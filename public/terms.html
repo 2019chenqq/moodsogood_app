@@ -1,0 +1,12 @@
+<!doctype html><meta charset="utf-8">
+<title>心晴｜服務條款</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
+<div id="app">載入中…</div>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+fetch('legal/terms_zh-TW.md', { cache: 'no-cache' })
+  .then(r => r.text())
+  .then(t => { document.getElementById('app').innerHTML = marked.parse(t); })
+  .catch(() => { document.getElementById('app').innerHTML = '載入失敗，請稍後再試。'; });
+</script>

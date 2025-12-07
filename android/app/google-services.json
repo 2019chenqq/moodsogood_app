@@ -1,0 +1,114 @@
+{
+  "project_info": {
+    "project_number": "510475967619",
+    "project_id": "moodsogood-9e45b",
+    "storage_bucket": "moodsogood-9e45b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:510475967619:android:938fa0816ac94a78c2cfb6",
+        "android_client_info": {
+          "package_name": "com.example.moodsogood_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "510475967619-lgrfljide5veb7qo1vlblpg390nabgpu.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.moodsogood_app",
+            "certificate_hash": "f0b0fb1af013dd6c700561619516175b9421ea39"
+          }
+        },
+        {
+          "client_id": "510475967619-adnq5q93nfh4alc6pil24dnjflufc57l.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDOUcSXP6D6JZyXtu6By355gHETT2VDsfM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "510475967619-adnq5q93nfh4alc6pil24dnjflufc57l.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "510475967619-3e3got4hsp0p08q1etbeu0udljahuuha.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.moodsogoodApp"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:510475967619:android:39381422489f4ce3c2cfb6",
+        "android_client_info": {
+          "package_name": "tw.heartsshine.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "510475967619-36ebvpau9hhfqbckbnpmrfp16aj6ac99.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "tw.heartsshine.app",
+            "certificate_hash": "f0b0fb1af013dd6c700561619516175b9421ea39"
+          }
+        },
+        {
+          "client_id": "510475967619-7ttvfm1nc3kqn9s1t2l4t8fvccd2e6fi.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "tw.heartsshine.app",
+            "certificate_hash": "3bb5025d75c4b661372ff2734a4dac496170f884"
+          }
+        },
+        {
+          "client_id": "510475967619-jdetaeobnijrek75umpd1lvi1416p5i5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "tw.heartsshine.app",
+            "certificate_hash": "be25619b87b872c32327c7e77007eb0656e0f346"
+          }
+        },
+        {
+          "client_id": "510475967619-adnq5q93nfh4alc6pil24dnjflufc57l.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDOUcSXP6D6JZyXtu6By355gHETT2VDsfM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "510475967619-adnq5q93nfh4alc6pil24dnjflufc57l.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "510475967619-3e3got4hsp0p08q1etbeu0udljahuuha.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.moodsogoodApp"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

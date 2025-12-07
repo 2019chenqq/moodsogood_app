@@ -1,0 +1,675 @@
+// lib/edit_record_page.dart
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import 'record_detail_screen.dart';
+import '../utils/date_helper.dart';
+
+class EditRecordPage extends StatefulWidget {
+  final String uid;
+  final String docId;
+  final Map<String, dynamic> initData;
+
+  const EditRecordPage({
+    super.key,
+    required this.uid,
+    required this.docId,
+    required this.initData,
+  });
+
+  @override
+  State<EditRecordPage> createState() => _EditRecordPageState();
+}
+
+class _EditRecordPageState extends State<EditRecordPage> {
+  bool _saving = false;
+
+num? _calcOverallMood(List<Map<String, dynamic>> emos) {
+  final vals = emos
+      .map((m) => m['value'])
+      .where((v) => v is num)
+      .cast<num>()
+      .map((n) => n.toDouble())
+      .toList();
+  if (vals.isEmpty) return null;
+  final avg = vals.reduce((a, b) => a + b) / vals.length;
+  return double.parse(avg.toStringAsFixed(1));
+}
+
+Future<void> _saveAndClose() async {
+  if (_saving) return;
+  setState(() => _saving = true);
+
+  // 你要的提示：「開始儲存情緒、症狀、睡眠」
+  if (mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('開始儲存情緒、症狀、睡眠')),
+    );
+  }
+
+  try {
+    final uid = widget.uid;
+    final docId = widget.docId;                 // 你是從詳細頁帶進來的 docId
+    final ref = FirebaseFirestore.instance
+        .collection('users').doc(uid)
+        .collection('dailyRecords').doc(docId);
+
+    // emotions / symptoms / sleep 請用你頁面上的變數
+    final payload = <String, dynamic>{
+      'emotions': emotions,                     // List<Map> 內含 {name, value}
+      'symptoms': symptoms,                     // List<String>
+      'sleep': sleep,                           // Map
+      'overallMood': _calcOverallMood(
+        emotions.map((e) => Map<String, dynamic>.from(e)).toList(),
+      ),
+      'savedAt': FieldValue.serverTimestamp(),  // 之後排序用
+    };
+
+    await ref.set(payload, SetOptions(merge: true));
+
+    if (!mounted) return;
+    // 儲存成功 ➜ 關掉編輯頁並回傳 true
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context, true);
+    } else {
+      // 萬一這頁是最上層，保險起見導回詳細頁
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RecordDetailScreen(uid: uid, docId: docId),
+        ),
+      );
+    }
+  } catch (e, st) {
+    debugPrint('save error: $e\n$st');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('儲存失敗：$e')),
+      );
+    }
+  } finally {
+    if (mounted) setState(() => _saving = false);
+  }
+}
+
+  // ====== 狀態：情緒 / 症狀 / 睡眠 ======
+  late List<Map<String, dynamic>> emotions; // [{name: '期待', value: 7}, ...]
+  late List<String> symptoms;               // ['心悸', '頭痛', ...]
+  late Map<String, dynamic> sleep;          // 見下方 keys
+
+  // 睡眠控制器（避免 TextField 反向輸入）
+  late final TextEditingController _hypNameCtrl;
+  late final TextEditingController _hypDoseCtrl;
+  TimeOfDay? _sleepTime;
+  TimeOfDay? _wakeTime;
+  int? _sleepQuality; // null 代表 '-'
+  bool _tookHypnotic = false;
+
+  // 方便：旗標列表（你可依需求增減）
+  static const List<Map<String, String>> kSleepFlags = [
+    {'key': 'good', 'label': '優'},
+    {'key': 'fair', 'label': '良好'},
+    {'key': 'earlyAwakening', 'label': '早醒'},
+    {'key': 'nightmare', 'label': '多夢'},
+    {'key': 'lightSleep', 'label': '淺眠'},
+    {'key': 'nocturia', 'label': '夜尿'},
+    {'key': 'fragmented', 'label': '睡睡醒醒'},
+    {'key': 'insufficient', 'label': '睡眠不足'},
+    {'key': 'sleepLatencyLong', 'label': '入睡困難'},
+    {'key': 'interrupted', 'label': '睡眠中斷'},
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+
+    // ===== 初始化：把每日紀錄的內容帶進來 =====
+    final init = widget.initData;
+
+    emotions = ((init['emotions'] as List?) ?? const [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+
+    symptoms = ((init['symptoms'] as List?) ?? const [])
+        .map((e) => e.toString())
+        .toList();
+
+    sleep = Map<String, dynamic>.from((init['sleep'] as Map?) ?? const {});
+
+    _tookHypnotic = sleep['tookHypnotic'] == true;
+    _hypNameCtrl = TextEditingController(text: (sleep['hypnoticName'] ?? '').toString());
+    _hypDoseCtrl = TextEditingController(text: (sleep['hypnoticDose'] ?? '').toString());
+    _sleepTime = DateHelper.parseTime(sleep['sleepTime']);
+    _wakeTime  = DateHelper.parseTime(sleep['wakeTime']);
+    _sleepQuality = (sleep['quality'] is int) ? sleep['quality'] as int : null;
+  }
+
+  @override
+  void dispose() {
+    _hypNameCtrl.dispose();
+    _hypDoseCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<TimeOfDay?> _pickTime(TimeOfDay? initial) async {
+    final now = TimeOfDay.now();
+    return showTimePicker(
+      context: context,
+      initialTime: initial ?? now,
+    );
+  }
+
+  // ====== 儲存到 Firestore（merge） ======
+  Future<void> _save() async {
+    // 整理 sleep map（僅塞有效值）
+    final Map<String, dynamic> newSleep = {};
+    newSleep['tookHypnotic'] = _tookHypnotic;
+    if (_hypNameCtrl.text.trim().isNotEmpty) {
+      newSleep['hypnoticName'] = _hypNameCtrl.text.trim();
+    } else {
+      newSleep['hypnoticName'] = '';
+    }
+    if (_hypDoseCtrl.text.trim().isNotEmpty) {
+      newSleep['hypnoticDose'] = _hypDoseCtrl.text.trim();
+    } else {
+      newSleep['hypnoticDose'] = '';
+    }
+    if (_sleepTime != null) newSleep['sleepTime'] = DateHelper.formatTime(_sleepTime);
+    if (_wakeTime  != null) newSleep['wakeTime']  = DateHelper.formatTime(_wakeTime);
+    if (_sleepQuality != null) newSleep['quality'] = _sleepQuality;
+
+    // flags / note / naps 若原本就有，在 sleep 裡一併保留或調整
+    final List<String> flags = ((sleep['flags'] as List?) ?? const []).map((e) => e.toString()).toList();
+    newSleep['flags'] = flags;
+    newSleep['note']  = (sleep['note'] ?? '').toString();
+
+    // naps：[{start:'HH:mm', end:'HH:mm', minutes:120}, ...]
+    final List<Map<String, dynamic>> naps = ((sleep['naps'] as List?) ?? const [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+    newSleep['naps'] = naps;
+
+    final data = <String, dynamic>{
+      'emotions': emotions,
+      'symptoms': symptoms,
+      'sleep': newSleep,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    final ref = FirebaseFirestore.instance
+        .collection('users')
+        .doc(widget.uid)
+        .collection('records')
+        .doc(widget.docId);
+
+    await ref.set(data, SetOptions(merge: true));
+    if (mounted) {
+      Navigator.of(context).pop(true); // 回傳 true 告訴上一頁有更新
+    }
+  }
+  
+  // ====== UI ======
+ @override
+Widget build(BuildContext context) {
+  return Scaffold(
+    appBar: AppBar(
+  title: const Text('編輯每日紀錄'),
+  actions: [
+    IconButton(
+      icon: const Icon(Icons.save),
+      onPressed: _saveAndClose,     // ⬅️ 要接這個
+    ),
+  ],
+),
+
+
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _sectionHeader('情緒', onAdd: _addEmotion),
+          if (emotions.isEmpty)
+            const ListTile(title: Text('沒有情緒項目')),
+          ...emotions.asMap().entries.map((entry) {
+            final idx = entry.key;
+            final m = entry.value;
+            return ListTile(
+              title: Text(m['name']?.toString() ?? ''),
+              subtitle: Slider(
+                value: (m['value'] is num) ? (m['value'] as num).toDouble() : 0,
+                min: 0,
+                max: 10,
+                divisions: 10,
+                label: '${m['value'] ?? 0}',
+                onChanged: (v) => setState(() => emotions[idx]['value'] = v.round()),
+              ),
+              trailing: IconButton(
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () => setState(() => emotions.removeAt(idx)),
+              ),
+            );
+          }),
+
+          const Divider(height: 32),
+
+          _sectionHeader('症狀', onAdd: _addSymptom),
+          if (symptoms.isEmpty)
+            const ListTile(title: Text('沒有症狀項目')),
+          ...symptoms.asMap().entries.map((entry) {
+            final idx = entry.key;
+            final s = entry.value;
+            return Dismissible(
+              key: ValueKey('sym-$idx-$s'),
+              direction: DismissDirection.endToStart,
+              background: Container(
+                color: Colors.redAccent,
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: const Icon(Icons.delete, color: Colors.white),
+              ),
+              onDismissed: (_) => setState(() => symptoms.removeAt(idx)),
+              child: ListTile(title: Text(s)),
+            );
+          }),
+
+          const Divider(height: 32),
+
+          _sectionHeader('睡眠'),
+          // 服藥
+          SwitchListTile(
+            title: const Text('前一晚是否服用安眠藥'),
+            value: _tookHypnotic,
+            onChanged: (v) => setState(() => _tookHypnotic = v),
+          ),
+          _textTile('藥物名稱', _hypNameCtrl),
+          _textTile('劑量', _hypDoseCtrl),
+
+          // 入睡 / 起床
+          ListTile(
+            title: const Text('入睡時間'),
+            trailing: Text(DateHelper.formatTime(_sleepTime)),
+            onTap: () async {
+              final t = await _pickTime(_sleepTime);
+              if (t != null) setState(() => _sleepTime = t);
+            },
+          ),
+          ListTile(
+            title: const Text('起床時間'),
+            trailing: Text(DateHelper.formatTime(_wakeTime)),
+            onTap: () async {
+              final t = await _pickTime(_wakeTime);
+              if (t != null) setState(() => _wakeTime = t);
+            },
+          ),
+
+          // 自覺睡眠品質
+          ListTile(
+            title: const Text('自覺睡眠品質（1~10）'),
+            trailing: Text(_sleepQuality?.toString() ?? '-'),
+            onTap: () async {
+              final v = await _pickQuality(context, _sleepQuality ?? 5);
+              if (v != null) setState(() => _sleepQuality = v);
+            },
+          ),
+
+          // 夜間睡眠狀況 flags
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: kSleepFlags.map((f) {
+              final key = f['key']!;
+              final label = f['label']!;
+              final selected = ((sleep['flags'] as List?) ?? const []).contains(key);
+              return FilterChip(
+                label: Text(label),
+                selected: selected,
+                onSelected: (v) {
+                  final list = ((sleep['flags'] as List?) ?? const []).map((e) => e.toString()).toList();
+                  if (v) {
+                    if (!list.contains(key)) list.add(key);
+                  } else {
+                    list.remove(key);
+                  }
+                  setState(() => sleep['flags'] = list);
+                },
+              );
+            }).toList(),
+          ),
+
+          const SizedBox(height: 12),
+
+          // 註記
+          ListTile(
+            title: const Text('睡眠註記'),
+            subtitle: Text((sleep['note'] ?? '').toString().isEmpty ? '—' : (sleep['note'] ?? '').toString()),
+            onTap: () async {
+              final v = await _editNote(context, (sleep['note'] ?? '').toString());
+              if (v != null) setState(() => sleep['note'] = v);
+            },
+          ),
+
+          const Divider(height: 32),
+
+          // 小睡
+          _sectionHeader('小睡', onAdd: _addNap),
+          ...(((sleep['naps'] as List?) ?? const [])
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList()
+              .asMap()
+              .entries
+              .map((entry) {
+            final idx = entry.key;
+            final m = entry.value;
+            final start = (m['start'] ?? '-').toString();
+final end = (m['end'] ?? '-').toString();
+final mins = (m['minutes'] ?? 0) as int;
+
+// 🕒 將分鐘轉換成「x 小時 y 分」格式
+String durationText = '';
+if (mins > 0) {
+  final hours = mins ~/ 60;
+  final remain = mins % 60;
+  if (hours > 0 && remain > 0) {
+    durationText = '（${hours} 小時 ${remain} 分）';
+  } else if (hours > 0) {
+    durationText = '（${hours} 小時）';
+  } else {
+    durationText = '（${remain} 分）';
+  }
+}
+
+final text = '$start → $end $durationText';
+            return ListTile(
+              title: Text(text),
+              trailing: IconButton(
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () {
+                  final list = ((sleep['naps'] as List?) ?? const [])
+                      .map((e) => Map<String, dynamic>.from(e as Map))
+                      .toList();
+                  list.removeAt(idx);
+                  setState(() => sleep['naps'] = list);
+                },
+              ),
+              onTap: () => _editNap(idx),
+            );
+          }).toList()),
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  // ====== UI helpers ======
+  Widget _sectionHeader(String title, {VoidCallback? onAdd}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(title,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          ),
+          if (onAdd != null)
+            IconButton(
+              icon: const Icon(Icons.add),
+              tooltip: '新增$title',
+              onPressed: onAdd,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _textTile(String title, TextEditingController ctrl) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: TextField(
+        controller: ctrl, // 保持同一個 controller，避免反向輸入
+        textDirection: TextDirection.ltr,
+        decoration: InputDecoration(
+          labelText: title,
+          border: const OutlineInputBorder(),
+          isDense: true,
+        ),
+      ),
+    );
+  }
+
+  // ====== 互動：新增 / 編輯 ======
+  Future<void> _addEmotion() async {
+    String name = '';
+    double value = 5;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('新增情緒'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              decoration: const InputDecoration(
+                labelText: '名稱',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              onChanged: (v) => name = v.trim(),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Text('強度 0-10'),
+                Expanded(
+                  child: Slider(
+                    value: value,
+                    min: 0, max: 10, divisions: 10,
+                    label: value.round().toString(),
+                    onChanged: (v) => setState(() => value = v),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('加入')),
+        ],
+      ),
+    );
+    if (ok == true && name.isNotEmpty) {
+      setState(() => emotions.add({'name': name, 'value': value.round()}));
+    }
+  }
+
+  Future<void> _addSymptom() async {
+    String s = '';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('新增症狀'),
+        content: TextField(
+          decoration: const InputDecoration(
+            labelText: '症狀',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+          onChanged: (v) => s = v.trim(),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('加入')),
+        ],
+      ),
+    );
+    if (ok == true && s.isNotEmpty) {
+      setState(() => symptoms.add(s));
+    }
+  }
+
+  Future<int?> _pickQuality(BuildContext context, int initial) async {
+    int temp = initial.clamp(1, 10);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('自覺睡眠品質（1~10）'),
+        content: StatefulBuilder(
+          builder: (_, setLocal) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('$temp', style: Theme.of(context).textTheme.headlineSmall),
+              Slider(
+                value: temp.toDouble(),
+                min: 1, max: 10, divisions: 9,
+                label: '$temp',
+                onChanged: (v) => setLocal(() => temp = v.round()),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('確定')),
+        ],
+      ),
+    );
+    if (ok == true) return temp;
+    return null;
+  }
+
+  Future<String?> _editNote(BuildContext context, String init) async {
+    String v = init;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('睡眠註記'),
+        content: TextField(
+          controller: TextEditingController(text: init),
+          maxLines: 4,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            hintText: '想補充的睡眠觀察…',
+          ),
+          onChanged: (x) => v = x,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('確定')),
+        ],
+      ),
+    );
+    if (ok == true) return v;
+    return null;
+  }
+
+  Future<void> _addNap() async {
+    final result = await _napDialog();
+    if (result == null) return;
+    final list = ((sleep['naps'] as List?) ?? const [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+    list.add(result);
+    setState(() => sleep['naps'] = list);
+  }
+
+  Future<void> _editNap(int index) async {
+    final list = ((sleep['naps'] as List?) ?? const [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+    if (index < 0 || index >= list.length) return;
+    final result = await _napDialog(init: list[index]);
+    if (result == null) return;
+    list[index] = result;
+    setState(() => sleep['naps'] = list);
+  }
+
+  Future<Map<String, dynamic>?> _napDialog({Map<String, dynamic>? init}) async {
+  TimeOfDay? start = DateHelper.parseTime(init?['start']);
+  TimeOfDay? end   = DateHelper.parseTime(init?['end']);
+  int minutes = DateHelper.calcDurationMinutes(start!, end!) ?? 0;
+
+  String fmt(TimeOfDay? t) => t == null ? '-' : t.format(context);
+
+  return showDialog<Map<String, dynamic>>(
+    context: context,
+    builder: (ctx) {
+      return StatefulBuilder(
+        builder: (ctx, setState) {
+          // 重新計算分鐘數
+          void recalc() {
+            minutes = DateHelper.calcDurationMinutes(start!, end!) ?? 0;
+            setState(() {});
+          }
+
+          Future<void> pickStart() async {
+            final v = await showTimePicker(
+              context: ctx,
+              initialTime: start ?? TimeOfDay.now(),
+            );
+            if (v != null) {
+              start = v;
+              recalc();
+            }
+          }
+
+          Future<void> pickEnd() async {
+            final v = await showTimePicker(
+              context: ctx,
+              initialTime: end ?? (start ?? TimeOfDay.now()),
+            );
+            if (v != null) {
+              end = v;
+              recalc();
+            }
+          }
+
+          final canSubmit = start != null && end != null && minutes > 0;
+
+          return AlertDialog(
+            title: const Text('小睡（開始 / 結束）'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  title: const Text('開始時間'),
+                  trailing: Text(fmt(start)),
+                  onTap: pickStart,
+                ),
+                ListTile(
+                  title: const Text('結束時間'),
+                  trailing: Text(fmt(end)),
+                  onTap: pickEnd,
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('時長：${DateHelper.formatDurationText(minutes)}'),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, null),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                // 只有條件成立才可按
+                onPressed: canSubmit
+                    ? () {
+                        Navigator.pop<Map<String, dynamic>>(ctx, {
+                          'start': fmt(start),
+                          'end'  : fmt(end),
+                          'minutes': minutes,
+                        });
+                      }
+                    : null,
+                child: const Text('確定'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
+}
