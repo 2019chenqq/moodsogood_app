@@ -19,6 +19,46 @@ class NotificationHelper {
       _notificationsPlugin;
 
   bool _isInitialized = false;
+  bool _exactAlarmAllowed = false; // 記錄是否拿到「精準鬧鐘」權限
+
+  Future<bool> _ensurePermissions() async {
+    var granted = true;
+
+    // Android：確認並要求通知與精準鬧鐘權限（13+ 需要 POST_NOTIFICATIONS，12+ 需要精準鬧鐘）
+    final android = _notificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    if (android != null) {
+      final enabled = await android.areNotificationsEnabled() ?? false;
+      if (!enabled) {
+        granted = await android.requestNotificationsPermission() ?? false;
+      }
+
+      // 精準鬧鐘權限（有拿到就用 exact 模式，沒有就退回 inexact）
+      _exactAlarmAllowed = await android.requestExactAlarmsPermission() ?? false;
+      debugPrint('🔔 Android permission: notif=$granted exact=$_exactAlarmAllowed');
+    }
+
+    // iOS：主動要權限，否則在前景時不會跳通知
+    final ios = _notificationsPlugin
+        .resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>();
+    if (ios != null) {
+      final iosGranted = await ios.requestPermissions(
+            alert: true,
+            badge: true,
+            sound: true,
+          ) ??
+          false;
+      granted = granted && iosGranted;
+      debugPrint('🍎 iOS permission: notif=$iosGranted');
+    }
+
+    if (!granted) {
+      debugPrint('⚠️ 使用者尚未允許通知，已略過');
+    }
+
+    return granted;
+  }
 
   Future<void> init() async {
     if (_isInitialized) return;
@@ -66,12 +106,15 @@ class NotificationHelper {
         AndroidFlutterLocalNotificationsPlugin>()
       ?.requestNotificationsPermission();
 
+    await _ensurePermissions();
+
     _isInitialized = true;
   }
 
   /// 立刻跳出測試通知
   Future<void> showTestNotification() async {
     await init();
+    if (!await _ensurePermissions()) return;
 
     await _notificationsPlugin.show(
       999,
@@ -85,7 +128,11 @@ class NotificationHelper {
           importance: Importance.max,
           priority: Priority.high,
         ),
-        iOS: DarwinNotificationDetails(),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
       ),
     );
   }
@@ -98,6 +145,8 @@ class NotificationHelper {
     required TimeOfDay time,
   }) async {
     await init();
+    final hasPermission = await _ensurePermissions();
+    if (!hasPermission) return;
     debugPrint('🔔 準備建立每日通知…');
 
     // 要求通知權限（Android 13+）
@@ -137,11 +186,18 @@ class NotificationHelper {
             importance: Importance.max,
             priority: Priority.high,
           ),
-          iOS: DarwinNotificationDetails(),
+          iOS: DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+          ),
         ),
-        // ✅ 用 inexact 模式，不再要求「精準鬧鐘」權限
-        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        androidScheduleMode: _exactAlarmAllowed
+            ? AndroidScheduleMode.exactAllowWhileIdle
+            : AndroidScheduleMode.inexactAllowWhileIdle,
         matchDateTimeComponents: DateTimeComponents.time,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
       );
       debugPrint('✅ 已成功建立每日排程：$scheduledDate');
 
