@@ -40,7 +40,31 @@ class NotificationHelper {
       android: androidSettings,
       iOS: iosSettings,
     );
-    await _notificationsPlugin.initialize(settings);
+    await _notificationsPlugin.initialize(
+      settings,
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
+        debugPrint('🔔 notification tapped, payload=${response.payload}');
+      },
+    );
+
+    // Create Android notification channel to ensure channel exists (Android 8+)
+    const AndroidNotificationChannel channel = AndroidNotificationChannel(
+      _channelId,
+      _channelName,
+      description: _channelDescription,
+      importance: Importance.high,
+    );
+
+    await _notificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
+
+    // Request runtime notification permission on Android 13+
+    await _notificationsPlugin
+      .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>()
+      ?.requestNotificationsPermission();
 
     _isInitialized = true;
   }
