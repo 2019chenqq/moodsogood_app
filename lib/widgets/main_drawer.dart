@@ -3,12 +3,17 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:firebase_storage/firebase_storage.dart'; // 🔥 存照片用
 import 'package:image_picker/image_picker.dart';         // 🔥 選照片用
+import 'package:google_sign_in/google_sign_in.dart';
+
 import 'dart:io';
 import '../daily/daily_record_screen.dart';
 import '../daily/daily_record_history.dart';
 import '../diary/diary_home_page.dart';
 import '../settings_page.dart';
 import '../pages/feesback_page.dart';
+import '../pages/upgrade_page.dart';
+import '../Sign_in_page.dart';
+import '../pro/pro_page.dart';
 
 class MainDrawer extends StatefulWidget {
   const MainDrawer({super.key});
@@ -79,71 +84,79 @@ class _MainDrawerState extends State<MainDrawer> {
     final user = FirebaseAuth.instance.currentUser;
     final String displayName = user?.email ?? '使用者';
     final String? photoUrl = user?.photoURL;
+    final GoogleSignIn _googleSignIn = GoogleSignIn();
+
+Future<void> signOut() async {
+  await FirebaseAuth.instance.signOut();
+  await _googleSignIn.signOut(); // ⭐ 這一行是關鍵
+}
 
     return Drawer(
-      child: ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          UserAccountsDrawerHeader(
-  accountName: Text(
-    displayName,
-    style: const TextStyle(
-      fontWeight: FontWeight.bold,
-      fontSize: 18,
-    ),
-  ),
+  child: ListView(
+    padding: EdgeInsets.zero,
+    children: [
+      UserAccountsDrawerHeader(
+        accountName: const SizedBox.shrink(),
 
-  // 這裡只在「上傳中」時顯示文字，平常什麼都不顯示
-  accountEmail: _isUploading
-      ? const Text(
-          '正在上傳...',
-          style: TextStyle(color: Colors.white70),
-        )
-      : const SizedBox.shrink(),
-
-            
-            // 🔥 頭貼區塊
-            currentAccountPicture: GestureDetector(
-              onTap: _isUploading ? null : _pickAndUploadImage, // 點擊觸發上傳
-              child: Stack(
-                children: [
-                  CircleAvatar(
-                    radius: 40,
-                    backgroundColor: Colors.white,
-                    backgroundImage: photoUrl != null ? NetworkImage(photoUrl) : null,
-                    child: photoUrl == null 
-                        ? const Icon(Icons.person, size: 40, color: Colors.grey) 
-                        : null,
-                  ),
-                  
-                  // 如果正在上傳，顯示轉圈圈
-                  if (_isUploading)
-                    const Positioned.fill(
-                      child: CircularProgressIndicator(color: Colors.white),
-                    ),
-                    
-                  // 如果沒在上傳，顯示一個小相機圖示提示使用者可以點
-                  if (!_isUploading)
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: const BoxDecoration(
-                          color: Color.fromARGB(255, 255, 255, 255),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.camera_alt, size: 14, color: Color.fromARGB(255, 80, 194, 182)),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            
-            decoration: BoxDecoration(
-              color: Color.fromARGB(255, 28, 185, 169),
-            ),
+        accountEmail: Text(
+          _isUploading ? '正在上傳...' : (user?.email ?? ''),
+          style: const TextStyle(
+            color: Color.fromARGB(255, 25, 107, 231), // 帳號文字顏色
+            fontSize: 17,
           ),
+        ),
+
+        // 🔥 頭貼區塊（完整整合）
+        currentAccountPicture: GestureDetector(
+          onTap: _isUploading ? null : _pickAndUploadImage,
+          child: Stack(
+            children: [
+              CircleAvatar(
+                radius: 40,
+                backgroundColor: Colors.white,
+                backgroundImage:
+                    photoUrl != null ? NetworkImage(photoUrl) : null,
+                child: photoUrl == null
+                    ? const Icon(Icons.person,
+                        size: 40, color: Colors.grey)
+                    : null,
+              ),
+
+              // 上傳中 → 顯示轉圈
+              if (_isUploading)
+                const Positioned.fill(
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                ),
+
+              // 未上傳 → 相機提示
+              if (!_isUploading)
+                Positioned(
+                  bottom: 0,
+                  right: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.camera_alt,
+                      size: 14,
+                      color: Color.fromARGB(255, 80, 194, 182),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+
+        decoration: const BoxDecoration(
+          color: Color.fromARGB(255, 179, 227, 222), // Drawer header 背景色
+        ),
+      ),
           // 2. 選單項目
           ListTile(
             leading: const Icon(Icons.dashboard_outlined), // 圖示：每日紀錄
@@ -206,15 +219,25 @@ class _MainDrawerState extends State<MainDrawer> {
               );
             },
           ),
-
+ListTile(
+  leading: const Icon(Icons.workspace_premium_outlined),
+  title: const Text('升級至心晴 Pro'),
+  onTap: () {
+  Navigator.pop(context); // 關 drawer
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => const ProPage(),
+    ),
+  );
+  }
+  ),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
             title: const Text('登出', style: TextStyle(color: Colors.red)),
             onTap: () async {
-              await FirebaseAuth.instance.signOut();
-              // 這裡通常會跳轉回登入頁，暫時先關閉
-              if (context.mounted) Navigator.pop(context);
-            },
+  await signOut();
+}
           ),
         ],
       ),

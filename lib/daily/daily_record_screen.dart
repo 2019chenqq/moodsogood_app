@@ -9,9 +9,22 @@ import 'package:moodsogood_app/quotes.dart';
 import '../app_globals.dart';
 import '../utils/date_helper.dart';
 import '../models/daily_record.dart';
-import '../models/period_cycle.dart';
+// import '../models/period_cycle.dart';
 import '../quotes.dart';
 import '../widgets/main_drawer.dart';
+import '../widgets/emotion_slider.dart';
+
+Future<List<DailyRecord>> loadAllRecords(String uid) async {
+  final snap = await FirebaseFirestore.instance
+      .collection('users')
+      .doc(uid)
+      .collection('dailyRecords')
+      .get();
+
+  return snap.docs
+    .map((d) => DailyRecord.fromFirestore(d))
+    .toList();
+}
 
 double? overallFrom(Map<String, dynamic> data) {
   final v = data['overallMood'];
@@ -53,11 +66,11 @@ enum SleepFlag {
   ok,
   earlyWake,
   dreams,
-  light,
-  fragile,
-  lack,
+  lightSleep,
+  fragmented,
+  insufficient,
   initInsomnia,
-  maintInsomnia,
+  interrupted,
   nocturia,
 }
 
@@ -89,17 +102,17 @@ String sleepFlagLabel(SleepFlag f) {
       return '早醒';
     case SleepFlag.dreams:
       return '多夢';
-    case SleepFlag.light:
+    case SleepFlag.lightSleep:
       return '淺眠';
     case SleepFlag.nocturia:
       return '夜尿';
-    case SleepFlag.fragile:
+    case SleepFlag.fragmented:
       return '睡睡醒醒';
-    case SleepFlag.lack:
+    case SleepFlag.insufficient:
       return '睡眠不足';
     case SleepFlag.initInsomnia:
       return '入睡困難 (躺超過 30 分鐘才入睡)';
-    case SleepFlag.maintInsomnia:
+    case SleepFlag.interrupted:
       return '睡眠中斷 (醒來後超過 30 分鐘才又入睡)';
   }
 }
@@ -155,73 +168,120 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-/// ------- 共用：Cupertino 滾輪選擇 -------
-/// 數字滾輪（支援標題）
-Future<int?> showWheelPicker(
-  BuildContext context, {
-  required int initial,
-  int min = 0,
-  int max = 10,
-  String? title, // ← 新增的參數
-}) async {
-  int value = initial.clamp(min, max);
+// /// ------- 共用：Cupertino 滾輪選擇 -------
+// /// 數字滾輪（支援標題）
+// Future<int?> showWheelPicker(
+//   BuildContext context, {
+//   required int initial,
+//   int min = 0,
+//   int max = 10,
+//   String? title, // ← 新增的參數
+// }) async {
+//   int value = initial.clamp(min, max);
 
-  return showModalBottomSheet<int>(
+//   return showModalBottomSheet<int>(
+//     context: context,
+//     showDragHandle: true,
+//     builder: (ctx) {
+//       return SizedBox(
+//         height: 300,
+//         child: Column(
+//           children: [
+//             if (title != null)
+//               Padding(
+//                 padding: const EdgeInsets.only(top: 8, bottom: 4),
+//                 child: Text(
+//                   title!,
+//                   style: Theme.of(ctx).textTheme.titleMedium,
+//                 ),
+//               ),
+//             Expanded(
+//               child: CupertinoPicker(
+//                 itemExtent: 40,
+//                 scrollController: FixedExtentScrollController(
+//                   initialItem: value - min,
+//                 ),
+//                 onSelectedItemChanged: (i) => value = min + i,
+//                 children: [
+//                   for (int i = min; i <= max; i++) Center(child: Text('$i')),
+//                 ],
+//               ),
+//             ),
+//             SafeArea(
+//               top: false,
+//               minimum: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+//               child: Row(
+//                 children: [
+//                   Expanded(
+//                     child: OutlinedButton(
+//                       onPressed: () => Navigator.of(ctx).pop(),
+//                       child: const Text('取消'),
+//                     ),
+//                   ),
+//                   const SizedBox(width: 12),
+//                   Expanded(
+//                     child: FilledButton(
+//                       onPressed: () => Navigator.of(ctx).pop(value),
+//                       child: const Text('確定'),
+//                     ),
+//                   ),
+//                 ],
+//               ),
+//             ),
+//           ],
+//         ),
+//       );
+//     },
+//   );
+// }
+Future<int?> showSliderPicker({
+  required BuildContext context,
+  required int initial,
+  required int min,
+  required int max,
+  required String title,
+}) async {
+  int tempValue = initial;
+
+  return showDialog<int>(
     context: context,
-    showDragHandle: true,
-    builder: (ctx) {
-      return SizedBox(
-        height: 300,
-        child: Column(
-          children: [
-            if (title != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8, bottom: 4),
-                child: Text(
-                  title!,
-                  style: Theme.of(ctx).textTheme.titleMedium,
+    builder: (context) {
+      return AlertDialog(
+        title: Text(title),
+        content: StatefulBuilder(
+          builder: (context, setState) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Slider(
+                  value: tempValue.toDouble(),
+                  min: min.toDouble(),
+                  max: max.toDouble(),
+                  divisions: max - min,
+                  label: tempValue.toString(),
+                  onChanged: (v) {
+                    setState(() => tempValue = v.round());
+                  },
                 ),
-              ),
-            Expanded(
-              child: CupertinoPicker(
-                itemExtent: 40,
-                scrollController: FixedExtentScrollController(
-                  initialItem: value - min,
-                ),
-                onSelectedItemChanged: (i) => value = min + i,
-                children: [
-                  for (int i = min; i <= max; i++) Center(child: Text('$i')),
-                ],
-              ),
-            ),
-            SafeArea(
-              top: false,
-              minimum: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.of(ctx).pop(),
-                      child: const Text('取消'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: () => Navigator.of(ctx).pop(value),
-                      child: const Text('確定'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+                Text('$tempValue / $max'),
+              ],
+            );
+          },
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, tempValue),
+            child: const Text('確定'),
+          ),
+        ],
       );
     },
   );
 }
-
 /// ------- 共用：輸入字串 Dialog -------
 Future<String?> showTextDialog(
     BuildContext context, String title, String hint) async {
@@ -259,7 +319,47 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   // ——— 目前紀錄日期與時間（給頁首顯示；docId 只吃日期） ———
   DateTime _recordDate = DateTime.now();
   TimeOfDay _recordTime = TimeOfDay.now();
-  
+  @override
+  void initState() {
+    super.initState();
+    _loadExistingData(_recordDate); // 一進來就載入今天的紀錄（含生理期狀態）
+  }
+
+void _resetForm({bool keepPeriodStatus = false}) {
+  setState(() {
+    // 🔹 症狀
+    _symptoms.clear();
+    _symptoms.add(SymptomItem(name: ''));
+
+    // 🔹 安眠藥相關
+    tookHypnotic = false;
+    hypnoticName = '';
+    _hypnoticNameCtrl.clear();
+    hypnoticDose = '';
+    _hypnoticDoseCtrl.clear();
+
+    // 🔹 睡眠時間
+    sleepTime = null;
+    wakeTime = null;
+    finalWakeTime = null;
+    midWakeList = '';
+    _midWakeCtrl.clear();
+
+    // 🔹 睡眠旗標、備註、品質
+    _sleepFlags.clear();
+    sleepNote = '';
+    sleepQuality = null;
+
+    // 🔹 小睡
+    _naps.clear();
+
+    // 🔹 生理期狀態：除非特別說「要保留」，才歸零
+    if (!keepPeriodStatus) {
+      _isPeriod = false;
+    }
+  });
+}
+
     // ——— 情緒/症狀/睡眠本地狀態 ———
   final List<EmotionItem> _emotions = [
     EmotionItem('整體情緒'),
@@ -276,7 +376,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     EmotionItem('食慾'),
     EmotionItem('能量'),
     EmotionItem('活動量'),
-    EmotionItem('疲憊程度'),
+    EmotionItem('疲倦程度'),
   ];
 
   final List<SymptomItem> _symptoms = [SymptomItem(name: '')];
@@ -310,229 +410,227 @@ late final TextEditingController _midWakeCtrl = TextEditingController(); // 控�
     );
   }
 
-  // ——— 底部儲存按鈕（一定會觸發提示） ———
-  // Widget _footerSave() => SafeArea(
-  //       minimum: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-  //       child: FilledButton.icon(
-  //         icon: const Icon(Icons.save_outlined),
-  //         label: const Text('儲存'),
-  //         onPressed: () async {
-  //           try {
-  //             rootMessengerKey.currentState?.showSnackBar(
-  //               const SnackBar(content: Text('開始儲存情緒、症狀、睡眠')),
-  //             );
-  //           } catch (_) {
-  //             ScaffoldMessenger.of(context).showSnackBar(
-  //               const SnackBar(content: Text('開始儲存情緒、症狀、睡眠')),
-  //             );
-  //           }
-  //           await _saveAll();
-  //         },
-  //       ),
-  //     );
 Future<void> _loadExistingData(DateTime date) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  if (uid == null) return;
 
-    final docId = DateHelper.toId(date); // 當天的 ID
+  final docId = DateHelper.toId(date);
 
-    try {
-      // 1. 先試著讀取「這一天」的資料
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('dailyRecords')
-          .doc(docId)
-          .get();
+  try {
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('dailyRecords')
+        .doc(docId)
+        .get();
 
-      if (doc.exists && doc.data() != null) {
-        // A. 如果這一天已經有紀錄了，就照實讀取
-        final record = DailyRecord.fromFirestore(doc);
-        final s = record.sleep;
+    if (doc.exists && doc.data() != null) {
+      // -------------------------
+      // A. 這一天已經有紀錄 → 完整讀取
+      // -------------------------
+      final record = DailyRecord.fromFirestore(doc);
+      final s = record.sleep;
 
-        setState(() {
-          // --- 情緒 ---
-          if (record.emotions.isNotEmpty) {
-            _emotions.clear();
-            _emotions.addAll(record.emotions.map((e) => EmotionItem(e.name, value: e.value)));
-          }
-          // --- 症狀 ---
-          if (record.symptoms.isNotEmpty) {
-            _symptoms.clear();
-            _symptoms.addAll(record.symptoms.map((name) => SymptomItem(name: name)));
-          }
-          // --- 睡眠 ---
-          tookHypnotic = s.tookHypnotic;
-          hypnoticName = s.hypnoticName ?? '';
-          _hypnoticNameCtrl.text = hypnoticName;
-          hypnoticDose = s.hypnoticDose ?? '';
-          _hypnoticDoseCtrl.text = hypnoticDose;
-          
-          sleepTime = s.sleepTime;
-          wakeTime = s.wakeTime;
-          finalWakeTime = s.finalWakeTime;
-          midWakeList = s.midWakeList ?? '';
-          _midWakeCtrl.text = midWakeList;
+      setState(() {
+        // --- 情緒 ---
+        if (record.emotions.isNotEmpty) {
+          _emotions.clear();
 
-          _sleepFlags.clear();
-          for (final flagStr in s.flags) {
-            try {
-              final match = SleepFlag.values.firstWhere((e) => e.name == flagStr);
-              _sleepFlags.add(match);
-            } catch (_) {}
-          }
-          sleepNote = s.note ?? '';
-          sleepQuality = s.quality;
-          _naps.clear();
-          _naps.addAll(s.naps.map((n) => NapItem(start: n.start, end: n.end)));
-          
-          // 🔥 關鍵點 A：如果有紀錄，就用紀錄裡的狀態
-          _isPeriod = record.isPeriod;
-        });
-      } else {
-        // B. 如果這一天「還沒有紀錄」 (是一張白紙)
-        // 🔥 關鍵點 B：去檢查「最近一次」的紀錄狀態
-        await _autoCheckLastPeriodStatus(uid, date);
-        
-        // 重置其他表單內容
-        _resetForm(keepPeriodStatus: true); // 告訴 reset 不要把生理期狀態洗掉
-      }
-    } catch (e) {
-      debugPrint('讀取資料錯誤: $e');
-    }
-  }
-
-  // 🔥 新增這個方法：自動檢查上一筆紀錄
-  Future<void> _autoCheckLastPeriodStatus(String uid, DateTime currentDate) async {
-    try {
-      // 找出日期小於今天的最近一筆資料
-      // 因為 docId 是 yyyy-MM-dd，字串排序剛好等於日期排序
-      final query = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('dailyRecords')
-          .where(FieldPath.documentId, isLessThan: DateHelper.toId(currentDate)) 
-          .orderBy(FieldPath.documentId, descending: true) // 找最新的
-          .limit(1)
-          .get();
-
-      if (query.docs.isNotEmpty) {
-        final lastDoc = query.docs.first;
-        final lastRecord = DailyRecord.fromFirestore(lastDoc);
-        
-        // 如果上一筆是「生理期中」，那今天預設也要是「生理期中」
-        // (為了保險，我們可以加個限制：如果上一筆是 30 天前的，就不延續了，避免誤判)
-        final daysDiff = currentDate.difference(lastRecord.date).inDays;
-        
-        if (lastRecord.isPeriod && daysDiff < 7) { 
-          // 假設超過 7 天沒開 App，應該就是斷了，不自動延續
-          setState(() {
-            _isPeriod = true; 
+          // 確保「整體情緒」永遠排第一
+          final all = record.emotions;
+          all.sort((a, b) {
+            if (a.name == '整體情緒') return -1;
+            if (b.name == '整體情緒') return 1;
+            return 0;
           });
-          debugPrint('🔄 自動延續生理期狀態：開啟');
-        } else {
-          setState(() {
-            _isPeriod = false;
-          });
-          debugPrint('⏹️ 上一次沒來，或太久沒紀錄，生理期狀態：關閉');
+
+          _emotions.addAll(
+            all.map(
+              (e) => EmotionItem(e.name, value: e.value),
+            ),
+          );
         }
-      } else {
-        // 完全沒有歷史紀錄
-        setState(() => _isPeriod = false);
-      }
-    } catch (e) {
-      debugPrint('檢查歷史生理期失敗: $e');
+if (record.overallMood != null) {
+          _emotions.removeWhere((e) => e.name == '整體情緒');
+          _emotions.insert(
+            0,
+            EmotionItem(
+              '整體情緒',
+              value: record.overallMood!.round(), 
+            ),
+          );
+        }
+        // --- 症狀 ---
+        if (record.symptoms.isNotEmpty) {
+          _symptoms
+            ..clear()
+            ..addAll(record.symptoms.map((n) => SymptomItem(name: n)));
+        }
+
+        // --- 睡眠 ---
+        tookHypnotic = s.tookHypnotic;
+        hypnoticName = s.hypnoticName ?? '';
+        _hypnoticNameCtrl.text = hypnoticName;
+        hypnoticDose = s.hypnoticDose ?? '';
+        _hypnoticDoseCtrl.text = hypnoticDose;
+
+        sleepTime = s.sleepTime;
+        wakeTime = s.wakeTime;
+        finalWakeTime = s.finalWakeTime;
+
+        midWakeList = s.midWakeList ?? '';
+        _midWakeCtrl.text = midWakeList;
+
+        // 睡眠標籤
+        _sleepFlags.clear();
+        for (final f in s.flags) {
+          try {
+            final match = SleepFlag.values.firstWhere((e) => e.name == f);
+            _sleepFlags.add(match);
+          } catch (_) {}
+        }
+
+        sleepNote = s.note ?? '';
+        sleepQuality = s.quality;
+
+        // 小睡
+        _naps
+          ..clear()
+          ..addAll(
+            s.naps.map(
+              (n) => NapItem(start: n.start, end: n.end),
+            ),
+          );
+
+        // -------------------------
+        // 🔥 生理期狀態（今日已有紀錄 → 就用紀錄的）
+        // -------------------------
+        _isPeriod = record.isPeriod == true;
+      });
+    } else {
+  // -------------------------
+  // B. 今日沒有紀錄 → 自動推算生理期（看昨天）
+  // -------------------------
+  await _loadPeriodState(date);
+
+  // -------------------------
+  // C. 清空其他欄位，但保留剛推算的 _isPeriod
+  // -------------------------
+  _resetForm(keepPeriodStatus: true);
+}
+  } catch (e) {
+    debugPrint('讀取資料錯誤: $e');
+  }
+}
+  
+Future<void> _loadPeriodState(DateTime currentDate) async {
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  if (uid == null) return;
+
+  try {
+    // 只看「昨天」那一天
+    final yesterdayDate = currentDate.subtract(const Duration(days: 1));
+    final yesterdayId = DateHelper.toId(yesterdayDate);
+
+    final yesterdaySnap = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('dailyRecords')
+        .doc(yesterdayId)
+        .get();
+
+    if (!yesterdaySnap.exists || yesterdaySnap.data() == null) {
+      // 昨天沒有紀錄 → 不自動延續
+      _isPeriod = false;
+      return;
+    }
+
+    final yesterdayRecord = DailyRecord.fromFirestore(yesterdaySnap);
+
+    // 🔥 規則：
+    // 昨天是生理期（isPeriod == true）
+    // 並且昨天沒有被標成結束日（periodEndId == null）
+    // → 今天預設延續經期
+    if (yesterdayRecord.isPeriod == true &&
+        yesterdayRecord.periodEndId == null) {
+      _isPeriod = true;
+      debugPrint('🔄 自動延續生理期到今天（昨天是經期中）');
+    } else {
+      _isPeriod = false;
+      debugPrint('⏹ 昨天不是經期中或已經結束，不延續');
+    }
+  } catch (e) {
+    debugPrint('讀取昨天的生理期狀態失敗: $e');
+    _isPeriod = false;
+  }
+}
+
+Future<void> _savePeriod(String todayId) async {
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  if (uid == null) return;
+
+  final col = FirebaseFirestore.instance
+      .collection('users')
+      .doc(uid)
+      .collection('dailyRecords');
+
+  // 先抓「今天」舊的狀態
+  final todayDoc = await col.doc(todayId).get();
+  final bool oldIsPeriod = todayDoc.data()?['isPeriod'] == true;
+
+  // 算出「昨天」的 id
+  final yesterdayDate = _recordDate.subtract(const Duration(days: 1));
+  final yesterdayId = DateHelper.toId(yesterdayDate);
+  final yesterdayDoc = await col.doc(yesterdayId).get();
+  final bool yesterdayIsPeriod =
+      yesterdayDoc.exists && (yesterdayDoc.data()?['isPeriod'] == true);
+  final String? yesterdayPeriodStart =
+      yesterdayDoc.data()?['periodStart'] as String?;
+
+  if (_isPeriod) {
+    // 🔥 現在這一天是「經期中」
+
+    // 如果昨天也是經期，而且有 periodStart，就沿用那個起始日
+    String periodStartToUse;
+    if (yesterdayIsPeriod && yesterdayPeriodStart != null) {
+      periodStartToUse = yesterdayPeriodStart;
+    } else {
+      // 否則代表這是新的第一天
+      periodStartToUse = todayId;
+    }
+
+    await col.doc(todayId).set(
+      {
+        'isPeriod': true,
+        'periodStart': periodStartToUse,
+        'periodEnd': null, // 這一天還沒結束
+      },
+      SetOptions(merge: true),
+    );
+  } else {
+    // 🔥 現在這一天「沒有經期」
+
+    // 如果原本是經期，代表這一天是「結束日」
+    if (oldIsPeriod) {
+      await col.doc(todayId).set(
+        {
+          'isPeriod': false,
+          'periodEnd': todayId,
+        },
+        SetOptions(merge: true),
+      );
+    } else {
+      // 原本就不是經期，只更新 isPeriod
+      await col.doc(todayId).set(
+        {
+          'isPeriod': false,
+        },
+        SetOptions(merge: true),
+      );
     }
   }
-
-  // 🔥 修改 _resetForm，加入 keepPeriodStatus 參數
-  void _resetForm({bool keepPeriodStatus = false}) {
-    setState(() {
-      // 情緒不一定重置，看你需求
-      // _emotions...
-      
-      _symptoms.clear();
-      _symptoms.add(SymptomItem(name: ''));
-      
-      tookHypnotic = false;
-      hypnoticName = '';
-      _hypnoticNameCtrl.clear();
-      hypnoticDose = '';
-      _hypnoticDoseCtrl.clear();
-      
-      sleepTime = null;
-      wakeTime = null;
-      finalWakeTime = null;
-      midWakeList = '';
-      _midWakeCtrl.clear();
-      
-      _sleepFlags.clear();
-      sleepNote = '';
-      sleepQuality = null;
-      _naps.clear();
-      
-      // 🔥 關鍵點 C：如果指定要保留狀態 (因為剛剛自動檢查過了)，就不重置它
-      if (!keepPeriodStatus) {
-        _isPeriod = false;
-      }
-    });
-  }
-  // 讀取最近一次的生理期狀態
-  Future<void> _fetchPeriodStatus() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-
-    try {
-      final snap = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('periodCycles')
-          .orderBy('startDate', descending: true)
-          .limit(1)
-          .get();
-    } catch (e) {
-      debugPrint('讀取經期錯誤: $e');
-    }
-  }
-
-  // 切換生理期狀態 (開始 / 結束)
-  Future<void> _togglePeriod(bool value) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-
-    // 為了避免誤觸，簡單用 SnackBar 提示，或直接操作
-    // 邏輯：
-    // 1. 如果現在是「無經期」 -> 開啟 -> 新增一筆 start=_recordDate
-    // 2. 如果現在是「經期中」 -> 關閉 -> 更新上一筆 end=_recordDate
-
-    try {
-      final col = FirebaseFirestore.instance.collection('users').doc(uid).collection('periodCycles');
-
-      if (value) {
-        // === 開始新週期 ===
-        // 防呆：如果最近一筆還沒結束，先把它強制結束在昨天 (或直接忽略)
-        if (_isPeriod) return; 
-        
-        await col.add({
-          'startDate': Timestamp.fromDate(_recordDate),
-          'endDate': null,
-        });
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('經期開始 🩸')));
-      } else {
-        // === 結束當前週期 ===
-        if (!_isPeriod) return;
-
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('經期結束 ✨')));
-      }
-      
-      // 重新讀取狀態
-      await _fetchPeriodStatus();
-      
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('操作失敗：$e')));
-    }
-  }
-  Future<void> _pickRecordDate() async {
+}
+   Future<void> _pickRecordDate() async {
     final picked = await showDatePicker(
       context: context,
       initialDate: _recordDate,
@@ -542,96 +640,110 @@ Future<void> _loadExistingData(DateTime date) async {
     if (picked != null) {
       setState(() => _recordDate = picked);
       // 🔥 重點：切換日期後，讀取那天的資料
-      await _loadExistingData(picked);
+      await _loadExistingData(_recordDate);
     }
   }
   // ——— 儲存：users/{uid}/dailyRecords/{yyyy-MM-dd}（同日合併） ———
   Future<void> _saveAll() async {
-    // 1. 防呆：如果正在存，就不要重複執行
-    if (_isSaving) return;
+  if (_isSaving) return;
 
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('尚未登入，無法儲存')),
-      );
-      return;
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  if (uid == null) return;
+
+  final date = _recordDate;
+  final docId = DateHelper.toId(date);
+
+  final ref = FirebaseFirestore.instance
+      .collection('users')
+      .doc(uid)
+      .collection('dailyRecords')
+      .doc(docId);
+
+  setState(() => _isSaving = true);
+
+  try {
+    // 讀取舊資料（用來銜接生理期開始日）
+    final oldSnap = await ref.get();
+    String? oldStartId;
+    bool oldIsPeriod = false;
+
+    if (oldSnap.exists && oldSnap.data() != null) {
+      final old = DailyRecord.fromFirestore(oldSnap);
+      oldStartId = old.periodStartId;
+      oldIsPeriod = old.isPeriod;
     }
 
-    // 2. 開始轉圈圈
-    setState(() => _isSaving = true);
+    // ----- 準備要寫進 Firebase 的資料 -----
+    final payload = <String, dynamic>{
+      'emotions': _emotions.map((e) => {'name': e.name, 'value': e.value}).toList(),
+      'symptoms': _symptoms.map((s) => s.name).toList(),
 
-    try {
-      final docId = DateHelper.toId(_recordDate); // 使用 Helper 取得 ID
-      final ref = FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('dailyRecords')
-          .doc(docId);
+      // 睡眠資料
+      'sleep': {
+        'tookHypnotic': tookHypnotic,
+        'hypnoticName': hypnoticName,
+        'hypnoticDose': hypnoticDose,
+        'sleepTime': DateHelper.formatTime(sleepTime),
+        'wakeTime': DateHelper.formatTime(wakeTime),
+        'flags': _sleepFlags.map((f) => f.name).toList(),
+        'note': sleepNote,
+        'quality': sleepQuality,
+        'finalWakeTime': DateHelper.formatTime(finalWakeTime),
+        'midWakeList': midWakeList,
+        'naps': _naps.map((n) => {
+              'start': DateHelper.formatTime(n.start),
+              'end': DateHelper.formatTime(n.end),
+              'minutes': DateHelper.calcDurationMinutes(n.start, n.end),
+            }).toList(),
+      },
 
-      // 準備要存的資料 (這裡保持你原本的邏輯，或確認是否已更新為新的 Model 結構)
-      // 假設你還沒完全改寫這邊的 payload 生成邏輯，先保留你原本的寫法：
-      final payload = <String, dynamic>{
-        'emotions': _emotions.map((e) => {'name': e.name, 'value': e.value}).toList(),
-        'symptoms': _symptoms.map((s) => s.name).toList(),
-        'isPeriod': _isPeriod,
-        'sleep': {
-          'tookHypnotic': tookHypnotic,
-          'hypnoticName': hypnoticName,
-          'hypnoticDose': hypnoticDose,
-          'sleepTime': DateHelper.formatTime(sleepTime),
-          'wakeTime': DateHelper.formatTime(wakeTime),
-          'flags': _sleepFlags.map((f) => f.name).toList(),
-          'note': sleepNote,
-          'quality': sleepQuality,
-          'finalWakeTime': DateHelper.formatTime(finalWakeTime),
-  'midWakeList': midWakeList,
-          'naps': _naps.map((n) => {
-                'start': DateHelper.formatTime(n.start),
-                'end': DateHelper.formatTime(n.end),
-                'minutes': DateHelper.calcDurationMinutes(n.start, n.end),
-              }).toList(),
-        },
-        'savedAt': FieldValue.serverTimestamp(),
-        'localTime': DateHelper.formatTime(_recordTime),
-      };
-
-      // 計算整體情緒 (如果有)
-      try {
-        final e = _emotions.firstWhere((x) => x.name == '整體情緒');
-        if (e.value is num) {
-          payload['overallMood'] = (e.value as num).toDouble();
-        }
-      } catch (_) {}
-
-      // 3. 寫入資料庫 (merge: true 代表不覆蓋舊有欄位)
-      await ref.set(payload, SetOptions(merge: true));
-
-      if (!mounted) return;
-
-      // 4. 🔥 顯示「已儲存」提示
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ 已儲存成功！'),
-          behavior: SnackBarBehavior.floating, // 浮動樣式比較好看
-          backgroundColor: Colors.green,       // 用綠色代表成功
-          duration: Duration(seconds: 1),      // 顯示 1 秒後自動消失
-        ),
-      );
-
-    } catch (e) {
-      if (!mounted) return;
-      // 錯誤提示
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('儲存失敗：$e'), backgroundColor: Colors.red),
-      );
-    } finally {
-      // 5. 結束轉圈圈
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
-    }
+      'savedAt': FieldValue.serverTimestamp(),
+    };
+try {
+  final e = _emotions.firstWhere((x) => x.name.contains('整體情緒'));
+  if (e.value != null) {
+    payload['overallMood'] = (e.value!) * 1.0; // 確保寫入 double
   }
+} catch (_) {
+  debugPrint("⚠️ 沒找到整體情緒，無法寫入 overallMood");
+}
+    // 🔥 生理期手動判斷邏輯
+    if (_isPeriod == true) {
+      // ---- 若今天是生理期 ----
+      payload['isPeriod'] = true;
+
+      // A. 若舊資料沒有開始日 → 今天就是經期開始
+      payload['periodStartId'] = oldStartId ?? docId;
+
+      // B. 經期中不可能有結束日
+      payload['periodEndId'] = null;
+
+    } else {
+      // ---- 若今天不是生理期 ----
+      payload['isPeriod'] = false;
+
+      // 若昨天是經期，而今天關閉 → 今天是經期結束
+      if (oldIsPeriod == true) {
+        payload['periodEndId'] = docId;
+      }
+
+      // 非經期時不應動 periodStartId（保留）
+      payload['periodStartId'] = oldStartId;
+    }
+
+    await ref.set(payload, SetOptions(merge: true));
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已儲存成功！')),
+    );
+
+  } finally {
+    if (mounted) setState(() => _isSaving = false);
+  }
+}
+
 
   /// 若「整體情緒」有填，直接用；否則回退到所有有數字項目的平均
   double? _overallFromEmotions(List list) {
@@ -674,6 +786,7 @@ Future<void> _loadExistingData(DateTime date) async {
 
   Future<void> _renameEmotion(int i) async {
     final name = await showTextDialog(context, '重新命名', _emotions[i].name);
+    if (i == 0) return;
     if (name != null && name.trim().isNotEmpty) {
       setState(() => _emotions[i] = _emotions[i].copyWith(name: name.trim()));
     }
@@ -681,29 +794,68 @@ Future<void> _loadExistingData(DateTime date) async {
 
   void _deleteEmotion(int i) => setState(() => _emotions.removeAt(i));
 
-  Future<void> _pickEmotionValue(int i) async {
-    final v = await showWheelPicker(
-      context,
-      initial: _emotions[i].value ?? 0,
-      min: 0,
-      max: 10,
-    );
-    if (v != null)
-      setState(() => _emotions[i] = _emotions[i].copyWith(value: v));
-  }
+  Future<int?> showSliderPicker(
+  BuildContext context, {
+  required int initial,
+  int min = 0,
+  int max = 10,
+}) async {
+  int temp = initial.clamp(min, max);
 
+  return showDialog<int>(
+    context: context,
+    builder: (ctx) {
+      return StatefulBuilder(
+        builder: (ctx, setState) {
+          return AlertDialog(
+            title: const Text('選擇分數'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('$temp / $max'),
+                Slider(
+                  value: temp.toDouble(),
+                  min: min.toDouble(),
+                  max: max.toDouble(),
+                  divisions: max - min,
+                  onChanged: (v) => setState(() => temp = v.round()),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, temp),
+                child: const Text('確定'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
   // 記錄日期/時間
 
   @override
   Widget build(BuildContext context) {
     final pages = [
-      _pageWrapper(_EmotionPage(
-        items: _emotions,
-        onAdd: _addEmotion,
-        onRename: _renameEmotion,
-        onDelete: _deleteEmotion,
-        onPickValue: _pickEmotionValue,
-      )),
+      _pageWrapper(
+  _EmotionPage(
+  items: _emotions,
+  onAdd: _addEmotion,
+  onRename: _renameEmotion,
+  onDelete: _deleteEmotion,
+  onChangeValue: (i, v) {
+    setState(() {
+      _emotions[i] = _emotions[i].copyWith(value: v);
+    });
+  },
+),
+),
       _pageWrapper(_SymptomPage(
         items: _symptoms,
         onAdd: () => setState(
@@ -749,13 +901,12 @@ Future<void> _loadExistingData(DateTime date) async {
         sleepNote: sleepNote,
         onChangeNote: (v) => setState(() => sleepNote = v),
         sleepQuality: sleepQuality,
-        onPickQuality: () async {
-          final v = await showWheelPicker(
+        onPickValue: () async { // 修正: 改成 onPickQuality，並移除 (i)
+          final v = await showSliderPicker(
             context,
-            initial: sleepQuality??0,
+            initial: sleepQuality ?? 1,
             min: 1,
             max: 10,
-            title: '自覺睡眠品質（1-10）',
           );
           if (v != null) setState(() => sleepQuality = v);
         },
@@ -942,56 +1093,109 @@ class _EmotionPage extends StatelessWidget {
     required this.onAdd,
     required this.onRename,
     required this.onDelete,
-    required this.onPickValue,
+    required this.onChangeValue 
   }) : super(key: key);
 
   final List<EmotionItem> items;
   final VoidCallback onAdd;
   final Future<void> Function(int index) onRename;
   final void Function(int index) onDelete;
-  final Future<void> Function(int index) onPickValue;
+final void Function(int index, int value) onChangeValue;
 
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        // 清單
-        ...List.generate(items.length, (i) {
-          final item = items[i];
-          return Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: ListTile(
-              title: Text(item.name),
-              subtitle: Text(item.value == null ? '—' : '${item.value} / 10'),
-              onTap: () => onPickValue(i),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                      icon: const Icon(Icons.edit_outlined),
-                      onPressed: () => onRename(i)),
-                  IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () => onDelete(i)),
-                ],
-              ),
-            ),
-          );
-        }),
 
-        const SizedBox(height: 12),
-        // 新增按鈕
-        OutlinedButton.icon(
-          onPressed: onAdd,
-          icon: const Icon(Icons.add),
-          label: const Text('新增情緒項目'),
-        ),
-      ],
-    );
-  }
+ @override
+Widget build(BuildContext context) {
+  return ListView(
+    padding: const EdgeInsets.all(16),
+    children: [
+      // 🔹 情緒清單（Slider 版）
+      ...List.generate(items.length, (i) {
+        final item = items[i];
+
+  const emotionRightIconMap = {
+  '整體情緒': 'assets/emotion/overall.png',
+  '焦慮程度': 'assets/emotion/anxious.png',
+  '憂鬱程度': 'assets/emotion/depression.png',
+  '空虛程度': 'assets/emotion/absence.png',
+  '無聊程度': 'assets/emotion/boring.png',
+  '難過程度': 'assets/emotion/sad.png',
+  '開心程度': 'assets/emotion/happy.png',
+  '無望感': 'assets/emotion/despair.png',
+  '孤獨感': 'assets/emotion/loneliness.png',
+  '動力': 'assets/emotion/power.png',
+  '自殺意念': 'assets/emotion/自殺意念.png',
+  '食慾': 'assets/emotion/食慾.png',
+  '能量': 'assets/emotion/energy.png',
+  '活動量': 'assets/emotion/活動量.png',
+  '疲倦程度': 'assets/emotion/tired.png',
+};
+
+        return Card(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 情緒名稱 + 編輯 / 刪除
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        item.name,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    if (i != 0)
+                      IconButton(
+                        icon: const Icon(Icons.edit_outlined),
+                        onPressed: () => onRename(i),
+                      ),
+                    if (i != 0)
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline),
+                        onPressed: () => onDelete(i),
+                      ),
+                  ],
+                ),
+
+                const SizedBox(height: 8),
+
+                // 🎚️ 情緒 Slider
+                EmotionSlider(
+  label: item.name,
+  value: item.value ?? 1,
+  onChanged: (v) => onChangeValue(i, v),
+leftIcon: 'assets/emotion/default.png',
+
+  rightIcon: emotionRightIconMap[item.name]
+      ?? 'assets/emotion/default.png',
+
+
+  gradientColors: const [
+    Color(0xFF9AD0EC),
+    Color(0xFFFFE08A),
+  ],
+),
+              ],
+            ),
+          ),
+        );
+      }),
+
+      const SizedBox(height: 12),
+
+      // ➕ 新增情緒
+      OutlinedButton.icon(
+        onPressed: onAdd,
+        icon: const Icon(Icons.add),
+        label: const Text('新增情緒項目'),
+      ),
+    ],
+  );
+}
 }
 
 /// 症狀分頁
@@ -1145,7 +1349,7 @@ class _SleepPage extends StatelessWidget {
     required this.sleepNote,
     required this.onChangeNote,
     required this.sleepQuality,
-    required this.onPickQuality,
+    required this.onPickValue,
     required this.naps,
     required this.onAddNap,
     required this.onEditNap,
@@ -1176,7 +1380,7 @@ class _SleepPage extends StatelessWidget {
   final void Function(String) onChangeNote;
 
   final int? sleepQuality; // 1~10
-  final Future<void> Function() onPickQuality;
+  final Future<void> Function() onPickValue;
 
   final List<NapItem> naps;
   final Future<void> Function() onAddNap;
@@ -1308,7 +1512,7 @@ class _SleepPage extends StatelessWidget {
             leading: const Icon(Icons.star_border_rounded, color: Colors.amber),
             title: const Text('自覺睡眠品質'),
             subtitle: Text(sleepQuality == null ? '—' : '$sleepQuality'),
-            onTap: onPickQuality,
+            onTap: onPickValue,
           ),
         ),
         const SizedBox(height: 12),
