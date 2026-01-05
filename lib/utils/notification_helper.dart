@@ -196,9 +196,7 @@ class NotificationHelper {
             ? AndroidScheduleMode.exactAllowWhileIdle
             : AndroidScheduleMode.inexactAllowWhileIdle,
         matchDateTimeComponents: DateTimeComponents.time,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
-      );
+              );
       debugPrint('✅ 已成功建立每日排程：$scheduledDate');
 
       final pending =
