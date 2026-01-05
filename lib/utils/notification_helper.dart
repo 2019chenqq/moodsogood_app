@@ -2,6 +2,9 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/material.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+import 'package:flutter/scheduler.dart' as fl_scheduler;
 
 const _channelId = 'heartshine_general';
 const _channelName = '心晴提醒';
@@ -20,6 +23,8 @@ class NotificationHelper {
 
   bool _isInitialized = false;
   bool _exactAlarmAllowed = false; // 記錄是否拿到「精準鬧鐘」權限
+  final String _prefsKey = 'scheduled_notifications_v1';
+  WidgetsBindingObserver? _lifecycleObserver;
 
   Future<bool> _ensurePermissions() async {
     var granted = true;
@@ -108,7 +113,45 @@ class NotificationHelper {
 
     await _ensurePermissions();
 
+    // Register lifecycle observer to reschedule on app resume (handles manual time changes)
+    _registerLifecycleObserver();
+
     _isInitialized = true;
+  }
+
+  void _registerLifecycleObserver() {
+    if (_lifecycleObserver != null) return;
+    _lifecycleObserver = _LifecycleHandler(this);
+    WidgetsBinding.instance.addObserver(_lifecycleObserver!);
+  }
+
+  /// Reschedule saved notifications (used when app resumes or time changed)
+  Future<void> rescheduleAllSavedNotifications() async {
+    final prefs = await SharedPreferences.getInstance();
+    final list = prefs.getStringList(_prefsKey) ?? <String>[];
+    if (list.isEmpty) return;
+
+    // Parse and reschedule (do not persist again)
+    for (final s in list) {
+      try {
+        final m = json.decode(s) as Map<String, dynamic>;
+        final id = m['id'] as int;
+        final title = m['title'] as String;
+        final body = m['body'] as String;
+        final hour = m['hour'] as int;
+        final minute = m['minute'] as int;
+
+        await scheduleDailyNotification(
+          id: id,
+          title: title,
+          body: body,
+          time: TimeOfDay(hour: hour, minute: minute),
+          persist: false,
+        );
+      } catch (e) {
+        debugPrint('❌ 讀取或重排通知失敗：$e');
+      }
+    }
   }
 
   /// 立刻跳出測試通知
@@ -143,6 +186,7 @@ class NotificationHelper {
     required String title,
     required String body,
     required TimeOfDay time,
+    bool persist = true,
   }) async {
     await init();
     final hasPermission = await _ensurePermissions();
@@ -199,6 +243,39 @@ class NotificationHelper {
               );
       debugPrint('✅ 已成功建立每日排程：$scheduledDate');
 
+              // Persist scheduled notification so we can reschedule on app resume/time change
+              if (persist) {
+                try {
+                  final prefs = await SharedPreferences.getInstance();
+                  final list = prefs.getStringList(_prefsKey) ?? <String>[];
+                  final entry = json.encode({
+                    'id': id,
+                    'title': title,
+                    'body': body,
+                    'hour': time.hour,
+                    'minute': time.minute,
+                  });
+
+                  // replace if exists
+                  final idx = list.indexWhere((e) {
+                    try {
+                      final m = json.decode(e) as Map<String, dynamic>;
+                      return (m['id'] as int) == id;
+                    } catch (_) {
+                      return false;
+                    }
+                  });
+                  if (idx >= 0) {
+                    list[idx] = entry;
+                  } else {
+                    list.add(entry);
+                  }
+                  await prefs.setStringList(_prefsKey, list);
+                } catch (e) {
+                  debugPrint('❌ 儲存排程資訊失敗：$e');
+                }
+              }
+
       final pending =
           await _notificationsPlugin.pendingNotificationRequests();
       debugPrint('📌 目前排隊中的通知數量：${pending.length}');
@@ -213,5 +290,35 @@ class NotificationHelper {
 
   Future<void> cancelNotification(int id) async {
     await _notificationsPlugin.cancel(id);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList(_prefsKey) ?? <String>[];
+      list.removeWhere((e) {
+        try {
+          final m = json.decode(e) as Map<String, dynamic>;
+          return (m['id'] as int) == id;
+        } catch (_) {
+          return false;
+        }
+      });
+      await prefs.setStringList(_prefsKey, list);
+    } catch (e) {
+      debugPrint('❌ 刪除儲存排程失敗：$e');
+    }
+  }
+}
+
+class _LifecycleHandler extends WidgetsBindingObserver {
+  final NotificationHelper _helper;
+  _LifecycleHandler(this._helper);
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // When app resumes, reschedule saved notifications to handle manual time changes
+      fl_scheduler.SchedulerBinding.instance.addPostFrameCallback((_) {
+        _helper.rescheduleAllSavedNotifications();
+      });
+    }
   }
 }
