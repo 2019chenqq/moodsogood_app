@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 
 // Firebase + Google Sign-In
 import 'package:firebase_core/firebase_core.dart';
@@ -30,6 +31,8 @@ final GlobalKey<ScaffoldMessengerState> rootMessengerKey = GlobalKey<ScaffoldMes
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await AndroidAlarmManager.initialize(); // :contentReference[oaicite:3]{index=3}
 
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
