@@ -20,6 +20,7 @@ class NotificationHelper {
   FlutterLocalNotificationsPlugin get notificationsPlugin => _notificationsPlugin;
 
   bool _isInitialized = false;
+  bool _exactAlarmAllowed = false;
 
   /// 你可以固定用同一個 channel id
   static const AndroidNotificationDetails _androidDetails =
@@ -34,10 +35,10 @@ class NotificationHelper {
   Future<void> init() async {
     if (_isInitialized) return;
 
-    // timezone 初始化（你原本只有 initializeTimeZones，建議補 local）
+    // timezone 初始化并设置为台北时区
     tz.initializeTimeZones();
-    // 若你之前有做 Asia/Taipei 的 setLocalLocation，可以在這裡補回來
-    // tz.setLocalLocation(tz.getLocation('Asia/Taipei'));
+    tz.setLocalLocation(tz.getLocation('Asia/Taipei'));
+    debugPrint('🕐 时区初始化完成：${tz.local.name}');
 
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     const iosSettings = DarwinInitializationSettings(
@@ -83,9 +84,40 @@ class NotificationHelper {
   }
 
   /// =========================
-  /// iOS（或非 Android）仍用你原本的 zonedSchedule
+  /// 確保通知權限
   /// =========================
-  Future<void> scheduleDailyNotificationIOSLike({
+  Future<bool> _ensurePermissions() async {
+    final android = _notificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    
+    if (android != null) {
+      final enabled = await android.areNotificationsEnabled() ?? false;
+      if (!enabled) {
+        return await android.requestNotificationsPermission() ?? false;
+      }
+      return enabled;
+    }
+    
+    final iOS = _notificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin>();
+    
+    if (iOS != null) {
+      return await iOS.requestPermissions(
+        alert: true,
+        badge: true,
+        sound: true,
+      ) ?? false;
+    }
+    
+    return true;
+  }
+
+  /// =========================
+  /// 每日定時通知
+  /// =========================
+  Future<void> scheduleDailyNotification({
     required int id,
     required String title,
     required String body,

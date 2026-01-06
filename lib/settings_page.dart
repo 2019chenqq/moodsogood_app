@@ -232,11 +232,12 @@ Future<void> _updateSettings(bool isOn, TimeOfDay time) async {
         ? time
         : TimeOfDay(hour: (time.hour + 24) % 24, minute: time.minute);
 
-    await helper.enableDailyAlarmAndroid(
-  title: '今天也辛苦了 💛',
-  body: '花一點時間記錄一下今天的心情吧。',
-  time: adjustedTime,
-);
+    await helper.scheduleDailyNotification(
+      id: 1,
+      title: '今天也辛苦了 💛',
+      body: '花一點時間記錄一下今天的心情吧。',
+      time: adjustedTime,
+    );
 
     debugPrint('✅ 已建立每日提醒：${adjustedTime.format(context)}');
     if (mounted) {
