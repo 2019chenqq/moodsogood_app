@@ -232,25 +232,27 @@ Future<void> _updateSettings(bool isOn, TimeOfDay time) async {
         ? time
         : TimeOfDay(hour: (time.hour + 24) % 24, minute: time.minute);
 
-    await helper.scheduleDailyNotification(
-      id: 1,
-      title: '今天也辛苦了 💛',
-      body: '花一點時間記錄一下今天的心情吧。',
+    // 使用 WorkManager（適用於小米等嚴格系統）
+    final success = await helper.scheduleDailyNotificationWithWorkManager(
       time: adjustedTime,
     );
 
-    debugPrint('✅ 已建立每日提醒：${adjustedTime.format(context)}');
+    debugPrint('✅ 已建立每日提醒（WorkManager）：${adjustedTime.format(context)}');
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('已設定每日提醒：${adjustedTime.format(context)} ✅'),
-          backgroundColor: Colors.green,
+          content: Text(
+            success 
+              ? '已設定每日提醒：${adjustedTime.format(context)} ✅\n（使用 WorkManager，適用於小米手機）' 
+              : '設定提醒失敗，請檢查權限'
+          ),
+          backgroundColor: success ? Colors.green : Colors.orange,
         ),
       );
     }
   } else {
     // 關閉提醒
-    await helper.cancelNotification(1);
+    await helper.cancelDailyNotificationWithWorkManager();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('已關閉每日提醒 ❎')),
