@@ -1,10 +1,12 @@
-import 'dart:io' show Platform;
-import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+const _channelId = 'heartshine_general';
+const _channelName = '心晴提醒';
+const _channelDescription = '心晴的提醒與每日通知';
 
 class NotificationHelper {
   static final NotificationHelper _instance = NotificationHelper._internal();
@@ -19,6 +21,7 @@ class NotificationHelper {
   FlutterLocalNotificationsPlugin get notificationsPlugin => _notificationsPlugin;
 
   bool _isInitialized = false;
+  bool _exactAlarmAllowed = false;
 
   /// 你可以固定用同一個 channel id
   static const AndroidNotificationDetails _androidDetails =
@@ -33,10 +36,10 @@ class NotificationHelper {
   Future<void> init() async {
     if (_isInitialized) return;
 
-    // timezone 初始化（你原本只有 initializeTimeZones，建議補 local）
+    // timezone 初始化并设置为台北时区
     tz.initializeTimeZones();
-    // 若你之前有做 Asia/Taipei 的 setLocalLocation，可以在這裡補回來
-    // tz.setLocalLocation(tz.getLocation('Asia/Taipei'));
+    tz.setLocalLocation(tz.getLocation('Asia/Taipei'));
+    debugPrint('🕐 时区初始化完成：${tz.local.name}');
 
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     const iosSettings = DarwinInitializationSettings(
@@ -82,20 +85,66 @@ class NotificationHelper {
   }
 
   /// =========================
-  /// iOS（或非 Android）仍用你原本的 zonedSchedule
+  /// 確保通知權限
   /// =========================
-  Future<void> scheduleDailyNotificationIOSLike({
+  Future<bool> _ensurePermissions() async {
+    final android = _notificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    
+    if (android != null) {
+      final enabled = await android.areNotificationsEnabled() ?? false;
+      if (!enabled) {
+        return await android.requestNotificationsPermission() ?? false;
+      }
+      return enabled;
+    }
+    
+    final iOS = _notificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin>();
+    
+    if (iOS != null) {
+      return await iOS.requestPermissions(
+        alert: true,
+        badge: true,
+        sound: true,
+      ) ?? false;
+    }
+    
+    return true;
+  }
+
+  /// =========================
+  /// 每日定時通知
+  /// =========================
+  Future<void> scheduleDailyNotification({
     required int id,
     required String title,
     required String body,
     required TimeOfDay time,
   }) async {
     await init();
+    final hasPermission = await _ensurePermissions();
+    if (!hasPermission) {
+      debugPrint('❌ 沒有通知權限，無法建立排程');
+      return;
+    }
+    debugPrint('🔔 準備建立每日通知…');
 
     await _notificationsPlugin
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.requestNotificationsPermission();
+
+    // 要求精準鬧鐘權限
+    final android = _notificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    if (android != null) {
+      _exactAlarmAllowed = await android.requestExactAlarmsPermission() ?? false;
+      debugPrint('🔔 精準鬧鐘權限: $_exactAlarmAllowed');
+    }
 
     final now = tz.TZDateTime.now(tz.local);
     var scheduledDate = tz.TZDateTime(
@@ -110,104 +159,98 @@ class NotificationHelper {
       scheduledDate = scheduledDate.add(const Duration(days: 1));
     }
 
-    await _notificationsPlugin.zonedSchedule(
-      id,
-      title,
-      body,
-      scheduledDate,
-      const NotificationDetails(
-        android: _androidDetails,
-        iOS: DarwinNotificationDetails(),
-      ),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      matchDateTimeComponents: DateTimeComponents.time,
-    );
-  }
-
-  /// =========================
-  /// Android：用「鬧鐘」排每日提醒（準時）
-  /// =========================
-  Future<void> enableDailyAlarmAndroid({
-    required String title,
-    required String body,
-    required TimeOfDay time,
-  }) async {
-    await init();
-
-    if (kIsWeb) {
-      // Web 不支援鬧鐘
-      return;
-    }
-    if (!Platform.isAndroid) {
-      // 非 Android 走原本方式
-      await scheduleDailyNotificationIOSLike(
-        id: kDailyAlarmId,
-        title: title,
-        body: body,
-        time: time,
+    try {
+      await _notificationsPlugin.zonedSchedule(
+        id,
+        title,
+        body,
+        scheduledDate,
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            _channelId,          // ✅ 跟測試通知同一個頻道
+            _channelName,
+            channelDescription: _channelDescription,
+            importance: Importance.max,
+            priority: Priority.high,
+            enableVibration: true,
+            enableLights: true,
+            playSound: true,
+            setAsGroupSummary: false,
+            fullScreenIntent: true,
+          ),
+          iOS: DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+            interruptionLevel: InterruptionLevel.timeSensitive,
+          ),
+        ),
+        androidScheduleMode: _exactAlarmAllowed
+            ? AndroidScheduleMode.exactAllowWhileIdle
+            : AndroidScheduleMode.inexactAllowWhileIdle,
       );
+      debugPrint('✅ 已成功建立每日排程：$scheduledDate');
+
+      final pending =
+          await _notificationsPlugin.pendingNotificationRequests();
+      debugPrint('📌 目前排隊中的通知數量：${pending.length}');
+      for (final p in pending) {
+        debugPrint('  ▶ id=${p.id}, title=${p.title}, body=${p.body}');
+      }
+    } catch (e, st) {
+      debugPrint('❌ 建立每日通知失敗：$e');
+      debugPrint('$st');
+    }
+  }
+
+  /// 测试：5秒后跳出通知
+  Future<void> scheduleTestNotificationIn5Seconds() async {
+    await init();
+    final hasPermission = await _ensurePermissions();
+    if (!hasPermission) {
+      debugPrint('❌ 沒有通知權限');
       return;
     }
 
-    // 1) 先取消舊的，避免重複
-    await AndroidAlarmManager.cancel(kDailyAlarmId);
+    final now = tz.TZDateTime.now(tz.local);
+    final scheduledDate = now.add(const Duration(seconds: 5));
 
-    // 2) 排「下一次」的 oneShotAt（到點後 callback 會再排下一天）
-    final next = _nextOccurrence(time);
-    await AndroidAlarmManager.oneShotAt(
-      next,
-      kDailyAlarmId,
-      _dailyAlarmCallback,
-      exact: true,
-      wakeup: true,
-      rescheduleOnReboot: true,
-    );
+    debugPrint('🧪 測試：5秒後跳出通知');
+    debugPrint('📅 現在時間：$now');
+    debugPrint('📅 排程時間：$scheduledDate');
 
-    // 3) 建議同時請求 Android exact alarm 權限（你原本有這個函式）
-    await requestExactAlarmPermission();
-  }
-
-  Future<void> disableDailyAlarm() async {
-    if (kIsWeb) return;
-    if (Platform.isAndroid) {
-      await AndroidAlarmManager.cancel(kDailyAlarmId);
+    try {
+      await _notificationsPlugin.zonedSchedule(
+        2,
+        '測試定時通知 🧪',
+        '如果你看到這個，代表定時通知系統正常運作',
+        scheduledDate,
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            _channelId,
+            _channelName,
+            channelDescription: _channelDescription,
+            importance: Importance.max,
+            priority: Priority.high,
+            enableVibration: true,
+            enableLights: true,
+            playSound: true,
+            fullScreenIntent: true,
+          ),
+          iOS: DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+            interruptionLevel: InterruptionLevel.timeSensitive,
+          ),
+        ),
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      );
+      debugPrint('✅ 已排程5秒後的測試通知');
+    } catch (e, st) {
+      debugPrint('❌ 測試通知排程失敗：$e');
+      debugPrint('$st');
     }
-    await _notificationsPlugin.cancel(kDailyAlarmId);
-  }
-
-  static DateTime _nextOccurrence(TimeOfDay time) {
-    final now = DateTime.now();
-    var candidate = DateTime(now.year, now.month, now.day, time.hour, time.minute);
-    if (!candidate.isAfter(now)) {
-      candidate = candidate.add(const Duration(days: 1));
-    }
-    return candidate;
-  }
-
-  /// 鬧鐘觸發：顯示通知 + 排下一天
-  @pragma('vm:entry-point')
-  static Future<void> _dailyAlarmCallback() async {
-    final helper = NotificationHelper();
-    await helper.showNow(
-      id: kDailyAlarmId,
-      title: '心晴提醒',
-      body: '記得寫下今天的一點點感受就好。',
-    );
-
-    // 排下一天同一時間（這裡要讀你實際儲存的時間）
-    // 如果你有用 SharedPreferences 存 time，應在這裡讀出來。
-    // 先用固定 21:00 做示範：
-    const time = TimeOfDay(hour: 21, minute: 0);
-    final next = _nextOccurrence(time);
-
-    await AndroidAlarmManager.oneShotAt(
-      next,
-      kDailyAlarmId,
-      _dailyAlarmCallback,
-      exact: true,
-      wakeup: true,
-      rescheduleOnReboot: true,
-    );
   }
 
   Future<void> cancelNotification(int id) async {
@@ -219,5 +262,36 @@ class NotificationHelper {
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
     await androidImplementation?.requestExactAlarmsPermission();
+  }
+  // ========== WorkManager 方法（用於小米等嚴格系統） ==========
+  static const platform = MethodChannel('tw.heartsshine.app/workmanager');
+
+  /// 使用 WorkManager 設定每日提醒（適用於小米手機）
+  Future<bool> scheduleDailyNotificationWithWorkManager({
+    required TimeOfDay time,
+  }) async {
+    try {
+      final result = await platform.invokeMethod('scheduleDailyNotification', {
+        'hour': time.hour,
+        'minute': time.minute,
+      });
+      debugPrint('✅ WorkManager 每日提醒已設定：${time.hour}:${time.minute}');
+      return result == true;
+    } catch (e) {
+      debugPrint('❌ WorkManager 設定失敗：$e');
+      return false;
+    }
+  }
+
+  /// 取消 WorkManager 的每日提醒
+  Future<bool> cancelDailyNotificationWithWorkManager() async {
+    try {
+      final result = await platform.invokeMethod('cancelDailyNotification');
+      debugPrint('✅ WorkManager 每日提醒已取消');
+      return result == true;
+    } catch (e) {
+      debugPrint('❌ WorkManager 取消失敗：$e');
+      return false;
+    }
   }
 }

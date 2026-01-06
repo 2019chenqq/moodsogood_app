@@ -44,6 +44,12 @@ class _SettingsPageState extends State<SettingsPage> {
   },
   child: const Text('測試通知（立刻跳出）'),
 ),
+          ElevatedButton(
+  onPressed: () async {
+    await NotificationHelper().scheduleTestNotificationIn5Seconds();
+  },
+  child: const Text('測試定時通知（5秒後跳出）'),
+),
           SwitchListTile(
             title: const Text('每日提醒'),
             subtitle: Text(_isReminderOn 
@@ -199,6 +205,25 @@ Future<void> _updateSettings(bool isOn, TimeOfDay time) async {
     // 先取消舊的，避免重複排
     await helper.cancelNotification(1);
 
+    // 檢查權限是否真的被授予
+    final android = helper.notificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    final notifEnabled = await android?.areNotificationsEnabled() ?? false;
+    debugPrint('🔔 通知已啟用: $notifEnabled');
+
+    if (!notifEnabled) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('❌ 需要允許通知權限才能使用提醒功能'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
 //     // 🕐 若設定時間已過，改成明天
     final now = TimeOfDay.now();
     bool isAfterNow = time.hour > now.hour ||
@@ -207,21 +232,27 @@ Future<void> _updateSettings(bool isOn, TimeOfDay time) async {
         ? time
         : TimeOfDay(hour: (time.hour + 24) % 24, minute: time.minute);
 
-    await helper.enableDailyAlarmAndroid(
-  title: '今天也辛苦了 💛',
-  body: '花一點時間記錄一下今天的心情吧。',
-  time: adjustedTime,
-);
+    // 使用 WorkManager（適用於小米等嚴格系統）
+    final success = await helper.scheduleDailyNotificationWithWorkManager(
+      time: adjustedTime,
+    );
 
-    debugPrint('✅ 已建立每日提醒：${adjustedTime.format(context)}');
+    debugPrint('✅ 已建立每日提醒（WorkManager）：${adjustedTime.format(context)}');
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已設定每日提醒：${adjustedTime.format(context)} ✅')),
+        SnackBar(
+          content: Text(
+            success 
+              ? '已設定每日提醒：${adjustedTime.format(context)} ✅\n（使用 WorkManager，適用於小米手機）' 
+              : '設定提醒失敗，請檢查權限'
+          ),
+          backgroundColor: success ? Colors.green : Colors.orange,
+        ),
       );
     }
   } else {
     // 關閉提醒
-    await helper.cancelNotification(1);
+    await helper.cancelDailyNotificationWithWorkManager();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('已關閉每日提醒 ❎')),

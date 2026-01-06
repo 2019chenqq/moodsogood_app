@@ -14,7 +14,16 @@ class IAPService {
   // 初始化 IAP
   Future<void> init() async {
     listenToPurchase();
-    await loadProducts();
+    try {
+      await loadProducts().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          print('⚠️ IAP loadProducts timeout - likely running on emulator without Play Services');
+        },
+      );
+    } catch (e) {
+      print('❌ IAP init error: $e');
+    }
   }
 
   // 查詢商品清單
@@ -24,14 +33,18 @@ class IAPService {
       'themes_pack',
     };
 
-    final response = await _iap.queryProductDetails(ids);
+    try {
+      final response = await _iap.queryProductDetails(ids);
 
-    if (response.error != null) {
-      print("商品查詢錯誤：${response.error}");
+      if (response.error != null) {
+        print("商品查詢錯誤：${response.error}");
+      }
+
+      products = response.productDetails;
+      print("已取得商品：$products");
+    } catch (e) {
+      print('❌ Error querying products: $e');
     }
-
-    products = response.productDetails;
-    print("已取得商品：$products");
   }
 
   // 發起購買
