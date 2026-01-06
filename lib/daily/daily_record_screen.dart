@@ -1111,6 +1111,23 @@ Widget build(BuildContext context) {
       // 🔹 情緒清單（Slider 版）
       ...List.generate(items.length, (i) {
         final item = items[i];
+const Map<String, String> emotionDisplayTextMap = {
+    '整體情緒': '今天整體過得還好嗎？',
+    '焦慮程度': '今天有感到緊繃或不安嗎？',
+    '憂鬱程度': '今天心情有比較低落嗎？',
+    '空虛程度': '有一種空空的感覺嗎？',
+    '無聊程度': '今天有提不起勁嗎？',
+    '難過程度': '今天有比較想哭或委屈嗎？',
+    '開心程度': '今天有感到一點點開心嗎？',
+    '無望感': '有覺得看不到出口嗎？',
+    '孤獨感': '今天有覺得自己被落下嗎？',
+    '動力': '今天做事有力氣嗎？',
+    '自殺意念': '有出現讓你感到害怕的念頭嗎？',
+    '食慾': '今天吃東西還順利嗎？',
+    '能量': '今天身體的能量還夠嗎？',
+    '活動量': '今天有稍微動一動嗎？',
+    '疲倦程度': '今天是不是很累了？',
+  };
 
   const emotionRightIconMap = {
   '整體情緒': 'assets/emotion/overall.png',
@@ -1144,9 +1161,9 @@ Widget build(BuildContext context) {
                   children: [
                     Expanded(
                       child: Text(
-                        item.name,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
+  emotionDisplayTextMap[item.name] ?? item.name,
+  style: Theme.of(context).textTheme.titleMedium,
+)
                     ),
                     if (i != 0)
                       IconButton(
@@ -1253,7 +1270,7 @@ class _SymptomPage extends StatelessWidget {
           elevation: 0,
           // 邊框：沒來時也有淡淡的粉色邊框
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(20),
             side: BorderSide(
               color: isPeriod ? activeColor : inactiveColor.withOpacity(0.3),
               width: 1.5,
@@ -1297,22 +1314,90 @@ class _SymptomPage extends StatelessWidget {
         const SizedBox(height: 24),
         
         // 2. 症狀列表 (保持原本邏輯)
-        ...List.generate(items.length, (i) {
-          final s = items[i];
-          return Card(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: ListTile(
-              title: Text(s.name.isEmpty ? '例如：心悸' : s.name),
-              onTap: () => onRename(i),
-              trailing: IconButton(
-                icon: const Icon(Icons.delete_outline),
-                onPressed: () => onDelete(i),
+        // ✅ 獨立的提醒卡（放在症狀列表前面）
+Card(
+  elevation: 0,
+  color: const Color(0xFFFFF1CC),
+  shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(16),
+    side: BorderSide(color: Colors.amber.withOpacity(0.35), width: 1),
+  ),
+  child: Padding(
+    padding: const EdgeInsets.all(14),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.lightbulb_outline, color: Colors.amber.shade700),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: const [
+              Text('溫柔提醒', style: TextStyle(fontWeight: FontWeight.w700)),
+              SizedBox(height: 6),
+              Text(
+                '不用很完整，想到什麼寫什麼就好。\n'
+                '也可以先寫一個最明顯的感覺：例如「心悸」「胸悶」「頭痛」。',
+                style: TextStyle(color: Colors.black54, height: 1.35),
               ),
-            ),
-          );
-        }),
-        
-        const SizedBox(height: 12),
+            ],
+          ),
+        ),
+      ],
+    ),
+  ),
+),
+
+const SizedBox(height: 14),
+
+// ✅ 你的症狀卡列表（原封不動邏輯，只有你要的 subtitle）
+...List.generate(items.length, (i) {
+  final s = items[i];
+  final isEmpty = s.name.trim().isEmpty;
+
+  final subtitleText = (i == 0)
+      ? '今天身體或心裡，哪裡怪怪的嗎？'
+      : (isEmpty ? '點一下可以修改' : null);
+
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 14),
+    child: Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.black.withOpacity(0.06), width: 1),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        title: Text(
+          isEmpty ? (i == 0 ? '例如：手抖、疲倦、嗜睡…' : '症狀 ${i + 1}') : s.name,
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: isEmpty ? Colors.black.withOpacity(0.45) : Colors.black.withOpacity(0.9),
+          ),
+        ),
+        subtitle: subtitleText == null
+            ? null
+            : Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  subtitleText,
+                  style: TextStyle(
+                    color: Colors.black.withOpacity(0.45),
+                    height: 1.3,
+                  ),
+                ),
+              ),
+        onTap: () => onRename(i),
+        trailing: IconButton(
+          icon: const Icon(Icons.delete_outline),
+          onPressed: () => onDelete(i),
+        ),
+      ),
+    ),
+  );
+}),
+
         
         // 3. 新增按鈕
         OutlinedButton.icon(
