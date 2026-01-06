@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -261,5 +262,36 @@ class NotificationHelper {
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
     await androidImplementation?.requestExactAlarmsPermission();
+  }
+  // ========== WorkManager 方法（用於小米等嚴格系統） ==========
+  static const platform = MethodChannel('tw.heartsshine.app/workmanager');
+
+  /// 使用 WorkManager 設定每日提醒（適用於小米手機）
+  Future<bool> scheduleDailyNotificationWithWorkManager({
+    required TimeOfDay time,
+  }) async {
+    try {
+      final result = await platform.invokeMethod('scheduleDailyNotification', {
+        'hour': time.hour,
+        'minute': time.minute,
+      });
+      debugPrint('✅ WorkManager 每日提醒已設定：${time.hour}:${time.minute}');
+      return result == true;
+    } catch (e) {
+      debugPrint('❌ WorkManager 設定失敗：$e');
+      return false;
+    }
+  }
+
+  /// 取消 WorkManager 的每日提醒
+  Future<bool> cancelDailyNotificationWithWorkManager() async {
+    try {
+      final result = await platform.invokeMethod('cancelDailyNotification');
+      debugPrint('✅ WorkManager 每日提醒已取消');
+      return result == true;
+    } catch (e) {
+      debugPrint('❌ WorkManager 取消失敗：$e');
+      return false;
+    }
   }
 }
