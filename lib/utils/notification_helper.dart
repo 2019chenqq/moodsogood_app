@@ -1,7 +1,7 @@
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/material.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 const _channelId = 'heartshine_general';
 const _channelName = '心晴提醒';
@@ -146,7 +146,10 @@ class NotificationHelper {
   }) async {
     await init();
     final hasPermission = await _ensurePermissions();
-    if (!hasPermission) return;
+    if (!hasPermission) {
+      debugPrint('❌ 沒有通知權限，無法建立排程');
+      return;
+    }
     debugPrint('🔔 準備建立每日通知…');
 
     // 要求通知權限（Android 13+）
@@ -154,6 +157,15 @@ class NotificationHelper {
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.requestNotificationsPermission();
+
+    // 要求精準鬧鐘權限
+    final android = _notificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    if (android != null) {
+      _exactAlarmAllowed = await android.requestExactAlarmsPermission() ?? false;
+      debugPrint('🔔 精準鬧鐘權限: $_exactAlarmAllowed');
+    }
 
     final now = tz.TZDateTime.now(tz.local);
     var scheduledDate = tz.TZDateTime(
@@ -185,18 +197,23 @@ class NotificationHelper {
             channelDescription: _channelDescription,
             importance: Importance.max,
             priority: Priority.high,
+            enableVibration: true,
+            enableLights: true,
+            playSound: true,
+            setAsGroupSummary: false,
+            fullScreenIntent: true,
           ),
           iOS: DarwinNotificationDetails(
             presentAlert: true,
             presentBadge: true,
             presentSound: true,
+            interruptionLevel: InterruptionLevel.timeSensitive,
           ),
         ),
         androidScheduleMode: _exactAlarmAllowed
             ? AndroidScheduleMode.exactAllowWhileIdle
             : AndroidScheduleMode.inexactAllowWhileIdle,
-        matchDateTimeComponents: DateTimeComponents.time,
-              );
+      );
       debugPrint('✅ 已成功建立每日排程：$scheduledDate');
 
       final pending =
@@ -207,6 +224,56 @@ class NotificationHelper {
       }
     } catch (e, st) {
       debugPrint('❌ 建立每日通知失敗：$e');
+      debugPrint('$st');
+    }
+  }
+
+  /// 测试：5秒后跳出通知
+  Future<void> scheduleTestNotificationIn5Seconds() async {
+    await init();
+    final hasPermission = await _ensurePermissions();
+    if (!hasPermission) {
+      debugPrint('❌ 沒有通知權限');
+      return;
+    }
+
+    final now = tz.TZDateTime.now(tz.local);
+    final scheduledDate = now.add(const Duration(seconds: 5));
+
+    debugPrint('🧪 測試：5秒後跳出通知');
+    debugPrint('📅 現在時間：$now');
+    debugPrint('📅 排程時間：$scheduledDate');
+
+    try {
+      await _notificationsPlugin.zonedSchedule(
+        2,
+        '測試定時通知 🧪',
+        '如果你看到這個，代表定時通知系統正常運作',
+        scheduledDate,
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            _channelId,
+            _channelName,
+            channelDescription: _channelDescription,
+            importance: Importance.max,
+            priority: Priority.high,
+            enableVibration: true,
+            enableLights: true,
+            playSound: true,
+            fullScreenIntent: true,
+          ),
+          iOS: DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+            interruptionLevel: InterruptionLevel.timeSensitive,
+          ),
+        ),
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      );
+      debugPrint('✅ 已排程5秒後的測試通知');
+    } catch (e, st) {
+      debugPrint('❌ 測試通知排程失敗：$e');
       debugPrint('$st');
     }
   }

@@ -29,23 +29,32 @@ import 'providers/pro_provider.dart';
 final GlobalKey<ScaffoldMessengerState> rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
 Future<void> main() async {
+  print('🚀 App startup starting...');
   WidgetsFlutterBinding.ensureInitialized();
 
+  print('🔥 Firebase initializing...');
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  print('✅ Firebase initialized');
 
   // 先載入主題設定
   final themeProvider = ThemeProvider();
   await themeProvider.loadTheme();
+  print('🎨 Theme loaded');
 
   // ⭐ 啟動時初始化通知（會印出 🕐 這行）
   await NotificationHelper().init();
+  print('🔔 Notifications initialized');
 
-  WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
-  await IAPService.instance.init();
+  // Only init IAP on release builds (skip on emulator/debug)
+  //  Ted add this for testing inapp purchase on emulator
+  if (!kDebugMode) {
+    await IAPService.instance.init();
+    print('🛍️ IAP Service initialized');
+  }
 
+  print('📱 Running app...');
   runApp(
   MultiProvider(
     providers: [

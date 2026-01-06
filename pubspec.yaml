@@ -82,9 +82,7 @@ flutter:
     - assets/icons/app_icon.png
     - assets/legal/心晴_服務條款_zh-TW.md
     - assets/legal/心晴_隱私權政策_zh-TW.md
-    - assets/emotion/整體情緒.png
-    - assets/emotion/anxious.png
-    - assets/emotion/default.png
+    - assets/emotion/  # 包含整个 emotion 文件夹的所有图片
   
   # To add assets to your application, add an assets section, like this:
   # assets:
