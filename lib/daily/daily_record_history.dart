@@ -2,13 +2,31 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
+import '../app_globals.dart'; 
 import '../models/daily_record.dart'; // 確保引用正確
 import '../utils/date_helper.dart';   // 確保引用正確
 import 'record_detail_screen.dart';   // 確保引用正確
 import '../models/period_cycle.dart';
 import '../widgets/main_drawer.dart';
 import '../quotes.dart';
+import '../widgets/pro_gate.dart';
+import '../pro/pro_page.dart'; 
+import '../widgets/emotion_chart.dart';
 
+const Map<String, String> ksleepFlagMap = {
+    'good': '優',
+    'ok': '良好',
+    'earlyWake': '早醒',
+    'dreams': '多夢',
+    'lightSleep': '淺眠',
+    'nocturia': '夜尿',
+    'fragmented': '睡睡醒醒',
+    'insufficient': '睡眠不足',
+    'initInsomnia': '入睡困難',
+    'interrupted': '睡眠中斷',
+  };
+const bool kDemoUnlockAll = true;
 class DailyRecordHistory extends StatefulWidget {
   const DailyRecordHistory({super.key});
 
@@ -19,12 +37,19 @@ class DailyRecordHistory extends StatefulWidget {
 class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTickerProviderStateMixin {
   DateFilter _dateFilter = DateFilter.last7;
   // MoodFilter 先暫時拿掉，因為圖表頁通常看全部比較準，或者你可以保留邏輯但只應用在列表
-  
+  bool _isProUser = false;
   // 分頁控制器
   late TabController _tabController;
   
   // 動態情緒選擇
   String _selectedEmotion = '整體情緒';
+
+ String? _periodLabel(DailyRecord r) {
+  if (r.isPeriod == true) {
+    return '🌸 生理期';
+  }
+  return null;
+}
 
   @override
   void initState() {
@@ -40,12 +65,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
 
   @override
   Widget build(BuildContext context) {
+    final bool isPro = _isProUser;
     final uid = FirebaseAuth.instance.currentUser?.uid;
-
-    if (uid == null) {
-      return const Center(child: Text('請先登入帳號'));
-    }
-
     final query = FirebaseFirestore.instance
         .collection('users')
         .doc(uid)
@@ -115,10 +136,11 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
                 controller: _tabController,
                 children: [
                   // 分頁 1: 列表
-                  _buildListPage(listRecords, allRecords), 
+                                    _buildListPage(listRecords, allRecords, isPro), 
                   
                   // 分頁 2: 圖表 (🔥 這裡把 cycles 傳進去了)
-                  _buildChartPage(allRecords, availableEmotions, cycles),
+
+_buildProChartContent(context, allRecords, availableEmotions, cycles, isPro),
                 ],
               );
             },
@@ -127,127 +149,244 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
       ),
     );
   }
+bool _isHistoryLocked(bool isPro) {
+  // 只開放最近 7 天
+  if (_dateFilter == DateFilter.last7) return false;
+
+  // 30 天 / 全部 → 非 Pro 鎖
+  return !isPro;
+}
 
   // --- 分頁 1: 列表 UI ---
-  Widget _buildListPage(List<DailyRecord> records, List<DailyRecord> allRecordsForSummary) {
-    return Column(
-      children: [
-        // 簡易週報卡片
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          child: WeeklySummaryCard(allRecords: allRecordsForSummary),
-        ),
-        
-        // 篩選器 (只影響列表)
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: _buildDateFilterChips(),
-        ),
-        
-        const Divider(height: 1),
-        
-        Expanded(
-          child: records.isEmpty
-              ? const Center(child: Text('沒有符合條件的紀錄'))
-              : ListView.separated(
-                  itemCount: records.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final r = records[index];
-                    return ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      title: Text(
-                        DateHelper.toDisplay(r.date),
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: _buildRecordSubtitle(context, r),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () {
-                         // 導航到詳細頁
-                         final uid = FirebaseAuth.instance.currentUser?.uid;
-                         if (uid != null) {
-                           Navigator.push(context, MaterialPageRoute(
-                             builder: (_) => RecordDetailScreen(uid: uid, docId: r.id),
-                           ));
-                         }
-                      },
-                    );
-                  },
-                ),
-        ),
-      ],
-    );
-  }
+  Widget _buildListPage(
+  List<DailyRecord> records,
+  List<DailyRecord> allRecordsForSummary,
+  bool isPro,
+) {
+  return Column(
+    children: [
+      // ─────────────────────
+      // 簡易週報卡片（永遠顯示）
+      // ─────────────────────
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+        child: WeeklySummaryCard(allRecords: allRecordsForSummary),
+      ),
+
+      // ─────────────────────
+      // 日期篩選器（7 / 30 / 全部）
+      // ─────────────────────
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+        child: _buildDateFilterChips(),
+      ),
+
+      const Divider(height: 1),
+
+      // ─────────────────────
+      // 每日紀錄清單（此區依 Pro 狀態鎖）
+      // ─────────────────────
+      Expanded(
+  child: _isHistoryLocked(isPro)
+      ? _buildProLockedView(
+        context: context,
+          title: '記錄歷程',
+          description: '查看 30 天與全部的每日記錄，需要升級 Pro',
+        )
+            : records.isEmpty
+                ? const Center(child: Text('沒有符合條件的紀錄'))
+                : ListView.separated(
+                    itemCount: records.length,
+                    separatorBuilder: (_, __) =>
+                        const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final r = records[index];
+                      final periodText = _periodLabel(r);
+
+                      return ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        title: Text(
+                          DateHelper.toDisplay(r.date),
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (periodText != null)
+                              Padding(
+                                padding:
+                                    const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  periodText,
+                                  style: const TextStyle(
+                                    color: Colors.pink,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            _buildRecordSubtitle(context, r),
+                          ],
+                        ),
+                        trailing:
+                            const Icon(Icons.chevron_right),
+                        onTap: () {
+                          final uid = FirebaseAuth
+                              .instance.currentUser?.uid;
+                          if (uid != null) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    RecordDetailScreen(
+                                  uid: uid,
+                                  docId: r.id,
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                      );
+                    },
+                  ),
+      ),
+    ],
+  );
+}
 
   // --- 分頁 2: 圖表 UI (重點修改) ---
-  Widget _buildChartPage(List<DailyRecord> allRecords, Set<String> emotionNames,
-  List<PeriodCycle> cycles,) {
-    // 1. 根據日期篩選資料 (圖表也要跟著篩選)
-    final filteredRecords = _applyDateFilter(allRecords, _dateFilter);
-    
-    // 2. 決定是否使用移動平均線 (7天 & 30天都用，或者依照你說的只在長天期用)
-    // 這裡邏輯：如果是「最近7天」，看原始數據；如果是「30天」或「全部」，看 MA7
-    final bool useMA = _dateFilter != DateFilter.last7;
+  Widget _buildProChartContent(
+  BuildContext context,
+  List<DailyRecord> allRecords,
+  Set<String> emotionNames,
+  List<PeriodCycle> cycles,
+  bool isPro,
+) {
+  // 1. 根據日期篩選資料
+  final filteredRecords = _applyDateFilter(allRecords, _dateFilter);
 
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  // 2. 是否使用移動平均（7 天 = 原始線，其餘 = MA）
+  final bool useMA = _dateFilter != DateFilter.last7;
+
+  // 3. 是否鎖定（非 Pro + 不是 7 天）
+  final bool isLocked =
+    !kDemoUnlockAll && !isPro && _dateFilter != DateFilter.last7;
+
+  return Padding(
+  padding: const EdgeInsets.all(16.0),
+  child: Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      // ===== 上方日期切換（永遠可點）=====
+      Row(
         children: [
-          // 上方控制區：篩選天數 + 情緒下拉選單
-          Row(
-            children: [
-              // 天數篩選器 (簡化版，或者共用上面的 _buildDateFilterChips)
-               Expanded(child: _buildDateFilterChips(compact: true)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          
-          // 情緒下拉選單
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              color: Theme.of(context).inputDecorationTheme.fillColor ?? Theme.of(context).cardColor,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: emotionNames.contains(_selectedEmotion) ? _selectedEmotion : '整體情緒',
-                isExpanded: true,
-                dropdownColor: Theme.of(context).cardColor,
-                icon: Icon(Icons.arrow_drop_down, color: Theme.of(context).iconTheme.color),
-                items: emotionNames.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                style: TextStyle(
-                      color: Theme.of(context).textTheme.bodyLarge?.color,),
-                onChanged: (val) {
-                  if (val != null) setState(() => _selectedEmotion = val);
-                },
-              ),
-            ),
-          ),
-          
-          const SizedBox(height: 24),
-          
-          Text(
-            useMA ? '$_selectedEmotion (7日移動平均趨勢)' : '$_selectedEmotion (每日數值)',
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey),
-          ),
-          const SizedBox(height: 16),
+          Expanded(child: _buildDateFilterChips(compact: true)),
+        ],
+      ),
+      const SizedBox(height: 12),
 
-          // 圖表本體
-         SizedBox( // <--- 改用 SizedBox
-            height: 300,
-            child: _ChartWidget(
-              records: filteredRecords,     // 顯示範圍內的資料
-              fullRecords: allRecords,      // 用來算 MA 的完整歷史資料 (因為算第一天的 MA 需要往前找)
+      // ===== 情緒下拉選單（永遠可點）=====
+      Container(
+  padding: const EdgeInsets.symmetric(horizontal: 12),
+  decoration: BoxDecoration(
+    color: Theme.of(context).inputDecorationTheme.fillColor ??
+        Theme.of(context).cardColor,
+    borderRadius: BorderRadius.circular(12),
+  ),
+  child: DropdownButtonHideUnderline(
+    child: DropdownButton<String>(
+      value: emotionNames.contains(_selectedEmotion)
+          ? _selectedEmotion
+          : '整體情緒',
+      isExpanded: true,
+      dropdownColor: Theme.of(context).cardColor,
+      icon: Icon(
+        Icons.arrow_drop_down,
+        color: Theme.of(context).iconTheme.color,
+      ),
+      items: emotionNames
+          .map(
+            (e) => DropdownMenuItem(
+              value: e,
+              child: Text(e),
+            ),
+          )
+          .toList(),
+      style: TextStyle(
+        color: Theme.of(context).textTheme.bodyLarge?.color,
+      ),
+
+      // 🔒 關鍵修改在這裡
+      onChanged: isLocked
+          ? null
+          : (val) {
+              if (val != null) {
+                setState(() => _selectedEmotion = val);
+              }
+            },
+    ),
+  ),
+),
+
+      const SizedBox(height: 24),
+
+      // ===== 圖表標題 =====
+      Text(
+        useMA
+            ? '$_selectedEmotion（7 日移動平均趨勢）'
+            : '$_selectedEmotion（每日數值）',
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+          color: Colors.grey,
+        ),
+      ),
+      const SizedBox(height: 16),
+
+      // ===== 圖表本體（唯一可以被鎖的地方）=====
+      SizedBox(
+        height: 300,
+        child: Stack(
+          children: [
+            // ✅ 原本好看的圖表 UI（永遠存在）
+            _ChartWidget(
+              records: filteredRecords,
+              fullRecords: allRecords,
               targetEmotion: _selectedEmotion,
               useMovingAverage: useMA,
             ),
-          ),
-        ],
+
+            // 🔒 只有在鎖定時，才覆蓋圖表
+            if (isLocked)
+              Positioned.fill(
+                child: IgnorePointer(
+                  ignoring: true,
+                  child: Container(
+                    color: Theme.of(context)
+                        .scaffoldBackgroundColor
+                        .withOpacity(0.75),
+                    alignment: Alignment.center,
+                    child: _buildProLockedView(
+                      context: context,
+                      title: '情緒趨勢圖',
+                      description:
+                          '查看 30 天 / 全部的情緒趨勢，需要升級 Pro。',
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
-    );
-  }
+    ],
+  ),
+);
+}
 
   // --- 輔助方法 ---
 
@@ -297,42 +436,73 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
     // _isBeforeDay(a, b) 表示 a < b
     return input.where((r) => !r.date.isBefore(start)).toList();
   }
-// 睡眠狀態的中英對照表
-  final Map<String, String> _sleepFlagMap = const {
-    'good': '優',
-    'ok': '良好',
-    'earlyWake': '早醒',
-    'dreams': '多夢',
-    'light': '淺眠',
-    'nocturia': '夜尿',
-    'fragile': '睡睡醒醒',
-    'lack': '睡眠不足',
-    'initInsomnia': '入睡困難',
-    'maintInsomnia': '睡眠中斷',
-  };
+  
   Widget _buildRecordSubtitle(BuildContext context, DailyRecord r) {
-    // ... 保持你原本的邏輯 ...
-     final List<String> parts = [];
-      if (r.overallMood != null) parts.add('情緒：${r.overallMood!.toStringAsFixed(1)}');
-      // --- 🔥計算總睡眠時數 (夜間 + 小睡) ---
-    final night = r.sleep.durationHours ?? 0;
-    // 將所有小睡的分鐘數加總
-    final napMinutes = r.sleep.naps.fold(0, (sum, nap) => sum + nap.durationMinutes);
-    // 換算成小時 (除以 60) 並加上夜間睡眠
-    final totalSleep = night + (napMinutes / 60.0);
+  final List<String> parts = [];
 
-    if (totalSleep > 0) {
-      parts.add('睡眠：${totalSleep.toStringAsFixed(1)}hr');
-    }
-
-    if (r.sleep.flags.isNotEmpty) {
-      final raw = r.sleep.flags.first;
-      final label = _sleepFlagMap[raw] ?? raw;
-      parts.add(label); 
-    }
-    
-    return Text(parts.join(' · '), style: Theme.of(context).textTheme.bodyMedium);
+  if (r.overallMood != null) {
+  parts.add('情緒：${r.overallMood!.toStringAsFixed(1)}');
+}
+  if (r.sleep.durationHours != null) {
+    parts.add('睡眠：${r.sleep.durationHours}hr');
   }
+   if (r.sleep.flags.isNotEmpty) {
+      parts.add(
+        r.sleep.flags.map((f) => ksleepFlagMap[f] ?? f).join(' ')
+      );
+    }
+
+    return Text(
+      parts.join(' · '),
+      style: Theme.of(context).textTheme.bodyMedium,
+    );
+}
+}
+Future<void> clearPeriodForRecord(BuildContext context, DailyRecord r) async {
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  if (uid == null) return;
+
+  // 如果本來就不是生理期就不用清除
+  if (r.isPeriod == false &&
+      r.periodStartId == null &&
+      r.periodEndId == null) {
+    return;
+  }
+
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: Text(DateHelper.toDisplay(r.date)),
+        content: const Text('要把這一天的生理期紀錄清除嗎？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('清除'),
+          ),
+        ],
+      );
+    },
+  );
+
+  if (confirm != true) return;
+
+  await FirebaseFirestore.instance
+      .collection('users')
+      .doc(uid)
+      .collection('dailyRecords')
+      .doc(r.id)
+      .update({
+    'isPeriod': false,
+    'periodStartId': null,
+    'periodEndId': null,
+  });
+
+  // 回到上一層會自動刷新，不用 setState
 }
 
 // --- 獨立出來的圖表 Widget (處理複雜的 MA 邏輯) ---
@@ -349,99 +519,151 @@ class _ChartWidget extends StatelessWidget {
     required this.targetEmotion,
     required this.useMovingAverage,
   });
+List<VerticalRangeAnnotation> buildPeriodRanges(List<DailyRecord> records) {
+  final List<VerticalRangeAnnotation> list = [];
+
+  int? startIndex; // 連續經期的開始
+  for (int i = 0; i < records.length; i++) {
+    final r = records[i];
+    final isPeriod = r.isPeriod;
+
+    if (isPeriod) {
+      startIndex ??= i; // 開始新的經期段
+    }
+
+    // 結束點（遇到非經期 or 最後一天）
+    if ((!isPeriod || i == records.length - 1) && startIndex != null) {
+      final endIndex = isPeriod ? i : i - 1;
+
+      list.add(
+        VerticalRangeAnnotation(
+          x1: startIndex!.toDouble() - 0.4,
+          x2: endIndex.toDouble() + 0.4,
+          color: Colors.pink.withOpacity(0.15),
+        ),
+      );
+
+      startIndex = null; // 重置
+    }
+  }
+
+  return list;
+}
 
   @override
-  Widget build(BuildContext context) {
-    if (records.length < 2) {
-      return const Center(child: Text('資料不足，無法顯示趨勢圖'));
-    }
-
-    final spots = <FlSpot>[];
-    // 🔥 1. 準備生理期區塊列表
-    final periodRanges = <VerticalRangeAnnotation>[];
-
-    for (int i = 0; i < records.length; i++) {
-      final r = records[i];
-      
-      // 計算數值 (保持原本邏輯)
-      double? value;
-      if (useMovingAverage) {
-        value = _calcMA7(r.date);
-      } else {
-        value = _getValue(r);
-      }
-      if (value != null) {
-        spots.add(FlSpot(i.toDouble(), value));
-      }
-final hasPeriod = r.isPeriod || 
-                        r.symptoms.contains('生理期') || 
-                        r.symptoms.contains('月經');
-
-      if (hasPeriod) {
-        periodRanges.add(
-          VerticalRangeAnnotation(
-            x1: i - 0.4, 
-            x2: i + 0.4,
-            color: Colors.pink.withOpacity(0.15), // 粉紅色背景
-          ),
-        );
-      }
-    }
-
-    if (spots.isEmpty) return const Center(child: Text('此情緒目前沒有數據'));
-final lineColor = useMovingAverage ? Colors.orange : Colors.teal;
-    return LineChart(
-      LineChartData(
-        minY: 0, maxY: 10,
-        // 🔥 3. 加入這個設定：繪製背景區塊
-        rangeAnnotations: RangeAnnotations(
-          verticalRangeAnnotations: periodRanges,
-        ),
-        gridData: FlGridData(show: true, horizontalInterval: 2, drawVerticalLine: false),
-        titlesData: FlTitlesData(
-          // ... (保持原本的設定) ...
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, interval: 2, reservedSize: 30, getTitlesWidget: (v, m) => Text(v.toInt().toString()))),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              interval: 1,
-              getTitlesWidget: (val, meta) {
-                final index = val.toInt();
-                if (index < 0 || index >= records.length) return const SizedBox.shrink();
-                
-                // 智慧標籤間距
-                int interval = records.length > 10 ? 5 : 1;
-                if (index % interval != 0) return const SizedBox.shrink();
-
-                final d = records[index].date;
-                return Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text('${d.month}/${d.day}', style: const TextStyle(fontSize: 10)),
-                );
-              },
-            ),
-          ),
-        ),
-        borderData: FlBorderData(show: false),
-        lineBarsData: [
-          LineChartBarData(
-            spots: spots,
-            isCurved: true,
-            color: useMovingAverage ? Colors.orange : Colors.teal,
-            barWidth: 3,
-            dotData: const FlDotData(show: false),
-            // 🔥 4. 如果有生理期，線條下方就不填色了，以免顏色混雜太亂
-            // 或者你可以保留，看你喜歡哪種效果
-            belowBarData: BarAreaData(
-              show: true, 
-              color: lineColor.withOpacity(0.15), // 半透明填充
-          ),)
-        ],
-      ),
-    );
+Widget build(BuildContext context) {
+  if (records.length < 2) {
+    return const Center(child: Text('資料不足，無法顯示趨勢圖'));
   }
+
+  // ===== 1️⃣ 準備情緒曲線點 =====
+  final spots = <FlSpot>[];
+
+  for (int i = 0; i < records.length; i++) {
+    final r = records[i];
+
+    double? value;
+    if (useMovingAverage) {
+      value = _calcMA7(r.date);
+    } else {
+      value = _getValue(r);
+    }
+
+    if (value != null) {
+      spots.add(FlSpot(i.toDouble(), value));
+    }
+  }
+
+  if (spots.isEmpty) {
+    return const Center(child: Text('此情緒目前沒有數據'));
+  }
+
+  // ===== 2️⃣ 🔥 在這裡「一次性」產生經期粉紅區塊 =====
+  final periodRanges = buildPeriodRanges(records);
+  debugPrint('🩸 periodRanges count = ${periodRanges.length}');
+
+  final lineColor = useMovingAverage ? Colors.orange : Colors.teal;
+
+  // ===== 3️⃣ 繪製圖表 =====
+  return LineChart(
+    LineChartData(
+      minY: 0,
+      maxY: 10,
+
+      // 🌸 經期粉紅色背景
+      rangeAnnotations: RangeAnnotations(
+        verticalRangeAnnotations: periodRanges,
+      ),
+
+      gridData: FlGridData(
+        show: true,
+        horizontalInterval: 2,
+        drawVerticalLine: false,
+      ),
+
+      titlesData: FlTitlesData(
+        topTitles: const AxisTitles(
+          sideTitles: SideTitles(showTitles: false),
+        ),
+        rightTitles: const AxisTitles(
+          sideTitles: SideTitles(showTitles: false),
+        ),
+        leftTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            interval: 2,
+            reservedSize: 30,
+            getTitlesWidget: (v, m) =>
+                Text(v.toInt().toString()),
+          ),
+        ),
+        bottomTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            interval: 1,
+            getTitlesWidget: (val, meta) {
+              final index = val.toInt();
+              if (index < 0 || index >= records.length) {
+                return const SizedBox.shrink();
+              }
+
+              final int interval = records.length > 10 ? 5 : 1;
+              if (index % interval != 0) {
+                return const SizedBox.shrink();
+              }
+
+              final d = records[index].date;
+              return Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  '${d.month}/${d.day}',
+                  style: const TextStyle(fontSize: 10),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+
+      borderData: FlBorderData(show: false),
+
+      lineBarsData: [
+        LineChartBarData(
+          spots: spots,
+          isCurved: true,
+          color: lineColor,
+          barWidth: 3,
+          dotData: const FlDotData(show: false),
+          belowBarData: BarAreaData(
+            show: true,
+            color: lineColor.withOpacity(0.15),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 
   // 取得單日特定情緒數值
   double? _getValue(DailyRecord r) {
@@ -583,7 +805,7 @@ class WeeklySummaryCard extends StatelessWidget {
             if (avgSleep != null) ...[
               const SizedBox(height: 4),
               Text(
-                '平均睡眠：約 ${avgSleep.toStringAsFixed(1)} 小時',
+                '平均夜間睡眠：約 ${avgSleep.toStringAsFixed(1)} 小時',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ],
@@ -600,4 +822,43 @@ class WeeklySummaryCard extends StatelessWidget {
       ),
     );
   }
+}
+Widget _buildProLockedView({
+  required BuildContext context,
+  required String title,
+  required String description,
+}) {
+  return Center(
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.lock_outline, size: 48, color: Colors.grey),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            description,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.grey),
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: () {
+              // ✅ 先用提示取代跳頁，避免 ProPage 不存在造成編譯錯
+              Navigator.push(
+  context,
+  MaterialPageRoute(builder: (_) => const ProPage()),
+);
+            },
+            child: const Text('升級 Pro'),
+          ),
+        ],
+      ),
+    ),
+  );
 }

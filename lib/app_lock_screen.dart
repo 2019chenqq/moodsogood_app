@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -98,78 +99,78 @@ class _AppLockScreenState extends State<AppLockScreen> {
 
   // ---------- 上方：簡單插畫感 header ----------
   Widget _buildHeader() {
-    final bg = _primary.withOpacity(0.06);
-    final circleBg = _primary.withOpacity(0.14);
+  final bg = _primary.withOpacity(0.06);
+  final circleBg = _primary.withOpacity(0.14);
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: const BorderRadius.only(
-          bottomLeft: Radius.circular(32),
-          bottomRight: Radius.circular(32),
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.fromLTRB(24, 32, 24, 32),
+    decoration: BoxDecoration(
+      color: bg,
+      borderRadius: const BorderRadius.only(
+        bottomLeft: Radius.circular(32),
+        bottomRight: Radius.circular(32),
+      ),
+    ),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        // 鎖頭圓圈：置中
+        Container(
+          width: 74,
+          height: 74,
+          decoration: BoxDecoration(
+            color: circleBg,
+            shape: BoxShape.circle,
+          ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Icon(
+                Icons.lock_rounded,
+                size: 34,
+                color: _primary,
+              ),
+              Positioned(
+                top: 14,
+                right: 16,
+                child: Icon(
+                  Icons.shield_rounded,
+                  size: 18,
+                  color: Colors.white.withOpacity(0.9),
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            width: 74,
-            height: 74,
-            decoration: BoxDecoration(
-              color: circleBg,
-              shape: BoxShape.circle,
-            ),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Icon(
-                  Icons.lock_rounded,
-                  size: 34,
-                  color: _primary,
-                ),
-                Positioned(
-                  top: 14,
-                  right: 16,
-                  child: Icon(
-                    Icons.auto_awesome,
-                    size: 18,
-                    color: Colors.white.withOpacity(0.9),
-                  ),
-                ),
-              ],
-            ),
+        const SizedBox(height: 16),
+        // 標題文字：置中
+        const Text(
+          '這裡很安全，\n只有你能打開。',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+            height: 1.4,
           ),
-          const SizedBox(width: 18),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '這裡很安全，\n只有你能打開。',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '輸入解鎖密碼，\n讓日記只為你保留位置。',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey.shade700,
-                    height: 1.4,
-                  ),
-                ),
-              ],
-            ),
+        ),
+        const SizedBox(height: 8),
+        // 副標文字：置中
+        Text(
+          '輸入解鎖密碼，\n讓日記只為你保留位置。',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 13,
+            color: Colors.grey.shade700,
+            height: 1.4,
           ),
-        ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  );
+}
 
   // ---------- PIN dots ----------
   Widget _buildPinDots() {
@@ -271,7 +272,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
     );
   }
 
-  @override
+   @override
   Widget build(BuildContext context) {
     if (_initializing) {
       // 讀取密碼中的小過場
@@ -282,56 +283,189 @@ class _AppLockScreenState extends State<AppLockScreen> {
       );
     }
 
+    final theme = Theme.of(context);
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F6),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(),
-            Expanded(
+      body: Stack(
+        children: [
+          // 背景：和登入頁同風格的藍綠漸層
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF6BC8D4),
+                  Color(0xFF7F8FD7),
+                ],
+              ),
+            ),
+          ),
+
+          // 柔光圓形（上右）
+          Positioned(
+            top: -80,
+            right: -40,
+            child: _blurBall(200, const Color(0x66FFFFFF)),
+          ),
+
+          // 柔光圓形（下左）
+          Positioned(
+            bottom: -60,
+            left: -30,
+            child: _blurBall(240, const Color(0x55FFFFFF)),
+          ),
+
+          SafeArea(
+            child: Center(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
-                child: Column(
-                  children: [
-                    const SizedBox(height: 4),
-                    _buildPinDots(),
-                    const SizedBox(height: 8),
-                    if (_loading)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 8),
-                        child: SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      )
-                    else if (_errorText != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          _errorText!,
-                          style: const TextStyle(
-                            color: Colors.red,
-                            fontSize: 13,
-                          ),
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(28),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                    child: Container(
+                      constraints: const BoxConstraints(maxWidth: 420),
+                      padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.18),
+                        borderRadius: BorderRadius.circular(28),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.35),
                         ),
                       ),
-                    const SizedBox(height: 24),
-                    _buildKeypad(),
-                    const Spacer(),
-                    const Text(
-                      '＊忘記密碼的話，只能刪除 App 重裝（雲端資料還在）',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
-                      textAlign: TextAlign.center,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          // 盾牌＋鎖 icon（往下置中）
+                          Container(
+                            width: 90,
+                            height: 90,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white.withOpacity(0.28),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.7),
+                                width: 1.2,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.12),
+                                  blurRadius: 18,
+                                  offset: const Offset(0, 8),
+                                ),
+                              ],
+                            ),
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: const [
+                                Icon(
+                                  Icons.shield_outlined, // 盾牌
+                                  size: 44,
+                                  color: Colors.white,
+                                ),
+                                Positioned(
+                                  bottom: 18,
+                                  child: Icon(
+                                    Icons.lock_outline, // 鎖
+                                    size: 22,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 18),
+
+                          // 標題
+                          Text(
+                            '隱私鎖定',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+
+                          const SizedBox(height: 8),
+
+                          // 說明文字
+                          Text(
+                            '為了保護你的日記與情緒紀錄，\n請輸入解鎖密碼。',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: Colors.white.withOpacity(0.92),
+                              height: 1.4,
+                            ),
+                          ),
+
+                          const SizedBox(height: 24),
+
+                          // 上方的 PIN 小圓點
+                          _buildPinDots(),
+
+                          const SizedBox(height: 8),
+
+                          // loading 或錯誤訊息
+                          if (_loading)
+                            const Padding(
+                              padding: EdgeInsets.only(top: 8),
+                              child: SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            )
+                          else if (_errorText != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Text(
+                                _errorText!,
+                                style: const TextStyle(
+                                  color: Colors.red,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+
+                          const SizedBox(height: 24),
+
+                          // 下方數字鍵盤（用你原本的 _buildKeypad）
+                          _buildKeypad(),
+
+                          const SizedBox(height: 16),
+
+                          // 忘記密碼提示（白色半透明）
+                          Text(
+                            '＊忘記密碼的話，只能刪除 App 重裝（雲端資料還在）',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: Colors.white.withOpacity(0.88),
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 8),
-                  ],
+                  ),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
-}
+  Widget _blurBall(double size, Color color) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+      ),
+    );}
+  }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        

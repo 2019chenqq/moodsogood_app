@@ -37,7 +37,6 @@ class SleepData {
   final TimeOfDay? wakeTime;  // 離床活動
   final TimeOfDay? finalWakeTime; // 🔥 新增：甦醒時刻 (睜開眼)
   final String? midWakeList;      // 🔥 新增：半夜醒來時間 (文字)
-  
   final int? quality;
   final bool tookHypnotic;
   final String? hypnoticName;
@@ -137,12 +136,18 @@ class Emotion {
 class DailyRecord {
   final String id;
   final DateTime date;
+
   final List<Emotion> emotions;
   final List<String> symptoms;
   final SleepData sleep;
-  final double? overallMood; // 🔥 新增：整體情緒分數
+
+  final double? overallMood;
+
+  final bool isPeriod;        // 是否是生理期的一天
+  final String? periodStartId; // 若這一天是經期「開始」，存這一天的 docId
+  final String? periodEndId;   // 若這一天是經期「結束」，存這一天的 docId
+
   final DateTime? updatedAt;
-  final bool isPeriod;
 
   const DailyRecord({
     required this.id,
@@ -152,6 +157,8 @@ class DailyRecord {
     this.sleep = const SleepData(),
     this.overallMood,
     this.isPeriod = false,
+    this.periodStartId,
+    this.periodEndId,
     this.updatedAt,
   });
 
@@ -160,28 +167,32 @@ class DailyRecord {
       'emotions': emotions.map((e) => e.toMap()).toList(),
       'symptoms': symptoms,
       'sleep': sleep.toMap(),
-      'overallMood': overallMood, // 存入 Firestore
+      'overallMood': overallMood,
       'isPeriod': isPeriod,
+      'periodStartId': periodStartId,
+      'periodEndId': periodEndId,
       'updatedAt': FieldValue.serverTimestamp(),
     };
   }
 
-  factory DailyRecord.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
+  factory DailyRecord.fromFirestore(
+      DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data() ?? {};
-    final id = doc.id;
-    final date = DateTime.tryParse(id) ?? DateTime.now();
 
     return DailyRecord(
-      id: id,
-      date: date,
+      id: doc.id,
+      date: DateTime.tryParse(doc.id) ?? DateTime.now(),
       emotions: (data['emotions'] as List?)
               ?.map((e) => Emotion.fromMap(e as Map<String, dynamic>))
               .toList() ??
           [],
-      symptoms: (data['symptoms'] as List?)?.map((e) => e.toString()).toList() ?? [],
+      symptoms:
+          (data['symptoms'] as List?)?.map((e) => e.toString()).toList() ?? [],
       sleep: SleepData.fromMap(data['sleep'] as Map<String, dynamic>?),
-      overallMood: (data['overallMood'] as num?)?.toDouble(), // 讀取
+      overallMood: (data['overallMood'] as num?)?.toDouble(),
       isPeriod: data['isPeriod'] == true,
+      periodStartId: data['periodStartId'] as String?,
+      periodEndId: data['periodEndId'] as String?,
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
     );
   }

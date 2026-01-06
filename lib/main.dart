@@ -22,98 +22,56 @@ import 'diary/diary_home_page.dart';
 import 'daily/daily_record_screen.dart';
 import 'providers/menu_provider.dart';
 import 'app_lock_screen.dart';
+import 'service/iap_service.dart';
+import 'providers/pro_provider.dart';
 /* =========================== main =========================== */
 
 final GlobalKey<ScaffoldMessengerState> rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
 Future<void> main() async {
+  print('🚀 App startup starting...');
   WidgetsFlutterBinding.ensureInitialized();
 
+  print('🔥 Firebase initializing...');
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  print('✅ Firebase initialized');
 
   // 先載入主題設定
   final themeProvider = ThemeProvider();
   await themeProvider.loadTheme();
+  print('🎨 Theme loaded');
 
   // ⭐ 啟動時初始化通知（會印出 🕐 這行）
   await NotificationHelper().init();
+  print('🔔 Notifications initialized');
 
+  // Only init IAP on release builds (skip on emulator/debug)
+  //  Ted add this for testing inapp purchase on emulator
+  if (!kDebugMode) {
+    await IAPService.instance.init();
+    print('🛍️ IAP Service initialized');
+  }
+
+  print('📱 Running app...');
   runApp(
-    ChangeNotifierProvider<ThemeProvider>.value(
-      value: themeProvider,
-      child: const App(),
+  MultiProvider(
+    providers: [
+      ChangeNotifierProvider<ThemeProvider>.value(
+        value: themeProvider,
+      ),
+      ChangeNotifierProvider<ProProvider>(
+        create: (_) => ProProvider()..init(),
+      ),
+    ],
+    child: const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: AuthGate(), // ⭐ 唯一入口（不用改）
     ),
-  );
+  ),
+);
 }
-
-// class MyApp extends StatelessWidget {
-//   const MyApp({super.key});
-
-//  @override
-// Widget build(BuildContext context) {
-//   // 🔥 2. 監聽主題變化
-//   final themeProvider = Provider.of<ThemeProvider>(context);
-
-//   return MaterialApp(
-//     // 🔥 3. 設定 Key，讓 SnackBar 可以在任何地方跳出來
-//     scaffoldMessengerKey: rootMessengerKey,
-
-//     title: '心晴 Heart shine',
-//     debugShowCheckedModeBanner: false,
-
-//     // ✨ 淺色主題（白底＋藍綠色）
-//     theme: ThemeData(
-//       useMaterial3: true,
-//       colorScheme: ColorScheme.fromSeed(
-//         seedColor: const Color(0xFF80CBC4), // 這裡就是整體主題色（藍綠）
-//         brightness: Brightness.light,
-//       ),
-//       // 如果之後想調整淺色模式的 card / input 也可以加在這裡
-//     ),
-
-//     // --- 深色主題 ---
-//     darkTheme: ThemeData(
-//       colorScheme: ColorScheme.fromSeed(
-//         seedColor: const Color(0xFF80CBC4),
-//         brightness: Brightness.dark, // 這是關鍵
-//       ),
-//       useMaterial3: true,
-//       scaffoldBackgroundColor: const Color(0xFF121212), // 純黑背景
-
-//       // App Bar
-//       appBarTheme: const AppBarTheme(
-//         backgroundColor: Color(0xFF121212),
-//         surfaceTintColor: Colors.transparent,
-//       ),
-
-//       // 🔥 1. 卡片顏色：深灰色
-//       cardTheme: const CardThemeData(
-//         color: Color(0xFF1E1E1E),
-//         surfaceTintColor: Colors.transparent,
-//       ),
-
-//       // 🔥 2. 輸入框顏色
-//       inputDecorationTheme: InputDecorationTheme(
-//         filled: true,
-//         fillColor: const Color(0xFF1E1E1E),
-//         border: OutlineInputBorder(
-//           borderRadius: BorderRadius.circular(12),
-//           borderSide: BorderSide.none,
-//         ),
-//         hintStyle: TextStyle(color: Colors.grey.shade600),
-//       ),
-//     ),
-
-//     // 🔥 4. 綁定目前的模式（跟著 ThemeProvider 切換）
-//     themeMode: themeProvider.themeMode,
-
-//     // 這裡看你的首頁是 DiaryHomePage 還是 HomeShell
-//     home: const DiaryHomePage(),
-//   );
-// }
-// }
 
 class App extends StatelessWidget {
   const App({super.key});

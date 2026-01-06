@@ -44,12 +44,12 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
       'ok',            // 良好
       'earlyWake',     // 早醒
       'dreams',        // 多夢
-      'light',         // 淺眠
+      'lightSleep',         // 淺眠
       'nocturia',      // 夜尿
-      'fragile',       // 睡睡醒醒
-      'lack',          // 睡眠不足
+      'fragmented',       // 睡睡醒醒
+      'insufficient',          // 睡眠不足
       'initInsomnia',  // 入睡困難
-      'maintInsomnia', // 睡眠中斷
+      'interrupted', // 睡眠中斷
     ];
 
     const label = <String, String>{
@@ -57,12 +57,12 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
       'ok': '良好',
       'earlyWake': '早醒',
       'dreams': '多夢',
-      'light': '淺眠',
+      'lightSleep': '淺眠',
       'nocturia': '夜尿',
-      'fragile': '睡睡醒醒',
-      'lack': '睡眠不足',
+      'fragmented': '睡睡醒醒',
+      'insufficient': '睡眠不足',
       'initInsomnia': '入睡困難 (躺超過 30 分鐘才入睡)',
-      'maintInsomnia': '睡眠中斷 (醒來超過 30 分鐘才又入睡)',
+      'interrupted': '睡眠中斷 (醒來超過 30 分鐘才又入睡)',
     };
 
     final out = <String>[];
@@ -74,6 +74,54 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
     }
     return out.isEmpty ? '-' : out.join('、');
   }
+Future<void> _clearRecord(BuildContext context) async {
+  final uid = widget.uid;
+  final docId = widget.docId;
+
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: const Text('清除這一天的紀錄？'),
+        content: const Text('所有情緒、症狀、睡眠、生理期資料都會被清除，無法復原。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('清除'),
+          ),
+        ],
+      );
+    },
+  );
+
+  if (confirm != true) return;
+
+  try {
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('dailyRecords')
+        .doc(docId)
+        .delete();
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已清除當日紀錄')),
+    );
+
+    Navigator.pop(context); // 返回上一頁（歷程頁）
+  } catch (e) {
+    debugPrint('刪除當日紀錄錯誤: $e');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('刪除失敗：$e')),
+    );
+  }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -132,7 +180,12 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                   }
                 },
               ),
-            ],
+              IconButton(
+      icon: const Icon(Icons.delete_outline),
+      tooltip: '清除當日資料',
+      onPressed: () => _clearRecord(context),
+    ),
+  ],
           ),
           body: ListView(
             padding: const EdgeInsets.all(16),
@@ -193,13 +246,21 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                 ),
               ),
               ListTile(
-                title: Text('夜間睡眠狀況', style: titleStyle),
-                // 直接傳入 List<String>，呼叫外部定义的 _prettyFlags
-                trailing: Text(
-                  _prettyFlags(sleep.flags),
-                  style: valueStyle,
-                ),
-              ),
+  title: Text('夜間睡眠狀況', style: titleStyle),
+  trailing: Text(
+    _prettyFlags(sleep.flags),
+    style: valueStyle,
+  ),
+),
+              ListTile(
+  title: const Text('夜間醒來時間'),
+  trailing: Text(
+    sleep.midWakeList == null || sleep.midWakeList!.trim().isEmpty
+        ? '-'
+        : sleep.midWakeList!,
+    style: valueStyle,
+  ),
+),
               ListTile(
                 title: Text('自覺睡眠品質', style: titleStyle),
                 trailing: Text(
@@ -240,13 +301,27 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                   subtitle: Text(text, style: noteStyle),
                 );
               }),
+              // ===== 生理期 =====
+// _sectionHeader(context, '生理期'),
+// ListTile(
+//   title: const Text('生理期狀態'),
+//   trailing: Text(
+//     _buildPeriodText(record),
+//     style: valueStyle,
+//   ),
+// ),
             ],
           ),
         );
       },
     );
     }
-  }
+//     String _buildPeriodText(DailyRecord r) {
+//   if (r.isPeriod == true) {
+//     return '🌸 生理期';
+//   }
+//   return '—';
+}
 
 /// 區塊標題＋右上角編輯鈕（頂層函式，別放進 class 裡）
 Widget _sectionHeader(BuildContext context, String title, {VoidCallback? onEdit}) {

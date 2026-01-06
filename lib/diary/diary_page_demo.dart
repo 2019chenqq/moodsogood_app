@@ -313,10 +313,14 @@ if (_prevDate != null || _nextDate != null) ...[
               controller: _titleCtrl,
               label: '🖊️ 標題（可留白）',
               hint: '幫今天下一個小標題，也可以跳過…',
-              minLines: 1, maxLines: 1,
+                      minLines: 1, maxLines: 1,
               onAnyChanged: _onAnyFieldChanged,
-            ),
+                        textStyle: const m.TextStyle(color: m.Colors.black87),
+  hintStyle: m.TextStyle(color: m.Colors.black.withOpacity(0.28)),
+  fillColor: m.Colors.white.withOpacity(0.70),
+  borderColor: m.Colors.black.withOpacity(0.18),),
             const m.SizedBox(height: 12),
+            
 
             CountTextField(
               controller: _contentCtrl,
@@ -324,6 +328,10 @@ if (_prevDate != null || _nextDate != null) ...[
               hint: '留下一點點也很好…',
               minLines: 8, maxLines: 10,
               onAnyChanged: _onAnyFieldChanged,
+              textStyle: const m.TextStyle(color: m.Colors.black87),
+  hintStyle: m.TextStyle(color: m.Colors.black.withOpacity(0.28)),
+  fillColor: m.Colors.white.withOpacity(0.70),
+  borderColor: m.Colors.black.withOpacity(0.18),
             ),
             const m.SizedBox(height: 12),
 
@@ -333,6 +341,10 @@ if (_prevDate != null || _nextDate != null) ...[
               hint: '歌名／連結／演出者…',
               minLines: 1, maxLines: 3,
               onAnyChanged: _onAnyFieldChanged,
+              textStyle: const m.TextStyle(color: m.Colors.black87),
+  hintStyle: m.TextStyle(color: m.Colors.black.withOpacity(0.28)),
+  fillColor: m.Colors.white.withOpacity(0.70),
+  borderColor: m.Colors.black.withOpacity(0.18),
             ),
             const m.SizedBox(height: 12),
 
@@ -342,6 +354,10 @@ if (_prevDate != null || _nextDate != null) ...[
               hint: '今天最想留住的畫面、對話或感受…',
               minLines: 3, maxLines: 10,
               onAnyChanged: _onAnyFieldChanged,
+              textStyle: const m.TextStyle(color: m.Colors.black87),
+  hintStyle: m.TextStyle(color: m.Colors.black.withOpacity(0.28)),
+  fillColor: m.Colors.white.withOpacity(0.70),
+  borderColor: m.Colors.black.withOpacity(0.18),
             ),
             const m.SizedBox(height: 12),
 
@@ -351,6 +367,10 @@ if (_prevDate != null || _nextDate != null) ...[
               hint: '例：潮汐、霧氣、烈陽、厚被…',
               minLines: 1, maxLines: 3,
               onAnyChanged: _onAnyFieldChanged,
+              textStyle: const m.TextStyle(color: m.Colors.black87),
+  hintStyle: m.TextStyle(color: m.Colors.black.withOpacity(0.28)),
+  fillColor: m.Colors.white.withOpacity(0.70),
+  borderColor: m.Colors.black.withOpacity(0.18),
             ),
             const m.SizedBox(height: 12),
 
@@ -360,6 +380,10 @@ if (_prevDate != null || _nextDate != null) ...[
               hint: '完成了什麼、撐住了什麼、或小小突破…',
               minLines: 2, maxLines: 10,
               onAnyChanged: _onAnyFieldChanged,
+              textStyle: const m.TextStyle(color: m.Colors.black87),
+  hintStyle: m.TextStyle(color: m.Colors.black.withOpacity(0.28)),
+  fillColor: m.Colors.white.withOpacity(0.70),
+  borderColor: m.Colors.black.withOpacity(0.18),
             ),
             const m.SizedBox(height: 12),
 
@@ -369,6 +393,10 @@ if (_prevDate != null || _nextDate != null) ...[
               hint: '肯定一下今天的自己，哪怕是很小的事情…',
               minLines: 3, maxLines: 10,
               onAnyChanged: _onAnyFieldChanged,
+              textStyle: const m.TextStyle(color: m.Colors.black87),
+  hintStyle: m.TextStyle(color: m.Colors.black.withOpacity(0.28)),
+  fillColor: m.Colors.white.withOpacity(0.70),
+  borderColor: m.Colors.black.withOpacity(0.18),
             ),
             const m.SizedBox(height: 12),
 
@@ -378,6 +406,10 @@ if (_prevDate != null || _nextDate != null) ...[
               hint: '睡眠、飲食、邊界、運動或求助…下一步可以怎麼做？',
               minLines: 3, maxLines: 10,
               onAnyChanged: _onAnyFieldChanged,
+              textStyle: const m.TextStyle(color: m.Colors.black87),
+  hintStyle: m.TextStyle(color: m.Colors.black.withOpacity(0.28)),
+  fillColor: m.Colors.white.withOpacity(0.70),
+  borderColor: m.Colors.black.withOpacity(0.18),
             ),
           ],
         ),
@@ -464,6 +496,10 @@ class CountTextField extends m.StatelessWidget {
   final m.TextEditingController controller;
   final String label;
   final String? hint;
+  final m.TextStyle? textStyle;
+final m.TextStyle? hintStyle;
+final m.Color? fillColor;
+final m.Color? borderColor;
   final int minLines;
   final int maxLines;
   final void Function()? onAnyChanged;
@@ -474,9 +510,13 @@ class CountTextField extends m.StatelessWidget {
     required this.label,
     this.hint,
     required this.minLines,
-    required this.maxLines,
-    this.onAnyChanged,
-  });
+  required this.maxLines,
+  this.onAnyChanged,
+  this.textStyle,
+  this.hintStyle,
+  this.fillColor,
+  this.borderColor,
+    });
 
   @override
   m.Widget build(m.BuildContext context) {
@@ -493,18 +533,34 @@ class CountTextField extends m.StatelessWidget {
             m.Text(label, style: m.Theme.of(context).textTheme.titleMedium),
             const m.SizedBox(height: 8),
             m.TextField(
-              controller: controller,
-              minLines: minLines,
-              maxLines: maxLines,
-              textAlign: m.TextAlign.justify,              // ★ 兩端對齊
-              textAlignVertical: m.TextAlignVertical.top,  // 文字從上方開始
-              keyboardType: m.TextInputType.multiline,
-              textInputAction: m.TextInputAction.newline,
-              decoration: m.InputDecoration(
-                hintText: hint,
-                border: m.InputBorder.none,
-              ),
-              onChanged: (_) => onAnyChanged?.call(),
+  controller: controller,
+  minLines: minLines,
+  maxLines: maxLines,
+  textAlign: m.TextAlign.justify,              // ★ 兩端對齊（保留）
+  textAlignVertical: m.TextAlignVertical.top,  // ★ 文字從上方開始（保留）
+  keyboardType: m.TextInputType.multiline,
+  textInputAction: m.TextInputAction.newline,
+
+  // ✅ 輸入文字顏色（更深、更好讀）
+  style: const m.TextStyle(
+    color: m.Colors.black87,
+    fontSize: 16,
+    height: 1.5,
+  ),
+
+  decoration: m.InputDecoration(
+    hintText: hint,
+
+    // ✅ 提示字顏色（更淡，跟輸入字明顯區分）
+    hintStyle: m.TextStyle(
+      color: m.Colors.black.withOpacity(0.28),
+      fontSize: 16,
+      height: 1.5,
+    ),
+
+    border: m.InputBorder.none,
+  ),
+  onChanged: (_) => onAnyChanged?.call(),
             ),
             m.Align(
               alignment: m.Alignment.bottomRight,

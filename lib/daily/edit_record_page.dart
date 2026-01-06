@@ -49,21 +49,60 @@ Future<void> _saveAndClose() async {
 
   try {
     final uid = widget.uid;
-    final docId = widget.docId;                 // 你是從詳細頁帶進來的 docId
-    final ref = FirebaseFirestore.instance
-        .collection('users').doc(uid)
-        .collection('dailyRecords').doc(docId);
+final docId = widget.docId;
+final ref = FirebaseFirestore.instance
+    .collection('users').doc(uid)
+    .collection('dailyRecords').doc(docId);
 
-    // emotions / symptoms / sleep 請用你頁面上的變數
-    final payload = <String, dynamic>{
-      'emotions': emotions,                     // List<Map> 內含 {name, value}
-      'symptoms': symptoms,                     // List<String>
-      'sleep': sleep,                           // Map
-      'overallMood': _calcOverallMood(
-        emotions.map((e) => Map<String, dynamic>.from(e)).toList(),
-      ),
-      'savedAt': FieldValue.serverTimestamp(),  // 之後排序用
-    };
+// 先把目前畫面上的睡眠欄位整理成新的 Map
+final Map<String, dynamic> newSleep = {};
+
+// 有沒有吃安眠藥
+newSleep['tookHypnotic'] = _tookHypnotic;
+
+// 藥名、劑量（沒有就存空字串）
+newSleep['hypnoticName'] = _hypNameCtrl.text.trim();
+newSleep['hypnoticDose'] = _hypDoseCtrl.text.trim();
+newSleep['flags'] = kSleepFlags;
+
+// 入睡時間、起床時間
+if (_sleepTime != null) {
+  newSleep['sleepTime'] = DateHelper.formatTime(_sleepTime);
+}
+if (_midWakeCtrl.text.trim().isNotEmpty) {
+  newSleep['midWakeList'] = _midWakeCtrl.text.trim();
+}
+if (_wakeTime != null) {
+  newSleep['wakeTime'] = DateHelper.formatTime(_wakeTime);
+}
+
+// 自覺睡眠品質
+if (_sleepQuality != null) {
+  newSleep['quality'] = _sleepQuality;
+}
+
+// flags / note / naps：用現在 state 裡的 sleep 去補
+final List<String> flags = ((sleep['flags'] as List?) ?? const [])
+    .map((e) => e.toString())
+    .toList();
+newSleep['flags'] = (sleep['flags'] as List?)?.map((e) => e.toString()).toList() ?? [];
+newSleep['note'] = (sleep['note'] ?? '').toString();
+
+final List<Map<String, dynamic>> naps = ((sleep['naps'] as List?) ?? const [])
+    .map((e) => Map<String, dynamic>.from(e as Map))
+    .toList();
+newSleep['naps'] = naps;
+
+// 最後再組 payload
+final payload = <String, dynamic>{
+  'emotions': emotions,
+  'symptoms': symptoms,
+  'sleep': newSleep, // ⬅️ 改成用 newSleep
+  'overallMood': _calcOverallMood(
+    emotions.map((e) => Map<String, dynamic>.from(e)).toList(),
+  ),
+  'savedAt': FieldValue.serverTimestamp(),
+};
 
     await ref.set(payload, SetOptions(merge: true));
 
@@ -101,6 +140,7 @@ Future<void> _saveAndClose() async {
   late final TextEditingController _hypNameCtrl;
   late final TextEditingController _hypDoseCtrl;
   TimeOfDay? _sleepTime;
+ late final TextEditingController _midWakeCtrl;
   TimeOfDay? _wakeTime;
   int? _sleepQuality; // null 代表 '-'
   bool _tookHypnotic = false;
@@ -108,14 +148,14 @@ Future<void> _saveAndClose() async {
   // 方便：旗標列表（你可依需求增減）
   static const List<Map<String, String>> kSleepFlags = [
     {'key': 'good', 'label': '優'},
-    {'key': 'fair', 'label': '良好'},
-    {'key': 'earlyAwakening', 'label': '早醒'},
-    {'key': 'nightmare', 'label': '多夢'},
+    {'key': 'ok', 'label': '良好'},
+    {'key': 'earlyWake', 'label': '早醒'},
+    {'key': 'dreams', 'label': '多夢'},
     {'key': 'lightSleep', 'label': '淺眠'},
     {'key': 'nocturia', 'label': '夜尿'},
     {'key': 'fragmented', 'label': '睡睡醒醒'},
     {'key': 'insufficient', 'label': '睡眠不足'},
-    {'key': 'sleepLatencyLong', 'label': '入睡困難'},
+    {'key': 'initInsomnia', 'label': '入睡困難'},
     {'key': 'interrupted', 'label': '睡眠中斷'},
   ];
 
@@ -139,6 +179,7 @@ Future<void> _saveAndClose() async {
     _tookHypnotic = sleep['tookHypnotic'] == true;
     _hypNameCtrl = TextEditingController(text: (sleep['hypnoticName'] ?? '').toString());
     _hypDoseCtrl = TextEditingController(text: (sleep['hypnoticDose'] ?? '').toString());
+    _midWakeCtrl = TextEditingController(text: (sleep['midWakeTime'] ?? '').toString());
     _sleepTime = DateHelper.parseTime(sleep['sleepTime']);
     _wakeTime  = DateHelper.parseTime(sleep['wakeTime']);
     _sleepQuality = (sleep['quality'] is int) ? sleep['quality'] as int : null;
@@ -148,6 +189,7 @@ Future<void> _saveAndClose() async {
   void dispose() {
     _hypNameCtrl.dispose();
     _hypDoseCtrl.dispose();
+    _midWakeCtrl.dispose();
     super.dispose();
   }
 
@@ -292,6 +334,15 @@ Widget build(BuildContext context) {
               if (t != null) setState(() => _sleepTime = t);
             },
           ),
+ListTile(
+  title: const Text('夜間醒來時間'),
+  subtitle: TextField(
+    controller: _midWakeCtrl,
+    decoration: const InputDecoration(
+      hintText: '例如：03:20 / 05:10 或 03:40醒過一次',
+    ),
+  ),
+),
           ListTile(
             title: const Text('起床時間'),
             trailing: Text(DateHelper.formatTime(_wakeTime)),
@@ -313,6 +364,7 @@ Widget build(BuildContext context) {
 
           // 夜間睡眠狀況 flags
           const SizedBox(height: 8),
+const Text('夜間睡眠狀況', style: TextStyle(fontWeight: FontWeight.w600)),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -586,7 +638,12 @@ final text = '$start → $end $durationText';
   Future<Map<String, dynamic>?> _napDialog({Map<String, dynamic>? init}) async {
   TimeOfDay? start = DateHelper.parseTime(init?['start']);
   TimeOfDay? end   = DateHelper.parseTime(init?['end']);
-  int minutes = DateHelper.calcDurationMinutes(start!, end!) ?? 0;
+
+  // 一開始如果是新增（沒有初始值），先給 0 即可
+  int minutes = 0;
+  if (start != null && end != null) {
+    minutes = DateHelper.calcDurationMinutes(start, end);
+  }
 
   String fmt(TimeOfDay? t) => t == null ? '-' : t.format(context);
 
@@ -597,7 +654,11 @@ final text = '$start → $end $durationText';
         builder: (ctx, setState) {
           // 重新計算分鐘數
           void recalc() {
-            minutes = DateHelper.calcDurationMinutes(start!, end!) ?? 0;
+            if (start != null && end != null) {
+              minutes = DateHelper.calcDurationMinutes(start!, end!);
+            } else {
+              minutes = 0;
+            }
             setState(() {});
           }
 

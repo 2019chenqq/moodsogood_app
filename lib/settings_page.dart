@@ -36,9 +36,19 @@ class _SettingsPageState extends State<SettingsPage> {
         children: [
           ElevatedButton(
   onPressed: () async {
-    await NotificationHelper().showTestNotification();
+    await NotificationHelper().showNow(
+  id: 999,
+  title: '測試通知',
+  body: '這是一則測試通知（立刻跳出）',
+);
   },
   child: const Text('測試通知（立刻跳出）'),
+),
+          ElevatedButton(
+  onPressed: () async {
+    await NotificationHelper().scheduleTestNotificationIn5Seconds();
+  },
+  child: const Text('測試定時通知（5秒後跳出）'),
 ),
           SwitchListTile(
             title: const Text('每日提醒'),
@@ -195,6 +205,25 @@ Future<void> _updateSettings(bool isOn, TimeOfDay time) async {
     // 先取消舊的，避免重複排
     await helper.cancelNotification(1);
 
+    // 檢查權限是否真的被授予
+    final android = helper.notificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    final notifEnabled = await android?.areNotificationsEnabled() ?? false;
+    debugPrint('🔔 通知已啟用: $notifEnabled');
+
+    if (!notifEnabled) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('❌ 需要允許通知權限才能使用提醒功能'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
 //     // 🕐 若設定時間已過，改成明天
     final now = TimeOfDay.now();
     bool isAfterNow = time.hour > now.hour ||
@@ -213,7 +242,10 @@ Future<void> _updateSettings(bool isOn, TimeOfDay time) async {
     debugPrint('✅ 已建立每日提醒：${adjustedTime.format(context)}');
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已設定每日提醒：${adjustedTime.format(context)} ✅')),
+        SnackBar(
+          content: Text('已設定每日提醒：${adjustedTime.format(context)} ✅'),
+          backgroundColor: Colors.green,
+        ),
       );
     }
   } else {

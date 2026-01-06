@@ -16,6 +16,12 @@ class SignInPage extends StatefulWidget {
 class _SignInPageState extends State<SignInPage> {
   bool _loading = false;
 
+  @override
+  void initState() {
+    super.initState();
+    print('📝 SignInPage loaded - User needs to sign in');
+  }
+
   Future<void> _handleGoogleSignIn() async {
     if (_loading) return;
     setState(() => _loading = true);

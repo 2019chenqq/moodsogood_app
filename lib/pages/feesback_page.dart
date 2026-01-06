@@ -23,14 +23,13 @@ class _FeedbackPageState extends State<FeedbackPage> {
       final user = FirebaseAuth.instance.currentUser;
       
       // 將回饋存入 'feedbacks' 集合
-      await FirebaseFirestore.instance.collection('feedbacks').add({
-        'uid': user?.uid,
-        'email': user?.email, // 方便你之後聯絡他
-        'content': content,
-        'timestamp': FieldValue.serverTimestamp(),
-        'platform': Theme.of(context).platform.toString(), // 紀錄是 iOS 還是 Android
-        'version': '1.0.0', // 可以手動寫死目前的版本號
-      });
+      await FirebaseFirestore.instance
+    .collection('feedback')
+    .add({
+      'uid': FirebaseAuth.instance.currentUser!.uid,
+      'content': _controller.text.trim(),
+      'createdAt': FieldValue.serverTimestamp(),
+    });
 
       if (!mounted) return;
 
