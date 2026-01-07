@@ -1310,6 +1310,53 @@ class _SymptomPage extends StatelessWidget {
             onChanged: (v) => onTogglePeriod(v),
           ),
         ),
+  elevation: 0,
+  shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(20),
+    side: BorderSide(
+      color: isPeriod ? activeColor : inactiveColor.withOpacity(0.3),
+      width: 1.5,
+    ),
+  ),
+  color: isPeriod ? activeBg : inactiveBg,
+  child: SwitchListTile(
+    // ✅ 只改這裡：永遠顯示粉色水滴圖片
+    secondary: Container(
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: isPeriod
+            ? Colors.pink.withOpacity(0.08)
+            : Colors.blueGrey.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Image.asset(
+        'assets/icons/粉色水滴.png',
+        width: 28,
+        height: 28,
+        fit: BoxFit.contain,
+      ),
+    ),
+
+    title: Text(
+      isPeriod ? '生理期中 🩸' : '生理期來了嗎？',
+      style: TextStyle(
+        fontWeight: FontWeight.bold,
+        color: isPeriod ? Colors.pink : colorScheme.onSurface,
+      ),
+    ),
+
+    subtitle: Text(
+      isPeriod ? '紀錄中...' : '紀錄週期，預測下次經期',
+      style: TextStyle(
+        color: isPeriod ? Colors.pink.shade300 : Colors.grey,
+      ),
+    ),
+
+    value: isPeriod,
+    activeColor: activeColor,
+    onChanged: (v) => onTogglePeriod(v),
+  ),
+),
         
         const SizedBox(height: 24),
         

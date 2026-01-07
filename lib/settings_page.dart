@@ -206,6 +206,7 @@ Future<void> _updateSettings(bool isOn, TimeOfDay time) async {
     final notifEnabled = await android?.areNotificationsEnabled() ?? false;
     debugPrint('🔔 通知已啟用: $notifEnabled');
 
+
     if (!notifEnabled) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -229,6 +230,7 @@ Future<void> _updateSettings(bool isOn, TimeOfDay time) async {
     // 使用 WorkManager（適用於小米等嚴格系統）
     final success = await helper.scheduleDailyNotificationWithWorkManager(
       time: adjustedTime,
+      payload: '/home',
     );
 
     debugPrint('✅ 已建立每日提醒（WorkManager）：${adjustedTime.format(context)}');

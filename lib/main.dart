@@ -24,7 +24,9 @@ import 'providers/pro_provider.dart';
 /* =========================== main =========================== */
 
 Future<void> main() async {
+
   debugPrint('🚀 App startup starting...');
+
   WidgetsFlutterBinding.ensureInitialized();
 
   await AndroidAlarmManager.initialize(); // :contentReference[oaicite:3]{index=3}
@@ -38,6 +40,7 @@ Future<void> main() async {
   // 先載入主題設定
   final themeProvider = ThemeProvider();
   await themeProvider.loadTheme();
+
   debugPrint('🎨 Theme loaded');
 
   // ⭐ 啟動時初始化通知（會印出 🕐 這行）
@@ -50,8 +53,8 @@ Future<void> main() async {
     await IAPService.instance.init();
     debugPrint('🛍️ IAP Service initialized');
   }
-
   debugPrint('📱 Running app...');
+
   runApp(
     MultiProvider(
       providers: [
@@ -195,7 +198,6 @@ class LoginPage extends StatelessWidget {
           .showSnackBar(SnackBar(content: Text('登入失敗：$e')));
     }
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
