@@ -66,12 +66,7 @@ Future<void> main() async {
           create: (_) => ProProvider()..init(),
         ),
       ],
-      child: MaterialApp(
-        navigatorKey: rootNavigatorKey,
-        scaffoldMessengerKey: rootMessengerKey,
-        debugShowCheckedModeBanner: false,
-        home: const AuthGate(), // ⭐ 唯一入口（不用改）
-      ),
+      child: const MainApp(),
     ),
   );
 
@@ -80,14 +75,15 @@ Future<void> main() async {
   });
 }
 
-class App extends StatelessWidget {
-  const App({super.key});
+class MainApp extends StatelessWidget {
+  const MainApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
 
     return MaterialApp(
+      navigatorKey: rootNavigatorKey,
       scaffoldMessengerKey: rootMessengerKey,
       debugShowCheckedModeBanner: false,
       locale: const Locale('zh', 'TW'),
@@ -107,7 +103,7 @@ class App extends StatelessWidget {
         ),
       ),
 
-      // 深色主題（你之前設計的那套）
+      // 深色主題
       darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF80CBC4),
@@ -137,7 +133,7 @@ class App extends StatelessWidget {
       // 關鍵：跟著 ThemeProvider 切換
       themeMode: themeProvider.themeMode,
 
-      home: const LockWrapper(),
+      home: const AuthGate(),
     );
   }
 }
@@ -167,7 +163,7 @@ class AuthGate extends StatelessWidget {
         if (snap.data == null) {
           return const SignInPage();      // 未登入
         }
-        return const DailyRecordScreen();         // 已登入
+        return const LockWrapper();         // 已登入，先檢查鎖定
       },
     );
   }
@@ -276,7 +272,7 @@ class _LockWrapperState extends State<LockWrapper> {
       return AppLockScreen(onUnlocked: _onUnlocked);
     }
 
-    // ✅ 解鎖後，或沒開啟鎖定，就照原本流程進 AuthGate
-    return const AuthGate();
+    // ✅ 解鎖後，或沒開啟鎖定，就進入 DailyRecordScreen
+    return const DailyRecordScreen();
   }
 }
