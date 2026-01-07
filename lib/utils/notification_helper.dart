@@ -8,6 +8,9 @@ import '../navigation_service.dart';
 import '../app_globals.dart';
 import '../daily/daily_record_screen.dart';
 
+import '../app_globals.dart';
+import '../daily/daily_record_screen.dart';
+
 const _channelId = 'heartshine_general';
 const _channelName = '心晴提醒';
 const _channelDescription = '心晴的提醒與每日通知';
@@ -65,6 +68,7 @@ class NotificationHelper {
     await _notificationsPlugin.initialize(
       settings,
 <<<<<<< HEAD
+<<<<<<< HEAD
       onDidReceiveNotificationResponse: (NotificationResponse response) {
         final payload = response.payload;
         if (payload != null && payload.isNotEmpty) {
@@ -90,6 +94,8 @@ class NotificationHelper {
       }
     });
 =======
+=======
+>>>>>>> 2f952edecc12017aa70b664fa48b808a054ea039
       onDidReceiveNotificationResponse: _handleNotificationResponse,
       onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
     );
@@ -99,6 +105,9 @@ class NotificationHelper {
     if (launchDetails?.didNotificationLaunchApp == true) {
       _pendingPayload = launchDetails?.notificationResponse?.payload;
     }
+<<<<<<< HEAD
+>>>>>>> 2f952edecc12017aa70b664fa48b808a054ea039
+=======
 >>>>>>> 2f952edecc12017aa70b664fa48b808a054ea039
     _isInitialized = true;
   }
@@ -157,7 +166,11 @@ class NotificationHelper {
         iOS: const DarwinNotificationDetails(),
       ),
 <<<<<<< HEAD
+<<<<<<< HEAD
       payload: payload ?? '/home',
+=======
+      payload: _dailyRecordPayload,
+>>>>>>> 2f952edecc12017aa70b664fa48b808a054ea039
 =======
       payload: _dailyRecordPayload,
 >>>>>>> 2f952edecc12017aa70b664fa48b808a054ea039
@@ -288,6 +301,7 @@ class NotificationHelper {
   }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
   /// 测试：5秒后跳出通知
   Future<void> scheduleTestNotificationIn5Seconds({String? payload}) async {
     await init();
@@ -339,6 +353,8 @@ class NotificationHelper {
     }
   }
 
+=======
+>>>>>>> 2f952edecc12017aa70b664fa48b808a054ea039
 =======
 >>>>>>> 2f952edecc12017aa70b664fa48b808a054ea039
   Future<void> cancelNotification(int id) async {
