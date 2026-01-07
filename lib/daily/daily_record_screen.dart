@@ -1267,49 +1267,53 @@ class _SymptomPage extends StatelessWidget {
       children: [
         // 1. 生理期卡片
         Card(
-          elevation: 0,
-          // 邊框：沒來時也有淡淡的粉色邊框
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: BorderSide(
-              color: isPeriod ? activeColor : inactiveColor.withOpacity(0.3),
-              width: 1.5,
-            ),
-          ),
-          // 背景：隨時都有顏色
-          color: isPeriod ? activeBg : inactiveBg,
-          
-          child: SwitchListTile(
-            // 圖示：沒來時是可愛的淡粉色水滴
-            secondary: Icon(
-              Icons.water_drop, 
-              color: isPeriod ? activeColor : inactiveColor,
-              size: 28,
-            ),
-            
-            // 🔥 標題：開啟顯示「生理期中」，關閉顯示「生理期來了嗎？」
-            title: Text(
-              isPeriod ? '生理期中 🩸' : '生理期來了嗎？',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: isPeriod ? Colors.pink : colorScheme.onSurface,
-              ),
-            ),
-            
-            // 副標題：只有開啟時才顯示詳細資訊 (或你可以簡化顯示)
-            subtitle: Text(
-              isPeriod ? '紀錄中...' : '紀錄週期，預測下次經期',
-              style: TextStyle(
-                color: isPeriod ? Colors.pink.shade300 : Colors.grey,
-              ),
-            ),
-            
-            // 開關本體
-            value: isPeriod, 
-            activeColor: activeColor,
-            onChanged: (v) => onTogglePeriod(v),
-          ),
-        ),
+  elevation: 0,
+  shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(20),
+    side: BorderSide(
+      color: isPeriod ? activeColor : inactiveColor.withOpacity(0.3),
+      width: 1.5,
+    ),
+  ),
+  color: isPeriod ? activeBg : inactiveBg,
+  child: SwitchListTile(
+    // ✅ 只改這裡：永遠顯示粉色水滴圖片
+    secondary: Container(
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: isPeriod
+            ? Colors.pink.withOpacity(0.08)
+            : Colors.blueGrey.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Image.asset(
+        'assets/icons/粉色水滴.png',
+        width: 28,
+        height: 28,
+        fit: BoxFit.contain,
+      ),
+    ),
+
+    title: Text(
+      isPeriod ? '生理期中 🩸' : '生理期來了嗎？',
+      style: TextStyle(
+        fontWeight: FontWeight.bold,
+        color: isPeriod ? Colors.pink : colorScheme.onSurface,
+      ),
+    ),
+
+    subtitle: Text(
+      isPeriod ? '紀錄中...' : '紀錄週期，預測下次經期',
+      style: TextStyle(
+        color: isPeriod ? Colors.pink.shade300 : Colors.grey,
+      ),
+    ),
+
+    value: isPeriod,
+    activeColor: activeColor,
+    onChanged: (v) => onTogglePeriod(v),
+  ),
+),
         
         const SizedBox(height: 24),
         

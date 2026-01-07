@@ -17,6 +17,7 @@ import 'firebase_options.dart';
 import 'Home_shell.dart';
 import 'Sign_in_page.dart';
 import 'app_globals.dart';
+import 'navigation_service.dart';
 import 'utils/notification_helper.dart';
 import 'providers/theme_provider.dart';
 import 'diary/diary_home_page.dart';
@@ -27,7 +28,7 @@ import 'service/iap_service.dart';
 import 'providers/pro_provider.dart';
 /* =========================== main =========================== */
 
-final GlobalKey<ScaffoldMessengerState> rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
+// rootMessengerKey moved to lib/app_globals.dart
 
 Future<void> main() async {
   print('🚀 App startup starting...');
@@ -49,6 +50,13 @@ Future<void> main() async {
   // ⭐ 啟動時初始化通知（會印出 🕐 這行）
   await NotificationHelper().init();
   print('🔔 Notifications initialized');
+  // 如果是由通知點擊啟動，取得 payload 並導向（啟動後導向需在下一個 frame）
+  final initialPayload = await NotificationHelper().getInitialNotificationPayload();
+  if (initialPayload != null && initialPayload.isNotEmpty) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      rootNavigatorKey.currentState?.pushNamed(initialPayload);
+    });
+  }
 
   // Only init IAP on release builds (skip on emulator/debug)
   //  Ted add this for testing inapp purchase on emulator
@@ -68,8 +76,15 @@ Future<void> main() async {
         create: (_) => ProProvider()..init(),
       ),
     ],
-    child: const MaterialApp(
+    child: MaterialApp(
+      navigatorKey: rootNavigatorKey,
+      scaffoldMessengerKey: rootMessengerKey,
       debugShowCheckedModeBanner: false,
+      routes: {
+        '/home': (ctx) => const HomePage(),
+        '/daily': (ctx) => DailyRecordScreen(),
+        '/diary': (ctx) => DiaryHomePage(),
+      },
       home: AuthGate(), // ⭐ 唯一入口（不用改）
     ),
   ),

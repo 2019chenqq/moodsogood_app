@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import '../navigation_service.dart';
 
 const _channelId = 'heartshine_general';
 const _channelName = '心晴提醒';
@@ -41,7 +42,9 @@ class NotificationHelper {
     tz.setLocalLocation(tz.getLocation('Asia/Taipei'));
     debugPrint('🕐 时区初始化完成：${tz.local.name}');
 
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    // 使用 android 資源名稱 app_icon（請把 assets/icons/app_icon 放到
+    // android/app/src/main/res/mipmap-*/ 或 drawable-* 內，名稱為 app_icon）
+    const androidSettings = AndroidInitializationSettings('app_icon');
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: false,
       requestBadgePermission: false,
@@ -53,8 +56,49 @@ class NotificationHelper {
       iOS: iosSettings,
     );
 
-    await _notificationsPlugin.initialize(settings);
+    await _notificationsPlugin.initialize(
+      settings,
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
+        final payload = response.payload;
+        if (payload != null && payload.isNotEmpty) {
+          try {
+            rootNavigatorKey.currentState?.pushNamed(payload);
+          } catch (e) {
+            debugPrint('🔔 通知點擊導向失敗: $e');
+          }
+        }
+      },
+    );
+    // 監聽 native 的 WorkManager 點擊事件（onNewIntent 會 invokeMethod("notificationTapped"))
+    platform.setMethodCallHandler((call) async {
+      if (call.method == 'notificationTapped') {
+        final payload = call.arguments as String?;
+        if (payload != null && payload.isNotEmpty) {
+          try {
+            rootNavigatorKey.currentState?.pushNamed(payload);
+          } catch (e) {
+            debugPrint('🔔 native tapped handler failed: $e');
+          }
+        }
+      }
+    });
     _isInitialized = true;
+  }
+
+  /// 如果 App 是由點擊通知啟動，可以在啟動時呼叫這個方法讀出 payload
+  Future<String?> getInitialNotificationPayload() async {
+    final details = await _notificationsPlugin.getNotificationAppLaunchDetails();
+    if (details?.didNotificationLaunchApp ?? false) {
+      return details?.notificationResponse?.payload;
+    }
+    // 如果不是透過 flutter_local_notifications 啟動（例如 WorkManager 原生通知），
+    // 試著向 native MainActivity 查詢 intent extra。
+    try {
+      final payload = await platform.invokeMethod<String?>('getInitialPayload');
+      return payload;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// =========================
@@ -64,6 +108,7 @@ class NotificationHelper {
     required int id,
     required String title,
     required String body,
+    String? payload,
   }) async {
     await init();
 
@@ -73,14 +118,27 @@ class NotificationHelper {
             AndroidFlutterLocalNotificationsPlugin>()
         ?.requestNotificationsPermission();
 
+    final androidDetails = AndroidNotificationDetails(
+      _channelId,
+      _channelName,
+      channelDescription: _channelDescription,
+      importance: Importance.max,
+      priority: Priority.high,
+      icon: 'app_icon',
+      enableVibration: true,
+      enableLights: true,
+      playSound: true,
+    );
+
     await _notificationsPlugin.show(
       id,
       title,
       body,
-      const NotificationDetails(
-        android: _androidDetails,
-        iOS: DarwinNotificationDetails(),
+      NotificationDetails(
+        android: androidDetails,
+        iOS: const DarwinNotificationDetails(),
       ),
+      payload: payload ?? '/home',
     );
   }
 
@@ -123,6 +181,7 @@ class NotificationHelper {
     required String title,
     required String body,
     required TimeOfDay time,
+    String? payload,
   }) async {
     await init();
     final hasPermission = await _ensurePermissions();
@@ -165,9 +224,9 @@ class NotificationHelper {
         title,
         body,
         scheduledDate,
-        const NotificationDetails(
+        NotificationDetails(
           android: AndroidNotificationDetails(
-            _channelId,          // ✅ 跟測試通知同一個頻道
+            _channelId, // ✅ 跟測試通知同一個頻道
             _channelName,
             channelDescription: _channelDescription,
             importance: Importance.max,
@@ -177,14 +236,16 @@ class NotificationHelper {
             playSound: true,
             setAsGroupSummary: false,
             fullScreenIntent: true,
+            icon: 'app_icon',
           ),
-          iOS: DarwinNotificationDetails(
+          iOS: const DarwinNotificationDetails(
             presentAlert: true,
             presentBadge: true,
             presentSound: true,
             interruptionLevel: InterruptionLevel.timeSensitive,
           ),
         ),
+        payload: payload ?? '/home',
         androidScheduleMode: _exactAlarmAllowed
             ? AndroidScheduleMode.exactAllowWhileIdle
             : AndroidScheduleMode.inexactAllowWhileIdle,
@@ -204,7 +265,7 @@ class NotificationHelper {
   }
 
   /// 测试：5秒后跳出通知
-  Future<void> scheduleTestNotificationIn5Seconds() async {
+  Future<void> scheduleTestNotificationIn5Seconds({String? payload}) async {
     await init();
     final hasPermission = await _ensurePermissions();
     if (!hasPermission) {
@@ -244,6 +305,7 @@ class NotificationHelper {
             interruptionLevel: InterruptionLevel.timeSensitive,
           ),
         ),
+        payload: payload,
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       );
       debugPrint('✅ 已排程5秒後的測試通知');
@@ -269,11 +331,13 @@ class NotificationHelper {
   /// 使用 WorkManager 設定每日提醒（適用於小米手機）
   Future<bool> scheduleDailyNotificationWithWorkManager({
     required TimeOfDay time,
+    String? payload,
   }) async {
     try {
       final result = await platform.invokeMethod('scheduleDailyNotification', {
         'hour': time.hour,
         'minute': time.minute,
+        'payload': payload ?? '/daily',
       });
       debugPrint('✅ WorkManager 每日提醒已設定：${time.hour}:${time.minute}');
       return result == true;

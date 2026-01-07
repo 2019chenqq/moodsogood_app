@@ -82,7 +82,7 @@ flutter:
   # the material Icons class.
   uses-material-design: true
   assets:
-    - assets/icons/app_icon.png
+    - assets/icons/
     - assets/legal/心晴_服務條款_zh-TW.md
     - assets/legal/心晴_隱私權政策_zh-TW.md
     - assets/emotion/  # 包含整个 emotion 文件夹的所有图片
