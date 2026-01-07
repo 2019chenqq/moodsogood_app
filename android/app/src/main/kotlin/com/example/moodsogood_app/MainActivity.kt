@@ -6,6 +6,9 @@ import io.flutter.plugin.common.MethodChannel
 import androidx.work.*
 import java.util.concurrent.TimeUnit
 import android.content.Context
+import android.app.PendingIntent
+import android.content.Intent
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 
@@ -69,11 +72,35 @@ class DailyReminderWorker(appContext: Context, workerParams: WorkerParameters) :
     }
 
     private fun showNotification() {
+        // Create an intent that reopens the app when the notification is tapped.
+        val launchIntent = applicationContext.packageManager
+            .getLaunchIntentForPackage(applicationContext.packageName)
+            ?.apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra("notification_payload", "open_daily_record")
+            }
+
+        val pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT or
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+
+        val contentIntent = launchIntent?.let {
+            PendingIntent.getActivity(
+                applicationContext,
+                0,
+                it,
+                pendingFlags
+            )
+        }
+
         val notification = NotificationCompat.Builder(applicationContext, "heartshine_general")
             .setContentTitle("今天也辛苦了 💛")
             .setContentText("花一點時間記錄一下今天的心情吧。")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(contentIntent)
             .build()
 
         NotificationManagerCompat.from(applicationContext).notify(1, notification)

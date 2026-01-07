@@ -4,9 +4,13 @@ import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import '../app_globals.dart';
+import '../daily/daily_record_screen.dart';
+
 const _channelId = 'heartshine_general';
 const _channelName = '心晴提醒';
 const _channelDescription = '心晴的提醒與每日通知';
+const _dailyRecordPayload = 'open_daily_record';
 
 class NotificationHelper {
   static final NotificationHelper _instance = NotificationHelper._internal();
@@ -19,6 +23,8 @@ class NotificationHelper {
       FlutterLocalNotificationsPlugin();
 
   FlutterLocalNotificationsPlugin get notificationsPlugin => _notificationsPlugin;
+
+  String? _pendingPayload;
 
   bool _isInitialized = false;
   bool _exactAlarmAllowed = false;
@@ -53,7 +59,17 @@ class NotificationHelper {
       iOS: iosSettings,
     );
 
-    await _notificationsPlugin.initialize(settings);
+    await _notificationsPlugin.initialize(
+      settings,
+      onDidReceiveNotificationResponse: _handleNotificationResponse,
+      onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
+    );
+
+    final launchDetails =
+        await _notificationsPlugin.getNotificationAppLaunchDetails();
+    if (launchDetails?.didNotificationLaunchApp == true) {
+      _pendingPayload = launchDetails?.notificationResponse?.payload;
+    }
     _isInitialized = true;
   }
 
@@ -81,6 +97,7 @@ class NotificationHelper {
         android: _androidDetails,
         iOS: DarwinNotificationDetails(),
       ),
+      payload: _dailyRecordPayload,
     );
   }
 
@@ -188,6 +205,7 @@ class NotificationHelper {
         androidScheduleMode: _exactAlarmAllowed
             ? AndroidScheduleMode.exactAllowWhileIdle
             : AndroidScheduleMode.inexactAllowWhileIdle,
+        payload: _dailyRecordPayload,
       );
       debugPrint('✅ 已成功建立每日排程：$scheduledDate');
 
@@ -203,56 +221,6 @@ class NotificationHelper {
     }
   }
 
-  /// 测试：5秒后跳出通知
-  Future<void> scheduleTestNotificationIn5Seconds() async {
-    await init();
-    final hasPermission = await _ensurePermissions();
-    if (!hasPermission) {
-      debugPrint('❌ 沒有通知權限');
-      return;
-    }
-
-    final now = tz.TZDateTime.now(tz.local);
-    final scheduledDate = now.add(const Duration(seconds: 5));
-
-    debugPrint('🧪 測試：5秒後跳出通知');
-    debugPrint('📅 現在時間：$now');
-    debugPrint('📅 排程時間：$scheduledDate');
-
-    try {
-      await _notificationsPlugin.zonedSchedule(
-        2,
-        '測試定時通知 🧪',
-        '如果你看到這個，代表定時通知系統正常運作',
-        scheduledDate,
-        const NotificationDetails(
-          android: AndroidNotificationDetails(
-            _channelId,
-            _channelName,
-            channelDescription: _channelDescription,
-            importance: Importance.max,
-            priority: Priority.high,
-            enableVibration: true,
-            enableLights: true,
-            playSound: true,
-            fullScreenIntent: true,
-          ),
-          iOS: DarwinNotificationDetails(
-            presentAlert: true,
-            presentBadge: true,
-            presentSound: true,
-            interruptionLevel: InterruptionLevel.timeSensitive,
-          ),
-        ),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      );
-      debugPrint('✅ 已排程5秒後的測試通知');
-    } catch (e, st) {
-      debugPrint('❌ 測試通知排程失敗：$e');
-      debugPrint('$st');
-    }
-  }
-
   Future<void> cancelNotification(int id) async {
     await _notificationsPlugin.cancel(id);
   }
@@ -262,6 +230,49 @@ class NotificationHelper {
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
     await androidImplementation?.requestExactAlarmsPermission();
+  }
+
+  void handleBackgroundNotificationResponse(
+      NotificationResponse notificationResponse) {
+    _handleNotificationResponse(notificationResponse);
+  }
+
+  void _handleNotificationResponse(NotificationResponse? response) {
+    final payload = response?.payload;
+    if (payload == null) return;
+
+    final handled = _handlePayload(payload);
+    if (!handled) {
+      _pendingPayload = payload;
+    }
+  }
+
+  bool _handlePayload(String payload) {
+    if (payload == _dailyRecordPayload) {
+      return _navigateToDailyRecord();
+    }
+    return false;
+  }
+
+  bool _navigateToDailyRecord() {
+    final navigator = rootNavigatorKey.currentState;
+    if (navigator == null) return false;
+
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const DailyRecordScreen()),
+      (_) => false,
+    );
+    return true;
+  }
+
+  /// 在 app 完成 build 後呼叫，確保若是從通知啟動也能導向首頁
+  void processPendingNavigation() {
+    final payload = _pendingPayload;
+    if (payload == null) return;
+
+    if (_handlePayload(payload)) {
+      _pendingPayload = null;
+    }
   }
 
   // ========== WorkManager 方法（用於小米等嚴格系統） ==========
@@ -295,4 +306,11 @@ class NotificationHelper {
       return false;
     }
   }
+}
+
+@pragma('vm:entry-point')
+void notificationTapBackground(
+    NotificationResponse notificationResponse) {
+  NotificationHelper()
+      .handleBackgroundNotificationResponse(notificationResponse);
 }

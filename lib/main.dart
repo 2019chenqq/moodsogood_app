@@ -27,8 +27,6 @@ import 'service/iap_service.dart';
 import 'providers/pro_provider.dart';
 /* =========================== main =========================== */
 
-final GlobalKey<ScaffoldMessengerState> rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
-
 Future<void> main() async {
   print('🚀 App startup starting...');
   WidgetsFlutterBinding.ensureInitialized();
@@ -59,21 +57,27 @@ Future<void> main() async {
 
   print('📱 Running app...');
   runApp(
-  MultiProvider(
-    providers: [
-      ChangeNotifierProvider<ThemeProvider>.value(
-        value: themeProvider,
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider<ThemeProvider>.value(
+          value: themeProvider,
+        ),
+        ChangeNotifierProvider<ProProvider>(
+          create: (_) => ProProvider()..init(),
+        ),
+      ],
+      child: MaterialApp(
+        navigatorKey: rootNavigatorKey,
+        scaffoldMessengerKey: rootMessengerKey,
+        debugShowCheckedModeBanner: false,
+        home: const AuthGate(), // ⭐ 唯一入口（不用改）
       ),
-      ChangeNotifierProvider<ProProvider>(
-        create: (_) => ProProvider()..init(),
-      ),
-    ],
-    child: const MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: AuthGate(), // ⭐ 唯一入口（不用改）
     ),
-  ),
-);
+  );
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    NotificationHelper().processPendingNavigation();
+  });
 }
 
 class App extends StatelessWidget {
