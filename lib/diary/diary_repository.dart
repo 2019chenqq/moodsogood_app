@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -108,7 +107,7 @@ class DiaryRepository {
   Future<Database> _open() async {
     if (_db != null) return _db!;
     final docs = await getApplicationDocumentsDirectory();
-    final dbPath = p.join(docs.path, 'mood_so_good.db');
+    final dbPath = '${docs.path}/mood_so_good.db';
     _db = await openDatabase(
       dbPath,
       version: 1,

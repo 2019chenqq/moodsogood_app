@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:firebase_storage/firebase_storage.dart'; // 🔥 存照片用
 import 'package:image_picker/image_picker.dart';         // 🔥 選照片用
 import 'package:google_sign_in/google_sign_in.dart';
@@ -11,8 +10,6 @@ import '../daily/daily_record_history.dart';
 import '../diary/diary_home_page.dart';
 import '../settings_page.dart';
 import '../pages/feesback_page.dart';
-import '../pages/upgrade_page.dart';
-import '../Sign_in_page.dart';
 import '../pro/pro_page.dart';
 
 class MainDrawer extends StatefulWidget {
@@ -82,14 +79,13 @@ class _MainDrawerState extends State<MainDrawer> {
   Widget build(BuildContext context) {
     // 每次 build 都重新抓取 user，確保顯示最新的 photoURL
     final user = FirebaseAuth.instance.currentUser;
-    final String displayName = user?.email ?? '使用者';
     final String? photoUrl = user?.photoURL;
-    final GoogleSignIn _googleSignIn = GoogleSignIn();
+    final googleSignIn = GoogleSignIn();
 
-Future<void> signOut() async {
-  await FirebaseAuth.instance.signOut();
-  await _googleSignIn.signOut(); // ⭐ 這一行是關鍵
-}
+  Future<void> signOut() async {
+    await FirebaseAuth.instance.signOut();
+    await googleSignIn.signOut(); // ⭐ 這一行是關鍵
+  }
 
     return Drawer(
   child: ListView(

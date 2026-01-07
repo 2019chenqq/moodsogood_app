@@ -53,7 +53,7 @@ class ProGate extends StatelessWidget {
         // 鎖定提示
         Positioned.fill(
           child: Container(
-            color: Colors.black.withOpacity(0.2),
+            color: Colors.black.withValues(alpha: 0.2),
             alignment: Alignment.center,
             child: _UpgradeCard(),
           ),

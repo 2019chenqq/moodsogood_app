@@ -20,8 +20,6 @@ class _FeedbackPageState extends State<FeedbackPage> {
     setState(() => _isSubmitting = true);
 
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      
       // 將回饋存入 'feedbacks' 集合
       await FirebaseFirestore.instance
     .collection('feedback')

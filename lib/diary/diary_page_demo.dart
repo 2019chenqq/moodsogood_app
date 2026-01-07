@@ -16,21 +16,8 @@ class DiaryPageDemo extends m.StatefulWidget {
 
 String get _uid => FirebaseAuth.instance.currentUser!.uid;
 
-DocumentReference<Map<String, dynamic>> _refForDay(DateTime d) {
-  return FirebaseFirestore.instance
-      .collection('users').doc(_uid)
-      .collection('diary').doc(DateHelper.toId(d));
-}
-
 class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
  
-  CollectionReference<Map<String,dynamic>> get _dailyCol => FirebaseFirestore
-      .instance.collection('users').doc(_uid).collection('diary');
-
-  // 若你有「上一筆/下一筆」切換日期，切完要再讀一次
-  void _goTo(DateTime d) {
-    // ... 你原本的切換邏輯 ... 
-  }
   // ---------------- UI 狀態（控制器） ----------------
   final _titleCtrl     = m.TextEditingController();
   final _contentCtrl   = m.TextEditingController();
@@ -230,19 +217,9 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   }
 
   // ---------------- UI ----------------
-  void _goPrevDay() {
-  if (_prevDate != null) _openDiary(_prevDate!);
-}
-
-void _goNextDay() {
-  if (_nextDate != null) _openDiary(_nextDate!);
-}
   @override
   m.Widget build(m.BuildContext context) {
-    final dateText =
-        '${_day.year}-${_day.month.toString().padLeft(2, '0')}-${_day.day.toString().padLeft(2, '0')}';
-    final color = m.Theme.of(context).colorScheme.secondaryContainer;
-final d = DateTime(widget.date.year, widget.date.month, widget.date.day);
+    final d = DateTime(widget.date.year, widget.date.month, widget.date.day);
 
     return m.Scaffold(
       appBar: m.AppBar(
@@ -316,9 +293,9 @@ if (_prevDate != null || _nextDate != null) ...[
                       minLines: 1, maxLines: 1,
               onAnyChanged: _onAnyFieldChanged,
                         textStyle: const m.TextStyle(color: m.Colors.black87),
-  hintStyle: m.TextStyle(color: m.Colors.black.withOpacity(0.28)),
-  fillColor: m.Colors.white.withOpacity(0.70),
-  borderColor: m.Colors.black.withOpacity(0.18),),
+  hintStyle: m.TextStyle(color: m.Colors.black.withValues(alpha: 0.28)),
+  fillColor: m.Colors.white.withValues(alpha: 0.70),
+  borderColor: m.Colors.black.withValues(alpha: 0.18),),
             const m.SizedBox(height: 12),
             
 
@@ -329,9 +306,9 @@ if (_prevDate != null || _nextDate != null) ...[
               minLines: 8, maxLines: 10,
               onAnyChanged: _onAnyFieldChanged,
               textStyle: const m.TextStyle(color: m.Colors.black87),
-  hintStyle: m.TextStyle(color: m.Colors.black.withOpacity(0.28)),
-  fillColor: m.Colors.white.withOpacity(0.70),
-  borderColor: m.Colors.black.withOpacity(0.18),
+  hintStyle: m.TextStyle(color: m.Colors.black.withValues(alpha: 0.28)),
+  fillColor: m.Colors.white.withValues(alpha: 0.70),
+  borderColor: m.Colors.black.withValues(alpha: 0.18),
             ),
             const m.SizedBox(height: 12),
 
@@ -342,9 +319,9 @@ if (_prevDate != null || _nextDate != null) ...[
               minLines: 1, maxLines: 3,
               onAnyChanged: _onAnyFieldChanged,
               textStyle: const m.TextStyle(color: m.Colors.black87),
-  hintStyle: m.TextStyle(color: m.Colors.black.withOpacity(0.28)),
-  fillColor: m.Colors.white.withOpacity(0.70),
-  borderColor: m.Colors.black.withOpacity(0.18),
+  hintStyle: m.TextStyle(color: m.Colors.black.withValues(alpha: 0.28)),
+  fillColor: m.Colors.white.withValues(alpha: 0.70),
+  borderColor: m.Colors.black.withValues(alpha: 0.18),
             ),
             const m.SizedBox(height: 12),
 
@@ -355,9 +332,9 @@ if (_prevDate != null || _nextDate != null) ...[
               minLines: 3, maxLines: 10,
               onAnyChanged: _onAnyFieldChanged,
               textStyle: const m.TextStyle(color: m.Colors.black87),
-  hintStyle: m.TextStyle(color: m.Colors.black.withOpacity(0.28)),
-  fillColor: m.Colors.white.withOpacity(0.70),
-  borderColor: m.Colors.black.withOpacity(0.18),
+  hintStyle: m.TextStyle(color: m.Colors.black.withValues(alpha: 0.28)),
+  fillColor: m.Colors.white.withValues(alpha: 0.70),
+  borderColor: m.Colors.black.withValues(alpha: 0.18),
             ),
             const m.SizedBox(height: 12),
 
@@ -368,9 +345,9 @@ if (_prevDate != null || _nextDate != null) ...[
               minLines: 1, maxLines: 3,
               onAnyChanged: _onAnyFieldChanged,
               textStyle: const m.TextStyle(color: m.Colors.black87),
-  hintStyle: m.TextStyle(color: m.Colors.black.withOpacity(0.28)),
-  fillColor: m.Colors.white.withOpacity(0.70),
-  borderColor: m.Colors.black.withOpacity(0.18),
+  hintStyle: m.TextStyle(color: m.Colors.black.withValues(alpha: 0.28)),
+  fillColor: m.Colors.white.withValues(alpha: 0.70),
+  borderColor: m.Colors.black.withValues(alpha: 0.18),
             ),
             const m.SizedBox(height: 12),
 
@@ -381,9 +358,9 @@ if (_prevDate != null || _nextDate != null) ...[
               minLines: 2, maxLines: 10,
               onAnyChanged: _onAnyFieldChanged,
               textStyle: const m.TextStyle(color: m.Colors.black87),
-  hintStyle: m.TextStyle(color: m.Colors.black.withOpacity(0.28)),
-  fillColor: m.Colors.white.withOpacity(0.70),
-  borderColor: m.Colors.black.withOpacity(0.18),
+  hintStyle: m.TextStyle(color: m.Colors.black.withValues(alpha: 0.28)),
+  fillColor: m.Colors.white.withValues(alpha: 0.70),
+  borderColor: m.Colors.black.withValues(alpha: 0.18),
             ),
             const m.SizedBox(height: 12),
 
@@ -394,9 +371,9 @@ if (_prevDate != null || _nextDate != null) ...[
               minLines: 3, maxLines: 10,
               onAnyChanged: _onAnyFieldChanged,
               textStyle: const m.TextStyle(color: m.Colors.black87),
-  hintStyle: m.TextStyle(color: m.Colors.black.withOpacity(0.28)),
-  fillColor: m.Colors.white.withOpacity(0.70),
-  borderColor: m.Colors.black.withOpacity(0.18),
+  hintStyle: m.TextStyle(color: m.Colors.black.withValues(alpha: 0.28)),
+  fillColor: m.Colors.white.withValues(alpha: 0.70),
+  borderColor: m.Colors.black.withValues(alpha: 0.18),
             ),
             const m.SizedBox(height: 12),
 
@@ -407,9 +384,9 @@ if (_prevDate != null || _nextDate != null) ...[
               minLines: 3, maxLines: 10,
               onAnyChanged: _onAnyFieldChanged,
               textStyle: const m.TextStyle(color: m.Colors.black87),
-  hintStyle: m.TextStyle(color: m.Colors.black.withOpacity(0.28)),
-  fillColor: m.Colors.white.withOpacity(0.70),
-  borderColor: m.Colors.black.withOpacity(0.18),
+  hintStyle: m.TextStyle(color: m.Colors.black.withValues(alpha: 0.28)),
+  fillColor: m.Colors.white.withValues(alpha: 0.70),
+  borderColor: m.Colors.black.withValues(alpha: 0.18),
             ),
           ],
         ),
@@ -426,7 +403,6 @@ class _DateHeaderCard extends m.StatelessWidget {
   @override
   m.Widget build(m.BuildContext context) {
     final text = DateHelper.toDisplay(date);     // yyyy-MM-dd
-    final wd   = _weekdayZh(date.weekday);
 
     return m.Container(
       margin: const m.EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -436,14 +412,14 @@ class _DateHeaderCard extends m.StatelessWidget {
         borderRadius: m.BorderRadius.circular(20),
         boxShadow: [
           m.BoxShadow(
-            color: m.Colors.black.withOpacity(0.05),
+            color: m.Colors.black.withValues(alpha: 0.05),
             blurRadius: 16,
             offset: const m.Offset(0, 6),
           ),
         ],
         // 淺淺的底：不會干擾整體
         gradient: m.LinearGradient(
-          colors: [m.Colors.black.withOpacity(0.04), m.Colors.black.withOpacity(0.02)],
+          colors: [m.Colors.black.withValues(alpha: 0.04), m.Colors.black.withValues(alpha: 0.02)],
           begin: m.Alignment.topLeft,
           end: m.Alignment.bottomRight,
         ),
@@ -480,7 +456,7 @@ class _DateHeaderCard extends m.StatelessWidget {
     return m.Container(
       padding: const m.EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: m.BoxDecoration(
-        color: m.Colors.black.withOpacity(0.06),
+        color: m.Colors.black.withValues(alpha: 0.06),
         borderRadius: m.BorderRadius.circular(999),
       ),
       child: m.Text(
@@ -553,7 +529,7 @@ final m.Color? borderColor;
 
     // ✅ 提示字顏色（更淡，跟輸入字明顯區分）
     hintStyle: m.TextStyle(
-      color: m.Colors.black.withOpacity(0.28),
+      color: m.Colors.black.withValues(alpha: 0.28),
       fontSize: 16,
       height: 1.5,
     ),

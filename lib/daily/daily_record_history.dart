@@ -368,8 +368,8 @@ bool _isHistoryLocked(bool isPro) {
                   ignoring: true,
                   child: Container(
                     color: Theme.of(context)
-                        .scaffoldBackgroundColor
-                        .withOpacity(0.75),
+                      .scaffoldBackgroundColor
+                      .withValues(alpha: 0.75),
                     alignment: Alignment.center,
                     child: _buildProLockedView(
                       context: context,
@@ -539,7 +539,7 @@ List<VerticalRangeAnnotation> buildPeriodRanges(List<DailyRecord> records) {
         VerticalRangeAnnotation(
           x1: startIndex!.toDouble() - 0.4,
           x2: endIndex.toDouble() + 0.4,
-          color: Colors.pink.withOpacity(0.15),
+          color: Colors.pink.withValues(alpha: 0.15),
         ),
       );
 
@@ -656,7 +656,7 @@ Widget build(BuildContext context) {
           dotData: const FlDotData(show: false),
           belowBarData: BarAreaData(
             show: true,
-            color: lineColor.withOpacity(0.15),
+            color: lineColor.withValues(alpha: 0.15),
           ),
         ),
       ],

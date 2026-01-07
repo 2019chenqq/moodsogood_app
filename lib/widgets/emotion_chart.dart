@@ -2,7 +2,6 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import '../models/daily_record.dart';
-import '../utils/date_helper.dart'; // 用來顯示 X 軸日期
 import '../models/period_cycle.dart';
 
 class EmotionChart extends StatelessWidget {
@@ -68,7 +67,7 @@ class EmotionChart extends StatelessWidget {
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4)),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4)),
         ],
       ),
       child: LineChart(
@@ -89,7 +88,7 @@ class EmotionChart extends StatelessWidget {
             show: true,
             drawVerticalLine: false, // 不畫垂直線，比較清爽
             horizontalInterval: 2,   // 每 2 分畫一條水平線
-            getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey.withOpacity(0.2), strokeWidth: 1),
+            getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey.withValues(alpha: 0.2), strokeWidth: 1),
           ),
 
           // 4. 邊框設定 (不顯示邊框)
@@ -152,7 +151,7 @@ class EmotionChart extends StatelessWidget {
               dotData: const FlDotData(show: true), // 顯示數據點
               belowBarData: BarAreaData(
                 show: true,
-                color: Colors.teal.withOpacity(0.1), // 線下方的填充顏色
+                color: Colors.teal.withValues(alpha: 0.1), // 線下方的填充顏色
               ),
             ),
           ],

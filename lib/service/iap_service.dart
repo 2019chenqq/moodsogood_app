@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
@@ -18,11 +19,11 @@ class IAPService {
       await loadProducts().timeout(
         const Duration(seconds: 5),
         onTimeout: () {
-          print('⚠️ IAP loadProducts timeout - likely running on emulator without Play Services');
+          debugPrint('⚠️ IAP loadProducts timeout - likely running on emulator without Play Services');
         },
       );
     } catch (e) {
-      print('❌ IAP init error: $e');
+      debugPrint('❌ IAP init error: $e');
     }
   }
 
@@ -37,13 +38,13 @@ class IAPService {
       final response = await _iap.queryProductDetails(ids);
 
       if (response.error != null) {
-        print("商品查詢錯誤：${response.error}");
+        debugPrint("商品查詢錯誤：${response.error}");
       }
 
       products = response.productDetails;
-      print("已取得商品：$products");
+      debugPrint("已取得商品：$products");
     } catch (e) {
-      print('❌ Error querying products: $e');
+      debugPrint('❌ Error querying products: $e');
     }
   }
 
@@ -62,7 +63,7 @@ class IAPService {
             _verifyAndGrant(p);
             break;
           case PurchaseStatus.error:
-            print("購買錯誤：${p.error}");
+            debugPrint("購買錯誤：${p.error}");
             break;
           default:
             break;
@@ -85,7 +86,7 @@ class IAPService {
         .doc(uid)
         .set({'pro': true}, SetOptions(merge: true));
 
-    print("付費成功：已解鎖 Pro 功能");
+    debugPrint("付費成功：已解鎖 Pro 功能");
   }
 
   void dispose() {

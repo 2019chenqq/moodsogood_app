@@ -27,8 +27,7 @@ class _EditRecordPageState extends State<EditRecordPage> {
 num? _calcOverallMood(List<Map<String, dynamic>> emos) {
   final vals = emos
       .map((m) => m['value'])
-      .where((v) => v is num)
-      .cast<num>()
+      .whereType<num>()
       .map((n) => n.toDouble())
       .toList();
   if (vals.isEmpty) return null;
@@ -82,9 +81,6 @@ if (_sleepQuality != null) {
 }
 
 // flags / note / naps：用現在 state 裡的 sleep 去補
-final List<String> flags = ((sleep['flags'] as List?) ?? const [])
-    .map((e) => e.toString())
-    .toList();
 newSleep['flags'] = (sleep['flags'] as List?)?.map((e) => e.toString()).toList() ?? [];
 newSleep['note'] = (sleep['note'] ?? '').toString();
 
@@ -201,55 +197,6 @@ final payload = <String, dynamic>{
     );
   }
 
-  // ====== 儲存到 Firestore（merge） ======
-  Future<void> _save() async {
-    // 整理 sleep map（僅塞有效值）
-    final Map<String, dynamic> newSleep = {};
-    newSleep['tookHypnotic'] = _tookHypnotic;
-    if (_hypNameCtrl.text.trim().isNotEmpty) {
-      newSleep['hypnoticName'] = _hypNameCtrl.text.trim();
-    } else {
-      newSleep['hypnoticName'] = '';
-    }
-    if (_hypDoseCtrl.text.trim().isNotEmpty) {
-      newSleep['hypnoticDose'] = _hypDoseCtrl.text.trim();
-    } else {
-      newSleep['hypnoticDose'] = '';
-    }
-    if (_sleepTime != null) newSleep['sleepTime'] = DateHelper.formatTime(_sleepTime);
-    if (_wakeTime  != null) newSleep['wakeTime']  = DateHelper.formatTime(_wakeTime);
-    if (_sleepQuality != null) newSleep['quality'] = _sleepQuality;
-
-    // flags / note / naps 若原本就有，在 sleep 裡一併保留或調整
-    final List<String> flags = ((sleep['flags'] as List?) ?? const []).map((e) => e.toString()).toList();
-    newSleep['flags'] = flags;
-    newSleep['note']  = (sleep['note'] ?? '').toString();
-
-    // naps：[{start:'HH:mm', end:'HH:mm', minutes:120}, ...]
-    final List<Map<String, dynamic>> naps = ((sleep['naps'] as List?) ?? const [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
-    newSleep['naps'] = naps;
-
-    final data = <String, dynamic>{
-      'emotions': emotions,
-      'symptoms': symptoms,
-      'sleep': newSleep,
-      'updatedAt': FieldValue.serverTimestamp(),
-    };
-
-    final ref = FirebaseFirestore.instance
-        .collection('users')
-        .doc(widget.uid)
-        .collection('records')
-        .doc(widget.docId);
-
-    await ref.set(data, SetOptions(merge: true));
-    if (mounted) {
-      Navigator.of(context).pop(true); // 回傳 true 告訴上一頁有更新
-    }
-  }
-  
   // ====== UI ======
  @override
 Widget build(BuildContext context) {
@@ -422,11 +369,11 @@ if (mins > 0) {
   final hours = mins ~/ 60;
   final remain = mins % 60;
   if (hours > 0 && remain > 0) {
-    durationText = '（${hours} 小時 ${remain} 分）';
+    durationText = '（$hours 小時 $remain 分）';
   } else if (hours > 0) {
-    durationText = '（${hours} 小時）';
+    durationText = '（$hours 小時）';
   } else {
-    durationText = '（${remain} 分）';
+    durationText = '（$remain 分）';
   }
 }
 

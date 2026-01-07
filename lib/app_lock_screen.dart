@@ -99,8 +99,8 @@ class _AppLockScreenState extends State<AppLockScreen> {
 
   // ---------- 上方：簡單插畫感 header ----------
   Widget _buildHeader() {
-  final bg = _primary.withOpacity(0.06);
-  final circleBg = _primary.withOpacity(0.14);
+  final bg = _primary.withValues(alpha: 0.06);
+  final circleBg = _primary.withValues(alpha: 0.14);
 
   return Container(
     width: double.infinity,
@@ -139,7 +139,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
                 child: Icon(
                   Icons.shield_rounded,
                   size: 18,
-                  color: Colors.white.withOpacity(0.9),
+                  color: Colors.white.withValues(alpha: 0.9),
                 ),
               ),
             ],
@@ -328,10 +328,10 @@ class _AppLockScreenState extends State<AppLockScreen> {
                       constraints: const BoxConstraints(maxWidth: 420),
                       padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.18),
+                        color: Colors.white.withValues(alpha: 0.18),
                         borderRadius: BorderRadius.circular(28),
                         border: Border.all(
-                          color: Colors.white.withOpacity(0.35),
+                          color: Colors.white.withValues(alpha: 0.35),
                         ),
                       ),
                       child: Column(
@@ -344,14 +344,14 @@ class _AppLockScreenState extends State<AppLockScreen> {
                             height: 90,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: Colors.white.withOpacity(0.28),
+                              color: Colors.white.withValues(alpha: 0.28),
                               border: Border.all(
-                                color: Colors.white.withOpacity(0.7),
+                                color: Colors.white.withValues(alpha: 0.7),
                                 width: 1.2,
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.12),
+                                  color: Colors.black.withValues(alpha: 0.12),
                                   blurRadius: 18,
                                   offset: const Offset(0, 8),
                                 ),
@@ -396,7 +396,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
                             '為了保護你的日記與情緒紀錄，\n請輸入解鎖密碼。',
                             textAlign: TextAlign.center,
                             style: theme.textTheme.bodyMedium?.copyWith(
-                              color: Colors.white.withOpacity(0.92),
+                              color: Colors.white.withValues(alpha: 0.92),
                               height: 1.4,
                             ),
                           ),
@@ -443,7 +443,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
                           Text(
                             '＊忘記密碼的話，只能刪除 App 重裝（雲端資料還在）',
                             style: theme.textTheme.bodySmall?.copyWith(
-                              color: Colors.white.withOpacity(0.88),
+                              color: Colors.white.withValues(alpha: 0.88),
                             ),
                             textAlign: TextAlign.center,
                           ),

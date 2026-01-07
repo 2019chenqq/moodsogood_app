@@ -13,49 +13,45 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'firebase_options.dart';
 
-
-import 'Home_shell.dart';
 import 'Sign_in_page.dart';
 import 'app_globals.dart';
 import 'utils/notification_helper.dart';
 import 'providers/theme_provider.dart';
-import 'diary/diary_home_page.dart';
 import 'daily/daily_record_screen.dart';
-import 'providers/menu_provider.dart';
 import 'app_lock_screen.dart';
 import 'service/iap_service.dart';
 import 'providers/pro_provider.dart';
 /* =========================== main =========================== */
 
 Future<void> main() async {
-  print('🚀 App startup starting...');
+  debugPrint('🚀 App startup starting...');
   WidgetsFlutterBinding.ensureInitialized();
 
   await AndroidAlarmManager.initialize(); // :contentReference[oaicite:3]{index=3}
 
-  print('🔥 Firebase initializing...');
+  debugPrint('🔥 Firebase initializing...');
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  print('✅ Firebase initialized');
+  debugPrint('✅ Firebase initialized');
 
   // 先載入主題設定
   final themeProvider = ThemeProvider();
   await themeProvider.loadTheme();
-  print('🎨 Theme loaded');
+  debugPrint('🎨 Theme loaded');
 
   // ⭐ 啟動時初始化通知（會印出 🕐 這行）
   await NotificationHelper().init();
-  print('🔔 Notifications initialized');
+  debugPrint('🔔 Notifications initialized');
 
   // Only init IAP on release builds (skip on emulator/debug)
   //  Ted add this for testing inapp purchase on emulator
   if (!kDebugMode) {
     await IAPService.instance.init();
-    print('🛍️ IAP Service initialized');
+    debugPrint('🛍️ IAP Service initialized');
   }
 
-  print('📱 Running app...');
+  debugPrint('📱 Running app...');
   runApp(
     MultiProvider(
       providers: [

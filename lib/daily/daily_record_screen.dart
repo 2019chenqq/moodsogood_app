@@ -1245,8 +1245,8 @@ class _SymptomPage extends StatelessWidget {
     final activeColor = Colors.pinkAccent;
     // 開啟時的背景 (ON)
     final activeBg = isDark 
-        ? Colors.pinkAccent.withOpacity(0.15) // 深色模式：深一點的粉紅透光
-        : Colors.pink.withOpacity(0.1);       // 淺色模式：淺粉紅
+      ? Colors.pinkAccent.withValues(alpha: 0.15) // 深色模式：深一點的粉紅透光
+      : Colors.pink.withValues(alpha: 0.1);       // 淺色模式：淺粉紅
 
     // 關閉時的顏色 (OFF) - 這就是修正的關鍵！
     final inactiveColor = isDark ? Colors.pink.shade200 : Colors.pink.shade200;
@@ -1272,7 +1272,7 @@ class _SymptomPage extends StatelessWidget {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
             side: BorderSide(
-              color: isPeriod ? activeColor : inactiveColor.withOpacity(0.3),
+              color: isPeriod ? activeColor : inactiveColor.withValues(alpha: 0.3),
               width: 1.5,
             ),
           ),
@@ -1320,7 +1320,7 @@ Card(
   color: const Color(0xFFFFF1CC),
   shape: RoundedRectangleBorder(
     borderRadius: BorderRadius.circular(16),
-    side: BorderSide(color: Colors.amber.withOpacity(0.35), width: 1),
+    side: BorderSide(color: Colors.amber.withValues(alpha: 0.35), width: 1),
   ),
   child: Padding(
     padding: const EdgeInsets.all(14),
@@ -1365,7 +1365,7 @@ const SizedBox(height: 14),
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Colors.black.withOpacity(0.06), width: 1),
+        side: BorderSide(color: Colors.black.withValues(alpha: 0.06), width: 1),
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -1373,7 +1373,7 @@ const SizedBox(height: 14),
           isEmpty ? (i == 0 ? '例如：手抖、疲倦、嗜睡…' : '症狀 ${i + 1}') : s.name,
           style: TextStyle(
             fontWeight: FontWeight.w700,
-            color: isEmpty ? Colors.black.withOpacity(0.45) : Colors.black.withOpacity(0.9),
+            color: isEmpty ? Colors.black.withValues(alpha: 0.45) : Colors.black.withValues(alpha: 0.9),
           ),
         ),
         subtitle: subtitleText == null
@@ -1383,7 +1383,7 @@ const SizedBox(height: 14),
                 child: Text(
                   subtitleText,
                   style: TextStyle(
-                    color: Colors.black.withOpacity(0.45),
+                    color: Colors.black.withValues(alpha: 0.45),
                     height: 1.3,
                   ),
                 ),
@@ -1723,28 +1723,6 @@ class _SectionTitle extends StatelessWidget {
     return Text(
       text,
       style: Theme.of(context).textTheme.titleMedium,
-    );
-  }
-}
-
-class _TimeTile extends StatelessWidget {
-  const _TimeTile({
-    Key? key,
-    required this.label,
-    required this.timeText,
-    required this.onTap,
-  }) : super(key: key);
-
-  final String label;
-  final String timeText;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      title: Text(label),
-      subtitle: Text(timeText),
-      onTap: onTap,
     );
   }
 }

@@ -19,7 +19,7 @@ class _SignInPageState extends State<SignInPage> {
   @override
   void initState() {
     super.initState();
-    print('📝 SignInPage loaded - User needs to sign in');
+    debugPrint('📝 SignInPage loaded - User needs to sign in');
   }
 
   Future<void> _handleGoogleSignIn() async {
@@ -95,9 +95,9 @@ class _SignInPageState extends State<SignInPage> {
                       width: 520,
                       padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.18),
+                        color: Colors.white.withValues(alpha: 0.18),
                         borderRadius: BorderRadius.circular(28),
-                        border: Border.all(color: Colors.white.withOpacity(0.35)),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.35)),
                       ),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -110,7 +110,7 @@ class _SignInPageState extends State<SignInPage> {
                               shape: BoxShape.circle,
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.08),
+                                  color: Colors.black.withValues(alpha: 0.08),
                                   blurRadius: 16,
                                   offset: const Offset(0, 8),
                                 ),
@@ -137,7 +137,7 @@ class _SignInPageState extends State<SignInPage> {
                             '記錄情緒・睡眠・症狀，讓每天更安心\n一起邁向更好的情緒照護',
                             textAlign: TextAlign.center,
                             style: theme.textTheme.bodyMedium?.copyWith(
-                              color: Colors.white.withOpacity(0.90),
+                              color: Colors.white.withValues(alpha: 0.90),
                             ),
                           ),
                           const SizedBox(height: 24),

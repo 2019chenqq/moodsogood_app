@@ -12,7 +12,7 @@ class AuthGate extends StatelessWidget {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
-        print('🔍 AuthGate - Connection: ${snapshot.connectionState}, HasData: ${snapshot.hasData}, Error: ${snapshot.error}');
+        debugPrint('🔍 AuthGate - Connection: ${snapshot.connectionState}, HasData: ${snapshot.hasData}, Error: ${snapshot.error}');
         
         // 還在判斷登入狀態
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -23,12 +23,12 @@ class AuthGate extends StatelessWidget {
 
         // 已登入 → 主畫面
         if (snapshot.hasData) {
-          print('✅ User logged in: ${snapshot.data?.email}');
+          debugPrint('✅ User logged in: ${snapshot.data?.email}');
           return const DailyRecordScreen();
         }
 
         // 未登入 → 登入頁
-        print('❌ User not logged in');
+        debugPrint('❌ User not logged in');
         return const SignInPage();
       },
     );

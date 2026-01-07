@@ -77,12 +77,7 @@ void initState() {
   _tab = m.TabController(length: 2, vsync: this);
 }
   String get uid => FirebaseAuth.instance.currentUser!.uid;
-void _openDiaryById(String docId) {
-  final p = docId.split('-');
-  final date = DateTime(int.parse(p[0]), int.parse(p[1]), int.parse(p[2]));
-  // 依你現有路由寫法：pushNamed 或直接 MaterialPageRoute 都可以
-  m.Navigator.pushNamed(context, '/diary/edit', arguments: date);
-}
+
   @override
   void dispose() {
     _tab.dispose();
@@ -177,26 +172,6 @@ class _DiaryList extends m.StatelessWidget {
       .doc(uid)
       .collection('diary');
 
-  Query<Map<String, dynamic>> _buildQuery() {
-    // 「最近」才 limit；「全部」不能 limit / 不能加時間 where
-    return showOnlyRecent
-        ? _col.orderBy(FieldPath.documentId, descending: true).limit(60)
-        : _col.orderBy(FieldPath.documentId, descending: true);
-  }
-
-Stream<QuerySnapshot<Map<String, dynamic>>> _recentDiary(String uid) =>
-  FirebaseFirestore.instance
-    .collection('users').doc(uid).collection('diary')
-    .orderBy(FieldPath.documentId, descending: true)
-    .limit(120)   // 想要看更多天自己調
-    .snapshots();
-
-Stream<QuerySnapshot<Map<String, dynamic>>> _allDiary(String uid) =>
-  FirebaseFirestore.instance
-    .collection('users').doc(uid).collection('diary')
-    .orderBy(FieldPath.documentId, descending: true)
-    .snapshots();
-
 @override
 m.Widget build(m.BuildContext context) {
   final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -267,33 +242,6 @@ _sortByDateDesc(deduped);
 }
   );
 }
-  // ====== List UI ======
-
-  m.Widget _buildList(m.BuildContext context, List<DateTime> dates) {
-    return m.ListView.separated(
-      padding: const m.EdgeInsets.only(bottom: 96),
-      itemCount: dates.length,
-      separatorBuilder: (_, __) => const m.Divider(height: 1),
-      itemBuilder: (context, i) {
-        final d = dates[i];
-        return m.ListTile(
-          leading: const m.Icon(m.Icons.bookmark_border),
-          title: m.Text(DateHelper.toDisplay(d)),
-          trailing: const m.Icon(m.Icons.chevron_right),
-          onTap: () {
-            m.Navigator.push(
-              context,
-              m.MaterialPageRoute(
-                builder: (_) =>
-                    // TODO: 這裡改成你的編輯頁 class
-                    DiaryPageDemo(date: d),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
   }
 
 // ================= 工具 =================

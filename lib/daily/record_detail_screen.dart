@@ -22,17 +22,6 @@ class RecordDetailScreen extends StatefulWidget {
 }
 
 class _RecordDetailScreenState extends State<RecordDetailScreen> {
-  int _reload = 0; // 控制重新載入
-
-  Future<Map<String, dynamic>?> _fetch() async {
-    final snap = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(widget.uid)
-        .collection('dailyRecords')
-        .doc(widget.docId)
-        .get();
-    return snap.data();
-  }
   
 // 將 flags（英文字串）轉為中文，並固定顯示順序
   String _prettyFlags(List<String> keys) {
