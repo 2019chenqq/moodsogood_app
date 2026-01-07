@@ -44,12 +44,6 @@ class _SettingsPageState extends State<SettingsPage> {
   },
   child: const Text('測試通知（立刻跳出）'),
 ),
-          ElevatedButton(
-  onPressed: () async {
-    await NotificationHelper().scheduleTestNotificationIn5Seconds(payload: '/home');
-  },
-  child: const Text('測試定時通知（5秒後跳出）'),
-),
           SwitchListTile(
             title: const Text('每日提醒'),
             subtitle: Text(_isReminderOn 
@@ -245,7 +239,7 @@ Future<void> _updateSettings(bool isOn, TimeOfDay time) async {
         SnackBar(
           content: Text(
             success 
-              ? '已設定每日提醒：${adjustedTime.format(context)} ✅\n（使用 WorkManager，適用於小米手機）' 
+              ? '已設定每日提醒：${adjustedTime.format(context)} ✅\n' 
               : '設定提醒失敗，請檢查權限'
           ),
           backgroundColor: success ? Colors.green : Colors.orange,

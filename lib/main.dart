@@ -17,7 +17,6 @@ import 'firebase_options.dart';
 import 'Home_shell.dart';
 import 'Sign_in_page.dart';
 import 'app_globals.dart';
-import 'navigation_service.dart';
 import 'utils/notification_helper.dart';
 import 'providers/theme_provider.dart';
 import 'diary/diary_home_page.dart';
@@ -28,44 +27,28 @@ import 'service/iap_service.dart';
 import 'providers/pro_provider.dart';
 /* =========================== main =========================== */
 
-// rootMessengerKey moved to lib/app_globals.dart
+final GlobalKey<ScaffoldMessengerState> rootMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
 Future<void> main() async {
-  print('🚀 App startup starting...');
   WidgetsFlutterBinding.ensureInitialized();
 
   await AndroidAlarmManager.initialize(); // :contentReference[oaicite:3]{index=3}
 
-  print('🔥 Firebase initializing...');
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  print('✅ Firebase initialized');
 
   // 先載入主題設定
   final themeProvider = ThemeProvider();
   await themeProvider.loadTheme();
-  print('🎨 Theme loaded');
 
   // ⭐ 啟動時初始化通知（會印出 🕐 這行）
   await NotificationHelper().init();
-  print('🔔 Notifications initialized');
-  // 如果是由通知點擊啟動，取得 payload 並導向（啟動後導向需在下一個 frame）
-  final initialPayload = await NotificationHelper().getInitialNotificationPayload();
-  if (initialPayload != null && initialPayload.isNotEmpty) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      rootNavigatorKey.currentState?.pushNamed(initialPayload);
-    });
-  }
 
-  // Only init IAP on release builds (skip on emulator/debug)
-  //  Ted add this for testing inapp purchase on emulator
-  if (!kDebugMode) {
-    await IAPService.instance.init();
-    print('🛍️ IAP Service initialized');
-  }
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  await IAPService.instance.init();
 
-  print('📱 Running app...');
   runApp(
   MultiProvider(
     providers: [
@@ -76,15 +59,8 @@ Future<void> main() async {
         create: (_) => ProProvider()..init(),
       ),
     ],
-    child: MaterialApp(
-      navigatorKey: rootNavigatorKey,
-      scaffoldMessengerKey: rootMessengerKey,
+    child: const MaterialApp(
       debugShowCheckedModeBanner: false,
-      routes: {
-        '/home': (ctx) => const HomePage(),
-        '/daily': (ctx) => DailyRecordScreen(),
-        '/diary': (ctx) => DiaryHomePage(),
-      },
       home: AuthGate(), // ⭐ 唯一入口（不用改）
     ),
   ),

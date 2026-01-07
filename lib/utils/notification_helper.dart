@@ -5,9 +5,13 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../navigation_service.dart';
 
+import '../app_globals.dart';
+import '../daily/daily_record_screen.dart';
+
 const _channelId = 'heartshine_general';
 const _channelName = '心晴提醒';
 const _channelDescription = '心晴的提醒與每日通知';
+const _dailyRecordPayload = 'open_daily_record';
 
 class NotificationHelper {
   static final NotificationHelper _instance = NotificationHelper._internal();
@@ -20,6 +24,8 @@ class NotificationHelper {
       FlutterLocalNotificationsPlugin();
 
   FlutterLocalNotificationsPlugin get notificationsPlugin => _notificationsPlugin;
+
+  String? _pendingPayload;
 
   bool _isInitialized = false;
   bool _exactAlarmAllowed = false;
@@ -58,6 +64,7 @@ class NotificationHelper {
 
     await _notificationsPlugin.initialize(
       settings,
+<<<<<<< HEAD
       onDidReceiveNotificationResponse: (NotificationResponse response) {
         final payload = response.payload;
         if (payload != null && payload.isNotEmpty) {
@@ -82,6 +89,17 @@ class NotificationHelper {
         }
       }
     });
+=======
+      onDidReceiveNotificationResponse: _handleNotificationResponse,
+      onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
+    );
+
+    final launchDetails =
+        await _notificationsPlugin.getNotificationAppLaunchDetails();
+    if (launchDetails?.didNotificationLaunchApp == true) {
+      _pendingPayload = launchDetails?.notificationResponse?.payload;
+    }
+>>>>>>> 2f952edecc12017aa70b664fa48b808a054ea039
     _isInitialized = true;
   }
 
@@ -138,7 +156,11 @@ class NotificationHelper {
         android: androidDetails,
         iOS: const DarwinNotificationDetails(),
       ),
+<<<<<<< HEAD
       payload: payload ?? '/home',
+=======
+      payload: _dailyRecordPayload,
+>>>>>>> 2f952edecc12017aa70b664fa48b808a054ea039
     );
   }
 
@@ -249,6 +271,7 @@ class NotificationHelper {
         androidScheduleMode: _exactAlarmAllowed
             ? AndroidScheduleMode.exactAllowWhileIdle
             : AndroidScheduleMode.inexactAllowWhileIdle,
+        payload: _dailyRecordPayload,
       );
       debugPrint('✅ 已成功建立每日排程：$scheduledDate');
 
@@ -264,6 +287,7 @@ class NotificationHelper {
     }
   }
 
+<<<<<<< HEAD
   /// 测试：5秒后跳出通知
   Future<void> scheduleTestNotificationIn5Seconds({String? payload}) async {
     await init();
@@ -315,6 +339,8 @@ class NotificationHelper {
     }
   }
 
+=======
+>>>>>>> 2f952edecc12017aa70b664fa48b808a054ea039
   Future<void> cancelNotification(int id) async {
     await _notificationsPlugin.cancel(id);
   }
@@ -325,6 +351,50 @@ class NotificationHelper {
             AndroidFlutterLocalNotificationsPlugin>();
     await androidImplementation?.requestExactAlarmsPermission();
   }
+
+  void handleBackgroundNotificationResponse(
+      NotificationResponse notificationResponse) {
+    _handleNotificationResponse(notificationResponse);
+  }
+
+  void _handleNotificationResponse(NotificationResponse? response) {
+    final payload = response?.payload;
+    if (payload == null) return;
+
+    final handled = _handlePayload(payload);
+    if (!handled) {
+      _pendingPayload = payload;
+    }
+  }
+
+  bool _handlePayload(String payload) {
+    if (payload == _dailyRecordPayload) {
+      return _navigateToDailyRecord();
+    }
+    return false;
+  }
+
+  bool _navigateToDailyRecord() {
+    final navigator = rootNavigatorKey.currentState;
+    if (navigator == null) return false;
+
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const DailyRecordScreen()),
+      (_) => false,
+    );
+    return true;
+  }
+
+  /// 在 app 完成 build 後呼叫，確保若是從通知啟動也能導向首頁
+  void processPendingNavigation() {
+    final payload = _pendingPayload;
+    if (payload == null) return;
+
+    if (_handlePayload(payload)) {
+      _pendingPayload = null;
+    }
+  }
+
   // ========== WorkManager 方法（用於小米等嚴格系統） ==========
   static const platform = MethodChannel('tw.heartsshine.app/workmanager');
 
@@ -358,4 +428,11 @@ class NotificationHelper {
       return false;
     }
   }
+}
+
+@pragma('vm:entry-point')
+void notificationTapBackground(
+    NotificationResponse notificationResponse) {
+  NotificationHelper()
+      .handleBackgroundNotificationResponse(notificationResponse);
 }
