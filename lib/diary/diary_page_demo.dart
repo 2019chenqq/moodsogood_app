@@ -14,8 +14,6 @@ class DiaryPageDemo extends m.StatefulWidget {
   m.State<DiaryPageDemo> createState() => _DiaryPageDemoState();
 }
 
-String get _uid => FirebaseAuth.instance.currentUser!.uid;
-
 class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
  
   // ---------------- UI 狀態（控制器） ----------------
@@ -38,7 +36,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   DateTime? _nextDate;
 
   // ---------------- Firestore 便捷存取 ----------------
-  String get _uid => FirebaseAuth.instance.currentUser!.uid;
+  // String get _uid => FirebaseAuth.instance.currentUser!.uid;
 
   // 正規化到當天 00:00:00
   DateTime get _day => DateTime(widget.date.year, widget.date.month, widget.date.day);
@@ -47,7 +45,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
 
   // 日記文件：users/{uid}/diary/{yyyy-MM-dd}
   DocumentReference<Map<String, dynamic>> get _docRef => FirebaseFirestore.instance
-      .collection('users').doc(_uid)
+      .collection('users').doc(FirebaseAuth.instance.currentUser!.uid)
       .collection('diary') // TODO: 若你的日記集合名不同（例如 diaries），改這裡
       .doc(_docId);
 
@@ -141,7 +139,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   Future<void> _loadNeighbors() async {
     try {
       final col = FirebaseFirestore.instance
-          .collection('users').doc(_uid)
+          .collection('users').doc(FirebaseAuth.instance.currentUser!.uid)
           .collection('diary'); // ⚠️ 確認這裡的集合名稱跟你的日記一樣 (diary 或 dailyRecords)
 
       // 確保用當日 00:00:00 的 Timestamp 進行比較

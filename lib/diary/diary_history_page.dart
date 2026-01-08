@@ -2,17 +2,16 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../diary/diary_repository.dart';
 import '../diary/diary_detail_page.dart';
 
 Future<void> _openHistoryDetail(
   BuildContext context, {
   required QueryDocumentSnapshot<Map<String, dynamic>> doc,
 }) async {
-  try {
-    final data = doc.data();
-    final docId = doc.id;
+  final navigator = Navigator.of(context);
+  final messenger = ScaffoldMessenger.of(context);
 
+  try {
     // ✅ 三選一：依你的詳情/編輯頁建構子挑一個用，其他刪掉
     // A. 只吃 docId
     //await Navigator.of(context).push(MaterialPageRoute(
@@ -20,16 +19,16 @@ Future<void> _openHistoryDetail(
     //));
 
     // B. 只吃整包 data
-    // await Navigator.of(context).push(MaterialPageRoute(
-    //   builder: (_) => DiaryDetailPage(data: data),
+    // await navigator.push(MaterialPageRoute(
+    //   builder: (_) => DiaryDetailPage(data: doc.data()),
     // ));
 
     // C. 你有 fromDoc() 這類工廠
-     await Navigator.of(context).push(MaterialPageRoute(
+     await navigator.push(MaterialPageRoute(
        builder: (_) => DiaryDetailPage.fromDoc(doc),
      ));
   } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
+    messenger.showSnackBar(
       SnackBar(content: Text('開啟失敗：$e')),
     );
   }
@@ -40,6 +39,9 @@ Future<void> _deleteHistoryEntry(
   required String docId,
   DateTime? date,
 }) async {
+  final navigator = Navigator.of(context);
+  final messenger = ScaffoldMessenger.of(context);
+
   final ok = await showDialog<bool>(
         context: context,
         builder: (_) => AlertDialog(
@@ -50,8 +52,8 @@ Future<void> _deleteHistoryEntry(
                 : '確定要刪除 ${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')} 的日記嗎？',
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
-            TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('刪除')),
+            TextButton(onPressed: () => navigator.pop(false), child: const Text('取消')),
+            TextButton(onPressed: () => navigator.pop(true), child: const Text('刪除')),
           ],
         ),
       ) ??
@@ -60,7 +62,7 @@ Future<void> _deleteHistoryEntry(
 
   final user = FirebaseAuth.instance.currentUser;
   if (user == null) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('請先登入')));
+    messenger.showSnackBar(const SnackBar(content: Text('請先登入')));
     return;
   }
 
@@ -71,7 +73,7 @@ Future<void> _deleteHistoryEntry(
       .doc(docId)
       .delete();
 
-  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已刪除')));
+  messenger.showSnackBar(const SnackBar(content: Text('已刪除')));
 }
 
 class DiaryHistoryPage extends StatelessWidget {
@@ -174,7 +176,7 @@ class DiaryReviewScreen extends StatelessWidget {
     final color = _moodColor(moodScore, cs);
 
     return Scaffold(
-      backgroundColor: cs.surfaceVariant.withOpacity(.15),
+      backgroundColor: cs.surfaceContainerHighest.withValues(alpha: .15),
       appBar: AppBar(
         title: const Text('日記回顧'),
         elevation: 0,
@@ -300,7 +302,7 @@ class _HeaderCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: cs.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: cs.outline.withOpacity(.45)),
+        border: Border.all(color: cs.outline.withValues(alpha: .45)),
       ),
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
       child: Row(
@@ -319,7 +321,7 @@ class _HeaderCard extends StatelessWidget {
               moodScore.toStringAsFixed(1),
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w800,
-                    color: Colors.black.withOpacity(.72),
+                    color: Colors.black.withValues(alpha: .72),
                   ),
             ),
           ),
@@ -366,7 +368,7 @@ class _Tag extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: cs.primaryContainer.withOpacity(.55),
+        color: cs.primaryContainer.withValues(alpha: .55),
         borderRadius: BorderRadius.circular(24),
       ),
       child: Text(
@@ -399,7 +401,7 @@ class _ChipCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: cs.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: cs.outline.withOpacity(.45)),
+        border: Border.all(color: cs.outline.withValues(alpha: .45)),
       ),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Row(
@@ -444,7 +446,7 @@ class _SectionCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: cs.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: cs.outline.withOpacity(.45)),
+        border: Border.all(color: cs.outline.withValues(alpha: .45)),
       ),
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       child: Column(
@@ -470,7 +472,7 @@ class _SectionCard extends StatelessWidget {
                   height: 1.6,
                   color: hasText
                       ? cs.onSurface
-                      : cs.onSurfaceVariant.withOpacity(.8),
+                      : cs.onSurfaceVariant.withValues(alpha: .8),
                 ),
           ),
         ],
@@ -490,7 +492,7 @@ class _Hint extends StatelessWidget {
       decoration: BoxDecoration(
         color: cs.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: cs.outline.withOpacity(.35)),
+        border: Border.all(color: cs.outline.withValues(alpha: .35)),
       ),
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       child: Row(

@@ -2,17 +2,13 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:provider/provider.dart';
-import '../app_globals.dart'; 
 import '../models/daily_record.dart'; // 確保引用正確
 import '../utils/date_helper.dart';   // 確保引用正確
 import 'record_detail_screen.dart';   // 確保引用正確
 import '../models/period_cycle.dart';
 import '../widgets/main_drawer.dart';
 import '../quotes.dart';
-import '../widgets/pro_gate.dart';
 import '../pro/pro_page.dart'; 
-import '../widgets/emotion_chart.dart';
 
 const Map<String, String> ksleepFlagMap = {
     'good': '優',
@@ -537,7 +533,7 @@ List<VerticalRangeAnnotation> buildPeriodRanges(List<DailyRecord> records) {
 
       list.add(
         VerticalRangeAnnotation(
-          x1: startIndex!.toDouble() - 0.4,
+          x1: startIndex.toDouble() - 0.4,
           x2: endIndex.toDouble() + 0.4,
           color: Colors.pink.withValues(alpha: 0.15),
         ),

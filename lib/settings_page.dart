@@ -83,23 +83,29 @@ class _SettingsPageState extends State<SettingsPage> {
                     padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
                     child: Text('外觀', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
                   ),
-                  RadioListTile<ThemeMode>(
-                    title: const Text('跟隨系統'),
-                    value: ThemeMode.system,
-                    groupValue: themeProvider.themeMode,
-                    onChanged: (val) => themeProvider.setTheme(val!),
-                  ),
-                  RadioListTile<ThemeMode>(
-                    title: const Text('淺色模式'),
-                    value: ThemeMode.light,
-                    groupValue: themeProvider.themeMode,
-                    onChanged: (val) => themeProvider.setTheme(val!),
-                  ),
-                  RadioListTile<ThemeMode>(
-                    title: const Text('深色模式 🌙'),
-                    value: ThemeMode.dark,
-                    groupValue: themeProvider.themeMode,
-                    onChanged: (val) => themeProvider.setTheme(val!),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: SegmentedButton<ThemeMode>(
+                      segments: const [
+                        ButtonSegment(
+                          value: ThemeMode.system,
+                          label: Text('跟隨系統'),
+                        ),
+                        ButtonSegment(
+                          value: ThemeMode.light,
+                          label: Text('淺色模式'),
+                        ),
+                        ButtonSegment(
+                          value: ThemeMode.dark,
+                          label: Text('深色模式 🌙'),
+                        ),
+                      ],
+                      selected: {themeProvider.themeMode},
+                      onSelectionChanged: (selection) {
+                        final mode = selection.first;
+                        themeProvider.setTheme(mode);
+                      },
+                    ),
                   ),
                 const Divider(),
 
@@ -185,6 +191,8 @@ Future<void> _updateSettings(bool isOn, TimeOfDay time) async {
   final helper = NotificationHelper();
   await helper.init();
 
+  if (!mounted) return;
+
   // 4. 要求權限
   final platform = helper.notificationsPlugin
       .resolvePlatformSpecificImplementation<
@@ -233,19 +241,22 @@ Future<void> _updateSettings(bool isOn, TimeOfDay time) async {
       payload: '/home',
     );
 
-    debugPrint('✅ 已建立每日提醒（WorkManager）：${adjustedTime.format(context)}');
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            success 
-              ? '已設定每日提醒：${adjustedTime.format(context)} ✅\n' 
-              : '設定提醒失敗，請檢查權限'
-          ),
-          backgroundColor: success ? Colors.green : Colors.orange,
+    if (!mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final adjustedTimeLabel = adjustedTime.format(context);
+
+    debugPrint('✅ 已建立每日提醒（WorkManager）：$adjustedTimeLabel');
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          success 
+            ? '已設定每日提醒：$adjustedTimeLabel ✅\n' 
+            : '設定提醒失敗，請檢查權限'
         ),
-      );
-    }
+        backgroundColor: success ? Colors.green : Colors.orange,
+      ),
+    );
   } else {
     // 關閉提醒
     await helper.cancelDailyNotificationWithWorkManager();
@@ -305,6 +316,7 @@ Future<void> _updateSettings(bool isOn, TimeOfDay time) async {
                 ),
                 FilledButton(
                   onPressed: () async {
+                    final navigator = Navigator.of(context);
                     final pin = pinController.text.trim();
                     final confirm = confirmController.text.trim();
 
@@ -324,9 +336,9 @@ Future<void> _updateSettings(bool isOn, TimeOfDay time) async {
                     final prefs = await SharedPreferences.getInstance();
                     await prefs.setString('appLockPin', pin);
 
-                    if (mounted) {
-                      Navigator.of(context).pop(true);
-                    }
+                    if (!mounted) return;
+
+                    navigator.pop(true);
                   },
                   child: const Text('確認'),
                 ),
@@ -343,6 +355,8 @@ Future<void> _updateSettings(bool isOn, TimeOfDay time) async {
   final prefs = await SharedPreferences.getInstance();
   // ⚠️ 一定要用 app_lock_screen.dart 裡用的同一個 key
   final savedPin = prefs.getString('appLockPin') ?? '';
+
+  if (!mounted) return;
 
   String? errorText;
 
@@ -406,6 +420,8 @@ Future<void> _updateSettings(bool isOn, TimeOfDay time) async {
               ),
               FilledButton(
                 onPressed: () async {
+                  final navigator = Navigator.of(context);
+                  final messenger = ScaffoldMessenger.of(context);
                   final oldPin = _oldPinController.text.trim();
                   final newPin = _newPinController.text.trim();
                   final confirmPin = _confirmPinController.text.trim();
@@ -435,9 +451,11 @@ Future<void> _updateSettings(bool isOn, TimeOfDay time) async {
                   _newPinController.clear();
                   _confirmPinController.clear();
 
-                  Navigator.of(context).pop();
+                  if (!mounted) return;
 
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  navigator.pop();
+
+                  messenger.showSnackBar(
                     const SnackBar(content: Text('解鎖密碼已更新')),
                   );
                 },

@@ -52,7 +52,7 @@ class DiaryDetailPage extends m.StatelessWidget {
     final color = _moodColor(moodScore, cs);
 
     return m.Scaffold(
-      backgroundColor: cs.surfaceVariant.withOpacity(.15),
+      backgroundColor: cs.surfaceContainerHighest.withValues(alpha: 0.15),
       appBar: m.AppBar(
         title: const m.Text('日記回顧'),
         elevation: 0,
@@ -186,7 +186,7 @@ class _HeaderCard extends m.StatelessWidget {
       decoration: m.BoxDecoration(
         color: cs.surface,
         borderRadius: m.BorderRadius.circular(20),
-        border: m.Border.all(color: cs.outline.withOpacity(.45)),
+        border: m.Border.all(color: cs.outline.withValues(alpha: 0.45)),
       ),
       padding: const m.EdgeInsets.fromLTRB(16, 14, 16, 16),
       child: m.Row(
@@ -205,7 +205,7 @@ class _HeaderCard extends m.StatelessWidget {
               moodScore.toStringAsFixed(1),
               style: m.Theme.of(context).textTheme.titleLarge?.copyWith(
                     fontWeight: m.FontWeight.w800,
-                    color: m.Colors.black.withOpacity(.72),
+                    color: m.Colors.black.withValues(alpha: 0.72),
                   ),
             ),
           ),
@@ -252,7 +252,7 @@ class _Tag extends m.StatelessWidget {
     return m.Container(
       padding: const m.EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: m.BoxDecoration(
-        color: cs.primaryContainer.withOpacity(.55),
+        color: cs.primaryContainer.withValues(alpha: 0.55),
         borderRadius: m.BorderRadius.circular(24),
       ),
       child: m.Text(
@@ -285,7 +285,7 @@ class _ChipCard extends m.StatelessWidget {
       decoration: m.BoxDecoration(
         color: cs.surface,
         borderRadius: m.BorderRadius.circular(16),
-        border: m.Border.all(color: cs.outline.withOpacity(.45)),
+        border: m.Border.all(color: cs.outline.withValues(alpha: 0.45)),
       ),
       padding: const m.EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: m.Row(
@@ -330,7 +330,7 @@ class _SectionCard extends m.StatelessWidget {
       decoration: m.BoxDecoration(
         color: cs.surface,
         borderRadius: m.BorderRadius.circular(20),
-        border: m.Border.all(color: cs.outline.withOpacity(.45)),
+        border: m.Border.all(color: cs.outline.withValues(alpha: 0.45)),
       ),
       padding: const m.EdgeInsets.fromLTRB(16, 14, 16, 14),
       child: m.Column(
@@ -356,7 +356,7 @@ class _SectionCard extends m.StatelessWidget {
                   height: 1.6,
                   color: hasText
                       ? cs.onSurface
-                      : cs.onSurfaceVariant.withOpacity(.8),
+                      : cs.onSurfaceVariant.withValues(alpha: 0.8),
                 ),
           ),
         ],
@@ -376,7 +376,7 @@ class _Hint extends m.StatelessWidget {
       decoration: m.BoxDecoration(
         color: cs.surface,
         borderRadius: m.BorderRadius.circular(14),
-        border: m.Border.all(color: cs.outline.withOpacity(.35)),
+        border: m.Border.all(color: cs.outline.withValues(alpha: 0.35)),
       ),
       padding: const m.EdgeInsets.fromLTRB(14, 12, 14, 12),
       child: m.Row(

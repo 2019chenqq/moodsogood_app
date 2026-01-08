@@ -9,8 +9,11 @@ import android.content.Context
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import tw.heartsshine.app.R
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "tw.heartsshine.app/workmanager"
@@ -148,7 +151,7 @@ class DailyReminderWorker(appContext: Context, workerParams: WorkerParameters) :
         val notification = NotificationCompat.Builder(applicationContext, "heartshine_general")
             .setContentTitle("今天也辛苦了 💛")
             .setContentText("花一點時間記錄一下今天的心情吧。")
-            .setSmallIcon(smallIcon)
+            .setSmallIcon(R.mipmap.ic_launcher)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(contentIntent)

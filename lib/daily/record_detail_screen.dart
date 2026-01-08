@@ -67,6 +67,9 @@ Future<void> _clearRecord(BuildContext context) async {
   final uid = widget.uid;
   final docId = widget.docId;
 
+  final navigator = Navigator.of(context);
+  final messenger = ScaffoldMessenger.of(context);
+
   final confirm = await showDialog<bool>(
     context: context,
     builder: (context) {
@@ -99,14 +102,14 @@ Future<void> _clearRecord(BuildContext context) async {
 
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    messenger.showSnackBar(
       const SnackBar(content: Text('已清除當日紀錄')),
     );
 
-    Navigator.pop(context); // 返回上一頁（歷程頁）
+    navigator.pop(); // 返回上一頁（歷程頁）
   } catch (e) {
     debugPrint('刪除當日紀錄錯誤: $e');
-    ScaffoldMessenger.of(context).showSnackBar(
+    messenger.showSnackBar(
       SnackBar(content: Text('刪除失敗：$e')),
     );
   }

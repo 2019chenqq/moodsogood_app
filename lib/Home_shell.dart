@@ -1,4 +1,4 @@
-import 'dart:math' as m;
+
 import 'dart:io';
 import 'package:flutter/material.dart' as m;
 import 'package:firebase_auth/firebase_auth.dart';
@@ -15,7 +15,7 @@ import '../daily/daily_record_history.dart';
 
 import 'Sign_in_page.dart';
 import 'settings_page.dart';
-import 'quotes.dart';
+
 
 class HomeShell extends m.StatefulWidget {
   const HomeShell({super.key});

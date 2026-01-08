@@ -27,6 +27,9 @@ class NapItem {
       end: DateHelper.parseTime(map['end']) ?? const TimeOfDay(hour: 0, minute: 0),
     );
   }
+
+  NapItem copyWith({TimeOfDay? start, TimeOfDay? end}) =>
+      NapItem(start: start ?? this.start, end: end ?? this.end);
 }
 
 /// ------------------------------------------------------

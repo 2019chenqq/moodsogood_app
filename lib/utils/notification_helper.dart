@@ -3,11 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import '../navigation_service.dart';
-
-import '../app_globals.dart';
-import '../daily/daily_record_screen.dart';
-
 import '../app_globals.dart';
 import '../daily/daily_record_screen.dart';
 
@@ -34,14 +29,6 @@ class NotificationHelper {
   bool _exactAlarmAllowed = false;
 
   /// 你可以固定用同一個 channel id
-  static const AndroidNotificationDetails _androidDetails =
-      AndroidNotificationDetails(
-    'daily_reminder_channel',
-    '每日提醒',
-    channelDescription: '提醒您紀錄日記與心情',
-    importance: Importance.max,
-    priority: Priority.high,
-  );
 
   Future<void> init() async {
     if (_isInitialized) return;
@@ -51,9 +38,8 @@ class NotificationHelper {
     tz.setLocalLocation(tz.getLocation('Asia/Taipei'));
     debugPrint('🕐 时区初始化完成：${tz.local.name}');
 
-    // 使用 android 資源名稱 app_icon（請把 assets/icons/app_icon 放到
-    // android/app/src/main/res/mipmap-*/ 或 drawable-* 內，名稱為 app_icon）
-    const androidSettings = AndroidInitializationSettings('app_icon');
+    // 使用現成的啟動 icon，避免缺少自訂資源導致 invalid_icon 錯誤
+    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: false,
       requestBadgePermission: false,
@@ -67,48 +53,25 @@ class NotificationHelper {
 
     await _notificationsPlugin.initialize(
       settings,
-<<<<<<< HEAD
-<<<<<<< HEAD
-      onDidReceiveNotificationResponse: (NotificationResponse response) {
-        final payload = response.payload;
-        if (payload != null && payload.isNotEmpty) {
-          try {
-            rootNavigatorKey.currentState?.pushNamed(payload);
-          } catch (e) {
-            debugPrint('🔔 通知點擊導向失敗: $e');
-          }
-        }
-      },
+      onDidReceiveNotificationResponse: _handleNotificationResponse,
+      onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
     );
     // 監聽 native 的 WorkManager 點擊事件（onNewIntent 會 invokeMethod("notificationTapped"))
     platform.setMethodCallHandler((call) async {
       if (call.method == 'notificationTapped') {
         final payload = call.arguments as String?;
         if (payload != null && payload.isNotEmpty) {
-          try {
-            rootNavigatorKey.currentState?.pushNamed(payload);
-          } catch (e) {
-            debugPrint('🔔 native tapped handler failed: $e');
-          }
+          _pendingPayload = payload;
+          _handlePayload(payload);
         }
       }
     });
-=======
-=======
->>>>>>> 2f952edecc12017aa70b664fa48b808a054ea039
-      onDidReceiveNotificationResponse: _handleNotificationResponse,
-      onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
-    );
 
     final launchDetails =
         await _notificationsPlugin.getNotificationAppLaunchDetails();
     if (launchDetails?.didNotificationLaunchApp == true) {
       _pendingPayload = launchDetails?.notificationResponse?.payload;
     }
-<<<<<<< HEAD
->>>>>>> 2f952edecc12017aa70b664fa48b808a054ea039
-=======
->>>>>>> 2f952edecc12017aa70b664fa48b808a054ea039
     _isInitialized = true;
   }
 
@@ -150,8 +113,8 @@ class NotificationHelper {
       _channelName,
       channelDescription: _channelDescription,
       importance: Importance.max,
-      priority: Priority.high,
-      icon: 'app_icon',
+      priority: Priority.high,      
+      icon: '@mipmap/ic_launcher',
       enableVibration: true,
       enableLights: true,
       playSound: true,
@@ -165,21 +128,15 @@ class NotificationHelper {
         android: androidDetails,
         iOS: const DarwinNotificationDetails(),
       ),
-<<<<<<< HEAD
-<<<<<<< HEAD
-      payload: payload ?? '/home',
-=======
+      // payload: payload ?? '/home',
       payload: _dailyRecordPayload,
->>>>>>> 2f952edecc12017aa70b664fa48b808a054ea039
-=======
-      payload: _dailyRecordPayload,
->>>>>>> 2f952edecc12017aa70b664fa48b808a054ea039
+
     );
   }
 
   /// =========================
   /// 確保通知權限
-  /// =========================
+
   Future<bool> _ensurePermissions() async {
     final android = _notificationsPlugin
         .resolvePlatformSpecificImplementation<
@@ -271,7 +228,7 @@ class NotificationHelper {
             playSound: true,
             setAsGroupSummary: false,
             fullScreenIntent: true,
-            icon: 'app_icon',
+            icon: '@mipmap/ic_launcher',
           ),
           iOS: const DarwinNotificationDetails(
             presentAlert: true,
@@ -280,7 +237,6 @@ class NotificationHelper {
             interruptionLevel: InterruptionLevel.timeSensitive,
           ),
         ),
-        payload: payload ?? '/home',
         androidScheduleMode: _exactAlarmAllowed
             ? AndroidScheduleMode.exactAllowWhileIdle
             : AndroidScheduleMode.inexactAllowWhileIdle,
@@ -300,8 +256,7 @@ class NotificationHelper {
     }
   }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
+
   /// 测试：5秒后跳出通知
   Future<void> scheduleTestNotificationIn5Seconds({String? payload}) async {
     await init();
@@ -353,10 +308,7 @@ class NotificationHelper {
     }
   }
 
-=======
->>>>>>> 2f952edecc12017aa70b664fa48b808a054ea039
-=======
->>>>>>> 2f952edecc12017aa70b664fa48b808a054ea039
+
   Future<void> cancelNotification(int id) async {
     await _notificationsPlugin.cancel(id);
   }

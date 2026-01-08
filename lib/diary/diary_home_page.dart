@@ -63,16 +63,11 @@ class _DiaryHomePageState extends m.State<DiaryHomePage>
     with m.SingleTickerProviderStateMixin {
   late final m.TabController _tab;
 late final String _uid;
-late final CollectionReference<Map<String, dynamic>> _diariesRef;
 
 @override
 void initState() {
   super.initState();
   _uid = FirebaseAuth.instance.currentUser!.uid;   // 取得登入者 uid（要已登入）
-  _diariesRef = FirebaseFirestore.instance
-      .collection('users')
-      .doc(_uid)
-      .collection('diary');                      // 確認跟你儲存的集合名稱一致
   // debugPrint('diary path = users/$_uid/diaries'); // 需要時可開啟看看
   _tab = m.TabController(length: 2, vsync: this);
 }
@@ -165,13 +160,6 @@ class _DiaryList extends m.StatelessWidget {
   final bool showOnlyRecent;
   const _DiaryList({required this.uid, required this.showOnlyRecent});
 
-// 你的排序：新到舊
-  CollectionReference<Map<String, dynamic>> get _col => FirebaseFirestore
-      .instance
-      .collection('users')
-      .doc(uid)
-      .collection('diary');
-
 @override
 m.Widget build(m.BuildContext context) {
   final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -248,39 +236,6 @@ _sortByDateDesc(deduped);
 
 /// 解析日期：優先從 doc.id（支援 yyyy-MM-dd 與 yyyy-MM-ddT...）
 /// 若失敗再看 `date` 欄位（Timestamp / ISO 字串），最後 fallback 今天。
-DateTime _dateFromDoc(QueryDocumentSnapshot<Map<String, dynamic>> d) {
-  final id = d.id;
-  final m0 = RegExp(r'^(\d{4})-(\d{2})-(\d{2})').firstMatch(id);
-  if (m0 != null) {
-    return DateTime(
-      int.parse(m0.group(1)!),
-      int.parse(m0.group(2)!),
-      int.parse(m0.group(3)!),
-    );
-  }
-  final v = d.data()['date'];
-  if (v is Timestamp) return v.toDate();
-  if (v is String) {
-    final parsed = DateTime.tryParse(v);
-    if (parsed != null) {
-      return DateTime(parsed.year, parsed.month, parsed.day);
-    }
-  }
-  final now = DateTime.now();
-  return DateTime(now.year, now.month, now.day);
-}
-
-
-List<DateTime> _mockDates() {
-  final now = DateTime.now();
-  return List.generate(
-    30,
-    (i) {
-      final d = now.subtract(Duration(days: i));
-      return DateTime(d.year, d.month, d.day);
-    },
-  );
-}
 
 /// 列表元件：共用「最近／全部」兩個分頁
 class DiaryListView extends m.StatelessWidget {
@@ -322,27 +277,6 @@ itemBuilder: (_, i) {
 );
       }
   }
-
-String _dayKeyFromDocId(String id) {
-  final onlyDate = id.split('T').first;                // 2025-11-02T... → 2025-11-02
-  return onlyDate.length >= 10 ? onlyDate.substring(0, 10) : onlyDate;
-}
-/// 點進去「那一天」：若你已有既存的開啟方法，改成呼叫它即可
-void _openDiaryByDoc(m.BuildContext context, QueryDocumentSnapshot doc) {
-  // 你目前日記的路由看起來是「用日期開編輯頁」，
-  // 若已有現成的 openDiary(DateTime) 之類，這裡轉換後呼叫。
-  final day = _dayKeyFromDocId(doc.id); // yyyy-MM-dd
-  final parts = day.split('-');
-  final date = DateTime(
-    int.parse(parts[0]),
-    int.parse(parts[1]),
-    int.parse(parts[2]),
-  );
-
-  // TODO：把下面這段換成你專案既有的導航方式
-  // 例如：Navigator.push(context, MaterialPageRoute(builder: (_) => DiaryPageDemo(date: date)));
-  m.Navigator.pushNamed(context, '/diary/edit', arguments: date);
-}
 DateTime _ymd(DateTime d) => DateTime(d.year, d.month, d.day);
 String _key(DateTime d) =>
   '${d.year.toString().padLeft(4,'0')}-${d.month.toString().padLeft(2,'0')}-${d.day.toString().padLeft(2,'0')}';
