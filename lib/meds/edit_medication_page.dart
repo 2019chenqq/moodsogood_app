@@ -2,14 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-class AddMedicationPage extends StatefulWidget {
-  const AddMedicationPage({super.key});
+class EditMedicationPage extends StatefulWidget {
+  final String docId;
+  final Map<String, dynamic> initialData;
+
+  const EditMedicationPage({
+    super.key,
+    required this.docId,
+    required this.initialData,
+  });
 
   @override
-  State<AddMedicationPage> createState() => _AddMedicationPageState();
+  State<EditMedicationPage> createState() => _EditMedicationPageState();
 }
 
-class _AddMedicationPageState extends State<AddMedicationPage> {
+class _EditMedicationPageState extends State<EditMedicationPage> {
   final _formKey = GlobalKey<FormState>();
 
   final _nameCtrl = TextEditingController();
@@ -17,67 +24,16 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
   final _purposeOtherCtrl = TextEditingController();
   final _bodySymptomCtrl = TextEditingController();
 
-  double _dose = 25; // 先用 slider，後續你想改成輸入框也可
+  double _dose = 0;
   String _unit = 'mg';
-Future<void> _editDoseManually() async {
-  final ctrl = TextEditingController(
-    text: (_dose % 1 == 0) ? _dose.toInt().toString() : _dose.toString(),
-  );
-
-  double? picked;
-
-  await showDialog<void>(
-    context: context,
-    builder: (dialogContext) {
-      void submit() {
-        final raw = ctrl.text.trim().replaceAll(',', '.');
-        final value = double.tryParse(raw);
-        if (value == null || value < 0) return;
-
-        picked = value.clamp(0, 300);
-        FocusScope.of(dialogContext).unfocus();
-        Navigator.of(dialogContext).pop(); // ✅ 用 dialogContext 關掉 dialog
-      }
-
-      return AlertDialog(
-        title: const Text('輸入劑量'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          textInputAction: TextInputAction.done,
-          onSubmitted: (_) => submit(), // ✅ 鍵盤右下角 ✓ / Done
-          decoration: InputDecoration(
-            suffixText: _unit,
-            hintText: '例如 0.5、1.25、25',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: submit,
-            child: const Text('確定'),
-          ),
-        ],
-      );
-    },
-  );
-
-  if (picked != null) {
-    setState(() => _dose = picked!);
-  }
-}
 
   final Map<String, bool> _timeSlots = {
     '早上': false,
     '中午': false,
     '下午': false,
     '晚上': false,
-    '睡前': true,
-    '需要時': false, // PRN
+    '睡前': false,
+    '需要時': false,
   };
 
   final Map<String, bool> _purposes = {
@@ -92,7 +48,48 @@ Future<void> _editDoseManually() async {
 
   DateTime _startDate = DateTime.now();
   bool _isActive = true;
+
   bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _hydrateFromInitial(widget.initialData);
+  }
+
+  void _hydrateFromInitial(Map<String, dynamic> d) {
+    _nameCtrl.text = (d['name'] as String?) ?? '';
+    _noteCtrl.text = (d['note'] as String?) ?? '';
+
+    final doseVal = d['dose'];
+    if (doseVal is int) _dose = doseVal.toDouble();
+    else if (doseVal is double) _dose = doseVal;
+    else _dose = 0;
+
+    _unit = (d['unit'] as String?) ?? 'mg';
+
+    final times = (d['times'] as List?)?.whereType<String>().toSet() ?? <String>{};
+    for (final k in _timeSlots.keys) {
+      _timeSlots[k] = times.contains(k);
+    }
+
+    final purposes = (d['purposes'] as List?)?.whereType<String>().toSet() ?? <String>{};
+    for (final k in _purposes.keys) {
+      _purposes[k] = purposes.contains(k);
+    }
+
+    // 自訂用途、身體症狀
+    _purposeOtherCtrl.text = (d['purposeOther'] as String?) ?? '';
+    final bodySymptoms = (d['bodySymptoms'] as List?)?.whereType<String>().toList() ?? <String>[];
+    _bodySymptomCtrl.text = bodySymptoms.join('、');
+
+    // startDate
+    final sd = d['startDate'];
+    if (sd is Timestamp) _startDate = sd.toDate();
+    _startDate = DateTime(_startDate.year, _startDate.month, _startDate.day);
+
+    _isActive = (d['isActive'] as bool?) ?? true;
+  }
 
   @override
   void dispose() {
@@ -106,12 +103,13 @@ Future<void> _editDoseManually() async {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-final bodySelected = _purposes['身體症狀'] == true;
-final otherSelected = _purposes['其他'] == true;
+
+    // 這兩個要在 build scope 先算好，才能 if (...)
+    final bodySelected = _purposes['身體症狀'] == true;
+    final otherSelected = _purposes['其他'] == true;
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('新增藥物'),
-      ),
+      appBar: AppBar(title: const Text('編輯藥物')),
       body: SafeArea(
         child: Form(
           key: _formKey,
@@ -119,24 +117,21 @@ final otherSelected = _purposes['其他'] == true;
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
             children: [
               _SoftHeaderCard(
-                title: '建立藥物清單',
-                subtitle: '平常不需要每天填藥。只有回診或調藥時，再做一次「紀錄調整」。',
+                title: '更新藥物資訊',
+                subtitle: '你可以調整劑量、用途與服用時間。回診/調藥的「變更紀錄」之後再做在「紀錄調整」。',
               ),
-
               const SizedBox(height: 14),
 
-              // 1) 藥名
               _SectionCard(
                 title: '藥物名稱',
                 icon: Icons.medication_outlined,
                 child: TextFormField(
                   controller: _nameCtrl,
                   textInputAction: TextInputAction.next,
-                  decoration: _inputDeco('例如：Sertraline、思樂康…'),
+                  decoration: _inputDeco('例如：Sertraline、Quetiapine…'),
                   validator: (v) {
                     final t = (v ?? '').trim();
                     if (t.isEmpty) return '請輸入藥物名稱';
-                    if (t.length < 2) return '名稱太短了';
                     return null;
                   },
                 ),
@@ -144,7 +139,6 @@ final otherSelected = _purposes['其他'] == true;
 
               const SizedBox(height: 12),
 
-              // 2) 劑量
               _SectionCard(
                 title: '劑量',
                 icon: Icons.tune,
@@ -153,33 +147,28 @@ final otherSelected = _purposes['其他'] == true;
                   children: [
                     Row(
                       children: [
-                        Expanded(
-                          child: InkWell(
-  borderRadius: BorderRadius.circular(12),
-  onTap: _editDoseManually,
-  child: Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          _doseLabel(_dose),
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-        ),
-        const SizedBox(width: 6),
-        Icon(
-          Icons.edit,
-          size: 16,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
-      ],
-    ),
-  ),
-),
+                        // 可點擊手動輸入
+                        InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: _editDoseManually,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _doseLabel(_dose),
+                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                ),
+                                const SizedBox(width: 6),
+                                Icon(Icons.edit, size: 16, color: cs.onSurfaceVariant),
+                              ],
+                            ),
+                          ),
                         ),
-                        const SizedBox(width: 10),
+                        const Spacer(),
                         _UnitPicker(
                           value: _unit,
                           onChanged: (v) => setState(() => _unit = v),
@@ -187,14 +176,17 @@ final otherSelected = _purposes['其他'] == true;
                       ],
                     ),
                     const SizedBox(height: 6),
+
+                    // 0.5 mg 刻度（你可改成 0.25 -> divisions: 1200）
                     Slider(
-                      value: _dose,
+                      value: _dose.clamp(0, 300),
                       min: 0,
-                      max: 1000,
-                      divisions: 2000, // 300 / 0.5 = 600,
+                      max: 300,
+                      divisions: 600,
                       label: _doseLabel(_dose),
                       onChanged: (v) => setState(() => _dose = v),
                     ),
+
                     Row(
                       children: [
                         _SmallGhostButton(
@@ -209,9 +201,7 @@ final otherSelected = _purposes['其他'] == true;
                         const Spacer(),
                         Text(
                           '可先填常用劑量，之後調整再記錄',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: cs.onSurfaceVariant,
-                              ),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
                         ),
                       ],
                     ),
@@ -221,7 +211,6 @@ final otherSelected = _purposes['其他'] == true;
 
               const SizedBox(height: 12),
 
-              // 3) 服用時間（像第二張那種分區感）
               _SectionCard(
                 title: '服用時間',
                 icon: Icons.schedule,
@@ -241,79 +230,54 @@ final otherSelected = _purposes['其他'] == true;
 
               const SizedBox(height: 12),
 
-              // 4) 用途
-             _SectionCard(
-  title: '用途（可選）',
-  icon: Icons.local_offer_outlined,
-  child: Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: _purposes.keys.map((k) {
-          final selected = _purposes[k] ?? false;
-                  return FilterChip(
-            selected: selected,
-            label: Text(k),
-            onSelected: (s) {
-              setState(() {
-                _purposes[k] = s;
+              _SectionCard(
+                title: '用途（可選）',
+                icon: Icons.local_offer_outlined,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _purposes.keys.map((k) {
+                        final selected = _purposes[k] ?? false;
+                        return FilterChip(
+                          selected: selected,
+                          label: Text(k),
+                          onSelected: (s) {
+                            setState(() {
+                              _purposes[k] = s;
+                              if (k == '其他' && !s) _purposeOtherCtrl.clear();
+                              if (k == '身體症狀' && !s) _bodySymptomCtrl.clear();
+                            });
+                          },
+                        );
+                      }).toList(),
+                    ),
 
-                // 取消「其他」或「身體症狀」時，清掉輸入避免殘留
-                if (k == '其他' && !s) _purposeOtherCtrl.clear();
-                if (k == '身體症狀' && !s) _bodySymptomCtrl.clear();
-              });
-            },
-          );
-        }).toList(),
-      ),
+                    if (bodySelected) ...[
+                      const SizedBox(height: 12),
+                      Text('身體症狀（可填多項）', style: Theme.of(context).textTheme.bodySmall),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: _bodySymptomCtrl,
+                        decoration: _inputDeco('例如：頭痛、噁心、心悸、手抖（可用逗號/頓號分隔）'),
+                      ),
+                    ],
 
-      if (bodySelected) ...[
-        const SizedBox(height: 12),
-        Text(
-          '身體症狀（可填多項）',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        const SizedBox(height: 6),
-        TextField(
-          controller: _bodySymptomCtrl,
-          decoration: InputDecoration(
-            hintText: '例如：頭痛、噁心、心悸、手抖（用逗號分隔）',
-            filled: true,
-            fillColor: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.55),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide.none,
-            ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          ),
-        ),
-      ],
-
-      if (otherSelected) ...[
-        const SizedBox(height: 12),
-        TextField(
-          controller: _purposeOtherCtrl,
-          decoration: InputDecoration(
-            hintText: '其他用途（例如：戒斷反應、PTSD 相關…）',
-            filled: true,
-            fillColor: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.55),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide.none,
-            ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          ),
-        ),
-      ],
-    ],
-  ),
-),
+                    if (otherSelected) ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _purposeOtherCtrl,
+                        decoration: _inputDeco('其他用途（例如：戒斷反應、PTSD 相關…）'),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
 
               const SizedBox(height: 12),
 
-              // 5) 開始日期 / 狀態
               _SectionCard(
                 title: '開始日期與狀態',
                 icon: Icons.event_available,
@@ -340,7 +304,6 @@ final otherSelected = _purposes['其他'] == true;
 
               const SizedBox(height: 12),
 
-              // 6) 備註
               _SectionCard(
                 title: '備註（可選）',
                 icon: Icons.notes_outlined,
@@ -354,7 +317,6 @@ final otherSelected = _purposes['其他'] == true;
 
               const SizedBox(height: 18),
 
-              // 儲存按鈕
               FilledButton(
                 onPressed: _saving ? null : _save,
                 style: FilledButton.styleFrom(
@@ -362,19 +324,8 @@ final otherSelected = _purposes['其他'] == true;
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 ),
                 child: _saving
-                    ? const SizedBox(
-                        height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2),
-                      )
+                    ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
                     : const Text('儲存'),
-              ),
-
-              const SizedBox(height: 8),
-
-              Text(
-                '提示：之後每次回診/調藥，請到藥物頁按「紀錄調整」，你就能和症狀趨勢做比對。',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: cs.onSurfaceVariant,
-                    ),
               ),
             ],
           ),
@@ -382,15 +333,6 @@ final otherSelected = _purposes['其他'] == true;
       ),
     );
   }
-
-  String _doseLabel(double v) {
-  // 如果是整數，就不要顯示 .0
-  if (v % 1 == 0) {
-    return '${v.toInt()} $_unit';
-  }
-  // 小數最多顯示 2 位（夠用）
-  return '${v.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '')} $_unit';
-}
 
   InputDecoration _inputDeco(String hint) {
     return InputDecoration(
@@ -403,6 +345,50 @@ final otherSelected = _purposes['其他'] == true;
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
     );
+  }
+
+  String _doseLabel(double v) {
+    if (v % 1 == 0) return '${v.toInt()} $_unit';
+    return '${v.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '')} $_unit';
+  }
+
+  Future<void> _editDoseManually() async {
+    final ctrl = TextEditingController(
+      text: (_dose % 1 == 0) ? _dose.toInt().toString() : _dose.toString(),
+    );
+
+    final result = await showDialog<double>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('輸入劑量'),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(
+              suffixText: _unit,
+              hintText: '例如 0.5、1.25、25、75',
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+            FilledButton(
+              onPressed: () {
+                final value = double.tryParse(ctrl.text.trim().replaceAll(',', '.'));
+                if (value == null || value < 0) return;
+                Navigator.pop(context, value);
+              },
+              child: const Text('確定'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result != null) {
+      setState(() => _dose = result.clamp(0, 300));
+    }
   }
 
   Future<void> _pickStartDate() async {
@@ -425,49 +411,54 @@ final otherSelected = _purposes['其他'] == true;
       return;
     }
 
+    // 防呆：勾了身體症狀但沒填，可提醒（可改成不擋）
+    if ((_purposes['身體症狀'] == true) && _bodySymptomCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('你選了「身體症狀」，可以補充一下內容（或取消勾選）')),
+      );
+      return;
+    }
+
     final name = _nameCtrl.text.trim();
     final times = _timeSlots.entries.where((e) => e.value).map((e) => e.key).toList();
     final purposes = _purposes.entries.where((e) => e.value).map((e) => e.key).toList();
+
     final purposeOther = _purposeOtherCtrl.text.trim();
-    final bodySymptomText = _bodySymptomCtrl.text.trim();
-    final doseValue = _dose;
-    
-final bodySymptoms = bodySymptomText.isEmpty
-    ? <String>[]
-    : bodySymptomText
-        .split(RegExp(r'[，,]'))
-        .map((s) => s.trim())
-        .where((s) => s.isNotEmpty)
-        .toList();
+    final bodyText = _bodySymptomCtrl.text.trim();
+    final bodySymptoms = bodyText.isEmpty
+        ? <String>[]
+        : bodyText
+            .split(RegExp(r'[，,、]'))
+            .map((s) => s.trim())
+            .where((s) => s.isNotEmpty)
+            .toList();
 
     setState(() => _saving = true);
 
     try {
-      final col = FirebaseFirestore.instance
+      final docRef = FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
-          .collection('medications');
+          .collection('medications')
+          .doc(widget.docId);
 
-      await col.add({
+      await docRef.set({
         'name': name,
-        'dose': doseValue,
+        'dose': _dose, // double，支援 0.5 / 1.25
         'unit': _unit,
         'times': times,
         'purposes': purposes,
+        'purposeOther': purposeOther.isEmpty ? null : purposeOther,
+        'bodySymptoms': bodySymptoms,
         'note': _noteCtrl.text.trim(),
         'startDate': Timestamp.fromDate(DateTime(_startDate.year, _startDate.month, _startDate.day)),
         'isActive': _isActive,
-        'bodySymptoms': bodySymptoms, // List<String>
-        'purposeOther': purposeOther.isEmpty ? null : purposeOther,
-        'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
-        // 後續做調藥 wizard 時才會更新：
-        'lastChangeAt': null,
-      });
+      }, SetOptions(merge: true));
 
       if (!mounted) return;
       Navigator.pop(context, true);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已新增藥物')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已更新藥物')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('儲存失敗：$e')));
@@ -484,14 +475,13 @@ final bodySymptoms = bodySymptomText.isEmpty
   }
 }
 
+/* ====== 以下是 UI 小元件（沿用你新增頁同款）====== */
+
 class _SoftHeaderCard extends StatelessWidget {
   final String title;
   final String subtitle;
 
-  const _SoftHeaderCard({
-    required this.title,
-    required this.subtitle,
-  });
+  const _SoftHeaderCard({required this.title, required this.subtitle});
 
   @override
   Widget build(BuildContext context) {
@@ -518,7 +508,7 @@ class _SoftHeaderCard extends StatelessWidget {
               color: cs.surface.withOpacity(0.65),
               borderRadius: BorderRadius.circular(16),
             ),
-            child: const Icon(Icons.medication_outlined),
+            child: const Icon(Icons.edit_outlined),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -527,12 +517,7 @@ class _SoftHeaderCard extends StatelessWidget {
               children: [
                 Text(title, style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: cs.onSurfaceVariant,
-                      ),
-                ),
+                Text(subtitle, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
               ],
             ),
           ),
@@ -547,16 +532,11 @@ class _SectionCard extends StatelessWidget {
   final IconData icon;
   final Widget child;
 
-  const _SectionCard({
-    required this.title,
-    required this.icon,
-    required this.child,
-  });
+  const _SectionCard({required this.title, required this.icon, required this.child});
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    
     return Card(
       elevation: 0,
       child: Padding(
@@ -591,9 +571,9 @@ class _UnitPicker extends StatelessWidget {
       value: value,
       items: const [
         DropdownMenuItem(value: 'mg', child: Text('mg')),
-        DropdownMenuItem(value: 'g', child: Text('g')),
         DropdownMenuItem(value: 'mL', child: Text('mL')),
         DropdownMenuItem(value: '顆', child: Text('顆')),
+        DropdownMenuItem(value: '錠', child: Text('錠')),
         DropdownMenuItem(value: '包', child: Text('包')),
       ],
       onChanged: (v) {
@@ -611,7 +591,6 @@ class _SmallGhostButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-
     return InkWell(
       borderRadius: BorderRadius.circular(12),
       onTap: onTap,

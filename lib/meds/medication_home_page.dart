@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'add_medication_page.dart';
+import 'edit_medication_page.dart';
+import '../widgets/main_drawer.dart';
+import 'record_adjustment_page.dart';
+
 
 class MedicationHomePage extends StatelessWidget {
   const MedicationHomePage({super.key});
@@ -23,17 +27,18 @@ class MedicationHomePage extends StatelessWidget {
         .orderBy('updatedAt', descending: true);
 
     return Scaffold(
+      drawer: const MainDrawer(),
       appBar: AppBar(
         title: const Text('藥物'),
         actions: [
           IconButton(
             tooltip: '紀錄調整（回診/調藥）',
             onPressed: () {
-              // TODO: 下一步做 Change Wizard 後，把這裡導過去
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('尚未建立「紀錄調整」頁面')),
-              );
-            },
+  Navigator.push(
+    context,
+    MaterialPageRoute(builder: (_) => const RecordAdjustmentPage()),
+  );
+},
             icon: const Icon(Icons.edit_note),
           ),
           IconButton(
@@ -477,21 +482,16 @@ Future<void> _showMedicationActions(
     },
   );
 
-  if (res == 'toggle') {
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('medications')
-        .doc(docId)
-        .set({
-      'isActive': !isActive,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(!isActive ? '已標記為「服用中」' : '已標記為「已停用」')),
-      );
-    }
-  }
+  if (res == 'edit') {
+  await Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => EditMedicationPage(
+        docId: docId,
+        initialData: data,
+      ),
+    ),
+  );
+  return;
+}
 }
