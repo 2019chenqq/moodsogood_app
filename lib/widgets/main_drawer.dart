@@ -11,6 +11,7 @@ import '../diary/diary_home_page.dart';
 import '../settings_page.dart';
 import '../pages/feesback_page.dart';
 import '../pro/pro_page.dart';
+import '../meds/medication_home_page.dart';
 
 class MainDrawer extends StatefulWidget {
   const MainDrawer({super.key});
@@ -188,6 +189,17 @@ class _MainDrawerState extends State<MainDrawer> {
               );
             },
           ),
+          ListTile(
+  leading: const Icon(Icons.medication_outlined),
+  title: const Text('藥物'),
+  onTap: () {
+    Navigator.pop(context);
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const MedicationHomePage()),
+    );
+  },
+),
 
           const Divider(),
 
