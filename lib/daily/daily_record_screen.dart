@@ -13,6 +13,7 @@ import '../models/daily_record.dart';
 import '../quotes.dart';
 import '../widgets/main_drawer.dart';
 import '../widgets/emotion_slider.dart';
+import '../constants/emotion_scale_guide.dart';
 
 Future<List<DailyRecord>> loadAllRecords(String uid) async {
   final snap = await FirebaseFirestore.instance
@@ -324,6 +325,50 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     super.initState();
     _loadExistingData(_recordDate); // 一進來就載入今天的紀錄（含生理期狀態）
   }
+void showEmotionScaleGuide(
+  BuildContext context,
+  String keyName,
+) {
+  final guide = emotionScaleGuides[keyName];
+  if (guide == null) return;
+
+  showDialog(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: Text(guide.question),
+      content: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('0 分代表：', style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            Text(guide.zero),
+            const SizedBox(height: 12),
+            const Text('10 分代表：', style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            Text(guide.ten),
+
+            if (guide.isSensitive) ...[
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+              const Text(
+                '如果你此刻覺得自己不安全，請優先尋求身邊可信任的人或緊急協助。',
+                style: TextStyle(fontSize: 13),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('知道了'),
+        ),
+      ],
+    ),
+  );
+}
 
 void _resetForm({bool keepPeriodStatus = false}) {
   setState(() {
@@ -1158,25 +1203,37 @@ const Map<String, String> emotionDisplayTextMap = {
               children: [
                 // 情緒名稱 + 編輯 / 刪除
                 Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-  emotionDisplayTextMap[item.name] ?? item.name,
-  style: Theme.of(context).textTheme.titleMedium,
-)
-                    ),
-                    if (i != 0)
-                      IconButton(
-                        icon: const Icon(Icons.edit_outlined),
-                        onPressed: () => onRename(i),
-                      ),
-                    if (i != 0)
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline),
-                        onPressed: () => onDelete(i),
-                      ),
-                  ],
-                ),
+  crossAxisAlignment: CrossAxisAlignment.start,
+  children: [
+    // 🔹 左邊：情緒題目（主文）
+    Expanded(
+      child: Text(
+        emotionDisplayTextMap[item.name] ?? item.name,
+        style: Theme.of(context).textTheme.titleMedium,
+      ),
+    ),
+
+    // 🔹 右邊：引導 / 編輯 / 刪除
+    IconButton(
+      icon: const Icon(Icons.info_outline),
+      tooltip: '評分說明',
+      onPressed: () => showEmotionScaleGuideDialog(context, item.name),
+    ),
+
+    if (i != 0)
+      IconButton(
+        icon: const Icon(Icons.edit_outlined),
+        onPressed: () => onRename(i),
+      ),
+
+    if (i != 0)
+      IconButton(
+        icon: const Icon(Icons.delete_outline),
+        onPressed: () => onDelete(i),
+      ),
+  ],
+),
+
 
                 const SizedBox(height: 8),
 
