@@ -130,7 +130,7 @@ final Map<String, MedChangeDraft> _drafts = {};
                 const SizedBox(height: 12),
 
                 Text(
-                  '逐顆藥物標註（預設：無變化）',
+                  '逐顆藥物標註（預設：維持原劑量）',
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const SizedBox(height: 8),
@@ -232,7 +232,7 @@ final Map<String, MedChangeDraft> _drafts = {};
               children: [
                 _choiceChip(
                   context,
-                  label: '無變化',
+                  label: '維持原劑量',
                   selected: draft.type == MedChangeType.unchanged,
                   onTap: () => setState(() {
                     draft.type = MedChangeType.unchanged;
@@ -517,7 +517,7 @@ Future<void> _editDose({
   String _typeLabel(MedChangeType t) {
     switch (t) {
       case MedChangeType.unchanged:
-        return '無變化';
+        return '維持原劑量';
       case MedChangeType.doseChanged:
         return '調整';
       case MedChangeType.stopped:

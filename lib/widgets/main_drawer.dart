@@ -142,7 +142,7 @@ class _MainDrawerState extends State<MainDrawer> {
                     child: const Icon(
                       Icons.camera_alt,
                       size: 14,
-                      color: Color.fromARGB(255, 80, 194, 182),
+                      color: Color(0xFF4BB0C6),
                     ),
                   ),
                 ),

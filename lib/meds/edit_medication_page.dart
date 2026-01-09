@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -20,13 +21,20 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
   final _formKey = GlobalKey<FormState>();
 
   final _nameCtrl = TextEditingController();
+  final _nameEnCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
   final _purposeOtherCtrl = TextEditingController();
   final _bodySymptomCtrl = TextEditingController();
 
   double _dose = 0;
   String _unit = 'mg';
+  String _medType = 'tablet'; // tablet / injection
+int _intervalDays = 28;     // 長效針用：每幾天一次（例如 28、30）
+Timer? _drugDebounce;
+bool _isSearchingDrug = false;
 
+// 候選結果：[{id, zh, en}]
+List<Map<String, String>> _drugSuggestions = [];
   final Map<String, bool> _timeSlots = {
     '早上': false,
     '中午': false,
@@ -60,7 +68,20 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
   void _hydrateFromInitial(Map<String, dynamic> d) {
     _nameCtrl.text = (d['name'] as String?) ?? '';
     _noteCtrl.text = (d['note'] as String?) ?? '';
+// ✅ 藥物形式：口服 / 長效針
+_medType = (d['type'] as String?) ?? 'tablet';
+// ✅ 注射間隔（天）
+final iv = d['intervalDays'];
+if (iv is int) _intervalDays = iv;
+else if (iv is double) _intervalDays = iv.round();
+else _intervalDays = 28;
 
+// 若是長效針：通常不需要 times（避免混進早上/睡前）
+if (_medType == 'injection') {
+  for (final k in _timeSlots.keys) {
+    _timeSlots[k] = false;
+  }
+}
     final doseVal = d['dose'];
     if (doseVal is int) _dose = doseVal.toDouble();
     else if (doseVal is double) _dose = doseVal;
@@ -208,25 +229,80 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
                   ],
                 ),
               ),
+_SectionCard(
+  title: '藥物形式',
+  icon: Icons.medical_services_outlined,
+  child: Wrap(
+    spacing: 8,
+    runSpacing: 8,
+    children: [
+      ChoiceChip(
+        label: const Text('口服藥'),
+        selected: _medType == 'tablet',
+        onSelected: (_) => setState(() => _medType = 'tablet'),
+      ),
+      ChoiceChip(
+        label: const Text('長效針'),
+        selected: _medType == 'injection',
+        onSelected: (_) => setState(() {
+          _medType = 'injection';
+          // 切到長效針時，清掉服用時間，避免混入早/晚分類
+          for (final k in _timeSlots.keys) {
+            _timeSlots[k] = false;
+          }
+        }),
+      ),
+    ],
+  ),
+),
+const SizedBox(height: 12),
 
-              const SizedBox(height: 12),
+if (_medType == 'injection') ...[
+  _SectionCard(
+    title: '注射間隔（天）',
+    icon: Icons.calendar_today_outlined,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('每 $_intervalDays 天一次', style: Theme.of(context).textTheme.titleSmall),
+        const SizedBox(height: 8),
+        Slider(
+          min: 7,
+          max: 60,
+          divisions: 46,
+          value: _intervalDays.toDouble(),
+          label: '$_intervalDays 天',
+          onChanged: (v) => setState(() => _intervalDays = v.round()),
+        ),
+        Text(
+          '提示：長效針通常不需要設定早/中/晚服用時間；每次施打請在「紀錄調整」記錄事件。',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+        ),
+      ],
+    ),
+  ),
+  const SizedBox(height: 12),
+],
 
-              _SectionCard(
-                title: '服用時間',
-                icon: Icons.schedule,
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _timeSlots.keys.map((k) {
-                    final selected = _timeSlots[k] ?? false;
-                    return FilterChip(
-                      selected: selected,
-                      label: Text(k),
-                      onSelected: (s) => setState(() => _timeSlots[k] = s),
-                    );
-                  }).toList(),
-                ),
-              ),
+              if (_medType != 'injection') ...[
+  _SectionCard(
+    title: '服用時間',
+    icon: Icons.schedule,
+    child: Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: _timeSlots.keys.map((k) {
+        final selected = _timeSlots[k] ?? false;
+        return FilterChip(
+          selected: selected,
+          label: Text(k),
+          onSelected: (s) => setState(() => _timeSlots[k] = s),
+        );
+      }).toList(),
+    ),
+  ),
+  const SizedBox(height: 12),
+],
 
               const SizedBox(height: 12),
 
@@ -420,7 +496,9 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
     }
 
     final name = _nameCtrl.text.trim();
-    final times = _timeSlots.entries.where((e) => e.value).map((e) => e.key).toList();
+    final times = (_medType == 'injection')
+    ? <String>[]
+    : _timeSlots.entries.where((e) => e.value).map((e) => e.key).toList();
     final purposes = _purposes.entries.where((e) => e.value).map((e) => e.key).toList();
 
     final purposeOther = _purposeOtherCtrl.text.trim();
@@ -446,8 +524,16 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
         'name': name,
         'dose': _dose, // double，支援 0.5 / 1.25
         'unit': _unit,
+        // ✅ 新增：口服/長效針
+  'type': _medType,
+
+  // ✅ 新增：注射間隔（天）— 口服藥就清掉
+  'intervalDays': _medType == 'injection' ? _intervalDays : null,
+
+  // ✅ 長效針不應該有 times
+  'times': times,
         'times': times,
-        'purposes': purposes,
+                'purposes': purposes,
         'purposeOther': purposeOther.isEmpty ? null : purposeOther,
         'bodySymptoms': bodySymptoms,
         'note': _noteCtrl.text.trim(),
@@ -473,6 +559,64 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
     final d = dt.day.toString().padLeft(2, '0');
     return '$y/$m/$d';
   }
+  Future<void> _searchDrugDict(String input) async {
+  final q = input.trim().toLowerCase();
+  if (q.length < 1) {
+    setState(() {
+      _drugSuggestions = [];
+      _isSearchingDrug = false;
+    });
+    return;
+  }
+
+  setState(() => _isSearchingDrug = true);
+
+  try {
+    // 你需要在 drug_dictionary 文件中建立 keywords 陣列（含前綴字）
+    final snap = await FirebaseFirestore.instance
+        .collection('drug_dictionary')
+        .where('keywords', arrayContains: q.length > 12 ? q.substring(0, 12) : q)
+        .limit(8)
+        .get();
+
+    final list = snap.docs.map((d) {
+      final data = d.data();
+      return <String, String>{
+        'id': d.id,
+        'zh': (data['zh'] as String?)?.trim() ?? '',
+        'en': (data['en'] as String?)?.trim() ?? '',
+      };
+    }).where((m) => (m['zh']!.isNotEmpty || m['en']!.isNotEmpty)).toList();
+
+    if (!mounted) return;
+    setState(() {
+      _drugSuggestions = list;
+      _isSearchingDrug = false;
+    });
+  } catch (_) {
+    if (!mounted) return;
+    setState(() => _isSearchingDrug = false);
+  }
+}
+
+void _onDrugNameChanged(String v) {
+  _drugDebounce?.cancel();
+  _drugDebounce = Timer(const Duration(milliseconds: 250), () {
+    _searchDrugDict(v);
+  });
+}
+
+void _applyDrugSuggestion(Map<String, String> s) {
+  final zh = (s['zh'] ?? '').trim();
+  final en = (s['en'] ?? '').trim();
+
+  // 你可以決定：中文欄位顯示 zh，英文欄位顯示 en
+  if (zh.isNotEmpty) _nameCtrl.text = zh;
+  if (en.isNotEmpty) _nameEnCtrl.text = en;
+
+  setState(() => _drugSuggestions = []);
+  FocusScope.of(context).nextFocus(); // 跳到下一個輸入欄（可改成 unfocus）
+}
 }
 
 /* ====== 以下是 UI 小元件（沿用你新增頁同款）====== */

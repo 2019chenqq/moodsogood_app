@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:async';
+
 
 class AddMedicationPage extends StatefulWidget {
   const AddMedicationPage({super.key});
@@ -13,18 +15,26 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
   final _formKey = GlobalKey<FormState>();
 
   final _nameCtrl = TextEditingController();
+  final _nameEnCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
   final _purposeOtherCtrl = TextEditingController();
   final _bodySymptomCtrl = TextEditingController();
 
   double _dose = 25; // 先用 slider，後續你想改成輸入框也可
   String _unit = 'mg';
-Future<void> _editDoseManually() async {
-  final ctrl = TextEditingController(
-    text: (_dose % 1 == 0) ? _dose.toInt().toString() : _dose.toString(),
-  );
+  String _medType = 'tablet'; // tablet / injection
+  int _intervalDays = 28;     // 只給 injection 用
+  Timer? _drugDebounce;
+bool _isSearchingDrug = false;
 
-  double? picked;
+// 候選結果：[{id, zh, en}]
+List<Map<String, String>> _drugSuggestions = [];
+
+  Future<void> _editDoseManually() async {
+    final ctrl = TextEditingController(
+      text: (_dose % 1 == 0) ? _dose.toInt().toString() : _dose.toString(),
+    );
+    double? picked;
 
   await showDialog<void>(
     context: context,
@@ -76,8 +86,9 @@ Future<void> _editDoseManually() async {
     '中午': false,
     '下午': false,
     '晚上': false,
-    '睡前': true,
-    '需要時': false, // PRN
+    '睡前': false,
+    '需要時': false, 
+    '回診時注射': false,// PRN
   };
 
   final Map<String, bool> _purposes = {
@@ -220,26 +231,52 @@ final otherSelected = _purposes['其他'] == true;
               ),
 
               const SizedBox(height: 12),
-
+_SectionCard(
+  title: '藥物形式',
+  icon: Icons.medical_services_outlined,
+  child: Wrap(
+    spacing: 8,
+    children: [
+      ChoiceChip(
+        label: const Text('口服藥'),
+        selected: _medType == 'tablet',
+        onSelected: (_) => setState(() => _medType = 'tablet'),
+      ),
+      ChoiceChip(
+        label: const Text('長效針'),
+        selected: _medType == 'injection',
+        onSelected: (_) => setState(() => _medType = 'injection'),
+      ),
+    ],
+  ),
+),
               // 3) 服用時間（像第二張那種分區感）
-              _SectionCard(
-                title: '服用時間',
-                icon: Icons.schedule,
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _timeSlots.keys.map((k) {
-                    final selected = _timeSlots[k] ?? false;
-                    return FilterChip(
-                      selected: selected,
-                      label: Text(k),
-                      onSelected: (s) => setState(() => _timeSlots[k] = s),
-                    );
-                  }).toList(),
-                ),
-              ),
-
-              const SizedBox(height: 12),
+              if (_medType == 'injection') ...[
+  _SectionCard(
+    title: '注射間隔（天）',
+    icon: Icons.calendar_today_outlined,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('每 $_intervalDays 天一次', style: Theme.of(context).textTheme.titleSmall),
+        const SizedBox(height: 8),
+        Slider(
+          min: 7,
+          max: 60,
+          divisions: 46,
+          value: _intervalDays.toDouble(),
+          label: '$_intervalDays 天',
+          onChanged: (v) => setState(() => _intervalDays = v.round()),
+        ),
+        Text(
+          '提示：長效針通常不需要設定早/中/晚服用時間；每次施打請在「紀錄調整」記錄事件。',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+        ),
+      ],
+    ),
+  ),
+  const SizedBox(height: 12),
+],
 
               // 4) 用途
              _SectionCard(
@@ -452,6 +489,10 @@ final bodySymptoms = bodySymptomText.isEmpty
         'name': name,
         'dose': doseValue,
         'unit': _unit,
+        'type': _medType,                 // ⭐ 新增
+  'intervalDays': _medType == 'injection'
+      ? _intervalDays
+      : null,           
         'times': times,
         'purposes': purposes,
         'note': _noteCtrl.text.trim(),
@@ -482,6 +523,64 @@ final bodySymptoms = bodySymptomText.isEmpty
     final d = dt.day.toString().padLeft(2, '0');
     return '$y/$m/$d';
   }
+  Future<void> _searchDrugDict(String input) async {
+  final q = input.trim().toLowerCase();
+  if (q.length < 1) {
+    setState(() {
+      _drugSuggestions = [];
+      _isSearchingDrug = false;
+    });
+    return;
+  }
+
+  setState(() => _isSearchingDrug = true);
+
+  try {
+    // 你需要在 drug_dictionary 文件中建立 keywords 陣列（含前綴字）
+    final snap = await FirebaseFirestore.instance
+        .collection('drug_dictionary')
+        .where('keywords', arrayContains: q.length > 12 ? q.substring(0, 12) : q)
+        .limit(8)
+        .get();
+
+    final list = snap.docs.map((d) {
+      final data = d.data();
+      return <String, String>{
+        'id': d.id,
+        'zh': (data['zh'] as String?)?.trim() ?? '',
+        'en': (data['en'] as String?)?.trim() ?? '',
+      };
+    }).where((m) => (m['zh']!.isNotEmpty || m['en']!.isNotEmpty)).toList();
+
+    if (!mounted) return;
+    setState(() {
+      _drugSuggestions = list;
+      _isSearchingDrug = false;
+    });
+  } catch (_) {
+    if (!mounted) return;
+    setState(() => _isSearchingDrug = false);
+  }
+}
+
+void _onDrugNameChanged(String v) {
+  _drugDebounce?.cancel();
+  _drugDebounce = Timer(const Duration(milliseconds: 250), () {
+    _searchDrugDict(v);
+  });
+}
+
+void _applyDrugSuggestion(Map<String, String> s) {
+  final zh = (s['zh'] ?? '').trim();
+  final en = (s['en'] ?? '').trim();
+
+  // 你可以決定：中文欄位顯示 zh，英文欄位顯示 en
+  if (zh.isNotEmpty) _nameCtrl.text = zh;
+  if (en.isNotEmpty) _nameEnCtrl.text = en;
+
+  setState(() => _drugSuggestions = []);
+  FocusScope.of(context).nextFocus(); // 跳到下一個輸入欄（可改成 unfocus）
+}
 }
 
 class _SoftHeaderCard extends StatelessWidget {
@@ -595,6 +694,7 @@ class _UnitPicker extends StatelessWidget {
         DropdownMenuItem(value: 'mL', child: Text('mL')),
         DropdownMenuItem(value: '顆', child: Text('顆')),
         DropdownMenuItem(value: '包', child: Text('包')),
+        DropdownMenuItem(value: '針劑', child: Text('針劑')),
       ],
       onChanged: (v) {
         if (v != null) onChanged(v);
