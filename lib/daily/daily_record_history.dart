@@ -2,13 +2,15 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
 import '../models/daily_record.dart'; // 確保引用正確
 import '../utils/date_helper.dart';   // 確保引用正確
 import 'record_detail_screen.dart';   // 確保引用正確
 import '../models/period_cycle.dart';
 import '../widgets/main_drawer.dart';
 import '../quotes.dart';
-import '../pro/pro_page.dart'; 
+import '../pro/pro_page.dart';
+import '../providers/pro_provider.dart'; 
 
 const Map<String, String> ksleepFlagMap = {
     'good': '優',
@@ -33,7 +35,7 @@ class DailyRecordHistory extends StatefulWidget {
 class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTickerProviderStateMixin {
   DateFilter _dateFilter = DateFilter.last7;
   // MoodFilter 先暫時拿掉，因為圖表頁通常看全部比較準，或者你可以保留邏輯但只應用在列表
-  bool _isProUser = false;
+  
   // 分頁控制器
   late TabController _tabController;
   
@@ -61,7 +63,10 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
 
   @override
   Widget build(BuildContext context) {
-    final bool isPro = _isProUser;
+    // 🔥 從全局 ProProvider 取得 Pro 狀態
+    final proProvider = context.watch<ProProvider>();
+    final bool isPro = proProvider.isPro;
+    
     final uid = FirebaseAuth.instance.currentUser?.uid;
     final query = FirebaseFirestore.instance
         .collection('users')

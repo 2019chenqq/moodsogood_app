@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
 
+/// 🚧 開發/測試用開關：設為 true 時，所有使用者都能使用 Pro features
+/// 📌 正式上線前請改為 false
+const bool kDebugUnlockAllProFeatures = true;
+
 class ProProvider extends ChangeNotifier {
   bool _isPro = false;
   bool _loading = true;
 
-  bool get isPro => _isPro;
+  /// 檢查使用者是否為 Pro
+  /// 如果 kDebugUnlockAllProFeatures = true，則所有人都是 Pro
+  bool get isPro => kDebugUnlockAllProFeatures || _isPro;
+  
   bool get loading => _loading;
 
   Future<void> init() async {
