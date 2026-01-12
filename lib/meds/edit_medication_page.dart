@@ -114,7 +114,9 @@ if (_medType == 'injection') {
 
   @override
   void dispose() {
-    _nameCtrl.dispose();
+    _drugDebounce?.cancel();
+  _nameCtrl.dispose();
+  _nameEnCtrl.dispose();
     _noteCtrl.dispose();
     _purposeOtherCtrl.dispose();
     _bodySymptomCtrl.dispose();
@@ -144,21 +146,85 @@ if (_medType == 'injection') {
               const SizedBox(height: 14),
 
               _SectionCard(
-                title: '藥物名稱',
-                icon: Icons.medication_outlined,
-                child: TextFormField(
-                  controller: _nameCtrl,
-                  textInputAction: TextInputAction.next,
-                  decoration: _inputDeco('例如：Sertraline、Quetiapine…'),
-                  validator: (v) {
-                    final t = (v ?? '').trim();
-                    if (t.isEmpty) return '請輸入藥物名稱';
-                    return null;
-                  },
-                ),
-              ),
+  title: '藥物名稱（中文）',
+  icon: Icons.medication_outlined,
+  child: Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      TextFormField(
+        controller: _nameCtrl,
+        textInputAction: TextInputAction.next,
+        decoration: _inputDeco('例如：克癲平、思樂康…')
+            .copyWith(suffixIcon: _isSearchingDrug
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : null,
+            ),
+        onChanged: _onDrugNameChanged, // ✅ 關鍵：觸發字典搜尋
+        validator: (v) {
+          final t = (v ?? '').trim();
+          if (t.isEmpty) return '請輸入藥物名稱';
+          if (t.length < 2) return '名稱太短了';
+          return null;
+        },
+      ),
 
-              const SizedBox(height: 12),
+      // ✅ 候選清單
+      if (_drugSuggestions.isNotEmpty) ...[
+        const SizedBox(height: 10),
+        Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: Theme.of(context).dividerColor.withOpacity(0.6),
+            ),
+          ),
+          child: ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _drugSuggestions.length,
+            separatorBuilder: (_, __) => Divider(
+              height: 1,
+              color: Theme.of(context).dividerColor.withOpacity(0.6),
+            ),
+            itemBuilder: (context, i) {
+              final s = _drugSuggestions[i];
+              final zh = s['zh'] ?? '';
+              final en = s['en'] ?? '';
+              return ListTile(
+                dense: true,
+                title: Text(zh.isEmpty ? en : zh),
+                subtitle: (zh.isNotEmpty && en.isNotEmpty) ? Text(en) : null,
+                onTap: () => _applyDrugSuggestion(s),
+              );
+            },
+          ),
+        ),
+      ],
+    ],
+  ),
+),
+
+const SizedBox(height: 12),
+
+_SectionCard(
+  title: '藥物名稱（英文，給醫師看）',
+  icon: Icons.translate_outlined,
+  child: TextFormField(
+    controller: _nameEnCtrl,
+    textInputAction: TextInputAction.next,
+    decoration: _inputDeco('例如：Clonazepam、Quetiapine…（可自動帶入/也可手動改）'),
+  ),
+),
+
+const SizedBox(height: 12),
 
               _SectionCard(
                 title: '劑量',

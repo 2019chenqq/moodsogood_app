@@ -5,6 +5,8 @@ import 'add_medication_page.dart';
 import 'edit_medication_page.dart';
 import '../widgets/main_drawer.dart';
 import 'record_adjustment_page.dart';
+import 'medication_actions.dart';
+import 'med_symptom_compare_page.dart';
 
 const List<String> kTimeOrder = [
   '早上',
@@ -62,11 +64,29 @@ class MedicationHomePage extends StatelessWidget {
         .orderBy('isActive', descending: true)
         .orderBy('updatedAt', descending: true);
 
-    return Scaffold(
-      drawer: const MainDrawer(),
-      appBar: AppBar(
-        title: const Text('藥物'),
-        actions: [
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        drawer: const MainDrawer(),
+        appBar: AppBar(
+          title: const Text('藥物'),
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: '目前使用藥物'),
+              Tab(text: '已停用'),
+            ],
+          ),
+          actions: [
+            IconButton(
+  tooltip: '症狀交叉比對',
+  icon: const Icon(Icons.compare_arrows),
+  onPressed: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const MedSymptomComparePage()),
+    );
+  },
+),
           IconButton(
             tooltip: '紀錄調整（回診/調藥）',
             onPressed: () {
@@ -89,185 +109,195 @@ class MedicationHomePage extends StatelessWidget {
             icon: const Icon(Icons.add),
           ),
         ],
-      ),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: medsQuery.snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('發生錯誤：${snapshot.error}'));
-          }
+        ),
+        body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: medsQuery.snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Center(child: Text('發生錯誤：${snapshot.error}'));
+            }
 
-          final docs = snapshot.data?.docs ?? [];
-          if (docs.isEmpty) {
-            return _EmptyState(
-  onAdd: () async {
-    final added = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const AddMedicationPage()),
-    );
-    // added == true 代表新增成功；StreamBuilder 會自動更新，不一定要做任何事
-  },
-);
-          }
-          // 🔹 依服用時間分組
-// 🔹 依服用時間分組（口服藥）
-final Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>> groups = {
-  for (final t in kTimeOrder) t: <QueryDocumentSnapshot<Map<String, dynamic>>>[],
-};
+            final docs = snapshot.data?.docs ?? [];
 
-// 🔹 長效針（注射）獨立清單
-final List<QueryDocumentSnapshot<Map<String, dynamic>>> injectionDocs = [];
+            final activeDocs = docs.where((d) => (d.data()['isActive'] ?? true) == true).toList();
+            final inactiveDocs = docs.where((d) => (d.data()['isActive'] ?? true) == false).toList();
 
-for (final doc in docs) {
-  final data = doc.data();
-  final isInjection = (data['type'] as String?) == 'injection';
+            // 構建分組（只針對 active）
+            final Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>> groups = {
+              for (final t in kTimeOrder) t: <QueryDocumentSnapshot<Map<String, dynamic>>>[],
+            };
+            final List<QueryDocumentSnapshot<Map<String, dynamic>>> injectionDocs = [];
 
-  if (isInjection) {
-    injectionDocs.add(doc);
-    continue; // ✅ 注射型不進早/中/晚分組
-  }
+            for (final doc in activeDocs) {
+              final data = doc.data();
+              final isInjection = (data['type'] as String?) == 'injection';
+              if (isInjection) {
+                injectionDocs.add(doc);
+                continue;
+              }
 
-  final times = (data['times'] as List?)?.whereType<String>().toList() ?? <String>[];
-  if (times.isEmpty) {
-    groups['未設定']!.add(doc);
-  } else {
-    for (final t in times) {
-      if (groups.containsKey(t)) {
-        groups[t]!.add(doc);
-      } else {
-        groups['未設定']!.add(doc);
-      }
-    }
-  }
-}
+              final times = (data['times'] as List?)?.whereType<String>().toList() ?? <String>[];
+              if (times.isEmpty) {
+                groups['未設定']!.add(doc);
+              } else {
+                for (final t in times) {
+                  if (groups.containsKey(t)) {
+                    groups[t]!.add(doc);
+                  } else {
+                    groups['未設定']!.add(doc);
+                  }
+                }
+              }
+            }
 
+            Widget buildActiveList() {
+              if (activeDocs.isEmpty) {
+                return _EmptyState(
+                  onAdd: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const AddMedicationPage()),
+                    );
+                  },
+                );
+              }
 
-          final active = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-          final inactive = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+                children: [
+                  if (injectionDocs.isNotEmpty) ...[
+                    _TimeSectionHeader(
+                      title: '長效針／定期注射',
+                      count: injectionDocs.length,
+                    ),
+                    const SizedBox(height: 8),
+                    ...injectionDocs.map((doc) {
+                      final data = doc.data();
 
-          for (final d in docs) {
-            final data = d.data();
-            final isActive = (data['isActive'] as bool?) ?? true;
-            (isActive ? active : inactive).add(d);
-          }
+                      final dose = data['dose'];
+                      final unit = (data['unit'] as String?) ?? 'mg';
 
-          return ListView(
-  padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-  children: [
-    // =========================
-    // ✅ 長效針／定期注射
-    // =========================
-    if (injectionDocs.isNotEmpty) ...[
-      _TimeSectionHeader(
-        title: '長效針／定期注射',
-        count: injectionDocs.length,
-      ),
-      const SizedBox(height: 8),
+                      final startTs = data['startDate'];
+                      final startDate = (startTs is Timestamp) ? startTs.toDate() : DateTime.now();
 
-      ...injectionDocs.map((doc) {
-        final data = doc.data();
+                      final intervalDaysRaw = data['intervalDays'];
+                      final intervalDays = (intervalDaysRaw is int)
+                          ? intervalDaysRaw
+                          : (intervalDaysRaw is double)
+                              ? intervalDaysRaw.round()
+                              : 28;
 
-        final name = (data['name'] as String?)?.trim();
-        final dose = data['dose'];
-        final unit = (data['unit'] as String?) ?? 'mg';
+                      final nextDate = _nextInjectionDate(
+                        startDate: startDate,
+                        intervalDays: intervalDays,
+                        today: DateTime.now(),
+                      );
+                      final daysLeft = _startOfDay(nextDate).difference(_startOfDay(DateTime.now())).inDays;
 
-        final startTs = data['startDate'];
-        final startDate = (startTs is Timestamp) ? startTs.toDate() : DateTime.now();
+                      final badge = (daysLeft <= 0)
+                          ? '今天注射'
+                          : '下次 ${_fmtMd(nextDate)}（剩 $daysLeft 天）';
 
-        final intervalDaysRaw = data['intervalDays'];
-        final intervalDays = (intervalDaysRaw is int)
-            ? intervalDaysRaw
-            : (intervalDaysRaw is double)
-                ? intervalDaysRaw.round()
-                : 28;
+                      return _MedicationCard(
+                        docId: doc.id,
+                        data: {
+                          ...data,
+                          '_subtitleOverride': (dose == null) ? '每 $intervalDays 天一次' : '$dose $unit｜每 $intervalDays 天一次',
+                          '_badgeOverride': badge,
+                        },
+                        onTap: () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => EditMedicationPage(
+                                docId: doc.id,
+                                initialData: data,
+                              ),
+                            ),
+                          );
+                        },
+                        onMore: () => _showMedicationActions(context, uid, doc.id, data),
+                      );
+                    }),
+                    const SizedBox(height: 20),
+                  ],
 
-        final nextDate = _nextInjectionDate(
-          startDate: startDate,
-          intervalDays: intervalDays,
-          today: DateTime.now(),
-        );
-        final daysLeft = _startOfDay(nextDate).difference(_startOfDay(DateTime.now())).inDays;
+                  for (final t in kTimeOrder)
+                    if (groups[t]!.isNotEmpty) ...[
+                      _TimeSectionHeader(
+                        title: t,
+                        count: groups[t]!.length,
+                      ),
+                      const SizedBox(height: 8),
+                      ...groups[t]!.map((doc) {
+                        final data = doc.data();
+                        final uid = FirebaseAuth.instance.currentUser!.uid;
+                        return _MedicationCard(
+                          docId: doc.id,
+                          data: data,
+                          onMore: () => showMedicationMoreSheet(
+                            context: context,
+                            uid: uid,
+                            medId: doc.id,
+                            data: data,
+                          ),
+                        );
+                      }),
+                      const SizedBox(height: 20),
+                    ],
+                ],
+              );
+            }
 
-        final badge = (daysLeft <= 0)
-            ? '今天注射'
-            : '下次 ${_fmtMd(nextDate)}（剩 $daysLeft 天）';
+            Widget buildInactiveList() {
+              if (inactiveDocs.isEmpty) {
+                return const Center(child: Text('目前沒有已停用的藥物'));
+              }
 
-        return _MedicationCard(
-          docId: doc.id,
-          data: {
-            ...data,
-            // ✅ 讓卡片副標更友善（可自行調整）
-            '_subtitleOverride': (dose == null) ? '每 $intervalDays 天一次' : '$dose $unit｜每 $intervalDays 天一次',
-            '_badgeOverride': badge,
-          },
-          onTap: () async {
-            await Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => EditMedicationPage(
-                  docId: doc.id,
-                  initialData: data,
-                ),
-              ),
+              return ListView.separated(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+                itemCount: inactiveDocs.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                itemBuilder: (context, i) {
+                  final doc = inactiveDocs[i];
+                  final data = doc.data();
+                  final uid = FirebaseAuth.instance.currentUser!.uid;
+                  return _MedicationCard(
+                    docId: doc.id,
+                    data: data,
+                    onMore: () => showMedicationMoreSheet(
+                      context: context,
+                      uid: uid,
+                      medId: doc.id,
+                      data: data,
+                    ),
+                  );
+                },
+              );
+            }
+
+            return TabBarView(
+              children: [
+                buildActiveList(),
+                buildInactiveList(),
+              ],
             );
           },
-          onMore: () => _showMedicationActions(context, uid, doc.id, data),
-        );
-      }),
-
-      const SizedBox(height: 20),
-    ],
-
-    // =========================
-    // ✅ 原本：早/中/晚/睡前…
-    // =========================
-    for (final t in kTimeOrder)
-      if (groups[t]!.isNotEmpty) ...[
-        _TimeSectionHeader(
-          title: t,
-          count: groups[t]!.length,
         ),
-        const SizedBox(height: 8),
-        ...groups[t]!.map((doc) {
-          final data = doc.data();
-          return _MedicationCard(
-            docId: doc.id,
-            data: data,
-            onTap: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => EditMedicationPage(
-                    docId: doc.id,
-                    initialData: data,
-                  ),
-                ),
-              );
-            },
-            onMore: () => _showMedicationActions(context, uid, doc.id, data),
-          );
-        }),
-        const SizedBox(height: 20),
-      ],
-  ],
-);
-
-
-        },
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-  final added = await Navigator.push(
-    context,
-    MaterialPageRoute(builder: (_) => const AddMedicationPage()),
-  );
-  // added == true 代表新增成功（可選）
-},
-        icon: const Icon(Icons.add),
-        label: const Text('新增藥物'),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: () async {
+            final added = await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AddMedicationPage()),
+            );
+            // added == true 代表新增成功（可選）
+          },
+          icon: const Icon(Icons.add),
+          label: const Text('新增藥物'),
+        ),
       ),
     );
   }
@@ -277,6 +307,103 @@ for (final doc in docs) {
     if (v is Timestamp) return v.toDate();
     return null;
   }
+  void _showMedActions(
+  BuildContext context, {
+  required String uid,
+  required String medId,
+  required Map<String, dynamic> data,
+}) {
+  showModalBottomSheet(
+    context: context,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (_) {
+      return SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('編輯藥物資料'),
+              onTap: () async {
+                Navigator.pop(context);
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => EditMedicationPage(
+                      docId: medId,
+                      initialData: data,
+                    ),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.pause_circle_outline),
+              title: const Text('停藥（標記為已停用）'),
+              onTap: () async {
+                Navigator.pop(context);
+                await FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(uid)
+                    .collection('medications')
+                    .doc(medId)
+                    .update({'isActive': false});
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('已標記為停藥')),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
+              title: const Text(
+                '刪除藥物（永久）',
+                style: TextStyle(color: Colors.red),
+              ),
+              onTap: () async {
+                Navigator.pop(context);
+
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    title: const Text('確認刪除'),
+                    content: const Text('刪除後將無法復原，確定要刪除嗎？'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('取消'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('刪除'),
+                      ),
+                    ],
+                  ),
+                );
+
+                if (ok == true) {
+                  await FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(uid)
+                      .collection('medications')
+                      .doc(medId)
+                      .delete();
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('藥物已刪除')),
+                  );
+                }
+              },
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
 }
 
 class _HeaderHintCard extends StatelessWidget {
@@ -433,7 +560,12 @@ class _MedicationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = (data['name'] as String?)?.trim().isNotEmpty == true ? data['name'] as String : '未命名藥物';
+    final name = ((data['nameZh'] ?? data['name'] ?? data['nameEn']) as String?)
+        ?.trim()
+        .isNotEmpty ==
+    true
+    ? ((data['nameZh'] ?? data['name'] ?? data['nameEn']) as String).trim()
+    : '未命名藥物';
     final dose = data['dose'];
     final unit = (data['unit'] as String?) ?? 'mg';
 
@@ -595,7 +727,7 @@ Future<void> _showMedicationActions(
           children: [
             ListTile(
               leading: const Icon(Icons.edit_outlined),
-              title: const Text('編輯藥物（之後做）'),
+              title: const Text('編輯藥物資料'),
               onTap: () => Navigator.pop(ctx, 'edit'),
             ),
             ListTile(

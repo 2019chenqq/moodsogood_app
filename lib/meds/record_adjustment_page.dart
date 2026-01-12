@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 // 你已經有的新增藥物頁（路徑依你的專案調整）
 import 'add_medication_page.dart';
+import 'record_adjustment_history_page.dart';
 
 enum MedChangeType {unchanged, doseChanged, stopped }
 
@@ -20,9 +21,40 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
 
   // 每顆藥的暫存變動
   final Map<String, _MedDraft> _draftByDocId = {};
-final Map<String, MedChangeDraft> _drafts = {};
-  bool _saving = false;
 
+  bool _saving = false;
+_MedDraft _ensureUiDraft(
+  String docId,
+  Map<String, dynamic> baseData,
+) {
+  return _draftByDocId.putIfAbsent(docId, () {
+    final oldDose = (baseData['dose'] is num)
+        ? (baseData['dose'] as num).toDouble()
+        : 0.0;
+
+    final unit = (baseData['unit'] as String?) ?? 'mg';
+    final name = (baseData['name'] as String?) ?? '未命名藥物';
+
+    return _MedDraft(
+      name: name,
+      unit: unit,
+      oldDose: oldDose,
+      type: MedChangeType.unchanged,
+      newDose: oldDose, // 預設 = 原劑量
+    );
+  });
+}
+
+double? _toDouble(dynamic v) {
+  if (v == null) return null;
+  if (v is num) return v.toDouble();
+  return double.tryParse(v.toString());
+}
+
+String _toStr(dynamic v, [String fallback = '']) {
+  final s = (v ?? '').toString().trim();
+  return s.isEmpty ? fallback : s;
+}
   @override
   void dispose() {
     _noteCtrl.dispose();
@@ -50,14 +82,20 @@ final Map<String, MedChangeDraft> _drafts = {};
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('紀錄調整'),
-        actions: [
-          TextButton(
-            onPressed: _saving ? null : () => _save(uid),
-            child: const Text('儲存'),
-          ),
-        ],
-      ),
+  title: const Text('紀錄調整'),
+  actions: [
+    IconButton(
+      tooltip: '調藥時間線',
+      icon: const Icon(Icons.timeline),
+      onPressed: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const RecordAdjustmentHistoryPage()),
+        );
+      },
+    ),
+  ],
+),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _saving ? null : _addNewMedication,
         icon: const Icon(Icons.add),
@@ -319,14 +357,15 @@ Future<void> _editDose({
   required String docId,
   required String unit,
 }) async {
-  // 先抓目前 draft.newDose 當預設值
-  final draft = _drafts.putIfAbsent(docId, () => MedChangeDraft());
+  final draft = _draftByDocId[docId]!;
+
   final initText = draft.newDose == null
       ? ''
-      : (draft.newDose! % 1 == 0 ? draft.newDose!.toInt().toString() : draft.newDose!.toString());
+      : (draft.newDose! % 1 == 0
+          ? draft.newDose!.toInt().toString()
+          : draft.newDose!.toString());
 
   final ctrl = TextEditingController(text: initText);
-
   double? picked;
 
   await showDialog<void>(
@@ -336,7 +375,6 @@ Future<void> _editDose({
         final raw = ctrl.text.trim().replaceAll(',', '.');
         final v = double.tryParse(raw);
         if (v == null || v < 0) return;
-
         picked = v;
         Navigator.of(dialogContext).pop();
       }
@@ -345,9 +383,8 @@ Future<void> _editDose({
         title: const Text('輸入調整後劑量'),
         content: TextField(
           controller: ctrl,
-          autofocus: true,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          textInputAction: TextInputAction.done,
+          autofocus: true,
           onSubmitted: (_) => submit(),
           decoration: InputDecoration(
             suffixText: unit,
@@ -356,7 +393,7 @@ Future<void> _editDose({
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('取消'),
           ),
           FilledButton(
@@ -374,6 +411,10 @@ Future<void> _editDose({
     draft.newDose = picked;
   });
 }
+
+
+
+
 
 
 
@@ -480,7 +521,23 @@ Future<void> _editDose({
       }
 
       await batch.commit();
+for (final e in changed) {
+  final docId = e.key;
+  final d = e.value;
 
+  await _applyMedicationChange(
+    uid: uid,
+    medId: docId,
+    action: d.type == MedChangeType.stopped
+        ? 'stop'
+        : d.type == MedChangeType.doseChanged
+            ? 'adjust'
+            : 'keep',
+    newDose: d.newDose,
+    unit: d.unit,
+  );
+}
+if (mounted) Navigator.pop(context, true);
       if (!mounted) return;
       Navigator.pop(context, true);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -536,6 +593,44 @@ Future<void> _editDose({
     if (v % 1 == 0) return '${v.toInt()} $unit';
     return '${v.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '')} $unit';
   }
+}
+Future<void> _applyMedicationChange({
+  required String uid,
+  required String medId,
+  required String action, // 'keep' | 'adjust' | 'stop'
+  required double? newDose,
+  required String unit,
+}) async {
+  final medRef = FirebaseFirestore.instance
+      .collection('users')
+      .doc(uid)
+      .collection('medications')
+      .doc(medId);
+
+  if (action == 'stop') {
+    // 停藥：把藥物標記為停用（首頁就不顯示）
+    await medRef.set({
+      'isActive': false,
+      'stoppedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    return;
+  }
+
+  if (action == 'adjust') {
+    if (newDose == null) return;
+
+    // ✅ 劑量調整：回寫「目前劑量」到藥物本體
+    await medRef.set({
+      'dose': newDose,            // 或 'currentDose'，看你首頁用哪個欄位
+      'unit': unit,
+      'isActive': true,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    return;
+  }
+
+  // keep：通常不必回寫（除非你要同步時間/狀態）
 }
 
 class _MedDraft {

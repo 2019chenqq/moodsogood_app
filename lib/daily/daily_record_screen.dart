@@ -305,6 +305,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       }
 
       final payload = <String, dynamic>{
+        'date': Timestamp.fromDate(DateTime(date.year, date.month, date.day)),
         'emotions': _emotions
             .map((e) => {'name': e.name, 'value': e.value})
             .toList(),
