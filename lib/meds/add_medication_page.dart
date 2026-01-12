@@ -629,18 +629,69 @@ final bodySymptoms = bodySymptomText.isEmpty
 
     final list = snap.docs.map((d) {
       final data = d.data();
+
+      // support zh as String or List<String>
+      List<String> zhList = [];
+      final zhRaw = data['zh'];
+      if (zhRaw is String) {
+        zhList = zhRaw
+            .split(RegExp(r'[，,/]'))
+            .map((s) => s.trim())
+            .where((s) => s.isNotEmpty)
+            .toList();
+      } else if (zhRaw is List) {
+        zhList = zhRaw.whereType<String>().map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+      }
+
+      final zhDisplay = zhList.isNotEmpty ? zhList.join(' / ') : ((data['zh'] as String?)?.trim() ?? '');
+      final en = (data['en'] as String?)?.trim() ?? '';
+
       return <String, String>{
         'id': d.id,
-        'zh': (data['zh'] as String?)?.trim() ?? '',
-        'en': (data['en'] as String?)?.trim() ?? '',
+        'zh': zhDisplay,
+        'en': en,
+        // encode zh list for later matching
+        'zh_list': zhList.join('|'),
       };
     }).where((m) => (m['zh']!.isNotEmpty || m['en']!.isNotEmpty)).toList();
 
     if (!mounted) return;
+    final inputLower = input.trim().toLowerCase();
     setState(() {
       _drugSuggestions = list;
       _isSearchingDrug = false;
     });
+
+    // If any candidate has a zh alias exactly matching the input, auto-fill its english name.
+    if (_nameEnCtrl.text.trim().isEmpty) {
+      Map<String, String>? match;
+      for (final s in list) {
+        final zhList = (s['zh_list'] ?? '').split('|').where((t) => t.isNotEmpty).toList();
+        final en = (s['en'] ?? '').trim();
+        final zhDisplay = (s['zh'] ?? '').toString();
+        if (zhList.any((z) => z.toLowerCase() == inputLower)) {
+          match = s;
+          break;
+        }
+        if (zhDisplay.toLowerCase() == inputLower) {
+          match = s;
+          break;
+        }
+        if (en.isNotEmpty && en.toLowerCase() == inputLower) {
+          match = s;
+          break;
+        }
+      }
+
+      if (match != null) {
+        final en = (match['en'] ?? '').trim();
+        final zhDisplay = (match['zh'] ?? '').toString();
+        if (en.isNotEmpty) _nameEnCtrl.text = en;
+        if (_nameCtrl.text.trim().isEmpty) _nameCtrl.text = zhDisplay;
+        // narrow suggestions to the matched item to make UI clear
+        setState(() => _drugSuggestions = [match!]);
+      }
+    }
   } catch (_) {
     if (!mounted) return;
     setState(() => _isSearchingDrug = false);
@@ -664,6 +715,84 @@ void _applyDrugSuggestion(Map<String, String> s) {
 
   setState(() => _drugSuggestions = []);
   FocusScope.of(context).nextFocus(); // 跳到下一個輸入欄（可改成 unfocus）
+}
+
+Future<void> _showAddDrugDialog(String input) async {
+  final zhCtrl = TextEditingController(text: input);
+  final enCtrl = TextEditingController();
+  final aliasCtrl = TextEditingController();
+
+  final res = await showDialog<bool>(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: const Text('新增到藥物字典'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: zhCtrl, decoration: const InputDecoration(labelText: '中文名稱')),
+            const SizedBox(height: 8),
+            TextField(controller: enCtrl, decoration: const InputDecoration(labelText: '英文名稱（選填）')),
+            const SizedBox(height: 8),
+            TextField(controller: aliasCtrl, decoration: const InputDecoration(labelText: '其他別名，逗號分隔（選填）')),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('新增'),
+          ),
+        ],
+      );
+    },
+  );
+
+  if (res != true) return;
+
+  final zh = zhCtrl.text.trim();
+  final en = enCtrl.text.trim();
+  final aliases = aliasCtrl.text.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+
+  try {
+    await _addDrugToDict(zh: zh, en: en, aliases: aliases);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已新增至字典')));
+    // refresh suggestions
+    _searchDrugDict(zh);
+  } catch (e) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('新增失敗：$e')));
+  }
+}
+
+Future<void> _addDrugToDict({required String zh, String? en, List<String>? aliases}) async {
+  final doc = <String, dynamic>{
+    'zh': zh,
+    'en': (en ?? '').trim(),
+    'alias': aliases ?? <String>[],
+  };
+
+  // generate simple keywords (lowercase prefixes up to 12 chars)
+  final kw = <String>{};
+  String addKeywordsFrom(String? s) {
+    if (s == null || s.trim().isEmpty) return '';
+    final t = s.trim().toLowerCase();
+    for (int i = 1; i <= t.length && i <= 12; i++) {
+      kw.add(t.substring(0, i));
+    }
+    // also add full token
+    kw.add(t);
+    return t;
+  }
+
+  addKeywordsFrom(zh);
+  addKeywordsFrom(en);
+  for (final a in aliases ?? []) addKeywordsFrom(a);
+
+  doc['keywords'] = kw.toList();
+
+  await FirebaseFirestore.instance.collection('drug_dictionary').add(doc);
 }
 }
 

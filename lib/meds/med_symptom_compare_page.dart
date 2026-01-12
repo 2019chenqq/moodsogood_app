@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 
 class MedSymptomComparePage extends StatefulWidget {
   const MedSymptomComparePage({super.key});
@@ -12,6 +13,8 @@ class MedSymptomComparePage extends StatefulWidget {
 class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
   String? _selectedMedId;
   Map<String, dynamic>? _selectedMedData;
+
+  late final FlutterTts _tts;
 
   DateTime _anchorDate = DateTime.now();
   int _windowDays = 7;
@@ -82,6 +85,33 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
     );
   }
 
+  @override
+  void initState() {
+    super.initState();
+    _tts = FlutterTts();
+    // Prefer Traditional Chinese if available
+    _tts.setLanguage('zh-TW');
+    _tts.setSpeechRate(0.45);
+  }
+
+  @override
+  void dispose() {
+    _tts.stop();
+    super.dispose();
+  }
+
+  Future<void> _speakAnchorDate() async {
+    try {
+      final y = _anchorDate.year;
+      final m = _anchorDate.month;
+      final d = _anchorDate.day;
+      final text = '調整日期為 $y 年 $m 月 $d 日';
+      await _tts.speak(text);
+    } catch (_) {
+      // ignore TTS errors silently
+    }
+  }
+
   // -----------------------------
   // UI: 藥物選擇
   // -----------------------------
@@ -133,11 +163,41 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
               border: OutlineInputBorder(),
               isDense: true,
             ),
-            onChanged: (v) {
+            onChanged: (v) async {
+              final data = docs.firstWhere((x) => x.id == v).data();
+
+              // Try to find an adjustment/update date in common fields
+              DateTime? medAdjustedDate;
+              for (final key in ['adjustedAt', 'adjustedDate', 'updatedAt', 'date', 'startDate']) {
+                if (data.containsKey(key) && data[key] != null) {
+                  final val = data[key];
+                  if (val is DateTime) {
+                    medAdjustedDate = val;
+                  } else if (val is Timestamp) {
+                    medAdjustedDate = val.toDate();
+                  } else if (val is int) {
+                    medAdjustedDate = DateTime.fromMillisecondsSinceEpoch(val);
+                  } else if (val is String) {
+                    medAdjustedDate = DateTime.tryParse(val);
+                  }
+                  if (medAdjustedDate != null) break;
+                }
+              }
+
               setState(() {
                 _selectedMedId = v;
-                _selectedMedData = docs.firstWhere((x) => x.id == v).data();
+                _selectedMedData = data;
+                if (medAdjustedDate != null) {
+                  _anchorDate = DateTime(
+                    medAdjustedDate.year,
+                    medAdjustedDate.month,
+                    medAdjustedDate.day,
+                  );
+                }
               });
+
+              // Speak the anchor date if we set one (or always speak current anchor)
+              await _speakAnchorDate();
             },
           );
         },
