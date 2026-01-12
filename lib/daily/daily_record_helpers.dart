@@ -1,6 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/daily_record.dart';
 
+// Sentinel to distinguish between "not provided" and explicit null when copying.
+const _unset = Object();
+
 // ============================================================
 // 頂層 Helper Functions
 // ============================================================
@@ -66,8 +69,10 @@ class EmotionItem {
   final int? value; // 0~10
   EmotionItem(this.name, {this.value});
 
-  EmotionItem copyWith({String? name, int? value}) =>
-      EmotionItem(name ?? this.name, value: value ?? this.value);
+  EmotionItem copyWith({String? name, Object? value = _unset}) {
+    final int? nextValue = value == _unset ? this.value : value as int?;
+    return EmotionItem(name ?? this.name, value: nextValue);
+  }
 }
 
 class SymptomItem {

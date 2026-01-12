@@ -12,6 +12,7 @@ import 'daily_record_helpers.dart';
 import 'daily_record_dialogs.dart';
 import 'daily_record_widgets.dart';
 import 'daily_record_pages.dart';
+import 'emotion_page_checkbox.dart';
 
 /// Main Screen
 class DailyRecordScreen extends StatefulWidget {
@@ -25,6 +26,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   int _index = 0;
   bool _isSaving = false;
   bool _isPeriod = false;
+  bool _useNewEmotionPage = true; // 可切換新舊情緒頁
   
   // ——— 目前紀錄日期與時間（給頁首顯示；docId 只吃日期） ———
   DateTime _recordDate = DateTime.now();
@@ -74,20 +76,16 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   // ——— 情緒/症狀/睡眠本地狀態 ———
   final List<EmotionItem> _emotions = [
     EmotionItem('整體情緒'),
-    EmotionItem('焦慮程度'),
-    EmotionItem('憂鬱程度'),
-    EmotionItem('空虛程度'),
-    EmotionItem('無聊程度'),
-    EmotionItem('難過程度'),
-    EmotionItem('開心程度'),
-    EmotionItem('無望感'),
-    EmotionItem('孤獨感'),
-    EmotionItem('動力'),
-    EmotionItem('自殺意念'),
-    EmotionItem('食慾'),
-    EmotionItem('能量'),
-    EmotionItem('活動量'),
-    EmotionItem('疲倦程度'),
+    EmotionItem('焦慮'),
+    EmotionItem('低落'),
+    EmotionItem('憂鬱'),
+    EmotionItem('悶悶不樂'),
+    EmotionItem('開心'),
+    EmotionItem('期待'),
+    EmotionItem('滿足'),
+    EmotionItem('生氣'),
+    EmotionItem('憤怒'),
+    EmotionItem('煩躁'),
   ];
 
   final List<SymptomItem> _symptoms = [SymptomItem(name: '')];
@@ -306,6 +304,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
 
       final payload = <String, dynamic>{
         'emotions': _emotions
+            .where((e) => e.value != null)
             .map((e) => {'name': e.name, 'value': e.value})
             .toList(),
         'symptoms': _symptoms.map((s) => s.name).toList(),
@@ -393,17 +392,36 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   Widget build(BuildContext context) {
     final pages = [
       _pageWrapper(
-        EmotionPage(
-          items: _emotions,
-          onAdd: _addEmotion,
-          onRename: _renameEmotion,
-          onDelete: _deleteEmotion,
-          onChangeValue: (i, v) {
-            setState(() {
-              _emotions[i] = _emotions[i].copyWith(value: v);
-            });
-          },
-        ),
+        _useNewEmotionPage
+            ? EmotionPageCheckbox(
+                items: _emotions,
+                onAdd: _addEmotion,
+                onRename: _renameEmotion,
+                onDelete: _deleteEmotion,
+                onToggleChecked: (i, checked) {
+                  setState(() {
+                    _emotions[i] = _emotions[i].copyWith(
+                      value: checked ? (_emotions[i].value ?? 5) : null,
+                    );
+                  });
+                },
+                onChangeValue: (i, v) {
+                  setState(() {
+                    _emotions[i] = _emotions[i].copyWith(value: v);
+                  });
+                },
+              )
+            : EmotionPage(
+                items: _emotions,
+                onAdd: _addEmotion,
+                onRename: _renameEmotion,
+                onDelete: _deleteEmotion,
+                onChangeValue: (i, v) {
+                  setState(() {
+                    _emotions[i] = _emotions[i].copyWith(value: v);
+                  });
+                },
+              ),
       ),
       _pageWrapper(SymptomPage(
         items: _symptoms,
