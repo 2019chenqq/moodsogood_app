@@ -659,6 +659,15 @@ if (_medType == 'injection') ...[
         .limit(8)
         .get();
 
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    debugPrint('auth uid=$uid');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('drug_dict query "${q.length > 12 ? q.substring(0, 12) : q}" -> ${snap.size} (uid:${uid ?? 'null'})'),
+        duration: const Duration(seconds: 2),
+      ));
+    }
+
     final list = snap.docs.map((d) {
       final data = d.data();
 

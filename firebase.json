@@ -25,9 +25,11 @@
       "**/.*",
       "**/node_modules/**"
     ]
-  }
-  ,
+  },
   "firestore": {
-    "rules": "firestore.rules"
+    "database": "(default)",
+    "location": "asia-east1",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
   }
 }

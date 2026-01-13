@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
-
+import 'drug_dictionary_service.dart';
 
 class AddMedicationPage extends StatefulWidget {
   const AddMedicationPage({super.key});
@@ -26,6 +26,29 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
   int _intervalDays = 28;     // 只給 injection 用
   Timer? _drugDebounce;
 bool _isSearchingDrug = false;
+
+void _applyDrugSuggestion(Map<String, String> s) {
+  final zh = s['zh'] ?? '';
+  final en = s['en'] ?? '';
+
+  setState(() {
+    if (zh.isNotEmpty) {
+      _nameCtrl.text = zh;
+    }
+    if (en.isNotEmpty) {
+      _nameEnCtrl.text = en;
+    }
+    _drugSuggestions = []; // 選完就收起建議清單
+  });
+
+  FocusScope.of(context).unfocus();
+}
+
+@override
+void initState() {
+  super.initState();
+  DrugDictionaryService.instance.ensureLoaded();
+}
 
 // 候選結果：[{id, zh, en}]
 List<Map<String, String>> _drugSuggestions = [];
@@ -627,6 +650,15 @@ final bodySymptoms = bodySymptomText.isEmpty
         .limit(8)
         .get();
 
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    debugPrint('auth uid=$uid');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('drug_dict query "${q.length > 12 ? q.substring(0, 12) : q}" -> ${snap.size} (uid:${uid ?? 'null'})'),
+        duration: const Duration(seconds: 2),
+      ));
+    }
+
     final list = snap.docs.map((d) {
       final data = d.data();
 
@@ -703,18 +735,6 @@ void _onDrugNameChanged(String v) {
   _drugDebounce = Timer(const Duration(milliseconds: 250), () {
     _searchDrugDict(v);
   });
-}
-
-void _applyDrugSuggestion(Map<String, String> s) {
-  final zh = (s['zh'] ?? '').trim();
-  final en = (s['en'] ?? '').trim();
-
-  // 你可以決定：中文欄位顯示 zh，英文欄位顯示 en
-  if (zh.isNotEmpty) _nameCtrl.text = zh;
-  if (en.isNotEmpty) _nameEnCtrl.text = en;
-
-  setState(() => _drugSuggestions = []);
-  FocusScope.of(context).nextFocus(); // 跳到下一個輸入欄（可改成 unfocus）
 }
 
 Future<void> _showAddDrugDialog(String input) async {
