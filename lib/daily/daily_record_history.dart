@@ -334,7 +334,7 @@ bool _isHistoryLocked(bool isPro) {
   ),
 ),
 
-      const SizedBox(height: 24),
+      const SizedBox(height: 12),
 
       // ===== 圖表標題 =====
       Text(
@@ -347,41 +347,43 @@ bool _isHistoryLocked(bool isPro) {
           color: Colors.grey,
         ),
       ),
-      const SizedBox(height: 16),
+      const SizedBox(height: 12),
 
       // ===== 圖表本體（唯一可以被鎖的地方）=====
-      SizedBox(
-        height: 300,
-        child: Stack(
-          children: [
-            // ✅ 原本好看的圖表 UI（永遠存在）
-            _ChartWidget(
-              records: filteredRecords,
-              fullRecords: allRecords,
-              targetEmotion: _selectedEmotion,
-              useMovingAverage: useMA,
-            ),
+      Expanded(
+        child: SizedBox(
+          width: double.infinity,
+          child: Stack(
+            children: [
+              // ✅ 原本好看的圖表 UI（永遠存在）
+              _ChartWidget(
+                records: filteredRecords,
+                fullRecords: allRecords,
+                targetEmotion: _selectedEmotion,
+                useMovingAverage: useMA,
+              ),
 
-            // 🔒 只有在鎖定時，才覆蓋圖表
-            if (isLocked)
-              Positioned.fill(
-                child: IgnorePointer(
-                  ignoring: true,
-                  child: Container(
-                    color: Theme.of(context)
-                      .scaffoldBackgroundColor
-                      .withValues(alpha: 0.75),
-                    alignment: Alignment.center,
-                    child: _buildProLockedView(
-                      context: context,
-                      title: '情緒趨勢圖',
-                      description:
-                          '查看 30 天 / 全部的情緒趨勢，需要升級 Pro。',
+              // 🔒 只有在鎖定時，才覆蓋圖表
+              if (isLocked)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    ignoring: true,
+                    child: Container(
+                      color: Theme.of(context)
+                        .scaffoldBackgroundColor
+                        .withValues(alpha: 0.75),
+                      alignment: Alignment.center,
+                      child: _buildProLockedView(
+                        context: context,
+                        title: '情緒趨勢圖',
+                        description:
+                            '查看 30 天 / 全部的情緒趨勢，需要升級 Pro。',
+                      ),
                     ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     ],
