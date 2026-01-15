@@ -75,17 +75,24 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
 
   // ——— 情緒/症狀/睡眠本地狀態 ———
   final List<EmotionItem> _emotions = [
-    EmotionItem('整體情緒'),
-    EmotionItem('焦慮'),
-    EmotionItem('低落'),
-    EmotionItem('憂鬱'),
-    EmotionItem('悶悶不樂'),
+    // 整體狀態
+    EmotionItem('平靜'),
     EmotionItem('開心'),
-    EmotionItem('期待'),
-    EmotionItem('滿足'),
-    EmotionItem('生氣'),
-    EmotionItem('憤怒'),
+    EmotionItem('有力量'),
+    EmotionItem('疲憊'),
+    EmotionItem('沒動力'),
+    // 壓力情緒
+    EmotionItem('焦慮'),
+    EmotionItem('緊張'),
+    EmotionItem('壓力大'),
     EmotionItem('煩躁'),
+    EmotionItem('生氣'),
+    // 低落警訊
+    EmotionItem('難過'),
+    EmotionItem('憂鬱'),
+    EmotionItem('無助'),
+    EmotionItem('崩潰感'),
+    EmotionItem('自殺意念'),
   ];
 
   final List<SymptomItem> _symptoms = [SymptomItem(name: '')];
@@ -142,31 +149,20 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         setState(() {
           // --- 情緒 ---
           if (record.emotions.isNotEmpty) {
-            _emotions.clear();
-
-            // 確保「整體情緒」永遠排第一
-            final all = record.emotions;
-            all.sort((a, b) {
-              if (a.name == '整體情緒') return -1;
-              if (b.name == '整體情緒') return 1;
-              return 0;
-            });
-
-            _emotions.addAll(
-              all.map(
-                (e) => EmotionItem(e.name, value: e.value),
-              ),
-            );
-          }
-          if (record.overallMood != null) {
-            _emotions.removeWhere((e) => e.name == '整體情緒');
-            _emotions.insert(
-              0,
-              EmotionItem(
-                '整體情緒',
-                value: record.overallMood!.round(),
-              ),
-            );
+            // 將已儲存的情緒值合併到現有的情緒列表中
+            for (var i = 0; i < _emotions.length; i++) {
+              final savedEmotion = record.emotions
+                  .where((e) => e.name == _emotions[i].name)
+                  .firstOrNull;
+              if (savedEmotion != null) {
+                _emotions[i] = EmotionItem(
+                  _emotions[i].name,
+                  value: savedEmotion.value,
+                );
+              } else {
+                _emotions[i] = EmotionItem(_emotions[i].name);
+              }
+            }
           }
           // --- 症狀 ---
           if (record.symptoms.isNotEmpty) {
@@ -331,13 +327,11 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         'savedAt': FieldValue.serverTimestamp(),
       };
 
-      try {
-        final e = _emotions.firstWhere((x) => x.name.contains('整體情緒'));
-        if (e.value != null) {
-          payload['overallMood'] = (e.value!) * 1.0;
-        }
-      } catch (_) {
-        debugPrint("⚠️ 沒找到整體情緒，無法寫入 overallMood");
+      // 計算整體情緒：所有已選情緒的平均值
+      final selectedEmotions = _emotions.where((e) => e.value != null).toList();
+      if (selectedEmotions.isNotEmpty) {
+        final sum = selectedEmotions.fold<int>(0, (acc, e) => acc + e.value!);
+        payload['overallMood'] = (sum / selectedEmotions.length);
       }
 
       if (_isPeriod == true) {

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'daily_record_helpers.dart';
+import '../widgets/emotion_slider.dart';
+import 'daily_record_pages.dart';
 
-/// 新版：勾選 + 分數（0~10）
-/// - 未勾選：`value == null`
-/// - 勾選：顯示 Slider，分數 0~10（預設 5）
+/// 新版：分類選擇 + 已選情緒評分
+/// TOP: 三大類情緒（整體狀態、壓力情緒、低落警訊）以 Chip 方式選擇
+/// BOTTOM: 已選情緒顯示 Slider (0~10)
 class EmotionPageCheckbox extends StatelessWidget {
   const EmotionPageCheckbox({
     super.key,
@@ -22,104 +24,177 @@ class EmotionPageCheckbox extends StatelessWidget {
   final void Function(int index, bool checked) onToggleChecked;
   final void Function(int index, int value) onChangeValue;
 
+  // 定義三大類情緒
+  static const Map<String, List<String>> _emotionCategories = {
+    '整體狀態': ['平靜', '開心', '有力量', '疲憊', '沒動力'],
+    '壓力情緒': ['焦慮', '緊張', '壓力大', '煩躁', '生氣'],
+    '低落警訊': ['難過', '憂鬱', '無助', '崩潰感', '自殺意念'],
+  };
+
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
+    // 從 items 中找出已選擇的情緒（value != null）
+    final selectedEmotions = <EmotionItem>[];
+    final emotionIndices = <String, int>{}; // 情緒名稱 -> index 映射
+
+    for (var i = 0; i < items.length; i++) {
+      emotionIndices[items[i].name] = i;
+      if (items[i].value != null) {
+        selectedEmotions.add(items[i]);
+      }
+    }
+
+    return Column(
       children: [
-        ...List.generate(items.length, (i) {
-          final item = items[i];
-          final checked = item.value != null;
+        // ========================================
+        // TOP SECTION: 情緒分類選擇區
+        // ========================================
+        Expanded(
+          flex: 2,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: _emotionCategories.entries.map((category) {
+              return _buildCategorySection(
+                context,
+                categoryName: category.key,
+                emotions: category.value,
+                emotionIndices: emotionIndices,
+              );
+            }).toList(),
+          ),
+        ),
 
-          return Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Checkbox(
-                        value: checked,
-                        onChanged: (v) {
-                          onToggleChecked(i, v == true);
-                        },
-                      ),
-                      Expanded(
-                        child: Text(
-                          item.name,
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.info_outline),
-                        tooltip: '評分說明',
-                        onPressed: () async {
-                          // 顯示簡單提醒
-                          await showDialog(
-                            context: context,
-                            builder: (_) => AlertDialog(
-                              title: const Text('分數說明'),
-                              content: const Text('0 代表程度低，10 代表程度高'),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context),
-                                  child: const Text('知道了'),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                      if (i != 0)
-                        IconButton(
-                          icon: const Icon(Icons.edit_outlined),
-                          onPressed: () => onRename(i),
-                        ),
-                      if (i != 0)
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: () => onDelete(i),
-                        ),
-                    ],
-                  ),
+        const Divider(height: 1, thickness: 2),
 
-                  if (checked) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      '0 代表程度低，10 代表程度高',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+        // ========================================
+        // BOTTOM SECTION: 已選情緒評分區
+        // ========================================
+        Expanded(
+          flex: 3,
+          child: Container(
+            color: Theme.of(context).colorScheme.surface,
+            child: selectedEmotions.isEmpty
+                ? Center(
+                    child: Text(
+                      '請從上方選擇情緒',
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                             color: Theme.of(context)
                                 .colorScheme
                                 .onSurface
-                                .withOpacity(0.7),
+                                .withOpacity(0.5),
                           ),
                     ),
-                    Slider(
-                      value: (item.value ?? 5).toDouble(),
-                      min: 0,
-                      max: 10,
-                      divisions: 10,
-                      label: '${item.value ?? 5}',
-                      onChanged: (v) => onChangeValue(i, v.round()),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          );
-        }),
-
-        const SizedBox(height: 12),
-        OutlinedButton.icon(
-          onPressed: onAdd,
-          icon: const Icon(Icons.add),
-          label: const Text('新增情緒項目'),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: selectedEmotions.map((emotion) {
+                      final index = emotionIndices[emotion.name]!;
+                      return _buildSelectedEmotionCard(
+                        context,
+                        emotion: emotion,
+                        index: index,
+                      );
+                    }).toList(),
+                  ),
+          ),
         ),
       ],
+    );
+  }
+
+  /// 構建單個分類區塊
+  Widget _buildCategorySection(
+    BuildContext context, {
+    required String categoryName,
+    required List<String> emotions,
+    required Map<String, int> emotionIndices,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8, top: 8),
+          child: Text(
+            categoryName,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+        ),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: emotions.map((emotionName) {
+            // 檢查這個情緒是否已存在於 items 中
+            final index = emotionIndices[emotionName];
+            final isSelected = index != null && items[index].value != null;
+
+            return FilterChip(
+              label: Text(emotionName),
+              selected: isSelected,
+              onSelected: (selected) {
+                if (index == null) {
+                  // 如果該情緒不存在於 items，先添加
+                  // 這裡需要通過 onAdd 來處理，但 onAdd 目前沒有參數
+                  // 暫時跳過或者可以擴展 API
+                  return;
+                }
+                onToggleChecked(index, selected);
+              },
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  /// 構建已選情緒卡片（帶 Slider）
+  Widget _buildSelectedEmotionCard(
+    BuildContext context, {
+    required EmotionItem emotion,
+    required int index,
+  }) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    emotion.name,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  tooltip: '移除',
+                  onPressed: () => onToggleChecked(index, false),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            EmotionSlider(
+              label: emotion.name,
+              value: emotion.value ?? 1,
+              onChanged: (v) => onChangeValue(index, v),
+              leftIcon: 'assets/emotion/default.png',
+              rightIcon: emotionRightIconMap[emotion.name] ??
+                  'assets/emotion/default.png',
+              gradientColors: const [
+                Color(0xFF9AD0EC),
+                Color(0xFFFFE08A),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

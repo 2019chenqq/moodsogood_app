@@ -28,6 +28,7 @@ const Map<String, String> emotionDisplayTextMap = {
 };
 
 const Map<String, String> emotionRightIconMap = {
+  // 舊有情緒
   '整體情緒': 'assets/emotion/overall.png',
   '焦慮程度': 'assets/emotion/anxious.png',
   '憂鬱程度': 'assets/emotion/depression.png',
@@ -43,6 +44,23 @@ const Map<String, String> emotionRightIconMap = {
   '能量': 'assets/emotion/energy.png',
   '活動量': 'assets/emotion/活動量.png',
   '疲倦程度': 'assets/emotion/tired.png',
+  // 整體狀態
+  '平靜': 'assets/emotion/default.png',
+  '開心': 'assets/emotion/happy.png',
+  '有力量': 'assets/emotion/power.png',
+  '疲憊': 'assets/emotion/tired.png',
+  '沒動力': 'assets/emotion/boring.png',
+  // 壓力情緒
+  '焦慮': 'assets/emotion/anxious.png',
+  '緊張': 'assets/emotion/anxious.png',
+  '壓力大': 'assets/emotion/anxious.png',
+  '煩躁': 'assets/emotion/anxious.png',
+  '生氣': 'assets/emotion/anxious.png',
+  // 低落警訊
+  '難過': 'assets/emotion/sad.png',
+  '憂鬱': 'assets/emotion/depression.png',
+  '無助': 'assets/emotion/despair.png',
+  '崩潰感': 'assets/emotion/despair.png',
 };
 
 /// 情緒分頁
