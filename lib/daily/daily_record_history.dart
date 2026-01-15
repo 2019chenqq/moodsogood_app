@@ -417,12 +417,21 @@ bool _isHistoryLocked(bool isPro) {
     );
   }
   
-  // 遍歷所有資料，找出所有用過的情緒標籤
+  // 遍歷所有資料，找出有實際數據的情緒標籤
   Set<String> _extractEmotionNames(List<DailyRecord> records) {
-    final names = <String>{'整體情緒'}; // 預設必有
+    final names = <String>{};
+    
+    // 檢查是否有 overallMood 數據
+    if (records.any((r) => r.overallMood != null)) {
+      names.add('整體情緒');
+    }
+    
+    // 只加入有 value 數據的情緒
     for (var r in records) {
       for (var e in r.emotions) {
-        if (e.name.isNotEmpty) names.add(e.name);
+        if (e.name.isNotEmpty && e.value != null) {
+          names.add(e.name);
+        }
       }
     }
     return names;
