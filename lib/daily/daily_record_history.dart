@@ -350,7 +350,8 @@ bool _isHistoryLocked(bool isPro) {
       const SizedBox(height: 12),
 
       // ===== 圖表本體（唯一可以被鎖的地方）=====
-      Expanded(
+      SizedBox(
+        height: 180,
         child: SizedBox(
           width: double.infinity,
           child: Stack(
