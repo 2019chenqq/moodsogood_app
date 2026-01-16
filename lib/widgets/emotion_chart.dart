@@ -61,7 +61,7 @@ class EmotionChart extends StatelessWidget {
       }
     }
     return Container(
-      height: 220, // 圖表高度
+      height: 180, // 圖表高度
       padding: const EdgeInsets.only(right: 24, left: 12, top: 24, bottom: 12),
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
