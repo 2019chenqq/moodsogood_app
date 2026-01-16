@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'record_detail_screen.dart';
 import '../utils/date_helper.dart';
 import '../utils/firebase_sync_config.dart';
+import 'daily_record_repository.dart';
 
 class EditRecordPage extends StatefulWidget {
   final String uid;
@@ -105,6 +106,18 @@ final payload = <String, dynamic>{
     if (FirebaseSyncConfig.shouldSync()) {
       await ref.set(payload, SetOptions(merge: true));
     }
+
+    // Always save to local database
+    final repo = DailyRecordRepository();
+    await repo.saveDailyRecord(
+      id: widget.docId,
+      userId: widget.uid,
+      date: DateTime.tryParse(widget.initData['date'] ?? '') ?? DateTime.now(),
+      emotions: Map<String, dynamic>.from(
+        emotions.asMap().map((k, v) => MapEntry(v['name'] ?? '', v['value'])),
+      ),
+      sleep: newSleep,
+    );
 
     if (!mounted) return;
     // 儲存成功 ➜ 關掉編輯頁並回傳 true

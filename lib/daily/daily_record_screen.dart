@@ -7,6 +7,7 @@ import '../utils/firebase_sync_config.dart';
 import '../models/daily_record.dart';
 import '../widgets/main_drawer.dart';
 import '../quotes.dart';
+import 'daily_record_repository.dart';
 
 // Import refactored modules
 import 'daily_record_helpers.dart';
@@ -351,6 +352,41 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       if (FirebaseSyncConfig.shouldSync()) {
         await ref.set(payload, SetOptions(merge: true));
       }
+
+      // Always save to local database
+      final repo = DailyRecordRepository();
+      await repo.saveDailyRecord(
+        id: docId,
+        userId: uid,
+        date: _recordDate,
+        emotions: Map<String, dynamic>.from(_emotions.asMap().map(
+          (k, v) => MapEntry(v.name, v.value),
+        )),
+        sleep: {
+          'sleepTime': sleepTime != null ? DateHelper.formatTime(sleepTime!) : null,
+          'wakeTime': wakeTime != null ? DateHelper.formatTime(wakeTime!) : null,
+          'finalWakeTime': finalWakeTime != null ? DateHelper.formatTime(finalWakeTime!) : null,
+          'midWakeList': midWakeList,
+          'quality': sleepQuality,
+          'tookHypnotic': tookHypnotic,
+          'hypnoticName': hypnoticName,
+          'hypnoticDose': hypnoticDose,
+          'flags': _sleepFlags.map((f) => f.name).toList(),
+          'note': sleepNote,
+          'naps': _naps
+              .map((n) => {
+                    'start': DateHelper.formatTime(n.start),
+                    'end': DateHelper.formatTime(n.end),
+                    'minutes': DateHelper.calcDurationMinutes(n.start, n.end),
+                  })
+              .toList(),
+        },
+        periodData: {
+          'isPeriod': _isPeriod,
+          'periodStartId': _isPeriod ? (oldStartId ?? docId) : oldStartId,
+          'periodEndId': !_isPeriod && oldIsPeriod ? docId : null,
+        },
+      );
 
       if (!mounted) return;
 
