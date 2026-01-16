@@ -71,7 +71,9 @@ class SleepData {
     final end = finalWakeTime ?? wakeTime;
     if (sleepTime == null || end == null) return null;
     final mins = DateHelper.calcDurationMinutes(sleepTime!, end);
-    return double.parse((mins / 60).toStringAsFixed(1));
+    final result = double.parse((mins / 60).toStringAsFixed(1));
+    debugPrint('🛏️ durationHours 計算：sleepTime=$sleepTime, wakeTime=$end, mins=$mins, result=$result');
+    return result;
   }
 
   // 🔥 新增：取得主要睡眠標籤 (用於列表顯示)
@@ -79,9 +81,9 @@ class SleepData {
 
   Map<String, dynamic> toMap() {
     return {
-      'sleepTime': DateHelper.formatTime(sleepTime),
-      'wakeTime': DateHelper.formatTime(wakeTime),
-      'finalWakeTime': DateHelper.formatTime(finalWakeTime), // 🔥
+      'sleepTime': sleepTime != null ? DateHelper.formatTime(sleepTime) : null,
+      'wakeTime': wakeTime != null ? DateHelper.formatTime(wakeTime) : null,
+      'finalWakeTime': finalWakeTime != null ? DateHelper.formatTime(finalWakeTime) : null, // 🔥
       'midWakeList': midWakeList ?? '',                      // 🔥
       'quality': quality,
       'tookHypnotic': tookHypnotic,
@@ -95,10 +97,14 @@ class SleepData {
 
   factory SleepData.fromMap(Map<String, dynamic>? map) {
     if (map == null) return SleepData.empty();
+    final sleepTimeStr = map['sleepTime'];
+    final wakeTimeStr = map['wakeTime'];
+    final finalWakeTimeStr = map['finalWakeTime'];
+    debugPrint('🛏️ SleepData.fromMap: sleepTime=$sleepTimeStr, wakeTime=$wakeTimeStr, finalWakeTime=$finalWakeTimeStr');
     return SleepData(
-      sleepTime: DateHelper.parseTime(map['sleepTime']),
-      wakeTime: DateHelper.parseTime(map['wakeTime']),
-      finalWakeTime: DateHelper.parseTime(map['finalWakeTime']), // 🔥
+      sleepTime: DateHelper.parseTime(sleepTimeStr),
+      wakeTime: DateHelper.parseTime(wakeTimeStr),
+      finalWakeTime: DateHelper.parseTime(finalWakeTimeStr), // 🔥
       midWakeList: map['midWakeList'] as String?,                // 🔥
       quality: map['quality'] as int?,
       tookHypnotic: map['tookHypnotic'] == true,

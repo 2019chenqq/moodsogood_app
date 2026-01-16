@@ -19,7 +19,7 @@ class FirebaseSyncConfig {
   /// - Set to false for development/testing (no Firebase quota usage)
   /// - Set to true for production (cloud sync enabled)
   /// 📌 Change this based on your build configuration
-  static const bool kEnableFirebaseSync = true;
+  static const bool kEnableFirebaseSync = false;
 
   bool get isEnabled => kEnableFirebaseSync;
 
