@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../utils/date_helper.dart';
+import '../utils/firebase_sync_config.dart';
 import '../models/daily_record.dart';
 import '../widgets/main_drawer.dart';
 import '../quotes.dart';
@@ -346,7 +347,10 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         payload['periodStartId'] = oldStartId;
       }
 
-      await ref.set(payload, SetOptions(merge: true));
+      // Only sync to Firebase if enabled
+      if (FirebaseSyncConfig.shouldSync()) {
+        await ref.set(payload, SetOptions(merge: true));
+      }
 
       if (!mounted) return;
 

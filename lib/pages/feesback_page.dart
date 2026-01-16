@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../utils/firebase_sync_config.dart';
 
 class FeedbackPage extends StatefulWidget {
   const FeedbackPage({super.key});
@@ -21,13 +22,15 @@ class _FeedbackPageState extends State<FeedbackPage> {
 
     try {
       // 將回饋存入 'feedbacks' 集合
-      await FirebaseFirestore.instance
-    .collection('feedback')
-    .add({
-      'uid': FirebaseAuth.instance.currentUser!.uid,
-      'content': _controller.text.trim(),
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+      if (FirebaseSyncConfig.shouldSync()) {
+        await FirebaseFirestore.instance
+      .collection('feedback')
+      .add({
+        'uid': FirebaseAuth.instance.currentUser!.uid,
+        'content': _controller.text.trim(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      }
 
       if (!mounted) return;
 

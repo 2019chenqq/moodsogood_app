@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'record_detail_screen.dart';
 import '../utils/date_helper.dart';
+import '../utils/firebase_sync_config.dart';
 
 class EditRecordPage extends StatefulWidget {
   final String uid;
@@ -100,7 +101,10 @@ final payload = <String, dynamic>{
   'savedAt': FieldValue.serverTimestamp(),
 };
 
-    await ref.set(payload, SetOptions(merge: true));
+    // Only sync to Firebase if enabled
+    if (FirebaseSyncConfig.shouldSync()) {
+      await ref.set(payload, SetOptions(merge: true));
+    }
 
     if (!mounted) return;
     // 儲存成功 ➜ 關掉編輯頁並回傳 true

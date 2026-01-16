@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
+import '../utils/firebase_sync_config.dart';
 
 class DrugDictItem {
   final String zh;
@@ -123,11 +124,13 @@ class DrugDictionaryService {
         .collection('drugDictionary')
         .doc(zhNorm);
 
-    await ref.set({
-      'zh': zhName.trim(),
-      'en': en,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    if (FirebaseSyncConfig.shouldSync()) {
+      await ref.set({
+        'zh': zhName.trim(),
+        'en': en,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    }
 
     _userMap[zhNorm] = en;
   }

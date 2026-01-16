@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
 import 'drug_dictionary_service.dart';
+import '../utils/firebase_sync_config.dart';
 
 class AddMedicationPage extends StatefulWidget {
   const AddMedicationPage({super.key});
@@ -592,7 +593,9 @@ final bodySymptoms = bodySymptomText.isEmpty
           .doc(uid)
           .collection('medications');
 
-      await col.add({
+      // Only sync to Firebase if enabled
+      if (FirebaseSyncConfig.shouldSync()) {
+        await col.add({
         'name': name,
         'dose': doseValue,
         'unit': _unit,
@@ -611,7 +614,8 @@ final bodySymptoms = bodySymptomText.isEmpty
         'updatedAt': FieldValue.serverTimestamp(),
         // 後續做調藥 wizard 時才會更新：
         'lastChangeAt': null,
-      });
+        });
+      }
 
       if (!mounted) return;
       Navigator.pop(context, true);
