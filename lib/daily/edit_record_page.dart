@@ -48,6 +48,8 @@ Future<void> _saveAndClose() async {
     );
   }
 
+  debugPrint('💾 開始保存編輯，_sleepTime=$_sleepTime, _wakeTime=$_wakeTime');
+
   try {
     final uid = widget.uid;
 final docId = widget.docId;
@@ -56,7 +58,8 @@ final ref = FirebaseFirestore.instance
     .collection('dailyRecords').doc(docId);
 
 // 先把目前畫面上的睡眠欄位整理成新的 Map
-final Map<String, dynamic> newSleep = {};
+// 注意：要保留現有的所有值，只更新改動的部分
+final Map<String, dynamic> newSleep = Map<String, dynamic>.from(sleep);
 
 // 有沒有吃安眠藥
 newSleep['tookHypnotic'] = _tookHypnotic;
@@ -64,25 +67,35 @@ newSleep['tookHypnotic'] = _tookHypnotic;
 // 藥名、劑量（沒有就存空字串）
 newSleep['hypnoticName'] = _hypNameCtrl.text.trim();
 newSleep['hypnoticDose'] = _hypDoseCtrl.text.trim();
-newSleep['flags'] = kSleepFlags;
 
-// 入睡時間、起床時間
+// 入睡時間、起床時間（確保保存時間或清除空值）
 if (_sleepTime != null) {
   newSleep['sleepTime'] = DateHelper.formatTime(_sleepTime);
+} else {
+  newSleep.remove('sleepTime');
 }
-if (_midWakeCtrl.text.trim().isNotEmpty) {
-  newSleep['midWakeList'] = _midWakeCtrl.text.trim();
-}
+
 if (_wakeTime != null) {
   newSleep['wakeTime'] = DateHelper.formatTime(_wakeTime);
+} else {
+  newSleep.remove('wakeTime');
+}
+
+// 中途醒來時間
+if (_midWakeCtrl.text.trim().isNotEmpty) {
+  newSleep['midWakeList'] = _midWakeCtrl.text.trim();
+} else {
+  newSleep.remove('midWakeList');
 }
 
 // 自覺睡眠品質
 if (_sleepQuality != null) {
   newSleep['quality'] = _sleepQuality;
+} else {
+  newSleep.remove('quality');
 }
 
-// flags / note / naps：用現在 state 裡的 sleep 去補
+// flags / note / naps：更新旗標和備註
 newSleep['flags'] = (sleep['flags'] as List?)?.map((e) => e.toString()).toList() ?? [];
 newSleep['note'] = (sleep['note'] ?? '').toString();
 
@@ -92,33 +105,29 @@ final List<Map<String, dynamic>> naps = ((sleep['naps'] as List?) ?? const [])
 newSleep['naps'] = naps;
 
 // 最後再組 payload
-final payload = <String, dynamic>{
-  'emotions': emotions,
-  'symptoms': symptoms,
-  'sleep': newSleep, // ⬅️ 改成用 newSleep
-  'overallMood': _calcOverallMood(
-    emotions.map((e) => Map<String, dynamic>.from(e)).toList(),
-  ),
-  'savedAt': FieldValue.serverTimestamp(),
-};
+    final payload = <String, dynamic>{
+      'emotions': emotions,
+      'symptoms': symptoms,
+      'sleep': newSleep, // ⬅️ 改成用 newSleep
+      'overallMood': _calcOverallMood(
+        emotions.map((e) => Map<String, dynamic>.from(e)).toList()),
+      'savedAt': FieldValue.serverTimestamp(),
+    };
 
+<<<<<<< HEAD
+    debugPrint('🔥 即將保存的完整 sleep 物件：$newSleep');
+    debugPrint('🔥 即將保存的完整 payload：$payload');
+    
+    // 使用 merge: true 確保頂級字段被合併
+    await ref.set(payload, SetOptions(merge: true));
+    debugPrint('✅ 保存成功');
+=======
     // Only sync to Firebase if enabled
     if (FirebaseSyncConfig.shouldSync()) {
       await ref.set(payload, SetOptions(merge: true));
     }
 
-    // Always save to local database
-    final repo = DailyRecordRepository();
-    await repo.saveDailyRecord(
-      id: widget.docId,
-      userId: widget.uid,
-      date: DateTime.tryParse(widget.initData['date'] ?? '') ?? DateTime.now(),
-      emotions: Map<String, dynamic>.from(
-        emotions.asMap().map((k, v) => MapEntry(v['name'] ?? '', v['value'])),
-      ),
-      sleep: newSleep,
-    );
-
+>>>>>>> cccc2b7058be0bbc41b154491ab8bf780b9fd693
     if (!mounted) return;
     // 儲存成功 ➜ 關掉編輯頁並回傳 true
     if (Navigator.canPop(context)) {
@@ -192,10 +201,12 @@ final payload = <String, dynamic>{
     _tookHypnotic = sleep['tookHypnotic'] == true;
     _hypNameCtrl = TextEditingController(text: (sleep['hypnoticName'] ?? '').toString());
     _hypDoseCtrl = TextEditingController(text: (sleep['hypnoticDose'] ?? '').toString());
-    _midWakeCtrl = TextEditingController(text: (sleep['midWakeTime'] ?? '').toString());
+    _midWakeCtrl = TextEditingController(text: (sleep['midWakeList'] ?? '').toString());
     _sleepTime = DateHelper.parseTime(sleep['sleepTime']);
     _wakeTime  = DateHelper.parseTime(sleep['wakeTime']);
     _sleepQuality = (sleep['quality'] is int) ? sleep['quality'] as int : null;
+    
+    debugPrint('🛏️ 編輯頁初始化睡眠：sleepTime=$_sleepTime, wakeTime=$_wakeTime, sleep=$sleep');
   }
 
   @override
