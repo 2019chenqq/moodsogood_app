@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../utils/firebase_sync_config.dart';
 
 // 你已經有的新增藥物頁（路徑依你的專案調整）
 import 'add_medication_page.dart';
@@ -520,7 +521,9 @@ Future<void> _editDose({
         batch.set(medRef, patch, SetOptions(merge: true));
       }
 
-      await batch.commit();
+      if (FirebaseSyncConfig.shouldSync()) {
+        await batch.commit();
+      }
 for (final e in changed) {
   final docId = e.key;
   final d = e.value;

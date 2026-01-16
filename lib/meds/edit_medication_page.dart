@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../utils/firebase_sync_config.dart';
 
 class EditMedicationPage extends StatefulWidget {
   final String docId;
@@ -600,27 +601,28 @@ if (_medType == 'injection') ...[
           .collection('medications')
           .doc(widget.docId);
 
-      await docRef.set({
-        'name': name,
-        'dose': _dose, // double，支援 0.5 / 1.25
-        'unit': _unit,
-        // ✅ 新增：口服/長效針
-  'type': _medType,
+      if (FirebaseSyncConfig.shouldSync()) {
+        await docRef.set({
+          'name': name,
+          'dose': _dose, // double，支援 0.5 / 1.25
+          'unit': _unit,
+          // ✅ 新增：口服/長效針
+    'type': _medType,
 
-  // ✅ 新增：注射間隔（天）— 口服藥就清掉
-  'intervalDays': _medType == 'injection' ? _intervalDays : null,
+    // ✅ 新增：注射間隔（天）— 口服藥就清掉
+    'intervalDays': _medType == 'injection' ? _intervalDays : null,
 
-  // ✅ 長效針不應該有 times
-  'times': times,
-        'times': times,
-                'purposes': purposes,
-        'purposeOther': purposeOther.isEmpty ? null : purposeOther,
-        'bodySymptoms': bodySymptoms,
-        'note': _noteCtrl.text.trim(),
-        'startDate': Timestamp.fromDate(DateTime(_startDate.year, _startDate.month, _startDate.day)),
-        'isActive': _isActive,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+    // ✅ 長效針不應該有 times
+    'times': times,
+                  'purposes': purposes,
+          'purposeOther': purposeOther.isEmpty ? null : purposeOther,
+          'bodySymptoms': bodySymptoms,
+          'note': _noteCtrl.text.trim(),
+          'startDate': Timestamp.fromDate(DateTime(_startDate.year, _startDate.month, _startDate.day)),
+          'isActive': _isActive,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
 
       if (!mounted) return;
       Navigator.pop(context, true);

@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'record_detail_screen.dart';
 import '../utils/date_helper.dart';
+import '../utils/firebase_sync_config.dart';
 
 class EditRecordPage extends StatefulWidget {
   final String uid;
@@ -112,12 +113,20 @@ newSleep['naps'] = naps;
       'savedAt': FieldValue.serverTimestamp(),
     };
 
+<<<<<<< HEAD
     debugPrint('🔥 即將保存的完整 sleep 物件：$newSleep');
     debugPrint('🔥 即將保存的完整 payload：$payload');
     
     // 使用 merge: true 確保頂級字段被合併
     await ref.set(payload, SetOptions(merge: true));
     debugPrint('✅ 保存成功');
+=======
+    // Only sync to Firebase if enabled
+    if (FirebaseSyncConfig.shouldSync()) {
+      await ref.set(payload, SetOptions(merge: true));
+    }
+
+>>>>>>> cccc2b7058be0bbc41b154491ab8bf780b9fd693
     if (!mounted) return;
     // 儲存成功 ➜ 關掉編輯頁並回傳 true
     if (Navigator.canPop(context)) {
