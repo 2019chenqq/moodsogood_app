@@ -1,9 +1,11 @@
 // record_detail_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
 import 'edit_record_page.dart';
 import '../utils/date_helper.dart';
 import '../models/daily_record.dart';
+import 'daily_record_repository.dart';
 
 class RecordDetailScreen extends StatefulWidget {
   final String uid;
@@ -22,6 +24,153 @@ class RecordDetailScreen extends StatefulWidget {
 }
 
 class _RecordDetailScreenState extends State<RecordDetailScreen> {
+  /// 從本地 SQLite 和 Firebase 加載混合數據
+  Future<DailyRecord?> _loadMergedRecord() async {
+    final date = DateHelper.parseIdToDate(widget.docId);
+    if (date == null) {
+      debugPrint('❌ Failed to parse date from docId: ${widget.docId}');
+      return null;
+    }
+
+    // 1. 先嘗試本地
+    try {
+      final repo = DailyRecordRepository();
+      final localData = await repo.getDailyRecord(userId: widget.uid, date: date);
+      if (localData != null) {
+        debugPrint('✅ Loaded record from local SQLite: ${widget.docId}');
+        return _convertLocalToRecord(localData, date);
+      }
+    } catch (e) {
+      debugPrint('⚠️  Local load failed: $e');
+    }
+
+    // 2. 再嘗試 Firebase
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users').doc(widget.uid)
+          .collection('dailyRecords').doc(widget.docId)
+          .get();
+      
+      if (snap.exists && snap.data() != null) {
+        debugPrint('✅ Loaded record from Firebase: ${widget.docId}');
+        return DailyRecord.fromFirestore(snap);
+      }
+    } catch (e) {
+      debugPrint('⚠️  Firebase load failed: $e');
+    }
+
+    return null;
+  }
+
+  /// 從本地 Map 轉換為 DailyRecord
+  DailyRecord _convertLocalToRecord(Map<String, dynamic> data, DateTime date) {
+    List<Emotion> emotions = [];
+    if (data['emotions'] != null) {
+      try {
+        Map<String, dynamic> emotionMap;
+        if (data['emotions'] is String) {
+          emotionMap = jsonDecode(data['emotions']) as Map<String, dynamic>;
+        } else if (data['emotions'] is Map) {
+          emotionMap = data['emotions'] as Map<String, dynamic>;
+        } else {
+          throw TypeError();
+        }
+        emotionMap.forEach((name, value) {
+          emotions.add(Emotion(name: name, value: value as int?));
+        });
+      } catch (e) {
+        debugPrint('❌ Failed to parse emotions: $e');
+      }
+    }
+
+    List<String> symptoms = [];
+    if (data['bodySymptoms'] != null) {
+      try {
+        List<dynamic> symptomList;
+        if (data['bodySymptoms'] is String) {
+          symptomList = jsonDecode(data['bodySymptoms']) as List<dynamic>;
+        } else if (data['bodySymptoms'] is List) {
+          symptomList = data['bodySymptoms'] as List<dynamic>;
+        } else {
+          throw TypeError();
+        }
+        symptoms = symptomList.cast<String>();
+      } catch (e) {
+        debugPrint('❌ Failed to parse symptoms: $e');
+      }
+    }
+
+    SleepData sleepData = SleepData();
+    if (data['sleep'] != null) {
+      try {
+        Map<String, dynamic> sleepMap;
+        if (data['sleep'] is String) {
+          sleepMap = jsonDecode(data['sleep']) as Map<String, dynamic>;
+        } else if (data['sleep'] is Map) {
+          sleepMap = data['sleep'] as Map<String, dynamic>;
+        } else {
+          throw TypeError();
+        }
+        sleepData = _parseSleepDataFromMap(sleepMap);
+      } catch (e) {
+        debugPrint('❌ Failed to parse sleep: $e');
+      }
+    }
+
+    bool isPeriod = false;
+    String? periodStartId;
+    String? periodEndId;
+    if (data['periodData'] != null) {
+      try {
+        Map<String, dynamic> periodMap;
+        if (data['periodData'] is String) {
+          periodMap = jsonDecode(data['periodData']) as Map<String, dynamic>;
+        } else if (data['periodData'] is Map) {
+          periodMap = data['periodData'] as Map<String, dynamic>;
+        } else {
+          throw TypeError();
+        }
+        isPeriod = periodMap['isPeriod'] ?? false;
+        periodStartId = periodMap['periodStartId'];
+        periodEndId = periodMap['periodEndId'];
+      } catch (e) {
+        debugPrint('❌ Failed to parse periodData: $e');
+      }
+    }
+
+    return DailyRecord(
+      id: data['id'] ?? widget.docId,
+      date: date,
+      emotions: emotions,
+      symptoms: symptoms,
+      sleep: sleepData,
+      isPeriod: isPeriod,
+      periodStartId: periodStartId,
+      periodEndId: periodEndId,
+    );
+  }
+
+  /// 解析睡眠數據
+  SleepData _parseSleepDataFromMap(Map<String, dynamic> sleepMap) {
+    return SleepData(
+      tookHypnotic: sleepMap['tookHypnotic'] ?? false,
+      hypnoticName: sleepMap['hypnoticName'],
+      hypnoticDose: sleepMap['hypnoticDose'],
+      sleepTime: sleepMap['sleepTime'] != null ? DateHelper.parseTime(sleepMap['sleepTime']) : null,
+      wakeTime: sleepMap['wakeTime'] != null ? DateHelper.parseTime(sleepMap['wakeTime']) : null,
+      finalWakeTime: sleepMap['finalWakeTime'] != null ? DateHelper.parseTime(sleepMap['finalWakeTime']) : null,
+      midWakeList: sleepMap['midWakeList'],
+      flags: List<String>.from(sleepMap['flags'] ?? []),
+      note: sleepMap['note'],
+      quality: sleepMap['quality'],
+      naps: (sleepMap['naps'] as List?)
+          ?.map((n) => NapItem(
+            start: DateHelper.parseTime(n['start']) ?? const TimeOfDay(hour: 0, minute: 0),
+            end: DateHelper.parseTime(n['end']) ?? const TimeOfDay(hour: 0, minute: 0),
+          ))
+          .toList() ?? [],
+    );
+  }
   
 // 將 flags（英文字串）轉為中文，並固定顯示順序
   String _prettyFlags(List<String> keys) {
@@ -117,23 +266,19 @@ Future<void> _clearRecord(BuildContext context) async {
 
   @override
   Widget build(BuildContext context) {
-    final docRef = FirebaseFirestore.instance
-        .collection('users').doc(widget.uid)
-        .collection('dailyRecords').doc(widget.docId);
-
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: docRef.snapshots(),
+    return FutureBuilder<DailyRecord?>(
+      future: _loadMergedRecord(),
       builder: (context, snap) {
         // 1. 處理載入中與錯誤
         if (snap.connectionState == ConnectionState.waiting) {
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
-        if (!snap.hasData || !snap.data!.exists) {
+        
+        final record = snap.data;
+        if (record == null) {
           return const Scaffold(body: Center(child: Text('找不到資料')));
         }
 
-        // 2. 🔥 核心改變：一行代碼將 Map 轉為強型別物件
-        final record = DailyRecord.fromFirestore(snap.data!);
         final sleep = record.sleep;
 
         // 定義樣式

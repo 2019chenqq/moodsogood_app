@@ -94,6 +94,11 @@ class DiaryEntry {
         moodKeyword: m['moodKeyword'] as String?,
         createdAt: DateTime.parse(m['createdAt'] as String),
         updatedAt: DateTime.parse(m['updatedAt'] as String),
+        themeSong: m['themeSong'] as String?,
+        highlight: m['highlight'] as String?,
+        metaphor: m['metaphor'] as String?,
+        proudOf: m['proudOf'] as String?,
+        selfCare: m['selfCare'] as String?,
       );
 }
 
@@ -110,7 +115,7 @@ class DiaryRepository {
     final dbPath = '${docs.path}/mood_so_good.db';
     _db = await openDatabase(
       dbPath,
-      version: 1,
+      version: 2, // 增加版本號以觸發升級
       onCreate: (db, version) async {
         await db.execute('''
         CREATE TABLE diary_entries (
@@ -121,10 +126,25 @@ class DiaryRepository {
           moodScore REAL,
           moodKeyword TEXT,
           createdAt TEXT NOT NULL,
-          updatedAt TEXT NOT NULL
+          updatedAt TEXT NOT NULL,
+          themeSong TEXT,
+          highlight TEXT,
+          metaphor TEXT,
+          proudOf TEXT,
+          selfCare TEXT
         );
         ''');
         await db.execute('CREATE INDEX IF NOT EXISTS idx_diary_date ON diary_entries(date DESC);');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          // 添加新欄位（如果舊資料庫不存在這些欄位）
+          await db.execute('ALTER TABLE diary_entries ADD COLUMN themeSong TEXT;');
+          await db.execute('ALTER TABLE diary_entries ADD COLUMN highlight TEXT;');
+          await db.execute('ALTER TABLE diary_entries ADD COLUMN metaphor TEXT;');
+          await db.execute('ALTER TABLE diary_entries ADD COLUMN proudOf TEXT;');
+          await db.execute('ALTER TABLE diary_entries ADD COLUMN selfCare TEXT;');
+        }
       },
     );
     return _db!;
@@ -162,6 +182,30 @@ class DiaryRepository {
     final rows = await db.query('diary_entries', where: 'id = ?', whereArgs: [id], limit: 1);
     if (rows.isEmpty) return null;
     return DiaryEntry.fromMap(rows.first);
+  }
+
+  /// 按日期查詢日記
+  Future<DiaryEntry?> getByDate(DateTime date) async {
+    final db = await _open();
+    final dateStr = date.toIso8601String().split('T')[0]; // yyyy-MM-dd
+    final rows = await db.query(
+      'diary_entries',
+      where: 'date LIKE ?',
+      whereArgs: ['$dateStr%'],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return DiaryEntry.fromMap(rows.first);
+  }
+
+  /// Upsert：如果該日期的日記已存在則更新，否則插入
+  Future<int> upsert(DiaryEntry entry) async {
+    final existing = await getByDate(entry.date);
+    if (existing != null) {
+      return await update(entry.copyWith(id: existing.id));
+    } else {
+      return await insert(entry);
+    }
   }
 
   Future<int> delete(int id) async {

@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../utils/date_helper.dart';
 import '../utils/firebase_sync_config.dart';
+import 'diary_repository.dart';
 
 class DiaryPageDemo extends m.StatefulWidget {
   final DateTime date;
@@ -73,24 +74,44 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
     super.dispose();
   }
 
-  // ---------------- 載入與儲存 ----------------
+  // 從控制器值更新 UI 的輔助函數
+  void _updateUIFromData(Map<String, dynamic> data) {
+    if (!mounted) return;
+    _titleCtrl.text     = (data['title']     ?? '') as String;
+    _contentCtrl.text   = (data['content']   ?? '') as String;
+    _songCtrl.text      = (data['themeSong'] ?? '') as String;
+    _highlightCtrl.text = (data['highlight'] ?? '') as String;
+    _metaphorCtrl.text  = (data['metaphor']  ?? '') as String;
+    _conceitedCtrl.text = (data['conceited'] ?? '') as String;
+    _proudOfCtrl.text   = (data['proudOf']   ?? '') as String;
+    _selfCareCtrl.text  = (data['selfCare']  ?? '') as String;
+    setState(() {}); // 更新字數
+  }
+
+  // 從本地 SQLite + Firebase 加載日記
   Future<void> _loadDraft() async {
     try {
-      final snap = await _docRef.get(const GetOptions(source: Source.serverAndCache));
-      final data = snap.data();
-      if (data != null && mounted) {
-        _titleCtrl.text     = (data['title']     ?? '') as String;
-        _contentCtrl.text   = (data['content']   ?? '') as String;
-        _songCtrl.text      = (data['themeSong'] ?? '') as String;
-        _highlightCtrl.text = (data['highlight'] ?? '') as String;
-        _metaphorCtrl.text  = (data['metaphor']  ?? '') as String;
-        _conceitedCtrl.text = (data['conceited'] ?? '') as String;
-        _proudOfCtrl.text   = (data['proudOf']   ?? '') as String;
-        _selfCareCtrl.text  = (data['selfCare']  ?? '') as String;
-        setState(() {}); // 更新字數
+      // 1. 先從本地 SQLite 加載
+      final repo = DiaryRepository();
+      final localEntry = await repo.getByDate(_day);
+      if (localEntry != null && mounted) {
+        m.debugPrint('📔 Loaded diary from local SQLite');
+        _updateUIFromData(localEntry.toMap());
+      }
+
+      // 2. 再嘗試從 Firebase 加載（如果有新的會覆蓋）
+      try {
+        final snap = await _docRef.get(const GetOptions(source: Source.serverAndCache));
+        final data = snap.data();
+        if (data != null && mounted) {
+          m.debugPrint('📔 Loaded diary from Firebase, updating local');
+          _updateUIFromData(data);
+        }
+      } catch (e) {
+        m.debugPrint('📔 Firebase load skipped or failed: $e');
       }
     } catch (e) {
-      m.debugPrint('load draft error: $e');
+      m.debugPrint('❌ Load draft error: $e');
     }
   }
 
@@ -112,6 +133,9 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
 
   Future<void> _saveDraft() async {
     try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+      
       // Only sync to Firebase if enabled
       if (FirebaseSyncConfig.shouldSync()) {
         await _docRef.set({
@@ -128,6 +152,25 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
       }
+      
+      // Always save to local database
+      try {
+        final repo = DiaryRepository();
+        await repo.upsert(DiaryEntry(
+          date: _day,
+          title: _titleCtrl.text.trim(),
+          content: _contentCtrl.text.trim(),
+          themeSong: _songCtrl.text.trim(),
+          highlight: _highlightCtrl.text.trim(),
+          metaphor: _metaphorCtrl.text.trim(),
+          proudOf: _proudOfCtrl.text.trim(),
+          selfCare: _selfCareCtrl.text.trim(),
+        ));
+        m.debugPrint('✅ Diary saved to local database');
+      } catch (e) {
+        m.debugPrint('❌ Failed to save diary locally: $e');
+      }
+      
       if (!mounted) return;
       setState(() { _saving = false; _savedAt = DateTime.now(); });
     } on FirebaseException catch (e) {

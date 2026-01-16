@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
 
 import '../utils/date_helper.dart';
 import '../utils/firebase_sync_config.dart';
@@ -131,11 +132,29 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
 
   Future<void> _loadExistingData(DateTime date) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+    if (uid == null) {
+      debugPrint('❌ No user ID found');
+      return;
+    }
 
     final docId = DateHelper.toId(date);
+    debugPrint('🔄 _loadExistingData called: uid=$uid, date=$date (ISO: ${date.toIso8601String()}), docId=$docId');
 
     try {
+      // 1. 先嘗試從本地 SQLite 加載
+      final repo = DailyRecordRepository();
+      debugPrint('📦 Attempting to load from local SQLite...');
+      var localData = await repo.getDailyRecord(userId: uid, date: date);
+      
+      if (localData != null) {
+        debugPrint('✅ Loaded record from local SQLite: $docId');
+        _applyLocalRecordData(localData, date);
+        return;
+      }
+
+      debugPrint('⚠️  No local record found, trying Firebase...');
+      
+      // 2. 如果本地沒有，再從 Firebase 加載
       final doc = await FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
@@ -144,83 +163,259 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
           .get();
 
       if (doc.exists && doc.data() != null) {
+        debugPrint('✅ Loaded record from Firebase: $docId');
         // A. 這一天已經有紀錄 → 完整讀取
         final record = DailyRecord.fromFirestore(doc);
-        final s = record.sleep;
-
-        setState(() {
-          // --- 情緒 ---
-          if (record.emotions.isNotEmpty) {
-            // 將已儲存的情緒值合併到現有的情緒列表中
-            for (var i = 0; i < _emotions.length; i++) {
-              final savedEmotion = record.emotions
-                  .where((e) => e.name == _emotions[i].name)
-                  .firstOrNull;
-              if (savedEmotion != null) {
-                _emotions[i] = EmotionItem(
-                  _emotions[i].name,
-                  value: savedEmotion.value,
-                );
-              } else {
-                _emotions[i] = EmotionItem(_emotions[i].name);
-              }
-            }
-          }
-          // --- 症狀 ---
-          if (record.symptoms.isNotEmpty) {
-            _symptoms
-              ..clear()
-              ..addAll(record.symptoms.map((n) => SymptomItem(name: n)));
-          }
-
-          // --- 睡眠 ---
-          tookHypnotic = s.tookHypnotic;
-          hypnoticName = s.hypnoticName ?? '';
-          _hypnoticNameCtrl.text = hypnoticName;
-          hypnoticDose = s.hypnoticDose ?? '';
-          _hypnoticDoseCtrl.text = hypnoticDose;
-
-          sleepTime = s.sleepTime;
-          wakeTime = s.wakeTime;
-          finalWakeTime = s.finalWakeTime;
-
-          midWakeList = s.midWakeList ?? '';
-          _midWakeCtrl.text = midWakeList;
-
-          // 睡眠標籤
-          _sleepFlags.clear();
-          for (final f in s.flags) {
-            try {
-              final match = SleepFlag.values.firstWhere((e) => e.name == f);
-              _sleepFlags.add(match);
-            } catch (_) {}
-          }
-
-          sleepNote = s.note ?? '';
-          sleepQuality = s.quality;
-
-          // 小睡
-          _naps
-            ..clear()
-            ..addAll(
-              s.naps.map(
-                (n) => NapItem(start: n.start, end: n.end),
-              ),
-            );
-
-          // 生理期狀態
-          _isPeriod = record.isPeriod == true;
-        });
+        _applyFirebaseRecordData(record, date);
       } else {
+        debugPrint('⚠️  No record found in Firebase either, loading period state...');
         // B. 今日沒有紀錄 → 自動推算生理期（看昨天）
         await _loadPeriodState(date);
 
         // C. 清空其他欄位，但保留剛推算的 _isPeriod
         _resetForm(keepPeriodStatus: true);
       }
-    } catch (e) {
-      debugPrint('讀取資料錯誤: $e');
+    } catch (e, st) {
+      debugPrint('❌ 讀取資料錯誤: $e\nStacktrace: $st');
     }
+  }
+
+  /// 從本地 SQLite 記錄應用數據
+  void _applyLocalRecordData(Map<String, dynamic> data, DateTime date) {
+    debugPrint('🔄 _applyLocalRecordData: data keys = ${data.keys.toList()}');
+    
+    // 解析 emotions 和其他 JSON 字段
+    List<Emotion> emotions = [];
+    if (data['emotions'] != null) {
+      try {
+        Map<String, dynamic> emotionMap;
+        if (data['emotions'] is String) {
+          emotionMap = jsonDecode(data['emotions']) as Map<String, dynamic>;
+        } else if (data['emotions'] is Map) {
+          emotionMap = data['emotions'] as Map<String, dynamic>;
+        } else {
+          throw TypeError();
+        }
+        debugPrint('✅ Parsed emotions from JSON: $emotionMap');
+        emotionMap.forEach((name, value) {
+          emotions.add(Emotion(name: name, value: value as int?));
+        });
+        debugPrint('✅ Total emotions parsed: ${emotions.length}');
+      } catch (e) {
+        debugPrint('❌ Failed to parse emotions: $e');
+      }
+    } else {
+      debugPrint('⚠️  No emotions field in data');
+    }
+
+    List<String> symptoms = [];
+    if (data['bodySymptoms'] != null) {
+      try {
+        List<dynamic> symptomList;
+        if (data['bodySymptoms'] is String) {
+          symptomList = jsonDecode(data['bodySymptoms']) as List<dynamic>;
+        } else if (data['bodySymptoms'] is List) {
+          symptomList = data['bodySymptoms'] as List<dynamic>;
+        } else {
+          throw TypeError();
+        }
+        symptoms = symptomList.cast<String>();
+        debugPrint('✅ Parsed symptoms: ${symptoms.length} items');
+      } catch (e) {
+        debugPrint('❌ Failed to parse symptoms: $e');
+      }
+    }
+
+    Map<String, dynamic>? periodData;
+    if (data['periodData'] != null) {
+      try {
+        if (data['periodData'] is String) {
+          periodData = jsonDecode(data['periodData']) as Map<String, dynamic>;
+        } else if (data['periodData'] is Map) {
+          periodData = data['periodData'] as Map<String, dynamic>;
+        } else {
+          throw TypeError();
+        }
+        debugPrint('✅ Parsed periodData: $periodData');
+      } catch (e) {
+        debugPrint('❌ Failed to parse periodData: $e');
+      }
+    }
+
+    SleepData sleepData = SleepData();
+    if (data['sleep'] != null) {
+      try {
+        Map<String, dynamic> sleepMap;
+        if (data['sleep'] is String) {
+          sleepMap = jsonDecode(data['sleep']) as Map<String, dynamic>;
+        } else if (data['sleep'] is Map) {
+          sleepMap = data['sleep'] as Map<String, dynamic>;
+        } else {
+          throw TypeError();
+        }
+        sleepData = _parseSleepDataFromMap(sleepMap);
+        debugPrint('✅ Parsed sleep data successfully');
+      } catch (e, st) {
+        debugPrint('❌ Failed to parse sleep: $e\nStacktrace: $st');
+      }
+    } else {
+      debugPrint('⚠️  No sleep field in data');
+    }
+
+    debugPrint('🎨 Applying parsed data to UI...');
+    setState(() {
+      // 應用情緒
+      if (emotions.isNotEmpty) {
+        for (var i = 0; i < _emotions.length; i++) {
+          final savedEmotion = emotions
+              .where((e) => e.name == _emotions[i].name)
+              .firstOrNull;
+          if (savedEmotion != null) {
+            _emotions[i] = EmotionItem(
+              _emotions[i].name,
+              value: savedEmotion.value,
+            );
+          } else {
+            _emotions[i] = EmotionItem(_emotions[i].name);
+          }
+        }
+        debugPrint('✅ Applied ${emotions.length} emotions to UI');
+      }
+
+      // 應用症狀
+      if (symptoms.isNotEmpty) {
+        _symptoms
+          ..clear()
+          ..addAll(symptoms.map((n) => SymptomItem(name: n)));
+        debugPrint('✅ Applied ${symptoms.length} symptoms to UI');
+      }
+
+      // 應用睡眠數據
+      tookHypnotic = sleepData.tookHypnotic;
+      hypnoticName = sleepData.hypnoticName ?? '';
+      _hypnoticNameCtrl.text = hypnoticName;
+      hypnoticDose = sleepData.hypnoticDose ?? '';
+      _hypnoticDoseCtrl.text = hypnoticDose;
+
+      sleepTime = sleepData.sleepTime;
+      wakeTime = sleepData.wakeTime;
+      finalWakeTime = sleepData.finalWakeTime;
+
+      midWakeList = sleepData.midWakeList ?? '';
+      _midWakeCtrl.text = midWakeList;
+
+      // 睡眠標籤
+      _sleepFlags.clear();
+      for (final f in sleepData.flags) {
+        try {
+          final match = SleepFlag.values.firstWhere((e) => e.name == f);
+          _sleepFlags.add(match);
+        } catch (_) {}
+      }
+
+      sleepNote = sleepData.note ?? '';
+      sleepQuality = sleepData.quality;
+
+      // 小睡
+      _naps
+        ..clear()
+        ..addAll(sleepData.naps);
+
+      // 生理期狀態
+      _isPeriod = periodData?['isPeriod'] ?? false;
+      
+      debugPrint('✅ All data applied to UI successfully');
+    });
+  }
+
+  /// 從 Firebase 記錄應用數據
+  void _applyFirebaseRecordData(DailyRecord record, DateTime date) {
+    final s = record.sleep;
+
+    setState(() {
+      // --- 情緒 ---
+      if (record.emotions.isNotEmpty) {
+        for (var i = 0; i < _emotions.length; i++) {
+          final savedEmotion = record.emotions
+              .where((e) => e.name == _emotions[i].name)
+              .firstOrNull;
+          if (savedEmotion != null) {
+            _emotions[i] = EmotionItem(
+              _emotions[i].name,
+              value: savedEmotion.value,
+            );
+          } else {
+            _emotions[i] = EmotionItem(_emotions[i].name);
+          }
+        }
+      }
+      // --- 症狀 ---
+      if (record.symptoms.isNotEmpty) {
+        _symptoms
+          ..clear()
+          ..addAll(record.symptoms.map((n) => SymptomItem(name: n)));
+      }
+
+      // --- 睡眠 ---
+      tookHypnotic = s.tookHypnotic;
+      hypnoticName = s.hypnoticName ?? '';
+      _hypnoticNameCtrl.text = hypnoticName;
+      hypnoticDose = s.hypnoticDose ?? '';
+      _hypnoticDoseCtrl.text = hypnoticDose;
+
+      sleepTime = s.sleepTime;
+      wakeTime = s.wakeTime;
+      finalWakeTime = s.finalWakeTime;
+
+      midWakeList = s.midWakeList ?? '';
+      _midWakeCtrl.text = midWakeList;
+
+      // 睡眠標籤
+      _sleepFlags.clear();
+      for (final f in s.flags) {
+        try {
+          final match = SleepFlag.values.firstWhere((e) => e.name == f);
+          _sleepFlags.add(match);
+        } catch (_) {}
+      }
+
+      sleepNote = s.note ?? '';
+      sleepQuality = s.quality;
+
+      // 小睡
+      _naps
+        ..clear()
+        ..addAll(
+          s.naps.map(
+            (n) => NapItem(start: n.start, end: n.end),
+          ),
+        );
+
+      // 生理期狀態
+      _isPeriod = record.isPeriod == true;
+    });
+  }
+
+  /// 從 Map 解析睡眠數據
+  SleepData _parseSleepDataFromMap(Map<String, dynamic> sleepMap) {
+    return SleepData(
+      tookHypnotic: sleepMap['tookHypnotic'] ?? false,
+      hypnoticName: sleepMap['hypnoticName'],
+      hypnoticDose: sleepMap['hypnoticDose'],
+      sleepTime: sleepMap['sleepTime'] != null ? DateHelper.parseTime(sleepMap['sleepTime']) : null,
+      wakeTime: sleepMap['wakeTime'] != null ? DateHelper.parseTime(sleepMap['wakeTime']) : null,
+      finalWakeTime: sleepMap['finalWakeTime'] != null ? DateHelper.parseTime(sleepMap['finalWakeTime']) : null,
+      midWakeList: sleepMap['midWakeList'],
+      flags: List<String>.from(sleepMap['flags'] ?? []),
+      note: sleepMap['note'],
+      quality: sleepMap['quality'],
+      naps: (sleepMap['naps'] as List?)
+          ?.map((n) => NapItem(
+            start: DateHelper.parseTime(n['start']) ?? const TimeOfDay(hour: 0, minute: 0),
+            end: DateHelper.parseTime(n['end']) ?? const TimeOfDay(hour: 0, minute: 0),
+          ))
+          .toList() ?? [],
+    );
   }
 
   Future<void> _loadPeriodState(DateTime currentDate) async {
@@ -357,6 +552,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       try {
         final repo = DailyRecordRepository();
         debugPrint('🏁 Start saving to local database...');
+        debugPrint('📅 Saving with date: $_recordDate (ISO: ${_recordDate.toIso8601String()})');
+        
         final emotionsToSave = Map<String, dynamic>.from(
           _emotions
               .where((e) => e.value != null && e.name != '整體情緒') // Exclude overallMood from emotions
@@ -366,11 +563,18 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         );
         debugPrint('📊 Emotions to save: $emotionsToSave');
         
+        final symptomsToSave = _symptoms
+            .map((s) => s.name)
+            .where((name) => name.isNotEmpty)
+            .toList();
+        debugPrint('🩹 Symptoms to save: $symptomsToSave (from _symptoms: ${_symptoms.map((s) => s.name).toList()})');
+        
         await repo.saveDailyRecord(
           id: docId,
           userId: uid,
           date: _recordDate,
           emotions: emotionsToSave,
+          bodySymptoms: symptomsToSave,
           sleep: {
             'sleepTime': sleepTime != null ? DateHelper.formatTime(sleepTime!) : null,
             'wakeTime': wakeTime != null ? DateHelper.formatTime(wakeTime!) : null,

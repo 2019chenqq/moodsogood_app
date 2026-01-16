@@ -14,6 +14,23 @@ class DateHelper {
     return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
   }
 
+  /// 從 ID 格式 (yyyy-MM-dd) 解析回 DateTime
+  /// 用途：從 docId 還原日期
+  static DateTime? parseIdToDate(String id) {
+    try {
+      final parts = id.split('-');
+      if (parts.length >= 3) {
+        final year = int.parse(parts[0]);
+        final month = int.parse(parts[1]);
+        final day = int.parse(parts[2]);
+        return DateTime(year, month, day);
+      }
+    } catch (e) {
+      return null;
+    }
+    return null;
+  }
+
   /// 轉成顯示格式：yyyy/MM/dd
   /// 用途：UI 顯示
   static String toDisplay(DateTime d) {

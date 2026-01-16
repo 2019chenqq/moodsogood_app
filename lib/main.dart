@@ -21,6 +21,7 @@ import 'providers/theme_provider.dart';
 import 'providers/firebase_sync_provider.dart';
 import 'daily/daily_record_screen.dart';
 import 'daily/daily_record_repository.dart';
+import 'diary/diary_repository.dart';
 import 'app_lock_screen.dart';
 import 'service/iap_service.dart';
 import 'providers/pro_provider.dart';

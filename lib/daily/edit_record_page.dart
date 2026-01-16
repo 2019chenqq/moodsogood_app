@@ -137,6 +137,10 @@ newSleep['naps'] = naps;
               .asMap()
               .map((k, v) => MapEntry(v['name'] ?? '', v['value']))
         ),
+        // symptoms 已經是 List<String>，僅過濾空白
+        bodySymptoms: symptoms
+          .where((name) => name.isNotEmpty)
+          .toList(),
         sleep: newSleep,
       );
       debugPrint('✅ 本地數據已保存');
