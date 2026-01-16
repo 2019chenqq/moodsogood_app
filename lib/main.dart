@@ -20,6 +20,7 @@ import 'utils/firebase_sync_config.dart';
 import 'providers/theme_provider.dart';
 import 'providers/firebase_sync_provider.dart';
 import 'daily/daily_record_screen.dart';
+import 'daily/daily_record_repository.dart';
 import 'app_lock_screen.dart';
 import 'service/iap_service.dart';
 import 'providers/pro_provider.dart';
@@ -48,6 +49,10 @@ Future<void> main() async {
   // Initialize Firebase Sync Config
   await FirebaseSyncConfig().init();
   debugPrint('📡 Firebase Sync Config initialized');
+
+  // Initialize Daily Record Repository
+  await DailyRecordRepository().init();
+  debugPrint('💾 Daily Record Repository initialized');
 
   // ⭐ 啟動時初始化通知（會印出 🕐 這行）
   await NotificationHelper().init();

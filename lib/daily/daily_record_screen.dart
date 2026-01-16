@@ -354,39 +354,57 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       }
 
       // Always save to local database
-      final repo = DailyRecordRepository();
-      await repo.saveDailyRecord(
-        id: docId,
-        userId: uid,
-        date: _recordDate,
-        emotions: Map<String, dynamic>.from(_emotions.asMap().map(
-          (k, v) => MapEntry(v.name, v.value),
-        )),
-        sleep: {
-          'sleepTime': sleepTime != null ? DateHelper.formatTime(sleepTime!) : null,
-          'wakeTime': wakeTime != null ? DateHelper.formatTime(wakeTime!) : null,
-          'finalWakeTime': finalWakeTime != null ? DateHelper.formatTime(finalWakeTime!) : null,
-          'midWakeList': midWakeList,
-          'quality': sleepQuality,
-          'tookHypnotic': tookHypnotic,
-          'hypnoticName': hypnoticName,
-          'hypnoticDose': hypnoticDose,
-          'flags': _sleepFlags.map((f) => f.name).toList(),
-          'note': sleepNote,
-          'naps': _naps
-              .map((n) => {
-                    'start': DateHelper.formatTime(n.start),
-                    'end': DateHelper.formatTime(n.end),
-                    'minutes': DateHelper.calcDurationMinutes(n.start, n.end),
-                  })
-              .toList(),
-        },
-        periodData: {
-          'isPeriod': _isPeriod,
-          'periodStartId': _isPeriod ? (oldStartId ?? docId) : oldStartId,
-          'periodEndId': !_isPeriod && oldIsPeriod ? docId : null,
-        },
-      );
+      try {
+        final repo = DailyRecordRepository();
+        debugPrint('🏁 Start saving to local database...');
+        final emotionsToSave = Map<String, dynamic>.from(
+          _emotions
+              .where((e) => e.value != null && e.name != '整體情緒') // Exclude overallMood from emotions
+              .toList()
+              .asMap()
+              .map((k, v) => MapEntry(v.name, v.value))
+        );
+        debugPrint('📊 Emotions to save: $emotionsToSave');
+        
+        await repo.saveDailyRecord(
+          id: docId,
+          userId: uid,
+          date: _recordDate,
+          emotions: emotionsToSave,
+          sleep: {
+            'sleepTime': sleepTime != null ? DateHelper.formatTime(sleepTime!) : null,
+            'wakeTime': wakeTime != null ? DateHelper.formatTime(wakeTime!) : null,
+            'finalWakeTime': finalWakeTime != null ? DateHelper.formatTime(finalWakeTime!) : null,
+            'midWakeList': midWakeList,
+            'quality': sleepQuality,
+            'tookHypnotic': tookHypnotic,
+            'hypnoticName': hypnoticName,
+            'hypnoticDose': hypnoticDose,
+            'flags': _sleepFlags.map((f) => f.name).toList(),
+            'note': sleepNote,
+            'naps': _naps
+                .map((n) => {
+                      'start': DateHelper.formatTime(n.start),
+                      'end': DateHelper.formatTime(n.end),
+                      'minutes': DateHelper.calcDurationMinutes(n.start, n.end),
+                    })
+                .toList(),
+          },
+          periodData: {
+            'isPeriod': _isPeriod,
+            'periodStartId': _isPeriod ? (oldStartId ?? docId) : oldStartId,
+            'periodEndId': !_isPeriod && oldIsPeriod ? docId : null,
+          },
+        );
+        debugPrint('✅ Local save completed successfully');
+      } catch (e) {
+        debugPrint('❌ Local storage failed: $e');
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('本地存儲失敗：$e')),
+        );
+        return;
+      }
 
       if (!mounted) return;
 

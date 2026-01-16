@@ -118,13 +118,30 @@ newSleep['naps'] = naps;
     debugPrint('🔥 即將保存的完整 sleep 物件：$newSleep');
     debugPrint('🔥 即將保存的完整 payload：$payload');
     
-    // 使用 merge: true 確保頂級字段被合併
-    await ref.set(payload, SetOptions(merge: true));
-    debugPrint('✅ 保存成功');
-
     // Only sync to Firebase if enabled
     if (FirebaseSyncConfig.shouldSync()) {
       await ref.set(payload, SetOptions(merge: true));
+    }
+
+    // Always save to local database
+    try {
+      final repo = DailyRecordRepository();
+      await repo.saveDailyRecord(
+        id: docId,
+        userId: uid,
+        date: DateTime.tryParse(widget.initData['date'] ?? '') ?? DateTime.now(),
+        emotions: Map<String, dynamic>.from(
+          emotions
+              .where((e) => e['value'] != null && e['name'] != '整體情緒') // Exclude overallMood
+              .toList()
+              .asMap()
+              .map((k, v) => MapEntry(v['name'] ?? '', v['value']))
+        ),
+        sleep: newSleep,
+      );
+      debugPrint('✅ 本地數據已保存');
+    } catch (e) {
+      debugPrint('❌ 本地保存失敗: $e');
     }
 
 

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -77,29 +78,37 @@ class DailyRecordRepository {
     List<Map<String, dynamic>>? medicines,
     Map<String, dynamic>? periodData,
   }) async {
-    if (!_initialized) await init();
+    debugPrint('📝 saveDailyRecord called: id=$id, userId=$userId, date=$date');
+    
+    if (!_initialized) {
+      debugPrint('⚠️  Database not initialized, initializing now...');
+      await init();
+    }
 
     try {
-      await _db.insert(
+      final record = {
+        'id': id,
+        'userId': userId,
+        'date': date.toIso8601String(),
+        'emotions': emotions != null ? jsonEncode(emotions) : null,
+        'sleep': sleep != null ? jsonEncode(sleep) : null,
+        'bodySymptoms': bodySymptoms != null ? jsonEncode(bodySymptoms) : null,
+        'dailyActivities': dailyActivities != null ? jsonEncode(dailyActivities) : null,
+        'medicines': medicines != null ? jsonEncode(medicines) : null,
+        'periodData': periodData != null ? jsonEncode(periodData) : null,
+        'createdAt': DateTime.now().toIso8601String(),
+        'updatedAt': DateTime.now().toIso8601String(),
+      };
+      
+      debugPrint('💾 Inserting record: $record');
+      final result = await _db.insert(
         'daily_records',
-        {
-          'id': id,
-          'userId': userId,
-          'date': date.toIso8601String(),
-          'emotions': emotions != null ? jsonEncode(emotions) : null,
-          'sleep': sleep != null ? jsonEncode(sleep) : null,
-          'bodySymptoms': bodySymptoms != null ? jsonEncode(bodySymptoms) : null,
-          'dailyActivities': dailyActivities != null ? jsonEncode(dailyActivities) : null,
-          'medicines': medicines != null ? jsonEncode(medicines) : null,
-          'periodData': periodData != null ? jsonEncode(periodData) : null,
-          'createdAt': DateTime.now().toIso8601String(),
-          'updatedAt': DateTime.now().toIso8601String(),
-        },
+        record,
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
-      print('DailyRecord saved locally: $id');
-    } catch (e) {
-      print('Error saving daily record: $e');
+      debugPrint('✅ Record inserted successfully with rowid=$result');
+    } catch (e, st) {
+      debugPrint('❌ Error saving daily record: $e\nStacktrace: $st');
       rethrow;
     }
   }
@@ -112,10 +121,14 @@ class DailyRecordRepository {
     if (!_initialized) await init();
 
     try {
+      // 按日期範圍查詢（整天）
+      final startOfDay = DateTime(date.year, date.month, date.day).toIso8601String();
+      final endOfDay = DateTime(date.year, date.month, date.day, 23, 59, 59).toIso8601String();
+      
       final results = await _db.query(
         'daily_records',
-        where: 'userId = ? AND date = ?',
-        whereArgs: [userId, date.toIso8601String().split('T')[0]],
+        where: 'userId = ? AND date >= ? AND date < ?',
+        whereArgs: [userId, startOfDay, endOfDay],
         limit: 1,
       );
 

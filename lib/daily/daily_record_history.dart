@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
+import 'dart:convert';
 import '../models/daily_record.dart'; // 確保引用正確
 import '../utils/date_helper.dart';   // 確保引用正確
 import 'record_detail_screen.dart';   // 確保引用正確
@@ -10,7 +11,8 @@ import '../models/period_cycle.dart';
 import '../widgets/main_drawer.dart';
 import '../quotes.dart';
 import '../pro/pro_page.dart';
-import '../providers/pro_provider.dart'; 
+import '../providers/pro_provider.dart';
+import 'daily_record_repository.dart';
 
 const Map<String, String> ksleepFlagMap = {
     'good': '優',
@@ -68,16 +70,11 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
     final bool isPro = proProvider.isPro;
     
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    final query = FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('dailyRecords')
-        .orderBy(FieldPath.documentId, descending: true)
-        .limit(90) // 抓 90 天
-        .withConverter<DailyRecord>(
-          fromFirestore: (snap, _) => DailyRecord.fromFirestore(snap),
-          toFirestore: (record, _) => record.toFirestore(),
-        );
+    if (uid == null) {
+      return const Scaffold(
+        body: Center(child: Text('未登入')),
+      );
+    }
 
     return Scaffold(
       drawer: const MainDrawer(),
@@ -93,55 +90,44 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
           ],
         ),
       ),
-      // 修改 Scaffod 的 body 區塊
-      body: StreamBuilder<QuerySnapshot>(
-        // 1. 外層：先讀取經期資料
-        stream: FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .collection('periodCycles')
-            .orderBy('startDate', descending: true)
-            .snapshots(),
-        builder: (context, periodSnap) {
-          // 處理經期資料 (如果還沒讀完或沒資料，就給空陣列)
-          final cycles = periodSnap.data?.docs
-              .map((doc) => PeriodCycle.fromFirestore(doc as DocumentSnapshot<Map<String, dynamic>>))
-              .toList() ?? [];
+      body: FutureBuilder<List<DailyRecord>>(
+        future: _loadAllRecords(uid),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('發生錯誤：${snapshot.error}'));
+          }
 
-          // 2. 內層：再讀取原本的日記紀錄 (這是你原本的那段)
-          return StreamBuilder<QuerySnapshot<DailyRecord>>(
-            stream: query.snapshots(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (snapshot.hasError) {
-                return Center(child: Text('發生錯誤：${snapshot.error}'));
-              }
+          final dailyRecords = snapshot.data ?? [];
+          dailyRecords.sort((a, b) => a.date.compareTo(b.date));
 
-              final docs = snapshot.data?.docs ?? [];
-              var allRecords = docs.map((e) => e.data()).toList();
-              
-              // 確保排序：舊 -> 新 (畫圖用)
-              allRecords.sort((a, b) => a.date.compareTo(b.date));
+          // 取得所有出現過的情緒名稱
+          final availableEmotions = _extractEmotionNames(dailyRecords);
 
-              // 取得所有出現過的情緒名稱
-              final availableEmotions = _extractEmotionNames(allRecords);
+          // 列表用的資料 (需過濾日期 + 反序)
+          var listRecords = List<DailyRecord>.from(dailyRecords);
+          listRecords = _applyDateFilter(listRecords, _dateFilter);
+          listRecords.sort((a, b) => b.date.compareTo(a.date));
 
-              // 列表用的資料 (需過濾日期 + 反序)
-              var listRecords = List<DailyRecord>.from(allRecords);
-              listRecords = _applyDateFilter(listRecords, _dateFilter);
-              listRecords.sort((a, b) => b.date.compareTo(a.date));
+          return StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('users')
+                .doc(uid)
+                .collection('periodCycles')
+                .orderBy('startDate', descending: true)
+                .snapshots(),
+            builder: (context, periodSnap) {
+              final cycles = periodSnap.data?.docs
+                  .map((doc) => PeriodCycle.fromFirestore(doc as DocumentSnapshot<Map<String, dynamic>>))
+                  .toList() ?? [];
 
               return TabBarView(
                 controller: _tabController,
                 children: [
-                  // 分頁 1: 列表
-                                    _buildListPage(listRecords, allRecords, isPro), 
-                  
-                  // 分頁 2: 圖表 (🔥 這裡把 cycles 傳進去了)
-
-_buildProChartContent(context, allRecords, availableEmotions, cycles, isPro),
+                  _buildListPage(listRecords, dailyRecords, isPro),
+                  _buildProChartContent(context, dailyRecords, availableEmotions, cycles, isPro),
                 ],
               );
             },
@@ -150,6 +136,204 @@ _buildProChartContent(context, allRecords, availableEmotions, cycles, isPro),
       ),
     );
   }
+
+  /// 從本地 SQLite 和 Firebase 加載所有記錄，並合併去重（最近 90 天）
+  Future<List<DailyRecord>> _loadAllRecords(String uid) async {
+    final endDate = DateTime.now();
+    final startDate = endDate.subtract(const Duration(days: 90));
+    
+    final Map<String, DailyRecord> recordsMap = {};
+
+    // 1. 先從本地 SQLite 加載
+    try {
+      final repo = DailyRecordRepository();
+      debugPrint('🔍 Loading records from local SQLite for user=$uid from $startDate to $endDate');
+      
+      final localRecords = await repo.getDailyRecordsByDateRange(
+        userId: uid,
+        startDate: startDate,
+        endDate: endDate,
+      );
+      
+      debugPrint('✅ Loaded ${localRecords.length} records from local database');
+      
+      // 轉換並加入 Map（以 id 為 key）
+      for (var localRecord in localRecords) {
+        final record = _convertLocalRecordToDailyRecord(localRecord);
+        recordsMap[record.id] = record;
+        debugPrint('  📦 Local: ${record.id} (${record.date})');
+      }
+    } catch (e, st) {
+      debugPrint('❌ Failed to load local records: $e\nStacktrace: $st');
+    }
+
+    // 2. 再從 Firebase 加載（總是讀取，即使 sync 關閉）
+    try {
+      debugPrint('🔍 Loading records from Firebase...');
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('dailyRecords')
+          .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
+          .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
+          .get();
+
+      debugPrint('✅ Loaded ${snapshot.docs.length} records from Firebase');
+
+      for (var doc in snapshot.docs) {
+        final record = DailyRecord.fromFirestore(doc);
+        // Firebase 的數據優先（因為可能更完整）
+        if (!recordsMap.containsKey(record.id)) {
+          recordsMap[record.id] = record;
+          debugPrint('  ☁️  Firebase: ${record.id} (${record.date})');
+        }
+      }
+    } catch (e, st) {
+      debugPrint('❌ Failed to load Firebase records: $e\nStacktrace: $st');
+    }
+
+    final allRecords = recordsMap.values.toList();
+    debugPrint('📊 Total merged records: ${allRecords.length}');
+    return allRecords;
+  }
+
+  /// 將單個本地記錄轉換為 DailyRecord 對象
+  DailyRecord _convertLocalRecordToDailyRecord(Map<String, dynamic> record) {
+    final date = DateTime.tryParse(record['date'] ?? '') ?? DateTime.now();
+    final emotions = _parseEmotionsFromLocal(record['emotions']);
+    final sleep = _parseSleepFromLocal(record['sleep']);
+    
+    // 計算整體情緒：所有情緒的平均值
+    double? overallMood;
+    if (emotions.isNotEmpty) {
+      final sum = emotions.fold<int>(0, (acc, e) => acc + (e.value ?? 0));
+      overallMood = emotions.length > 0 ? (sum / emotions.length).toDouble() : null;
+    }
+    
+    return DailyRecord(
+      id: record['id'] ?? '',
+      date: date,
+      emotions: emotions,
+      overallMood: overallMood,
+      symptoms: _parseBodySymptoms(record['bodySymptoms']),
+      sleep: sleep,
+      isPeriod: record['periodData'] != null 
+          ? (record['periodData'] as Map?)?.containsKey('isPeriod') == true ? true : false
+          : false,
+    );
+  }
+
+  /// 從本地存儲的 JSON 中解析情緒數據
+  List<Emotion> _parseEmotionsFromLocal(dynamic emotionsData) {
+    if (emotionsData == null) return [];
+    if (emotionsData is String) {
+      try {
+        emotionsData = jsonDecode(emotionsData);
+      } catch (e) {
+        return [];
+      }
+    }
+    if (emotionsData is! Map) return [];
+
+    return (emotionsData as Map<String, dynamic>).entries
+        .where((e) => 
+            (e.value as num?)?.toInt() != null && 
+            (e.value as num).toInt() != 0 &&
+            e.key != '整體情緒') // Exclude overallMood from emotions list
+        .map((e) {
+          return Emotion(name: e.key, value: (e.value as num?)?.toInt() ?? 0);
+        }).toList();
+  }
+
+  /// 從本地存儲的 JSON 中解析睡眠數據
+  SleepData _parseSleepFromLocal(dynamic sleepData) {
+    if (sleepData == null) {
+      return SleepData(
+        sleepTime: null,
+        wakeTime: null,
+        quality: null,
+        tookHypnotic: false,
+        hypnoticName: null,
+        hypnoticDose: null,
+        flags: const [],
+        note: null,
+        naps: const [],
+      );
+    }
+
+    if (sleepData is String) {
+      try {
+        sleepData = jsonDecode(sleepData);
+      } catch (e) {
+        return SleepData(
+          sleepTime: null,
+          wakeTime: null,
+          quality: null,
+          tookHypnotic: false,
+          flags: const [],
+          naps: const [],
+        );
+      }
+    }
+
+    if (sleepData is! Map) {
+      return SleepData(
+        sleepTime: null,
+        wakeTime: null,
+        quality: null,
+        tookHypnotic: false,
+        flags: const [],
+        naps: const [],
+      );
+    }
+
+    final map = sleepData as Map<String, dynamic>;
+    return SleepData(
+      sleepTime: _parseTime(map['sleepTime']),
+      wakeTime: _parseTime(map['wakeTime']),
+      quality: (map['quality'] as num?)?.toInt(),
+      tookHypnotic: map['tookHypnotic'] ?? false,
+      hypnoticName: map['hypnoticName'],
+      hypnoticDose: map['hypnoticDose'],
+      flags: (map['flags'] as List?)?.cast<String>() ?? const [],
+      note: map['note'],
+      naps: const [],
+    );
+  }
+
+  /// 解析時間字符串（格式 HH:MM）
+  TimeOfDay? _parseTime(dynamic timeStr) {
+    if (timeStr == null || timeStr is! String) return null;
+    try {
+      final parts = timeStr.split(':');
+      if (parts.length == 2) {
+        return TimeOfDay(
+          hour: int.parse(parts[0]),
+          minute: int.parse(parts[1]),
+        );
+      }
+    } catch (e) {
+      return null;
+    }
+    return null;
+  }
+
+  /// 解析身體症狀
+  List<String> _parseBodySymptoms(dynamic symptomsData) {
+    if (symptomsData == null) return [];
+    if (symptomsData is String) {
+      try {
+        symptomsData = jsonDecode(symptomsData);
+      } catch (e) {
+        return [];
+      }
+    }
+    if (symptomsData is List) {
+      return symptomsData.map((s) => s.toString()).toList();
+    }
+    return [];
+  }
+
 bool _isHistoryLocked(bool isPro) {
   // 只開放最近 7 天
   if (_dateFilter == DateFilter.last7) return false;
@@ -268,6 +452,13 @@ bool _isHistoryLocked(bool isPro) {
   List<PeriodCycle> cycles,
   bool isPro,
 ) {
+  // Validate _selectedEmotion - if it's no longer in available emotions, reset it
+  if (emotionNames.isNotEmpty && !emotionNames.contains(_selectedEmotion)) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      setState(() => _selectedEmotion = emotionNames.first);
+    });
+  }
+  
   // 1. 根據日期篩選資料
   final filteredRecords = _applyDateFilter(allRecords, _dateFilter);
 
@@ -301,23 +492,32 @@ bool _isHistoryLocked(bool isPro) {
   ),
   child: DropdownButtonHideUnderline(
     child: DropdownButton<String>(
-      value: emotionNames.contains(_selectedEmotion)
-          ? _selectedEmotion
-          : '整體情緒',
+      value: emotionNames.isEmpty 
+          ? null
+          : (emotionNames.contains(_selectedEmotion)
+              ? _selectedEmotion
+              : emotionNames.first),
       isExpanded: true,
       dropdownColor: Theme.of(context).cardColor,
       icon: Icon(
         Icons.arrow_drop_down,
         color: Theme.of(context).iconTheme.color,
       ),
-      items: emotionNames
-          .map(
-            (e) => DropdownMenuItem(
-              value: e,
-              child: Text(e),
-            ),
-          )
-          .toList(),
+      items: emotionNames.isEmpty
+          ? [
+              DropdownMenuItem(
+                value: null,
+                child: Text('無可用數據'),
+              )
+            ]
+          : emotionNames
+              .map(
+                (e) => DropdownMenuItem(
+                  value: e,
+                  child: Text(e),
+                ),
+              )
+              .toList(),
       style: TextStyle(
         color: Theme.of(context).textTheme.bodyLarge?.color,
       ),
@@ -424,19 +624,25 @@ bool _isHistoryLocked(bool isPro) {
   Set<String> _extractEmotionNames(List<DailyRecord> records) {
     final names = <String>{};
     
+    debugPrint('🔍 Extracting emotion names from ${records.length} records');
+    
     // 檢查是否有 overallMood 數據
-    if (records.any((r) => r.overallMood != null)) {
+    final hasOverallMood = records.any((r) => r.overallMood != null && r.overallMood != 0);
+    if (hasOverallMood) {
       names.add('整體情緒');
+      debugPrint('  ✓ Found overallMood data');
     }
     
-    // 只加入有 value 數據的情緒
+    // 只加入有 value 數據的情緒（自動去除「整體情緒」，因為已經在上面處理）
     for (var r in records) {
       for (var e in r.emotions) {
-        if (e.name.isNotEmpty && e.value != null) {
+        if (e.name.isNotEmpty && e.value != null && e.name != '整體情緒') {
           names.add(e.name);
         }
       }
     }
+    
+    debugPrint('✅ Extracted ${names.length} unique emotions: $names');
     return names;
   }
 
@@ -451,25 +657,36 @@ bool _isHistoryLocked(bool isPro) {
   }
   
   Widget _buildRecordSubtitle(BuildContext context, DailyRecord r) {
-  final List<String> parts = [];
+    final List<String> parts = [];
 
-  if (r.overallMood != null) {
-  parts.add('情緒：${r.overallMood!.toStringAsFixed(1)}');
-}
-  if (r.sleep.durationHours != null) {
-    parts.add('睡眠：${r.sleep.durationHours}hr');
-  }
-   if (r.sleep.flags.isNotEmpty) {
+    debugPrint('📝 Building subtitle for record ${r.id}: overallMood=${r.overallMood}, emotions count=${r.emotions.length}');
+
+    if (r.overallMood != null) {
+      parts.add('情緒：${r.overallMood!.toStringAsFixed(1)}');
+    } else if (r.emotions.isNotEmpty) {
+      // 如果沒有 overallMood，顯示情緒列表
+      final emotionText = r.emotions
+          .take(3)  // 只顯示前 3 個情緒
+          .map((e) => '${e.name}${e.value}')
+          .join(' ');
+      parts.add('情緒：$emotionText');
+    }
+    
+    if (r.sleep.durationHours != null) {
+      parts.add('睡眠：${r.sleep.durationHours}hr');
+    }
+    if (r.sleep.flags.isNotEmpty) {
       parts.add(
         r.sleep.flags.map((f) => ksleepFlagMap[f] ?? f).join(' ')
       );
     }
 
+    debugPrint('  Subtitle parts: $parts');
     return Text(
-      parts.join(' · '),
+      parts.isEmpty ? '(無資料)' : parts.join(' · '),
       style: Theme.of(context).textTheme.bodyMedium,
     );
-}
+  }
 }
 Future<void> clearPeriodForRecord(BuildContext context, DailyRecord r) async {
   final uid = FirebaseAuth.instance.currentUser?.uid;
