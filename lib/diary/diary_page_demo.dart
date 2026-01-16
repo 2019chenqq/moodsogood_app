@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../utils/date_helper.dart';
+import '../utils/firebase_sync_config.dart';
 
 class DiaryPageDemo extends m.StatefulWidget {
   final DateTime date;
@@ -111,19 +112,22 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
 
   Future<void> _saveDraft() async {
     try {
-      await _docRef.set({
-        'date'     : Timestamp.fromDate(_day),
-        'title'    : _titleCtrl.text.trim(),
-        'content'  : _contentCtrl.text.trim(),
-        'themeSong': _songCtrl.text.trim(),
-        'highlight': _highlightCtrl.text.trim(),
-        'metaphor' : _metaphorCtrl.text.trim(),
-        'conceited': _conceitedCtrl.text.trim(),
-        'proudOf'  : _proudOfCtrl.text.trim(),
-        'selfCare' : _selfCareCtrl.text.trim(),
+      // Only sync to Firebase if enabled
+      if (FirebaseSyncConfig.shouldSync()) {
+        await _docRef.set({
+          'date'     : Timestamp.fromDate(_day),
+          'title'    : _titleCtrl.text.trim(),
+          'content'  : _contentCtrl.text.trim(),
+          'themeSong': _songCtrl.text.trim(),
+          'highlight': _highlightCtrl.text.trim(),
+          'metaphor' : _metaphorCtrl.text.trim(),
+          'conceited': _conceitedCtrl.text.trim(),
+          'proudOf'  : _proudOfCtrl.text.trim(),
+          'selfCare' : _selfCareCtrl.text.trim(),
 
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
       if (!mounted) return;
       setState(() { _saving = false; _savedAt = DateTime.now(); });
     } on FirebaseException catch (e) {

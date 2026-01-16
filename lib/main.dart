@@ -16,7 +16,9 @@ import 'firebase_options.dart';
 import 'Sign_in_page.dart';
 import 'app_globals.dart';
 import 'utils/notification_helper.dart';
+import 'utils/firebase_sync_config.dart';
 import 'providers/theme_provider.dart';
+import 'providers/firebase_sync_provider.dart';
 import 'daily/daily_record_screen.dart';
 import 'app_lock_screen.dart';
 import 'service/iap_service.dart';
@@ -43,6 +45,10 @@ Future<void> main() async {
 
   debugPrint('🎨 Theme loaded');
 
+  // Initialize Firebase Sync Config
+  await FirebaseSyncConfig().init();
+  debugPrint('📡 Firebase Sync Config initialized');
+
   // ⭐ 啟動時初始化通知（會印出 🕐 這行）
   await NotificationHelper().init();
   debugPrint('🔔 Notifications initialized');
@@ -60,6 +66,9 @@ Future<void> main() async {
       providers: [
         ChangeNotifierProvider<ThemeProvider>.value(
           value: themeProvider,
+        ),
+        ChangeNotifierProvider<FirebaseSyncProvider>(
+          create: (_) => FirebaseSyncProvider()..init(),
         ),
         ChangeNotifierProvider<ProProvider>(
           create: (_) => ProProvider()..init(),

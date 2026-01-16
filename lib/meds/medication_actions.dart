@@ -2,6 +2,7 @@
   import 'package:cloud_firestore/cloud_firestore.dart';
   import 'package:firebase_auth/firebase_auth.dart';
 import 'edit_medication_page.dart';
+import '../utils/firebase_sync_config.dart';
 
   Future<void> showMedicationMoreSheet({
   required BuildContext context,
@@ -96,16 +97,19 @@ import 'edit_medication_page.dart';
 
       if (ok != true) return;
 
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('medications')
-          .doc(medId)
-          .delete();
+      // Only delete from Firebase if sync is enabled
+      if (FirebaseSyncConfig.shouldSync()) {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('medications')
+            .doc(medId)
+            .delete();
+      }
 
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已刪除：$name')),
+        SnackBar(content: Text('已刪除：$name${!FirebaseSyncConfig.shouldSync() ? ' (本機只)' : ''}')),
       );
     }
   } catch (e) {
@@ -118,36 +122,45 @@ import 'edit_medication_page.dart';
 
 
 Future<void> _deactivateMedication({required String uid, required String medId}) async {
-  await FirebaseFirestore.instance
-      .collection('users')
-      .doc(uid)
-      .collection('medications')
-      .doc(medId)
-      .set({
-    'isActive': false,
-    'updatedAt': FieldValue.serverTimestamp(),
-  }, SetOptions(merge: true));
+  // Only sync to Firebase if enabled
+  if (FirebaseSyncConfig.shouldSync()) {
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('medications')
+        .doc(medId)
+        .set({
+      'isActive': false,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
 }
 
 Future<void> _activateMedication({required String uid, required String medId}) async {
-  await FirebaseFirestore.instance
-      .collection('users')
-      .doc(uid)
-      .collection('medications')
-      .doc(medId)
-      .set({
-    'isActive': true,
-    'updatedAt': FieldValue.serverTimestamp(),
-  }, SetOptions(merge: true));
+  // Only sync to Firebase if enabled
+  if (FirebaseSyncConfig.shouldSync()) {
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('medications')
+        .doc(medId)
+        .set({
+      'isActive': true,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
 }
 
 Future<void> _deleteMedication({required String uid, required String medId}) async {
-  await FirebaseFirestore.instance
-      .collection('users')
-      .doc(uid)
-      .collection('medications')
-      .doc(medId)
-      .delete();
+  // Only sync to Firebase if enabled
+  if (FirebaseSyncConfig.shouldSync()) {
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('medications')
+        .doc(medId)
+        .delete();
+  }
 }
 
 Future<bool> _confirmDeleteMedication(BuildContext context, String name) async {
