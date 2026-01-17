@@ -22,15 +22,13 @@ class _FeedbackPageState extends State<FeedbackPage> {
 
     try {
       // 將回饋存入 'feedbacks' 集合
-      if (FirebaseSyncConfig.shouldSync()) {
-        await FirebaseFirestore.instance
-      .collection('feedback')
-      .add({
-        'uid': FirebaseAuth.instance.currentUser!.uid,
-        'content': _controller.text.trim(),
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-      }
+      await FirebaseFirestore.instance
+        .collection('feedback')
+        .add({
+          'uid': FirebaseAuth.instance.currentUser!.uid,
+          'content': _controller.text.trim(),
+          'createdAt': FieldValue.serverTimestamp(),
+        });
 
       if (!mounted) return;
 
