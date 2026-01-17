@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // 需要安裝這個來存設定
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'utils/notification_helper.dart';
 import 'providers/theme_provider.dart';
@@ -34,16 +35,17 @@ class _SettingsPageState extends State<SettingsPage> {
       appBar: AppBar(title: const Text('設定')),
       body: ListView(
         children: [
-          ElevatedButton(
-  onPressed: () async {
-    await NotificationHelper().showNow(
-  id: 999,
-  title: '測試通知',
-  body: '這是一則測試通知（立刻跳出）',
-);
-  },
-  child: const Text('測試通知（立刻跳出）'),
-),
+          if (kDebugMode)
+  ElevatedButton(
+    onPressed: () async {
+      await NotificationHelper().showNow(
+        id: 999,
+        title: '測試通知',
+        body: '這是一則測試通知（立刻跳出）',
+      );
+    },
+    child: const Text('測試通知（立刻跳出）'),
+  ),
           SwitchListTile(
             title: const Text('每日提醒'),
             subtitle: Text(_isReminderOn 
