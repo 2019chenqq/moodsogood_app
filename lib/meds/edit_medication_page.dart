@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/firebase_sync_config.dart';
 
 class EditMedicationPage extends StatefulWidget {
@@ -167,13 +169,15 @@ if (_medType == 'injection') {
                   )
                 : null,
             ),
-        onChanged: _onDrugNameChanged, // ✅ 關鍵：觸發字典搜尋
-        validator: (v) {
-          final t = (v ?? '').trim();
-          if (t.isEmpty) return '請輸入藥物名稱';
-          if (t.length < 2) return '名稱太短了';
-          return null;
-        },
+        onChanged: (value) {
+  // 🔕 暫時關閉藥物中英對照字典搜尋
+},
+validator: (v) {
+  final t = (v ?? '').trim();
+  if (t.isEmpty) return '請輸入藥物名稱';
+  if (t.length < 2) return '名稱太短了';
+  return null;
+},
       ),
 
       // ✅ 候選清單
@@ -187,57 +191,57 @@ if (_medType == 'injection') {
               color: Theme.of(context).dividerColor.withOpacity(0.6),
             ),
           ),
-          child: ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _drugSuggestions.length,
-            separatorBuilder: (_, __) => Divider(
-              height: 1,
-              color: Theme.of(context).dividerColor.withOpacity(0.6),
-            ),
-            itemBuilder: (context, i) {
-              final s = _drugSuggestions[i];
-              final zh = s['zh'] ?? '';
-              final en = s['en'] ?? '';
-              return ListTile(
-                dense: true,
-                title: Text(zh.isEmpty ? en : zh),
-                subtitle: (zh.isNotEmpty && en.isNotEmpty) ? Text(en) : null,
-                onTap: () => _applyDrugSuggestion(s),
-              );
-            },
-          ),
+          // child: ListView.separated(
+          //   shrinkWrap: true,
+          //   physics: const NeverScrollableScrollPhysics(),
+          //   itemCount: _drugSuggestions.length,
+          //   separatorBuilder: (_, __) => Divider(
+          //     height: 1,
+          //     color: Theme.of(context).dividerColor.withOpacity(0.6),
+          //   ),
+          //   itemBuilder: (context, i) {
+          //     final s = _drugSuggestions[i];
+          //     final zh = s['zh'] ?? '';
+          //     final en = s['en'] ?? '';
+          //     return ListTile(
+          //       dense: true,
+          //       title: Text(zh.isEmpty ? en : zh),
+          //       subtitle: (zh.isNotEmpty && en.isNotEmpty) ? Text(en) : null,
+          //       onTap: () => _applyDrugSuggestion(s),
+          //     );
+          //   },
+          // ),
         ),
       ],
       // 若沒有候選，提供新增到字典的選項
-      if (!_isSearchingDrug && _drugSuggestions.isEmpty && _nameCtrl.text.trim().isNotEmpty) ...[
-        const SizedBox(height: 8),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.add_box_outlined),
-          title: const Text('找不到這個藥，新增到字典？'),
-          subtitle: Text(_nameCtrl.text.trim()),
-          trailing: TextButton(
-            onPressed: () => _showAddDrugDialog(_nameCtrl.text.trim()),
-            child: const Text('新增'),
-          ),
-        ),
-      ],
+      // if (!_isSearchingDrug && _drugSuggestions.isEmpty && _nameCtrl.text.trim().isNotEmpty) ...[
+      //   const SizedBox(height: 8),
+      //   ListTile(
+      //     contentPadding: EdgeInsets.zero,
+      //     leading: const Icon(Icons.add_box_outlined),
+      //     title: const Text('找不到這個藥，新增到字典？'),
+      //     subtitle: Text(_nameCtrl.text.trim()),
+      //     trailing: TextButton(
+      //       onPressed: () => _showAddDrugDialog(_nameCtrl.text.trim()),
+      //       child: const Text('新增'),
+      //     ),
+      //   ),
+      // ],
     ],
   ),
 ),
 
-const SizedBox(height: 12),
+// const SizedBox(height: 12),
 
-_SectionCard(
-  title: '藥物名稱（英文，給醫師看）',
-  icon: Icons.translate_outlined,
-  child: TextFormField(
-    controller: _nameEnCtrl,
-    textInputAction: TextInputAction.next,
-    decoration: _inputDeco('例如：Clonazepam、Quetiapine…（可自動帶入/也可手動改）'),
-  ),
-),
+// _SectionCard(
+//   title: '藥物成分（英文）',
+//   icon: Icons.translate_outlined,
+//   child: TextFormField(
+//     controller: _nameEnCtrl,
+//     textInputAction: TextInputAction.next,
+//     decoration: _inputDeco('例如：Clonazepam、Quetiapine…（可自動帶入/也可手動改）'),
+//   ),
+// ),
 
 const SizedBox(height: 12),
 
@@ -747,17 +751,17 @@ void _onDrugNameChanged(String v) {
   });
 }
 
-void _applyDrugSuggestion(Map<String, String> s) {
-  final zh = (s['zh'] ?? '').trim();
-  final en = (s['en'] ?? '').trim();
+// void _applyDrugSuggestion(Map<String, String> s) {
+//   final zh = (s['zh'] ?? '').trim();
+//   final en = (s['en'] ?? '').trim();
 
-  // 你可以決定：中文欄位顯示 zh，英文欄位顯示 en
-  if (zh.isNotEmpty) _nameCtrl.text = zh;
-  if (en.isNotEmpty) _nameEnCtrl.text = en;
+//   // 你可以決定：中文欄位顯示 zh，英文欄位顯示 en
+//   // if (zh.isNotEmpty) _nameCtrl.text = zh;
+//   // if (en.isNotEmpty) _nameEnCtrl.text = en;
 
-  setState(() => _drugSuggestions = []);
-  FocusScope.of(context).nextFocus(); // 跳到下一個輸入欄（可改成 unfocus）
-}
+//   // setState(() => _drugSuggestions = []);
+//   FocusScope.of(context).nextFocus(); // 跳到下一個輸入欄（可改成 unfocus）
+// }
 
 Future<void> _showAddDrugDialog(String input) async {
   final zhCtrl = TextEditingController(text: input);

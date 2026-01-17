@@ -32,15 +32,15 @@ void _applyDrugSuggestion(Map<String, String> s) {
   final zh = s['zh'] ?? '';
   final en = s['en'] ?? '';
 
-  setState(() {
-    if (zh.isNotEmpty) {
-      _nameCtrl.text = zh;
-    }
-    if (en.isNotEmpty) {
-      _nameEnCtrl.text = en;
-    }
-    _drugSuggestions = []; // 選完就收起建議清單
-  });
+  // setState(() {
+  //   // if (zh.isNotEmpty) {
+  //   //   _nameCtrl.text = zh;
+  //   // }
+  //   // if (en.isNotEmpty) {
+  //   //   _nameEnCtrl.text = en;
+  //   // }
+  //   _drugSuggestions = []; // 選完就收起建議清單
+  // });
 
   FocusScope.of(context).unfocus();
 }
@@ -184,13 +184,15 @@ final otherSelected = _purposes['其他'] == true;
                   )
                 : null,
             ),
-        onChanged: _onDrugNameChanged, // ✅ 關鍵：觸發字典搜尋
-        validator: (v) {
-          final t = (v ?? '').trim();
-          if (t.isEmpty) return '請輸入藥物名稱';
-          if (t.length < 2) return '名稱太短了';
-          return null;
-        },
+        onChanged: (value) {
+  // 🔕 暫時關閉藥物中英對照字典搜尋
+},
+validator: (v) {
+  final t = (v ?? '').trim();
+  if (t.isEmpty) return '請輸入藥物名稱';
+  if (t.length < 2) return '名稱太短了';
+  return null;
+},
       ),
 
       // ✅ 候選清單
@@ -204,43 +206,43 @@ final otherSelected = _purposes['其他'] == true;
               color: Theme.of(context).dividerColor.withOpacity(0.6),
             ),
           ),
-          child: ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _drugSuggestions.length,
-            separatorBuilder: (_, __) => Divider(
-              height: 1,
-              color: Theme.of(context).dividerColor.withOpacity(0.6),
-            ),
-            itemBuilder: (context, i) {
-              final s = _drugSuggestions[i];
-              final zh = s['zh'] ?? '';
-              final en = s['en'] ?? '';
-              return ListTile(
-                dense: true,
-                title: Text(zh.isEmpty ? en : zh),
-                subtitle: (zh.isNotEmpty && en.isNotEmpty) ? Text(en) : null,
-                onTap: () => _applyDrugSuggestion(s),
-              );
-            },
-          ),
+          // child: ListView.separated(
+          //   shrinkWrap: true,
+          //   physics: const NeverScrollableScrollPhysics(),
+          //   itemCount: _drugSuggestions.length,
+          //   separatorBuilder: (_, __) => Divider(
+          //     height: 1,
+          //     color: Theme.of(context).dividerColor.withOpacity(0.6),
+          //   ),
+          //   itemBuilder: (context, i) {
+          //     final s = _drugSuggestions[i];
+          //     final zh = s['zh'] ?? '';
+          //     final en = s['en'] ?? '';
+          //     return ListTile(
+          //       dense: true,
+          //       title: Text(zh.isEmpty ? en : zh),
+          //       subtitle: (zh.isNotEmpty && en.isNotEmpty) ? Text(en) : null,
+          //       onTap: () => _applyDrugSuggestion(s),
+          //     );
+          //   },
+          // ),
         ),
       ],
     ],
   ),
 ),
 
-const SizedBox(height: 12),
+// const SizedBox(height: 12),
 
-_SectionCard(
-  title: '藥物名稱（英文，給醫師看）',
-  icon: Icons.translate_outlined,
-  child: TextFormField(
-    controller: _nameEnCtrl,
-    textInputAction: TextInputAction.next,
-    decoration: _inputDeco('例如：Clonazepam、Quetiapine…（可自動帶入/也可手動改）'),
-  ),
-),
+// _SectionCard(
+//   title: '藥物成分（英文）',
+//   icon: Icons.translate_outlined,
+//   child: TextFormField(
+//     controller: _nameEnCtrl,
+//     textInputAction: TextInputAction.next,
+//     decoration: _inputDeco('例如：Clonazepam、Quetiapine…（可自動帶入/也可手動改）'),
+//   ),
+// ),
 
 const SizedBox(height: 12),
 
