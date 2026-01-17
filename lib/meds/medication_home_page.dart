@@ -209,15 +209,15 @@ class MedicationHomePage extends StatelessWidget {
                           '_badgeOverride': badge,
                         },
                         onTap: () async {
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => EditMedicationPage(
-                                docId: doc.id,
-                                initialData: data,
-                              ),
-                            ),
-                          );
+  final updated = await Navigator.push<bool>(
+    context,
+    MaterialPageRoute(
+      builder: (_) => EditMedicationPage(
+        docId: doc.id,
+        initialData: data, // ✅ 必填：要把目前這筆資料傳進去
+      ),
+    ),
+  );
                         },
                         onMore: () => _showMedicationActions(context, uid, doc.id, data),
                       );
@@ -327,17 +327,16 @@ class MedicationHomePage extends StatelessWidget {
               leading: const Icon(Icons.edit_outlined),
               title: const Text('編輯藥物資料'),
               onTap: () async {
-                Navigator.pop(context);
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => EditMedicationPage(
-                      docId: medId,
-                      initialData: data,
-                    ),
-                  ),
-                );
-              },
+  final updated = await Navigator.push<bool>(
+    context,
+    MaterialPageRoute(
+      builder: (_) => EditMedicationPage(
+        docId: medId,
+        initialData: data,
+      ),
+    ),
+  );
+},
             ),
             ListTile(
               leading: const Icon(Icons.pause_circle_outline),
@@ -560,11 +559,9 @@ class _MedicationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = ((data['nameZh'] ?? data['name'] ?? data['nameEn']) as String?)
-        ?.trim()
-        .isNotEmpty ==
-    true
-    ? ((data['nameZh'] ?? data['name'] ?? data['nameEn']) as String).trim()
+    final rawName = data['name'] ?? data['nameZh'] ?? data['nameEn'];
+final name = (rawName as String?)?.trim().isNotEmpty == true
+    ? rawName.toString().trim()
     : '未命名藥物';
     final dose = data['dose'];
     final unit = (data['unit'] as String?) ?? 'mg';
@@ -580,9 +577,9 @@ final badge = data['_badgeOverride'] as String?;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
         onTap: onTap,
-        child: Card(
+        borderRadius: BorderRadius.circular(16),
+                child: Card(
           elevation: 0,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
