@@ -2,9 +2,8 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/firebase_sync_config.dart';
+import 'medication_local_db.dart';
 
 class EditMedicationPage extends StatefulWidget {
   final String docId;
@@ -109,7 +108,17 @@ if (_medType == 'injection') {
 
     // startDate
     final sd = d['startDate'];
-    if (sd is Timestamp) _startDate = sd.toDate();
+    if (sd is Timestamp) {
+      _startDate = sd.toDate();
+    } else if (sd is DateTime) {
+      _startDate = sd;
+    } else if (sd is String && sd.isNotEmpty) {
+      final parsed = DateTime.tryParse(sd);
+      if (parsed != null) _startDate = parsed;
+    } else if (sd is int) {
+      // 支援本地資料若存成毫秒時間戳
+      _startDate = DateTime.fromMillisecondsSinceEpoch(sd);
+    }
     _startDate = DateTime(_startDate.year, _startDate.month, _startDate.day);
 
     _isActive = (d['isActive'] as bool?) ?? true;
@@ -285,10 +294,10 @@ const SizedBox(height: 12),
 
                     // 0.5 mg 刻度（你可改成 0.25 -> divisions: 1200）
                     Slider(
-                      value: _dose.clamp(0, 300),
+                      value: _dose.clamp(0, 1000),
                       min: 0,
-                      max: 300,
-                      divisions: 600,
+                      max: 1000,
+                      divisions: 2000,
                       label: _doseLabel(_dose),
                       onChanged: (v) => setState(() => _dose = v),
                     ),
@@ -297,12 +306,12 @@ const SizedBox(height: 12),
                       children: [
                         _SmallGhostButton(
                           text: '−',
-                          onTap: () => setState(() => _dose = (_dose - 0.5).clamp(0, 300)),
+                          onTap: () => setState(() => _dose = (_dose - 0.5).clamp(0, 1000)),
                         ),
                         const SizedBox(width: 8),
                         _SmallGhostButton(
                           text: '+',
-                          onTap: () => setState(() => _dose = (_dose + 0.5).clamp(0, 300)),
+                          onTap: () => setState(() => _dose = (_dose + 0.5).clamp(0, 1000)),
                         ),
                         const Spacer(),
                         Text(
@@ -548,7 +557,7 @@ if (_medType == 'injection') ...[
     );
 
     if (result != null) {
-      setState(() => _dose = result.clamp(0, 300));
+      setState(() => _dose = result.clamp(0, 1000));
     }
   }
 
@@ -582,8 +591,8 @@ if (_medType == 'injection') ...[
 
     final name = _nameCtrl.text.trim();
     final times = (_medType == 'injection')
-    ? <String>[]
-    : _timeSlots.entries.where((e) => e.value).map((e) => e.key).toList();
+        ? <String>[]
+        : _timeSlots.entries.where((e) => e.value).map((e) => e.key).toList();
     final purposes = _purposes.entries.where((e) => e.value).map((e) => e.key).toList();
 
     final purposeOther = _purposeOtherCtrl.text.trim();
@@ -599,33 +608,53 @@ if (_medType == 'injection') ...[
     setState(() => _saving = true);
 
     try {
-      final docRef = FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('medications')
-          .doc(widget.docId);
+      final now = DateTime.now();
 
+      final medicationData = {
+        'id': widget.docId,
+        'name': name,
+        'dose': _dose,
+        'unit': _unit,
+        'type': _medType,
+        'intervalDays': _medType == 'injection' ? _intervalDays : null,
+        'times': times,
+        'purposes': purposes,
+        'note': _noteCtrl.text.trim(),
+        'startDate': DateTime(_startDate.year, _startDate.month, _startDate.day).toString(),
+        'isActive': _isActive,
+        'bodySymptoms': bodySymptoms,
+        'purposeOther': purposeOther.isEmpty ? null : purposeOther,
+        'updatedAt': now.toString(),
+        'lastChangeAt': (widget.initialData['lastChangeAt'] as String?) ?? '',
+      };
+
+      // 1️⃣ 先更新本地端（一定要更新）
+      await MedicationLocalDB().updateMedication(uid, widget.docId, medicationData);
+      debugPrint('✅ 本地已更新: ${widget.docId}');
+
+      // 2️⃣ 再更新 Firebase（如果啟用同步）
       if (FirebaseSyncConfig.shouldSync()) {
-        await docRef.set({
-          'name': name,
-          'dose': _dose, // double，支援 0.5 / 1.25
-          'unit': _unit,
-          // ✅ 新增：口服/長效針
-    'type': _medType,
-
-    // ✅ 新增：注射間隔（天）— 口服藥就清掉
-    'intervalDays': _medType == 'injection' ? _intervalDays : null,
-
-    // ✅ 長效針不應該有 times
-    'times': times,
-                  'purposes': purposes,
-          'purposeOther': purposeOther.isEmpty ? null : purposeOther,
-          'bodySymptoms': bodySymptoms,
-          'note': _noteCtrl.text.trim(),
-          'startDate': Timestamp.fromDate(DateTime(_startDate.year, _startDate.month, _startDate.day)),
-          'isActive': _isActive,
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('medications')
+            .doc(widget.docId)
+            .set({
+              'name': name,
+              'dose': _dose,
+              'unit': _unit,
+              'type': _medType,
+              'intervalDays': _medType == 'injection' ? _intervalDays : null,
+              'times': times,
+              'purposes': purposes,
+              'purposeOther': purposeOther.isEmpty ? null : purposeOther,
+              'bodySymptoms': bodySymptoms,
+              'note': _noteCtrl.text.trim(),
+              'startDate': Timestamp.fromDate(DateTime(_startDate.year, _startDate.month, _startDate.day)),
+              'isActive': _isActive,
+              'updatedAt': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
+        debugPrint('🔥 Firebase 已同步: ${widget.docId}');
       }
 
       if (!mounted) return;

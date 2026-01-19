@@ -743,7 +743,6 @@ class _ChartWidget extends StatelessWidget {
   final bool useMovingAverage;
 
   const _ChartWidget({
-    super.key,
     required this.records,
     required this.fullRecords,
     required this.targetEmotion,
@@ -963,12 +962,6 @@ class WeeklySummaryCard extends StatelessWidget {
     final totalDays = 7;
     final recordedDays = weekRecords.length;
 
-    // 計算情緒平均 (改用 overallMood)
-    final moodValues = weekRecords
-        .map((r) => r.overallMood)
-        .where((v) => v != null)
-        .cast<double>()
-        .toList();
 
     // 計算睡眠平均 (改用 sleep.durationHours)
     final sleepValues = weekRecords.map((r) {
@@ -984,10 +977,6 @@ class WeeklySummaryCard extends StatelessWidget {
       // 如果 total 為 0，代表那天完全沒睡或沒紀錄，回傳 null 以便過濾
       return total > 0 ? total : null;
     }).where((v) => v != null).cast<double>().toList();
-
-    final avgMood = moodValues.isEmpty
-        ? null
-        : moodValues.reduce((a, b) => a + b) / moodValues.length;
 
     final avgSleep = sleepValues.isEmpty
         ? null
@@ -1025,13 +1014,6 @@ class WeeklySummaryCard extends StatelessWidget {
               '有紀錄的天數：$recordedDays / $totalDays 天',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
-            if (avgMood != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                '平均情緒：約 ${avgMood.toStringAsFixed(1)} / 10',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ],
             if (avgSleep != null) ...[
               const SizedBox(height: 4),
               Text(

@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
 import 'drug_dictionary_service.dart';
 import '../utils/firebase_sync_config.dart';
+import 'medication_local_db.dart';
 
 class AddMedicationPage extends StatefulWidget {
   const AddMedicationPage({super.key});
@@ -301,12 +302,12 @@ const SizedBox(height: 12),
                       children: [
                         _SmallGhostButton(
                           text: '−',
-                          onTap: () => setState(() => _dose = (_dose - 0.5).clamp(0, 300)),
+                          onTap: () => setState(() => _dose = (_dose - 0.5).clamp(0, 1000)),
                         ),
                         const SizedBox(width: 8),
                         _SmallGhostButton(
                           text: '+',
-                          onTap: () => setState(() => _dose = (_dose + 0.5).clamp(0, 300)),
+                          onTap: () => setState(() => _dose = (_dose + 0.5).clamp(0, 1000)),
                         ),
                         const Spacer(),
                         Text(
@@ -579,44 +580,75 @@ _SectionCard(
     final bodySymptomText = _bodySymptomCtrl.text.trim();
     final doseValue = _dose;
     
-final bodySymptoms = bodySymptomText.isEmpty
-    ? <String>[]
-    : bodySymptomText
-        .split(RegExp(r'[，,]'))
-        .map((s) => s.trim())
-        .where((s) => s.isNotEmpty)
-        .toList();
+    final bodySymptoms = bodySymptomText.isEmpty
+        ? <String>[]
+        : bodySymptomText
+            .split(RegExp(r'[，,]'))
+            .map((s) => s.trim())
+            .where((s) => s.isNotEmpty)
+            .toList();
 
     setState(() => _saving = true);
 
     try {
-      final col = FirebaseFirestore.instance
+      final docId = FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
-          .collection('medications');
+          .collection('medications')
+          .doc()
+          .id; // 生成 ID
 
-      // Only sync to Firebase if enabled
-      if (FirebaseSyncConfig.shouldSync()) {
-        await col.add({
+      final now = DateTime.now();
+      final timestamp = Timestamp.fromDate(now);
+      
+      final medicationData = {
+        'id': docId,
         'name': name,
         'dose': doseValue,
         'unit': _unit,
-        'type': _medType,                 // ⭐ 新增
-  'intervalDays': _medType == 'injection'
-      ? _intervalDays
-      : null,           
+        'type': _medType,
+        'intervalDays': _medType == 'injection' ? _intervalDays : null,
         'times': times,
         'purposes': purposes,
         'note': _noteCtrl.text.trim(),
-        'startDate': Timestamp.fromDate(DateTime(_startDate.year, _startDate.month, _startDate.day)),
+        'startDate': DateTime(_startDate.year, _startDate.month, _startDate.day).toString(),
         'isActive': _isActive,
-        'bodySymptoms': bodySymptoms, // List<String>
+        'bodySymptoms': bodySymptoms,
         'purposeOther': purposeOther.isEmpty ? null : purposeOther,
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-        // 後續做調藥 wizard 時才會更新：
+        'createdAt': now.toString(),
+        'updatedAt': now.toString(),
         'lastChangeAt': null,
-        });
+      };
+
+      // 1️⃣ 先存本地端（一定要存）
+      await MedicationLocalDB().addMedication(uid, medicationData);
+      debugPrint('✅ 本地已保存: $docId');
+
+      // 2️⃣ 再上傳 Firebase（如果啟用同步）
+      if (FirebaseSyncConfig.shouldSync()) {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('medications')
+            .doc(docId)
+            .set({
+              'name': name,
+              'dose': doseValue,
+              'unit': _unit,
+              'type': _medType,
+              'intervalDays': _medType == 'injection' ? _intervalDays : null,
+              'times': times,
+              'purposes': purposes,
+              'note': _noteCtrl.text.trim(),
+              'startDate': Timestamp.fromDate(DateTime(_startDate.year, _startDate.month, _startDate.day)),
+              'isActive': _isActive,
+              'bodySymptoms': bodySymptoms,
+              'purposeOther': purposeOther.isEmpty ? null : purposeOther,
+              'createdAt': FieldValue.serverTimestamp(),
+              'updatedAt': FieldValue.serverTimestamp(),
+              'lastChangeAt': null,
+            });
+        debugPrint('🔥 Firebase 已同步: $docId');
       }
 
       if (!mounted) return;

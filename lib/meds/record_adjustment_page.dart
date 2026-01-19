@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../utils/firebase_sync_config.dart';
+import 'medication_local_db.dart';
 
 // 你已經有的新增藥物頁（路徑依你的專案調整）
 import 'add_medication_page.dart';
@@ -24,6 +25,65 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
   final Map<String, _MedDraft> _draftByDocId = {};
 
   bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 初始化時從 Firebase 同步最新藥物到本地
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      _syncFromFirebase(uid);
+    }
+  }
+
+  Future<void> _syncFromFirebase(String uid) async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('medications')
+          .get();
+
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final startTs = data['startDate'];
+        DateTime? startDate;
+        if (startTs is Timestamp) startDate = startTs.toDate();
+        if (startTs is String) startDate = DateTime.tryParse(startTs);
+
+        final mapped = {
+          'id': doc.id,
+          'name': data['name'],
+          'dose': data['dose'],
+          'unit': data['unit'],
+          'type': data['type'],
+          'intervalDays': data['intervalDays'],
+          'times': (data['times'] as List?)?.cast<String>() ?? <String>[],
+          'purposes': (data['purposes'] as List?)?.cast<String>() ?? <String>[],
+          'note': data['note'],
+          'startDate': startDate?.toString(),
+          'isActive': data['isActive'] ?? true,
+          'bodySymptoms': (data['bodySymptoms'] as List?)?.cast<String>() ?? <String>[],
+          'purposeOther': data['purposeOther'],
+          'createdAt': DateTime.now().toString(),
+          'updatedAt': DateTime.now().toString(),
+          'lastChangeAt': (data['lastChangeAt'] is Timestamp)
+              ? (data['lastChangeAt'] as Timestamp).toDate().toString()
+              : data['lastChangeAt']?.toString(),
+        };
+
+        await MedicationLocalDB().addMedication(uid, mapped);
+      }
+    } catch (e) {
+      debugPrint('紀錄調整頁同步 Firebase 失敗：$e');
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _getMedsForAdjustment(String uid) async {
+    final all = await MedicationLocalDB().getMedicationsForDisplay(uid);
+    return all.where((m) => (m['isActive'] ?? true) == true).toList();
+  }
+
 _MedDraft _ensureUiDraft(
   String docId,
   Map<String, dynamic> baseData,
@@ -74,13 +134,6 @@ String _toStr(dynamic v, [String fallback = '']) {
       );
     }
 
-    final medsQuery = FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('medications')
-        .orderBy('isActive', descending: true)
-        .orderBy('updatedAt', descending: true);
-
     return Scaffold(
       appBar: AppBar(
   title: const Text('紀錄調整'),
@@ -103,17 +156,17 @@ String _toStr(dynamic v, [String fallback = '']) {
         label: const Text('新增這次新開的藥'),
       ),
       body: SafeArea(
-        child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: medsQuery.snapshots(),
+        child: FutureBuilder<List<Map<String, dynamic>>>(
+          future: _getMedsForAdjustment(uid),
           builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
             if (snap.hasError) {
               return _ErrorView(message: '讀取藥物失敗：${snap.error}');
             }
-            if (!snap.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
 
-            final docs = snap.data!.docs;
+            final docs = snap.data ?? [];
             if (docs.isEmpty) {
               return _EmptyMedsView(
                 onAdd: _addNewMedication,
@@ -121,8 +174,9 @@ String _toStr(dynamic v, [String fallback = '']) {
             }
 
             // 確保 draft 有初始化
-            for (final d in docs) {
-              _draftByDocId.putIfAbsent(d.id, () => _MedDraft.fromDoc(d));
+            for (final med in docs) {
+              final docId = med['id'] as String? ?? '';
+              _draftByDocId.putIfAbsent(docId, () => _MedDraft.fromMap(med));
             }
 
             return ListView(
@@ -174,7 +228,7 @@ String _toStr(dynamic v, [String fallback = '']) {
                 ),
                 const SizedBox(height: 8),
 
-                ...docs.map((d) => _buildMedCard(context, d, _draftByDocId[d.id]!)),
+                ...docs.map((med) => _buildMedCard(context, med, _draftByDocId[med['id'] as String? ?? '']!)),
 
                 const SizedBox(height: 14),
 
@@ -200,19 +254,18 @@ String _toStr(dynamic v, [String fallback = '']) {
 
   Widget _buildMedCard(
     BuildContext context,
-    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    Map<String, dynamic> med,
     _MedDraft draft,
   ) {
     final cs = Theme.of(context).colorScheme;
-    final data = doc.data();
 
-    final name = (data['name'] as String?) ?? '未命名藥物';
-    final unit = (data['unit'] as String?) ?? 'mg';
-    final dose = data['dose'];
+    final name = (med['name'] as String?) ?? '未命名藥物';
+    final unit = (med['unit'] as String?) ?? 'mg';
+    final dose = med['dose'];
     final doseStr = _doseToString(dose, unit);
 
-    final times = (data['times'] as List?)?.whereType<String>().toList() ?? const <String>[];
-    final isActive = (data['isActive'] as bool?) ?? true;
+    final times = (med['times'] as List?)?.whereType<String>().toList() ?? const <String>[];
+    final isActive = (med['isActive'] as bool?) ?? true;
 
     // 卡片視覺：有變動就稍微凸顯
     final changed = draft.type != MedChangeType.unchanged;
@@ -307,7 +360,7 @@ String _toStr(dynamic v, [String fallback = '']) {
               _InlineEditRow(
                 title: '新劑量',
                 valueText: draft.newDose == null ? '點擊輸入' : _doseToString(draft.newDose, unit),
-                onTap: () => _editDose(docId: doc.id, unit: unit),
+                onTap: () => _editDose(docId: med['id'] as String? ?? '', unit: unit),
               ),
               const SizedBox(height: 8),
               Text(
@@ -443,10 +496,16 @@ Future<void> _editDose({
   Future<void> _save(String uid) async {
     if (_saving) return;
 
+    debugPrint('🔄 開始保存調整記錄...');
+    debugPrint('📍 調整日期：${_fmtYmd(_date)}');
+    debugPrint('📝 備註：${_noteCtrl.text}');
+
     // 只取有變動的 items（無變化的不寫入）
     final changed = _draftByDocId.entries
         .where((e) => e.value.type != MedChangeType.unchanged)
         .toList();
+
+    debugPrint('🔍 檢查變動：${_draftByDocId.length} 顆藥物，${changed.length} 顆有變動');
 
     if (changed.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -491,7 +550,29 @@ Future<void> _editDose({
 
       final batch = FirebaseFirestore.instance.batch();
 
-      // 1) 寫入調整紀錄
+      // 1) 寫入調整紀錄到本地 DB（一定要寫入）
+      final adjId = adjRef.id;
+      final dateStr = _fmtYmd(DateTime(_date.year, _date.month, _date.day));
+      debugPrint('📋 準備保存調整記錄 - adjId: $adjId, date: $dateStr, items 數量: ${items.length}');
+      
+      try {
+        await MedicationLocalDB().addAdjustmentRecord(uid, adjId, {
+          'date': dateStr,
+          'note': _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
+          'items': items,
+          'createdAt': DateTime.now().toString(),
+        });
+        debugPrint('✅ 本地調整記錄已保存');
+      } catch (e) {
+        debugPrint('❌ 本地調整記錄保存失敗：$e');
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('本地保存失敗：$e')),
+        );
+        return;
+      }
+
+      // 2) 寫入調整紀錄到 Firebase
       batch.set(adjRef, {
         'date': adjDate,
         'note': _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
@@ -499,7 +580,7 @@ Future<void> _editDose({
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      // 2) 同步更新藥物主檔（只更新有變動的）
+      // 3) 同步更新藥物主檔（只更新有變動的）
       for (final e in changed) {
         final medDocId = e.key;
         final d = e.value;
@@ -521,37 +602,66 @@ Future<void> _editDose({
         batch.set(medRef, patch, SetOptions(merge: true));
       }
 
-      if (FirebaseSyncConfig.shouldSync()) {
-        await batch.commit();
-      }
-for (final e in changed) {
-  final docId = e.key;
-  final d = e.value;
+      // 4️⃣ 先更新本地端藥物（一定要更新）
+      for (final e in changed) {
+        final medDocId = e.key;
+        final d = e.value;
 
-  await _applyMedicationChange(
-    uid: uid,
-    medId: docId,
-    action: d.type == MedChangeType.stopped
-        ? 'stop'
-        : d.type == MedChangeType.doseChanged
-            ? 'adjust'
-            : 'keep',
-    newDose: d.newDose,
-    unit: d.unit,
-  );
-}
-if (mounted) Navigator.pop(context, true);
-      if (!mounted) return;
+        final localMed = await MedicationLocalDB().getMedication(uid, medDocId);
+        if (localMed != null) {
+          final updated = Map<String, dynamic>.from(localMed);
+          updated['updatedAt'] = DateTime.now().toString();
+          updated['lastChangeAt'] = DateTime(_date.year, _date.month, _date.day).toString();
+
+          if (d.type == MedChangeType.doseChanged) {
+            updated['dose'] = d.newDose;
+            updated['isActive'] = true;
+          } else if (d.type == MedChangeType.stopped) {
+            updated['isActive'] = false;
+          }
+
+          try {
+            await MedicationLocalDB().updateMedication(uid, medDocId, updated);
+          } catch (e) {
+            debugPrint('⚠️ 更新藥物 $medDocId 失敗：$e');
+          }
+        }
+      }
+      debugPrint('✅ 本地藥物已更新');
+
+      // 5️⃣ 再上傳 Firebase（如果啟用同步）
+      if (FirebaseSyncConfig.shouldSync()) {
+        try {
+          await batch.commit();
+          debugPrint('🔥 Firebase 調整已同步');
+        } catch (e) {
+          debugPrint('⚠️ Firebase 同步失敗：$e');
+        }
+      }
+
+      if (!mounted) {
+        debugPrint('❌ Widget 已卸載，無法返回');
+        return;
+      }
+      
       Navigator.pop(context, true);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('已儲存本次調整')),
       );
     } catch (e) {
+      debugPrint('❌ 儲存異常：$e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('儲存失敗：$e')));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  String _fmtYmd(DateTime dt) {
+    final y = dt.year.toString().padLeft(4, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    return '$y/$m/$d';
   }
 
   static InputDecoration _inputDeco(BuildContext context, String hint) {
@@ -565,13 +675,6 @@ if (mounted) Navigator.pop(context, true);
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
     );
-  }
-
-  String _fmtYmd(DateTime dt) {
-    final y = dt.year.toString().padLeft(4, '0');
-    final m = dt.month.toString().padLeft(2, '0');
-    final d = dt.day.toString().padLeft(2, '0');
-    return '$y/$m/$d';
   }
 
   String _typeLabel(MedChangeType t) {
@@ -597,44 +700,6 @@ if (mounted) Navigator.pop(context, true);
     return '${v.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '')} $unit';
   }
 }
-Future<void> _applyMedicationChange({
-  required String uid,
-  required String medId,
-  required String action, // 'keep' | 'adjust' | 'stop'
-  required double? newDose,
-  required String unit,
-}) async {
-  final medRef = FirebaseFirestore.instance
-      .collection('users')
-      .doc(uid)
-      .collection('medications')
-      .doc(medId);
-
-  if (action == 'stop') {
-    // 停藥：把藥物標記為停用（首頁就不顯示）
-    await medRef.set({
-      'isActive': false,
-      'stoppedAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-    return;
-  }
-
-  if (action == 'adjust') {
-    if (newDose == null) return;
-
-    // ✅ 劑量調整：回寫「目前劑量」到藥物本體
-    await medRef.set({
-      'dose': newDose,            // 或 'currentDose'，看你首頁用哪個欄位
-      'unit': unit,
-      'isActive': true,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-    return;
-  }
-
-  // keep：通常不必回寫（除非你要同步時間/狀態）
-}
 
 class _MedDraft {
   String name;
@@ -658,6 +723,20 @@ class _MedDraft {
     final name = (d['name'] as String?) ?? '未命名藥物';
     final unit = (d['unit'] as String?) ?? 'mg';
     final dose = d['dose'];
+    final oldDose = (dose is int) ? dose.toDouble() : (dose is double ? dose : 0.0);
+
+    return _MedDraft(
+      name: name,
+      unit: unit,
+      oldDose: oldDose,
+      type: MedChangeType.unchanged,
+    );
+  }
+
+  factory _MedDraft.fromMap(Map<String, dynamic> m) {
+    final name = (m['name'] as String?) ?? '未命名藥物';
+    final unit = (m['unit'] as String?) ?? 'mg';
+    final dose = m['dose'];
     final oldDose = (dose is int) ? dose.toDouble() : (dose is double ? dose : 0.0);
 
     return _MedDraft(

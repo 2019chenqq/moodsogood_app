@@ -5,8 +5,8 @@ import 'add_medication_page.dart';
 import 'edit_medication_page.dart';
 import '../widgets/main_drawer.dart';
 import 'record_adjustment_page.dart';
-import 'medication_actions.dart';
 import 'med_symptom_compare_page.dart';
+import 'medication_local_db.dart';
 
 const List<String> kTimeOrder = [
   '早上',
@@ -45,8 +45,43 @@ DateTime _nextInjectionDate({
   final addDays = intervalDays - mod;
   return t.add(Duration(days: addDays));
 }
-class MedicationHomePage extends StatelessWidget {
+class MedicationHomePage extends StatefulWidget {
   const MedicationHomePage({super.key});
+
+  @override
+  State<MedicationHomePage> createState() => _MedicationHomePageState();
+}
+
+class _MedicationHomePageState extends State<MedicationHomePage> {
+  late Future<List<Map<String, dynamic>>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  void _refresh() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      _future = Future.value(<Map<String, dynamic>>[]);
+      setState(() {});
+      return;
+    }
+
+    // 先立即顯示本地資料
+    _future = MedicationLocalDB().getMedicationsForDisplay(uid);
+    setState(() {});
+
+    // 背景同步 Firebase 後再刷新一次
+    _syncFromFirebase(uid);
+  }
+
+  Future<void> _syncFromFirebase(String uid) async {
+    await _mergeFirebaseIntoLocal(uid);
+    _future = MedicationLocalDB().getMedicationsForDisplay(uid);
+    if (mounted) setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -56,13 +91,6 @@ class MedicationHomePage extends StatelessWidget {
         body: Center(child: Text('請先登入帳號')),
       );
     }
-
-    final medsQuery = FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('medications')
-        .orderBy('isActive', descending: true)
-        .orderBy('updatedAt', descending: true);
 
     return DefaultTabController(
       length: 2,
@@ -78,40 +106,41 @@ class MedicationHomePage extends StatelessWidget {
           ),
           actions: [
             IconButton(
-  tooltip: '症狀交叉比對',
-  icon: const Icon(Icons.compare_arrows),
-  onPressed: () {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const MedSymptomComparePage()),
-    );
-  },
-),
-          IconButton(
-            tooltip: '紀錄調整（回診/調藥）',
-            onPressed: () {
-  Navigator.push(
-    context,
-    MaterialPageRoute(builder: (_) => const RecordAdjustmentPage()),
-  );
-},
-            icon: const Icon(Icons.edit_note),
-          ),
-          IconButton(
-            tooltip: '新增藥物',
-            onPressed: () async {
-  final added = await Navigator.push(
-    context,
-    MaterialPageRoute(builder: (_) => const AddMedicationPage()),
-  );
-  // added == true 代表新增成功（可選）
-},
-            icon: const Icon(Icons.add),
-          ),
-        ],
+              tooltip: '症狀交叉比對',
+              icon: const Icon(Icons.compare_arrows),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const MedSymptomComparePage()),
+                );
+              },
+            ),
+            IconButton(
+              tooltip: '紀錄調整（回診/調藥）',
+              onPressed: () async {
+                final changed = await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const RecordAdjustmentPage()),
+                );
+                if (changed == true) _refresh();
+              },
+              icon: const Icon(Icons.edit_note),
+            ),
+            IconButton(
+              tooltip: '新增藥物',
+              onPressed: () async {
+                final added = await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AddMedicationPage()),
+                );
+                if (added == true) _refresh();
+              },
+              icon: const Icon(Icons.add),
+            ),
+          ],
         ),
-        body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: medsQuery.snapshots(),
+        body: FutureBuilder<List<Map<String, dynamic>>>(
+          future: _future,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
@@ -120,193 +149,204 @@ class MedicationHomePage extends StatelessWidget {
               return Center(child: Text('發生錯誤：${snapshot.error}'));
             }
 
-            final docs = snapshot.data?.docs ?? [];
+            final allMeds = snapshot.data ?? [];
 
-            final activeDocs = docs.where((d) => (d.data()['isActive'] ?? true) == true).toList();
-            final inactiveDocs = docs.where((d) => (d.data()['isActive'] ?? true) == false).toList();
-
-            // 構建分組（只針對 active）
-            final Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>> groups = {
-              for (final t in kTimeOrder) t: <QueryDocumentSnapshot<Map<String, dynamic>>>[],
-            };
-            final List<QueryDocumentSnapshot<Map<String, dynamic>>> injectionDocs = [];
-
-            for (final doc in activeDocs) {
-              final data = doc.data();
-              final isInjection = (data['type'] as String?) == 'injection';
-              if (isInjection) {
-                injectionDocs.add(doc);
-                continue;
-              }
-
-              final times = (data['times'] as List?)?.whereType<String>().toList() ?? <String>[];
-              if (times.isEmpty) {
-                groups['未設定']!.add(doc);
-              } else {
-                for (final t in times) {
-                  if (groups.containsKey(t)) {
-                    groups[t]!.add(doc);
-                  } else {
-                    groups['未設定']!.add(doc);
-                  }
-                }
-              }
-            }
-
-            Widget buildActiveList() {
-              if (activeDocs.isEmpty) {
-                return _EmptyState(
-                  onAdd: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const AddMedicationPage()),
-                    );
-                  },
-                );
-              }
-
-              return ListView(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-                children: [
-                  if (injectionDocs.isNotEmpty) ...[
-                    _TimeSectionHeader(
-                      title: '長效針／定期注射',
-                      count: injectionDocs.length,
-                    ),
-                    const SizedBox(height: 8),
-                    ...injectionDocs.map((doc) {
-                      final data = doc.data();
-
-                      final dose = data['dose'];
-                      final unit = (data['unit'] as String?) ?? 'mg';
-
-                      final startTs = data['startDate'];
-                      final startDate = (startTs is Timestamp) ? startTs.toDate() : DateTime.now();
-
-                      final intervalDaysRaw = data['intervalDays'];
-                      final intervalDays = (intervalDaysRaw is int)
-                          ? intervalDaysRaw
-                          : (intervalDaysRaw is double)
-                              ? intervalDaysRaw.round()
-                              : 28;
-
-                      final nextDate = _nextInjectionDate(
-                        startDate: startDate,
-                        intervalDays: intervalDays,
-                        today: DateTime.now(),
-                      );
-                      final daysLeft = _startOfDay(nextDate).difference(_startOfDay(DateTime.now())).inDays;
-
-                      final badge = (daysLeft <= 0)
-                          ? '今天注射'
-                          : '下次 ${_fmtMd(nextDate)}（剩 $daysLeft 天）';
-
-                      return _MedicationCard(
-                        docId: doc.id,
-                        data: {
-                          ...data,
-                          '_subtitleOverride': (dose == null) ? '每 $intervalDays 天一次' : '$dose $unit｜每 $intervalDays 天一次',
-                          '_badgeOverride': badge,
-                        },
-                        onTap: () async {
-  final updated = await Navigator.push<bool>(
-    context,
-    MaterialPageRoute(
-      builder: (_) => EditMedicationPage(
-        docId: doc.id,
-        initialData: data, // ✅ 必填：要把目前這筆資料傳進去
-      ),
-    ),
-  );
-                        },
-                        onMore: () => _showMedicationActions(context, uid, doc.id, data),
-                      );
-                    }),
-                    const SizedBox(height: 20),
-                  ],
-
-                  for (final t in kTimeOrder)
-                    if (groups[t]!.isNotEmpty) ...[
-                      _TimeSectionHeader(
-                        title: t,
-                        count: groups[t]!.length,
-                      ),
-                      const SizedBox(height: 8),
-                      ...groups[t]!.map((doc) {
-                        final data = doc.data();
-                        final uid = FirebaseAuth.instance.currentUser!.uid;
-                        return _MedicationCard(
-                          docId: doc.id,
-                          data: data,
-                          onMore: () => showMedicationMoreSheet(
-                            context: context,
-                            uid: uid,
-                            medId: doc.id,
-                            data: data,
-                          ),
-                        );
-                      }),
-                      const SizedBox(height: 20),
-                    ],
-                ],
-              );
-            }
-
-            Widget buildInactiveList() {
-              if (inactiveDocs.isEmpty) {
-                return const Center(child: Text('目前沒有已停用的藥物'));
-              }
-
-              return ListView.separated(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-                itemCount: inactiveDocs.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
-                itemBuilder: (context, i) {
-                  final doc = inactiveDocs[i];
-                  final data = doc.data();
-                  final uid = FirebaseAuth.instance.currentUser!.uid;
-                  return _MedicationCard(
-                    docId: doc.id,
-                    data: data,
-                    onMore: () => showMedicationMoreSheet(
-                      context: context,
-                      uid: uid,
-                      medId: doc.id,
-                      data: data,
-                    ),
-                  );
-                },
-              );
-            }
+            final activeMeds = allMeds.where((m) => (m['isActive'] ?? true) == true).toList();
+            final inactiveMeds = allMeds.where((m) => (m['isActive'] ?? true) == false).toList();
 
             return TabBarView(
               children: [
-                buildActiveList(),
-                buildInactiveList(),
+                _buildMedicationList(context, activeMeds),
+                _buildMedicationList(context, inactiveMeds),
               ],
             );
           },
-        ),
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: () async {
-            final added = await Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const AddMedicationPage()),
-            );
-            // added == true 代表新增成功（可選）
-          },
-          icon: const Icon(Icons.add),
-          label: const Text('新增藥物'),
         ),
       ),
     );
   }
 
-  DateTime? _readTimestampToDate(dynamic v) {
-    if (v == null) return null;
-    if (v is Timestamp) return v.toDate();
-    return null;
+  /// 將 Firebase 資料合併到本地（不阻塞首次顯示）
+  Future<void> _mergeFirebaseIntoLocal(String uid) async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('medications')
+          .get();
+
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final startTs = data['startDate'];
+        DateTime? startDate;
+        if (startTs is Timestamp) startDate = startTs.toDate();
+        if (startTs is String) startDate = DateTime.tryParse(startTs);
+
+        // 檢查本地是否已存在該藥物
+        final localMed = await MedicationLocalDB().getMedication(uid, doc.id);
+        if (localMed != null) {
+          // 比較更新時間：如果本地比 Firebase 更新，則跳過覆蓋
+          final localUpdatedStr = localMed['updatedAt'] as String?;
+          final remoteUpdated = (data['updatedAt'] as Timestamp?)?.toDate();
+          
+          if (localUpdatedStr != null && remoteUpdated != null) {
+            final localUpdated = DateTime.tryParse(localUpdatedStr);
+            if (localUpdated != null && localUpdated.isAfter(remoteUpdated)) {
+              debugPrint('⏭️ 本地資料更新：${doc.id}，跳過 Firebase 覆蓋');
+              continue;
+            }
+          }
+        }
+
+        final mapped = {
+          'id': doc.id,
+          'name': data['name'],
+          'dose': data['dose'],
+          'unit': data['unit'],
+          'type': data['type'],
+          'intervalDays': data['intervalDays'],
+          'times': (data['times'] as List?)?.cast<String>() ?? <String>[],
+          'purposes': (data['purposes'] as List?)?.cast<String>() ?? <String>[],
+          'note': data['note'],
+          'startDate': startDate?.toString(),
+          'isActive': data['isActive'] ?? true,
+          'bodySymptoms': (data['bodySymptoms'] as List?)?.cast<String>() ?? <String>[],
+          'purposeOther': data['purposeOther'],
+          'createdAt': (localMed?['createdAt']) ?? DateTime.now().toString(),
+          'updatedAt': data['updatedAt'] is Timestamp 
+              ? (data['updatedAt'] as Timestamp).toDate().toString()
+              : data['updatedAt']?.toString() ?? DateTime.now().toString(),
+          'lastChangeAt': (data['lastChangeAt'] is Timestamp)
+              ? (data['lastChangeAt'] as Timestamp).toDate().toString()
+              : data['lastChangeAt']?.toString(),
+        };
+
+        await MedicationLocalDB().addMedication(uid, mapped);
+      }
+    } catch (e) {
+      debugPrint('抓取 Firebase 藥物失敗：$e');
+    }
   }
+
+  Widget _buildMedicationList(
+    BuildContext context,
+    List<Map<String, dynamic>> meds,
+  ) {
+    if (meds.isEmpty) {
+      return const Center(
+        child: Text('目前沒有藥物紀錄'),
+      );
+    }
+
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      return const Center(child: Text('請先登入'));
+    }
+
+    // 構建分組
+    final Map<String, List<Map<String, dynamic>>> groups = {
+      for (final t in kTimeOrder) t: <Map<String, dynamic>>[],
+    };
+    final List<Map<String, dynamic>> injectionMeds = [];
+
+    for (final med in meds) {
+      final isInjection = (med['type'] as String?) == 'injection';
+      if (isInjection) {
+        injectionMeds.add(med);
+        continue;
+      }
+
+      final times = (med['times'] as List?)?.cast<String>() ?? <String>[];
+      if (times.isEmpty) {
+        groups['未設定']!.add(med);
+      } else {
+        for (final t in times) {
+          if (groups.containsKey(t)) {
+            groups[t]!.add(med);
+          } else {
+            groups['未設定']!.add(med);
+          }
+        }
+      }
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        // 注射藥物
+        if (injectionMeds.isNotEmpty) ...[
+          _SectionTitle(title: '長效針', count: injectionMeds.length),
+          ...injectionMeds.map((med) {
+            final medId = med['id'] as String? ?? '';
+            final startDate = med['startDate'];
+            final intervalDays = med['intervalDays'];
+
+            DateTime? start;
+            if (startDate is String) {
+              start = DateTime.tryParse(startDate);
+            } else if (startDate is DateTime) {
+              start = startDate;
+            }
+
+            final nextDate = (start != null && intervalDays != null)
+                ? _nextInjectionDate(
+                    startDate: start,
+                    intervalDays: intervalDays as int,
+                    today: DateTime.now(),
+                  )
+                : null;
+
+            final diffDays = nextDate != null
+                ? nextDate.difference(DateTime.now()).inDays
+                : null;
+
+            return _MedicationCard(
+              docId: medId,
+              data: {
+                ...med,
+                if (diffDays != null) '_badgeOverride': '剩 $diffDays 天',
+              },
+              onTap: () {
+                _showMedActions(context, uid: uid, medId: medId, data: med);
+              },
+              onMore: () {
+                _showMedActions(context, uid: uid, medId: medId, data: med);
+              },
+            );
+          }).toList(),
+          const SizedBox(height: 12),
+        ],
+
+        // 口服藥分組
+        ...kTimeOrder.map((timeLabel) {
+          final medsInTime = groups[timeLabel] ?? [];
+          if (medsInTime.isEmpty) return const SizedBox.shrink();
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _SectionTitle(title: timeLabel, count: medsInTime.length),
+              ...medsInTime.map((med) {
+                final medId = med['id'] as String? ?? '';
+                return _MedicationCard(
+                  docId: medId,
+                  data: med,
+                  onTap: () {
+                    _showMedActions(context, uid: uid, medId: medId, data: med);
+                  },
+                  onMore: () {
+                    _showMedActions(context, uid: uid, medId: medId, data: med);
+                  },
+                );
+              }).toList(),
+              const SizedBox(height: 12),
+            ],
+          );
+        }).toList(),
+      ],
+    );
+  }
+
   void _showMedActions(
   BuildContext context, {
   required String uid,
@@ -327,15 +367,19 @@ class MedicationHomePage extends StatelessWidget {
               leading: const Icon(Icons.edit_outlined),
               title: const Text('編輯藥物資料'),
               onTap: () async {
-  final updated = await Navigator.push<bool>(
-    context,
-    MaterialPageRoute(
-      builder: (_) => EditMedicationPage(
-        docId: medId,
-        initialData: data,
-      ),
-    ),
-  );
+                Navigator.pop(context);
+                final updated = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => EditMedicationPage(
+                      docId: medId,
+                      initialData: data,
+                    ),
+                  ),
+                );
+                if (updated == true) {
+                  _refresh();
+                }
 },
             ),
             ListTile(
@@ -343,6 +387,14 @@ class MedicationHomePage extends StatelessWidget {
               title: const Text('停藥（標記為已停用）'),
               onTap: () async {
                 Navigator.pop(context);
+                // 本地更新
+                await MedicationLocalDB().updateMedication(uid, medId, {
+                  'isActive': false,
+                  'updatedAt': DateTime.now().toString(),
+                  'lastChangeAt': DateTime.now().toString(),
+                });
+
+                // Firebase 更新
                 await FirebaseFirestore.instance
                     .collection('users')
                     .doc(uid)
@@ -353,6 +405,7 @@ class MedicationHomePage extends StatelessWidget {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('已標記為停藥')),
                 );
+                _refresh();
               },
             ),
             ListTile(
@@ -383,6 +436,9 @@ class MedicationHomePage extends StatelessWidget {
                 );
 
                 if (ok == true) {
+                  // 本地刪除
+                  await MedicationLocalDB().deleteMedication(uid, medId);
+
                   await FirebaseFirestore.instance
                       .collection('users')
                       .doc(uid)
@@ -393,6 +449,7 @@ class MedicationHomePage extends StatelessWidget {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('藥物已刪除')),
                   );
+                  _refresh();
                 }
               },
             ),
@@ -706,52 +763,6 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-Future<void> _showMedicationActions(
-  BuildContext context,
-  String uid,
-  String docId,
-  Map<String, dynamic> data,
-) async {
-  final isActive = (data['isActive'] as bool?) ?? true;
-
-  final res = await showModalBottomSheet<String>(
-    context: context,
-    showDragHandle: true,
-    builder: (ctx) {
-      return SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: const Text('編輯藥物資料'),
-              onTap: () => Navigator.pop(ctx, 'edit'),
-            ),
-            ListTile(
-              leading: Icon(isActive ? Icons.pause_circle_outline : Icons.play_circle_outline),
-              title: Text(isActive ? '停藥（標記為已停用）' : '恢復服用（標記為服用中）'),
-              onTap: () => Navigator.pop(ctx, 'toggle'),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      );
-    },
-  );
-
-  if (res == 'edit') {
-  await Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => EditMedicationPage(
-        docId: docId,
-        initialData: data,
-      ),
-    ),
-  );
-  return;
-}
-}
 class _TimeSectionHeader extends StatelessWidget {
   final String title;
   final int count;

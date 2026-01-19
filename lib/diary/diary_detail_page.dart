@@ -1,8 +1,6 @@
 // lib/ui/diary_detail_page.dart
 import 'package:flutter/material.dart' as m;
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../diary/diary_repository.dart' as repo;   // ← 加上別名 repo
 
 
 class DiaryDetailPage extends m.StatelessWidget {

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'medication_local_db.dart';
 
 class MedSymptomComparePage extends StatefulWidget {
   const MedSymptomComparePage({super.key});
@@ -92,6 +93,55 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
     // Prefer Traditional Chinese if available
     _tts.setLanguage('zh-TW');
     _tts.setSpeechRate(0.45);
+    
+    // 初始化時從 Firebase 同步最新藥物到本地
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      _syncFromFirebase(uid);
+    }
+  }
+
+  Future<void> _syncFromFirebase(String uid) async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('medications')
+          .get();
+
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final startTs = data['startDate'];
+        DateTime? startDate;
+        if (startTs is Timestamp) startDate = startTs.toDate();
+        if (startTs is String) startDate = DateTime.tryParse(startTs);
+
+        final mapped = {
+          'id': doc.id,
+          'name': data['name'],
+          'dose': data['dose'],
+          'unit': data['unit'],
+          'type': data['type'],
+          'intervalDays': data['intervalDays'],
+          'times': (data['times'] as List?)?.cast<String>() ?? <String>[],
+          'purposes': (data['purposes'] as List?)?.cast<String>() ?? <String>[],
+          'note': data['note'],
+          'startDate': startDate?.toString(),
+          'isActive': data['isActive'] ?? true,
+          'bodySymptoms': (data['bodySymptoms'] as List?)?.cast<String>() ?? <String>[],
+          'purposeOther': data['purposeOther'],
+          'createdAt': DateTime.now().toString(),
+          'updatedAt': DateTime.now().toString(),
+          'lastChangeAt': (data['lastChangeAt'] is Timestamp)
+              ? (data['lastChangeAt'] as Timestamp).toDate().toString()
+              : data['lastChangeAt']?.toString(),
+        };
+
+        await MedicationLocalDB().addMedication(uid, mapped);
+      }
+    } catch (e) {
+      debugPrint('症狀比對頁同步 Firebase 失敗：$e');
+    }
   }
 
   @override
@@ -116,18 +166,10 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
   // UI: 藥物選擇
   // -----------------------------
   Widget _buildMedPicker(String uid) {
-    final medsStream = FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('medications')
-        .orderBy('isActive', descending: true)
-        .orderBy('updatedAt', descending: true)
-        .snapshots();
-
     return _Card(
       title: '選擇藥物',
-      child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: medsStream,
+      child: FutureBuilder<List<Map<String, dynamic>>>(
+        future: _getMedsForCompare(uid),
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
             return const Padding(
@@ -139,20 +181,19 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
             return Text('讀取藥物失敗：${snap.error}');
           }
 
-          final docs = snap.data?.docs ?? [];
-          if (docs.isEmpty) {
+          final meds = snap.data ?? [];
+          if (meds.isEmpty) {
             return const Text('尚未建立藥物清單');
           }
 
           // Dropdown items
-          final items = docs.map((d) {
-            final data = d.data();
-            final name = (data['name'] ?? '').toString().trim();
-            final display = name.isEmpty ? d.id : name;
-            final isActive = (data['isActive'] ?? true) == true;
+          final items = meds.map((med) {
+            final name = (med['name'] ?? '').toString().trim();
+            final medId = (med['id'] as String?) ?? '';
+            final display = name.isEmpty ? medId : name;
             return DropdownMenuItem<String>(
-              value: d.id,
-              child: Text(isActive ? display : '$display（已停用）'),
+              value: medId,
+              child: Text(display),
             );
           }).toList();
 
@@ -164,19 +205,15 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
               isDense: true,
             ),
             onChanged: (v) async {
-              final data = docs.firstWhere((x) => x.id == v).data();
+              final med = meds.firstWhere((x) => x['id'] == v);
 
               // Try to find an adjustment/update date in common fields
               DateTime? medAdjustedDate;
               for (final key in ['adjustedAt', 'adjustedDate', 'updatedAt', 'date', 'startDate']) {
-                if (data.containsKey(key) && data[key] != null) {
-                  final val = data[key];
+                if (med.containsKey(key) && med[key] != null) {
+                  final val = med[key];
                   if (val is DateTime) {
                     medAdjustedDate = val;
-                  } else if (val is Timestamp) {
-                    medAdjustedDate = val.toDate();
-                  } else if (val is int) {
-                    medAdjustedDate = DateTime.fromMillisecondsSinceEpoch(val);
                   } else if (val is String) {
                     medAdjustedDate = DateTime.tryParse(val);
                   }
@@ -186,7 +223,7 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
 
               setState(() {
                 _selectedMedId = v;
-                _selectedMedData = data;
+                _selectedMedData = med;
                 if (medAdjustedDate != null) {
                   _anchorDate = DateTime(
                     medAdjustedDate.year,
@@ -271,6 +308,12 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
   }
 
   // -----------------------------
+  // 從本地 DB 獲取服用中的藥物
+  Future<List<Map<String, dynamic>>> _getMedsForCompare(String uid) async {
+    final all = await MedicationLocalDB().getMedicationsForDisplay(uid);
+    return all.where((m) => (m['isActive'] ?? true) == true).toList();
+  }
+
   // 計算主流程
   // -----------------------------
   Future<void> _runCompare() async {

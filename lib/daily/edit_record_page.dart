@@ -26,17 +26,6 @@ class EditRecordPage extends StatefulWidget {
 class _EditRecordPageState extends State<EditRecordPage> {
   bool _saving = false;
 
-num? _calcOverallMood(List<Map<String, dynamic>> emos) {
-  final vals = emos
-      .map((m) => m['value'])
-      .whereType<num>()
-      .map((n) => n.toDouble())
-      .toList();
-  if (vals.isEmpty) return null;
-  final avg = vals.reduce((a, b) => a + b) / vals.length;
-  return double.parse(avg.toStringAsFixed(1));
-}
-
 Future<void> _saveAndClose() async {
   if (_saving) return;
   setState(() => _saving = true);
@@ -109,8 +98,6 @@ newSleep['naps'] = naps;
       'emotions': emotions,
       'symptoms': symptoms,
       'sleep': newSleep, // ⬅️ 改成用 newSleep
-      'overallMood': _calcOverallMood(
-        emotions.map((e) => Map<String, dynamic>.from(e)).toList()),
       'savedAt': FieldValue.serverTimestamp(),
     };
 
