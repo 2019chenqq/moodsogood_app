@@ -42,7 +42,10 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
   late TabController _tabController;
   
   // 動態情緒選擇
-  String _selectedEmotion = '整體情緒';
+  String _selectedEmotion = '';
+  
+  // 用於強制刷新的計數器
+  int _refreshCounter = 0;
 
  String? _periodLabel(DailyRecord r) {
   if (r.isPeriod == true) {
@@ -92,6 +95,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
       ),
       body: FutureBuilder<List<DailyRecord>>(
         future: _loadAllRecords(uid),
+        key: ValueKey(_refreshCounter), // 使用 ValueKey 強制重新構建
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -433,7 +437,10 @@ bool _isHistoryLocked(bool isPro) {
                                   docId: r.id,
                                 ),
                               ),
-                            );
+                            ).then((_) {
+                              // 返回時刷新頁面
+                              setState(() => _refreshCounter++);
+                            });
                           }
                         },
                       );
@@ -626,14 +633,7 @@ bool _isHistoryLocked(bool isPro) {
     
     debugPrint('🔍 Extracting emotion names from ${records.length} records');
     
-    // 檢查是否有 overallMood 數據
-    final hasOverallMood = records.any((r) => r.overallMood != null && r.overallMood != 0);
-    if (hasOverallMood) {
-      names.add('整體情緒');
-      debugPrint('  ✓ Found overallMood data');
-    }
-    
-    // 只加入有 value 數據的情緒（自動去除「整體情緒」，因為已經在上面處理）
+    // 只加入有 value 數據的情緒（不包含「整體情緒」）
     for (var r in records) {
       for (var e in r.emotions) {
         if (e.name.isNotEmpty && e.value != null && e.name != '整體情緒') {
@@ -661,17 +661,6 @@ bool _isHistoryLocked(bool isPro) {
 
     debugPrint('📝 Building subtitle for record ${r.id}: overallMood=${r.overallMood}, emotions count=${r.emotions.length}');
 
-    if (r.overallMood != null) {
-      parts.add('情緒：${r.overallMood!.toStringAsFixed(1)}');
-    } else if (r.emotions.isNotEmpty) {
-      // 如果沒有 overallMood，顯示情緒列表
-      final emotionText = r.emotions
-          .take(3)  // 只顯示前 3 個情緒
-          .map((e) => '${e.name}${e.value}')
-          .join(' ');
-      parts.add('情緒：$emotionText');
-    }
-    
     if (r.sleep.durationHours != null) {
       parts.add('睡眠：${r.sleep.durationHours}hr');
     }
@@ -766,8 +755,8 @@ List<VerticalRangeAnnotation> buildPeriodRanges(List<DailyRecord> records) {
 
       list.add(
         VerticalRangeAnnotation(
-          x1: startIndex.toDouble() - 0.4,
-          x2: endIndex.toDouble() + 0.4,
+          x1: startIndex.toDouble(),
+          x2: endIndex.toDouble() + 0.5,
           color: Colors.pink.withValues(alpha: 0.15),
         ),
       );
