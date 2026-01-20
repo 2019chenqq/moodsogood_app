@@ -53,39 +53,38 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
       }
     }
 
-    return Column(
-      children: [
-        // ========================================
-        // TOP SECTION: 情緒分類選擇區
-        // ========================================
-        Expanded(
-          flex: 2,
-          child: ListView(
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          // ========================================
+          // TOP SECTION: 情緒分類選擇區
+          // ========================================
+          Container(
             padding: const EdgeInsets.all(16),
-            children: _emotionCategories.entries.map((category) {
-              return _buildCategorySection(
-                context,
-                categoryName: category.key,
-                emotions: category.value,
-                emotionIndices: emotionIndices,
-              );
-            }).toList(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: _emotionCategories.entries.map((category) {
+                return _buildCategorySection(
+                  context,
+                  categoryName: category.key,
+                  emotions: category.value,
+                  emotionIndices: emotionIndices,
+                );
+              }).toList(),
+            ),
           ),
-        ),
 
-        const Divider(height: 1, thickness: 2),
+          const Divider(height: 1, thickness: 2),
 
-        // ========================================
-        // MIDDLE SECTION: 已選情緒評分區（可收合）
-        // ========================================
-        _buildCollapsibleSliderSection(context, selectedEmotions, emotionIndices),
+          // ========================================
+          // MIDDLE SECTION: 已選情緒評分區（可收合）
+          // ========================================
+          _buildCollapsibleSliderSection(context, selectedEmotions, emotionIndices),
 
-        // ========================================
-        // BOTTOM SECTION: 日記連結
-        // ========================================
-        Expanded(
-          flex: 2,
-          child: Container(
+          // ========================================
+          // BOTTOM SECTION: 日記連結
+          // ========================================
+          Container(
             padding: const EdgeInsets.all(16),
             child: Center(
               child: Column(
@@ -129,8 +128,8 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -140,56 +139,58 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
     List<EmotionItem> selectedEmotions,
     Map<String, int> emotionIndices,
   ) {
-    return Expanded(
-      flex: _isSliderExpanded ? 3 : 1,
-      child: Column(
-        children: [
-          // 標題欄 + 收合按鈕
+    final contentHeight = _isSliderExpanded ? 300.0 : 0.0;
+    
+    return Column(
+      children: [
+        // 標題欄 + 收合按鈕
+        Container(
+          color: Theme.of(context).colorScheme.surface,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '情緒評分',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              IconButton(
+                icon: Icon(
+                  _isSliderExpanded
+                      ? Icons.expand_less
+                      : Icons.expand_more,
+                ),
+                onPressed: () {
+                  setState(() => _isSliderExpanded = !_isSliderExpanded);
+                },
+              ),
+            ],
+          ),
+        ),
+
+        // 內容區（展開時顯示）
+        if (_isSliderExpanded)
           Container(
             color: Theme.of(context).colorScheme.surface,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '情緒評分',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                ),
-                IconButton(
-                  icon: Icon(
-                    _isSliderExpanded
-                        ? Icons.expand_less
-                        : Icons.expand_more,
-                  ),
-                  onPressed: () {
-                    setState(() => _isSliderExpanded = !_isSliderExpanded);
-                  },
-                ),
-              ],
-            ),
-          ),
-
-          // 內容區（展開時顯示）
-          if (_isSliderExpanded)
-            Expanded(
-              child: Container(
-                color: Theme.of(context).colorScheme.surface,
-                child: selectedEmotions.isEmpty
-                    ? Center(
-                        child: Text(
-                          '請從上方選擇情緒',
-                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurface
-                                    .withOpacity(0.5),
-                              ),
-                        ),
-                      )
-                    : ListView(
-                        padding: const EdgeInsets.all(16),
+            constraints: const BoxConstraints(maxHeight: 400),
+            child: selectedEmotions.isEmpty
+                ? Center(
+                    child: Text(
+                      '請從上方選擇情緒',
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withOpacity(0.5),
+                          ),
+                    ),
+                  )
+                : SingleChildScrollView(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
                         children: selectedEmotions.map((emotion) {
                           final index = emotionIndices[emotion.name]!;
                           return _buildSelectedEmotionCard(
@@ -199,10 +200,10 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
                           );
                         }).toList(),
                       ),
-              ),
-            ),
-        ],
-      ),
+                    ),
+                  ),
+          ),
+      ],
     );
   }
 
