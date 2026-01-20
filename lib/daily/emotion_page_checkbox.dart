@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'daily_record_helpers.dart';
 import 'daily_record_pages.dart';
 import '../widgets/emotion_slider.dart';
-import '../diary/diary_home_page.dart';
 
 /// 新版：分類選擇 + 已選情緒評分
 /// TOP: 三大類情緒（整體狀態、壓力情緒、低落警訊）以 Chip 方式選擇
@@ -32,6 +31,19 @@ class EmotionPageCheckbox extends StatefulWidget {
 
 class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
   bool _isSliderExpanded = true; // 控制 slider 區域的展開/收合
+  late TextEditingController _diaryNoteController; // 日記輸入控制器
+
+  @override
+  void initState() {
+    super.initState();
+    _diaryNoteController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _diaryNoteController.dispose();
+    super.dispose();
+  }
 
   // 定義三大類情緒
   static const Map<String, List<String>> _emotionCategories = {
@@ -82,50 +94,54 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
           _buildCollapsibleSliderSection(context, selectedEmotions, emotionIndices),
 
           // ========================================
-          // BOTTOM SECTION: 日記連結
+          // BOTTOM SECTION: 日記筆記區
           // ========================================
           Container(
             padding: const EdgeInsets.all(16),
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.notes_outlined,
-                    size: 56,
-                    color: Theme.of(context).colorScheme.primary.withOpacity(0.7),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '今日日記',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _diaryNoteController,
+                  maxLines: 6,
+                  decoration: InputDecoration(
+                    hintText: '寫下今天的感受、想法或發生的事...',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    contentPadding: const EdgeInsets.all(12),
+                    filled: true,
+                    fillColor: Theme.of(context).colorScheme.surface,
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    '今日日記',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '記錄今天的感受和故事',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withOpacity(0.6),
-                        ),
-                  ),
-                  const SizedBox(height: 24),
-                  ElevatedButton.icon(
+                ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: ElevatedButton.icon(
                     onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => DiaryHomePage(),
+                      // 可根據需要保存日記內容
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            _diaryNoteController.text.isEmpty
+                                ? '請輸入日記內容'
+                                : '日記已保存',
+                          ),
                         ),
                       );
                     },
-                    icon: const Icon(Icons.open_in_new),
-                    label: const Text('打開日記'),
+                    icon: const Icon(Icons.save),
+                    label: const Text('保存日記'),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ],
