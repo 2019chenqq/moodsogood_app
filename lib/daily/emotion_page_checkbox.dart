@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'daily_record_helpers.dart';
 import 'daily_record_pages.dart';
 import '../widgets/emotion_slider.dart';
-import '../diary/diary_home_page.dart';
+import '../diary/diary_page_demo.dart';
 
 /// 新版：分類選擇 + 已選情緒評分
 /// TOP: 三大類情緒（整體狀態、壓力情緒、低落警訊）以 Chip 方式選擇
@@ -127,7 +127,7 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
                     onPressed: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (context) => DiaryHomePage(),
+                          builder: (context) => DiaryPageDemo(date: DateTime.now()),
                         ),
                       );
                     },
