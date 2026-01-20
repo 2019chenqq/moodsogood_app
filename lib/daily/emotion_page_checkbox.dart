@@ -92,7 +92,7 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
-                    Icons.diary_outlined,
+                    Icons.notes_outlined,
                     size: 56,
                     color: Theme.of(context).colorScheme.primary.withOpacity(0.7),
                   ),
