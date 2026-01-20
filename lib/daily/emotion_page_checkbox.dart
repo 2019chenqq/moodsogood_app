@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'daily_record_helpers.dart';
 import 'daily_record_pages.dart';
 import '../widgets/emotion_slider.dart';
+import '../diary/diary_home_page.dart';
 
 /// 新版：分類選擇 + 已選情緒評分
 /// TOP: 三大類情緒（整體狀態、壓力情緒、低落警訊）以 Chip 方式選擇
@@ -31,40 +32,14 @@ class EmotionPageCheckbox extends StatefulWidget {
 
 class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
   bool _isSliderExpanded = true; // 控制 slider 區域的展開/收合
-  
-  // 日記欄位控制器
-  late TextEditingController _titleCtrl;
-  late TextEditingController _contentCtrl;
-  late TextEditingController _songCtrl;
-  late TextEditingController _highlightCtrl;
-  late TextEditingController _metaphorCtrl;
-  late TextEditingController _conceitedCtrl;
-  late TextEditingController _proudOfCtrl;
-  late TextEditingController _selfCareCtrl;
 
   @override
   void initState() {
     super.initState();
-    _titleCtrl = TextEditingController();
-    _contentCtrl = TextEditingController();
-    _songCtrl = TextEditingController();
-    _highlightCtrl = TextEditingController();
-    _metaphorCtrl = TextEditingController();
-    _conceitedCtrl = TextEditingController();
-    _proudOfCtrl = TextEditingController();
-    _selfCareCtrl = TextEditingController();
   }
 
   @override
   void dispose() {
-    _titleCtrl.dispose();
-    _contentCtrl.dispose();
-    _songCtrl.dispose();
-    _highlightCtrl.dispose();
-    _metaphorCtrl.dispose();
-    _conceitedCtrl.dispose();
-    _proudOfCtrl.dispose();
-    _selfCareCtrl.dispose();
     super.dispose();
   }
 
@@ -117,138 +92,50 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
           _buildCollapsibleSliderSection(context, selectedEmotions, emotionIndices),
 
           // ========================================
-          // BOTTOM SECTION: 日記欄位區
+          // BOTTOM SECTION: 日記連結
           // ========================================
           Container(
             padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: _titleCtrl,
-                  minLines: 1,
-                  maxLines: 1,
-                  decoration: InputDecoration(
-                    labelText: '🖊️ 標題（可留白）',
-                    hintText: '幫今天下一個小標題，也可以跳過…',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    contentPadding: const EdgeInsets.all(12),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.notes_outlined,
+                    size: 56,
+                    color: Theme.of(context).colorScheme.primary.withOpacity(0.7),
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _contentCtrl,
-                  minLines: 6,
-                  maxLines: 8,
-                  decoration: InputDecoration(
-                    labelText: '📜 內容',
-                    hintText: '留下一點點也很好…',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    contentPadding: const EdgeInsets.all(12),
+                  const SizedBox(height: 16),
+                  Text(
+                    '今日日記',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _songCtrl,
-                  minLines: 1,
-                  maxLines: 3,
-                  decoration: InputDecoration(
-                    labelText: '🎧 今日的主題曲',
-                    hintText: '歌名／連結／演出者…',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    contentPadding: const EdgeInsets.all(12),
+                  const SizedBox(height: 8),
+                  Text(
+                    '記錄今天的感受和故事',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withOpacity(0.6),
+                        ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _highlightCtrl,
-                  minLines: 3,
-                  maxLines: 8,
-                  decoration: InputDecoration(
-                    labelText: '✨ 今天最想記錄的瞬間',
-                    hintText: '今天最想留住的畫面、對話或感受…',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    contentPadding: const EdgeInsets.all(12),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _metaphorCtrl,
-                  minLines: 1,
-                  maxLines: 3,
-                  decoration: InputDecoration(
-                    labelText: '🌚 今天的情緒像…',
-                    hintText: '例：潮汐、霧氣、烈陽、厚被…',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    contentPadding: const EdgeInsets.all(12),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _conceitedCtrl,
-                  minLines: 2,
-                  maxLines: 8,
-                  decoration: InputDecoration(
-                    labelText: '🥇 為自己感到驕傲的是',
-                    hintText: '完成了什麼、撐住了什麼、或小小突破…',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    contentPadding: const EdgeInsets.all(12),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _proudOfCtrl,
-                  minLines: 3,
-                  maxLines: 8,
-                  decoration: InputDecoration(
-                    labelText: '🌤️ 我做得不錯的地方',
-                    hintText: '肯定一下今天的自己，哪怕是很小的事情…',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    contentPadding: const EdgeInsets.all(12),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _selfCareCtrl,
-                  minLines: 3,
-                  maxLines: 8,
-                  decoration: InputDecoration(
-                    labelText: '❤️‍🩹 我還能多照顧自己一點的地方',
-                    hintText: '睡眠、飲食、邊界、運動或求助…下一步可以怎麼做？',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    contentPadding: const EdgeInsets.all(12),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: ElevatedButton.icon(
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
                     onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('日記已保存')),
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => DiaryHomePage(),
+                        ),
                       );
                     },
-                    icon: const Icon(Icons.save),
-                    label: const Text('保存日記'),
+                    icon: const Icon(Icons.open_in_new),
+                    label: const Text('打開日記'),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ],
