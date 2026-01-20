@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'daily_record_helpers.dart';
+import 'daily_record_pages.dart';
 import '../widgets/emotion_slider.dart';
 
 /// 新版：分類選擇 + 已選情緒評分
