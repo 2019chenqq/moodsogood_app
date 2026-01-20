@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'daily_record_helpers.dart';
 import 'daily_record_pages.dart';
 import '../widgets/emotion_slider.dart';
-import '../widgets/count_text_field.dart';
 
 /// 新版：分類選擇 + 已選情緒評分
 /// TOP: 三大類情緒（整體狀態、壓力情緒、低落警訊）以 Chip 方式選擇
@@ -125,76 +124,116 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CountTextField(
+                TextField(
                   controller: _titleCtrl,
-                  label: '🖊️ 標題（可留白）',
-                  hint: '幫今天下一個小標題，也可以跳過…',
                   minLines: 1,
                   maxLines: 1,
-                  onAnyChanged: () {},
+                  decoration: InputDecoration(
+                    labelText: '🖊️ 標題（可留白）',
+                    hintText: '幫今天下一個小標題，也可以跳過…',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    contentPadding: const EdgeInsets.all(12),
+                  ),
                 ),
                 const SizedBox(height: 12),
-                CountTextField(
+                TextField(
                   controller: _contentCtrl,
-                  label: '📜 內容',
-                  hint: '留下一點點也很好…',
                   minLines: 6,
                   maxLines: 8,
-                  onAnyChanged: () {},
+                  decoration: InputDecoration(
+                    labelText: '📜 內容',
+                    hintText: '留下一點點也很好…',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    contentPadding: const EdgeInsets.all(12),
+                  ),
                 ),
                 const SizedBox(height: 12),
-                CountTextField(
+                TextField(
                   controller: _songCtrl,
-                  label: '🎧 今日的主題曲',
-                  hint: '歌名／連結／演出者…',
                   minLines: 1,
                   maxLines: 3,
-                  onAnyChanged: () {},
+                  decoration: InputDecoration(
+                    labelText: '🎧 今日的主題曲',
+                    hintText: '歌名／連結／演出者…',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    contentPadding: const EdgeInsets.all(12),
+                  ),
                 ),
                 const SizedBox(height: 12),
-                CountTextField(
+                TextField(
                   controller: _highlightCtrl,
-                  label: '✨ 今天最想記錄的瞬間',
-                  hint: '今天最想留住的畫面、對話或感受…',
                   minLines: 3,
                   maxLines: 8,
-                  onAnyChanged: () {},
+                  decoration: InputDecoration(
+                    labelText: '✨ 今天最想記錄的瞬間',
+                    hintText: '今天最想留住的畫面、對話或感受…',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    contentPadding: const EdgeInsets.all(12),
+                  ),
                 ),
                 const SizedBox(height: 12),
-                CountTextField(
+                TextField(
                   controller: _metaphorCtrl,
-                  label: '🌚 今天的情緒像…',
-                  hint: '例：潮汐、霧氣、烈陽、厚被…',
                   minLines: 1,
                   maxLines: 3,
-                  onAnyChanged: () {},
+                  decoration: InputDecoration(
+                    labelText: '🌚 今天的情緒像…',
+                    hintText: '例：潮汐、霧氣、烈陽、厚被…',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    contentPadding: const EdgeInsets.all(12),
+                  ),
                 ),
                 const SizedBox(height: 12),
-                CountTextField(
+                TextField(
                   controller: _conceitedCtrl,
-                  label: '🥇 為自己感到驕傲的是',
-                  hint: '完成了什麼、撐住了什麼、或小小突破…',
                   minLines: 2,
                   maxLines: 8,
-                  onAnyChanged: () {},
+                  decoration: InputDecoration(
+                    labelText: '🥇 為自己感到驕傲的是',
+                    hintText: '完成了什麼、撐住了什麼、或小小突破…',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    contentPadding: const EdgeInsets.all(12),
+                  ),
                 ),
                 const SizedBox(height: 12),
-                CountTextField(
+                TextField(
                   controller: _proudOfCtrl,
-                  label: '🌤️ 我做得不錯的地方',
-                  hint: '肯定一下今天的自己，哪怕是很小的事情…',
                   minLines: 3,
                   maxLines: 8,
-                  onAnyChanged: () {},
+                  decoration: InputDecoration(
+                    labelText: '🌤️ 我做得不錯的地方',
+                    hintText: '肯定一下今天的自己，哪怕是很小的事情…',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    contentPadding: const EdgeInsets.all(12),
+                  ),
                 ),
                 const SizedBox(height: 12),
-                CountTextField(
+                TextField(
                   controller: _selfCareCtrl,
-                  label: '❤️‍🩹 我還能多照顧自己一點的地方',
-                  hint: '睡眠、飲食、邊界、運動或求助…下一步可以怎麼做？',
                   minLines: 3,
                   maxLines: 8,
-                  onAnyChanged: () {},
+                  decoration: InputDecoration(
+                    labelText: '❤️‍🩹 我還能多照顧自己一點的地方',
+                    hintText: '睡眠、飲食、邊界、運動或求助…下一步可以怎麼做？',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    contentPadding: const EdgeInsets.all(12),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Align(
@@ -223,8 +262,6 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
     List<EmotionItem> selectedEmotions,
     Map<String, int> emotionIndices,
   ) {
-    final contentHeight = _isSliderExpanded ? 300.0 : 0.0;
-    
     return Column(
       children: [
         // 標題欄 + 收合按鈕
