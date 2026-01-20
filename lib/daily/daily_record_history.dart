@@ -141,63 +141,72 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
     );
   }
 
-  /// 從本地 SQLite 和 Firebase 加載所有記錄，並合併去重（最近 90 天）
+  /// 從本地 SQLite 和/或 Firebase 加載所有記錄
+  /// - 免費用戶：僅從本地 SQLite 加載（最近 90 天）
+  /// - Pro 用戶：從 Firebase 加載所有數據
   Future<List<DailyRecord>> _loadAllRecords(String uid) async {
+    final proProvider = context.read<ProProvider>();
+    final isPro = proProvider.isPro;
+    
     final endDate = DateTime.now();
-    final startDate = endDate.subtract(const Duration(days: 90));
+    // 免費版：90天   Pro版：無限期
+    final startDate = isPro 
+        ? DateTime(2020, 1, 1)  // Pro 用戶查詢所有數據
+        : endDate.subtract(const Duration(days: 90));  // 免費用戶只查詢最近 90 天
+    
+    debugPrint('📊 Loading records for ${isPro ? "Pro" : "Free"} user (from $startDate)');
     
     final Map<String, DailyRecord> recordsMap = {};
 
-    // 1. 先從本地 SQLite 加載
-    try {
-      final repo = DailyRecordRepository();
-      debugPrint('🔍 Loading records from local SQLite for user=$uid from $startDate to $endDate');
-      
-      final localRecords = await repo.getDailyRecordsByDateRange(
-        userId: uid,
-        startDate: startDate,
-        endDate: endDate,
-      );
-      
-      debugPrint('✅ Loaded ${localRecords.length} records from local database');
-      
-      // 轉換並加入 Map（以 id 為 key）
-      for (var localRecord in localRecords) {
-        final record = _convertLocalRecordToDailyRecord(localRecord);
-        recordsMap[record.id] = record;
-        debugPrint('  📦 Local: ${record.id} (${record.date})');
+    // 免費用戶：只從本地加載
+    if (!isPro) {
+      try {
+        final repo = DailyRecordRepository();
+        debugPrint('🔍 [FREE USER] Loading records from local SQLite for user=$uid from $startDate to $endDate');
+        
+        final localRecords = await repo.getDailyRecordsByDateRange(
+          userId: uid,
+          startDate: startDate,
+          endDate: endDate,
+        );
+        
+        debugPrint('✅ Loaded ${localRecords.length} records from local database');
+        
+        for (var localRecord in localRecords) {
+          final record = _convertLocalRecordToDailyRecord(localRecord);
+          recordsMap[record.id] = record;
+          debugPrint('  📦 Local: ${record.id} (${record.date})');
+        }
+      } catch (e, st) {
+        debugPrint('❌ Failed to load local records: $e\nStacktrace: $st');
       }
-    } catch (e, st) {
-      debugPrint('❌ Failed to load local records: $e\nStacktrace: $st');
-    }
+    } 
+    // Pro 用戶：從 Firebase 加載
+    else {
+      try {
+        debugPrint('🔍 [PRO USER] Loading records from Firebase...');
+        final snapshot = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('dailyRecords')
+            .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
+            .orderBy('date', descending: true)
+            .get();
 
-    // 2. 再從 Firebase 加載（總是讀取，即使 sync 關閉）
-    try {
-      debugPrint('🔍 Loading records from Firebase...');
-      final snapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('dailyRecords')
-          .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
-          .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
-          .get();
+        debugPrint('✅ Loaded ${snapshot.docs.length} records from Firebase');
 
-      debugPrint('✅ Loaded ${snapshot.docs.length} records from Firebase');
-
-      for (var doc in snapshot.docs) {
-        final record = DailyRecord.fromFirestore(doc);
-        // Firebase 的數據優先（因為可能更完整）
-        if (!recordsMap.containsKey(record.id)) {
+        for (var doc in snapshot.docs) {
+          final record = DailyRecord.fromFirestore(doc);
           recordsMap[record.id] = record;
           debugPrint('  ☁️  Firebase: ${record.id} (${record.date})');
         }
+      } catch (e, st) {
+        debugPrint('❌ Failed to load Firebase records: $e\nStacktrace: $st');
       }
-    } catch (e, st) {
-      debugPrint('❌ Failed to load Firebase records: $e\nStacktrace: $st');
     }
 
     final allRecords = recordsMap.values.toList();
-    debugPrint('📊 Total merged records: ${allRecords.length}');
+    debugPrint('📊 Total records loaded: ${allRecords.length}');
     return allRecords;
   }
 

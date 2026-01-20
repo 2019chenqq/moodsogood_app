@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'sign_in_page.dart';
-import '../daily/daily_record_screen.dart'; // 你的主畫面
+import 'Home_shell.dart'; // 你的主畫面
+import 'onboarding_page.dart'; // 初次使用導覽頁
 
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
+
+  Future<bool> _hasSeenOnboarding() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('has_seen_onboarding') ?? false;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,10 +28,27 @@ class AuthGate extends StatelessWidget {
           );
         }
 
-        // 已登入 → 主畫面
+        // 已登入 → 檢查是否需要顯示導覽頁
         if (snapshot.hasData) {
           debugPrint('✅ User logged in: ${snapshot.data?.email}');
-          return const DailyRecordScreen();
+          return FutureBuilder<bool>(
+            future: _hasSeenOnboarding(),
+            builder: (context, onboardingSnapshot) {
+              if (onboardingSnapshot.connectionState == ConnectionState.waiting) {
+                return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                );
+              }
+
+              // 如果沒有看過導覽頁，先顯示導覽頁
+              if (onboardingSnapshot.data == false) {
+                return const OnboardingPage();
+              }
+
+              // 已看過導覽頁，顯示主應用
+              return const HomeShell();
+            },
+          );
         }
 
         // 未登入 → 登入頁

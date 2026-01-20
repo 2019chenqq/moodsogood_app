@@ -5,6 +5,17 @@ import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'utils/notification_helper.dart';
 import 'providers/theme_provider.dart';
+import 'providers/pro_provider.dart';
+import 'onboarding_page.dart';
+import 'daily/daily_record_tutorial.dart';
+import 'diary/diary_tutorial.dart';
+import 'daily/statistics_tutorial.dart';
+import 'daily/daily_record_page_tutorial.dart';
+import 'diary/diary_page_tutorial.dart';
+import 'daily/statistics_page_tutorial.dart';
+import 'utils/data_sync_diagnostics.dart';
+import 'utils/firebase_sync_config.dart';
+import 'pages/subscription_info_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -31,14 +42,139 @@ class _SettingsPageState extends State<SettingsPage> {
   TimeOfDay _reminderTime = const TimeOfDay(hour: 22, minute: 0); // 預設晚上 10 點
 @override
   Widget build(BuildContext context) {
+    final proProvider = context.watch<ProProvider>();
+    
     return Scaffold(
       appBar: AppBar(title: const Text('設定')),
       body: ListView(
         children: [
+          // 訂閱狀態卡片
+          Container(
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: proProvider.isPro
+                    ? [Colors.amber[300]!, Colors.amber[600]!]
+                    : [Colors.grey[300]!, Colors.grey[500]!],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          proProvider.isPro ? '✨ Pro 會員' : '📱 免費版',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          FirebaseSyncConfig.getStorageType(),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.white70,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        FirebaseSyncConfig.getDataRetention(),
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      proProvider.isPro ? Icons.cloud : Icons.storage,
+                      size: 16,
+                      color: Colors.white70,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        proProvider.isPro
+                            ? '✅ 雲端備份 + 多設備同步'
+                            : '✅ 本地存儲（本機隱私）',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // 訂閱信息按鈕
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.info_outline),
+              label: const Text('訂閱信息與功能對比'),
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const SubscriptionInfoPage(),
+                  ),
+                );
+              },
+            ),
+          ),
+
           if (kDebugMode)
-  ElevatedButton(
-    onPressed: () async {
-      await NotificationHelper().showNow(
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.lock_open),
+                      label: const Text('解鎖 Pro'),
+                      onPressed: () {
+                        proProvider.debugUnlock();
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.lock),
+                      label: const Text('鎖定'),
+                      onPressed: () {
+                        proProvider.lock();
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          if (kDebugMode)
+            ElevatedButton(
+              onPressed: () async {
+                await NotificationHelper().showNow(
         id: 999,
         title: '測試通知',
         body: '這是一則測試通知（立刻跳出）',
@@ -152,9 +288,320 @@ class _SettingsPageState extends State<SettingsPage> {
               );
             },
           ),
+
+          const Divider(),
+
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text('說明', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.school),
+            title: const Text('應用導覽'),
+            subtitle: const Text('初次使用指南和應用概述'),
+            onTap: () async {
+              await Navigator.of(context).push<bool>(
+                MaterialPageRoute(
+                  builder: (context) => const OnboardingPage(),
+                ),
+              );
+            },
+          ),
+
+          const Divider(),
+
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text(
+              '頁面導覽',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: Colors.grey[600],
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.note_add),
+            title: const Text('每日紀錄頁面導覽'),
+            subtitle: const Text('了解每日紀錄頁面上的各個按鈕和功能'),
+            onTap: () {
+              _launchPageTutorial(
+                context,
+                '每日紀錄',
+                DailyRecordPageTutorial.generateSteps(),
+              );
+            },
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.book),
+            title: const Text('日記頁面導覽'),
+            subtitle: const Text('了解如何使用日記功能'),
+            onTap: () {
+              _launchPageTutorial(
+                context,
+                '日記',
+                DiaryPageTutorial.generateSteps(),
+              );
+            },
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.bar_chart),
+            title: const Text('統計頁面導覽'),
+            subtitle: const Text('了解如何查看和分析您的數據'),
+            onTap: () {
+              _launchPageTutorial(
+                context,
+                '統計分析',
+                StatisticsPageTutorial.generateSteps(),
+              );
+            },
+          ),
+
+          const Divider(),
+
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text(
+              '詳細教學',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: Colors.grey[600],
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.note_add),
+            title: const Text('每日紀錄詳細教學'),
+            subtitle: const Text('學習如何使用每日紀錄功能'),
+            onTap: () async {
+              await Navigator.of(context).push<bool>(
+                MaterialPageRoute(
+                  builder: (context) => const DailyRecordTutorialPage(),
+                ),
+              );
+            },
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.book),
+            title: const Text('日記詳細教學'),
+            subtitle: const Text('學習如何使用日記功能'),
+            onTap: () async {
+              await Navigator.of(context).push<bool>(
+                MaterialPageRoute(
+                  builder: (context) => const DiaryTutorialPage(),
+                ),
+              );
+            },
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.bar_chart),
+            title: const Text('統計分析教學'),
+            subtitle: const Text('學習如何查看和分析數據'),
+            onTap: () async {
+              await Navigator.of(context).push<bool>(
+                MaterialPageRoute(
+                  builder: (context) => const StatisticsTutorialPage(),
+                ),
+              );
+            },
+          ),
+
+          const Divider(),
+
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text(
+              '數據診斷',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: Colors.grey[600],
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.analytics),
+            title: const Text('檢查數據同步狀態'),
+            subtitle: const Text('檢查本地和雲端數據是否一致'),
+            onTap: () => _showSyncDiagnostics(context),
+          ),
+
+          if (kDebugMode)
+            ListTile(
+              leading: const Icon(Icons.cloud_sync),
+              title: const Text('Firebase 同步狀態'),
+              subtitle: Text(
+                FirebaseSyncConfig.shouldSync()
+                    ? '✅ 已啟用'
+                    : '❌ 已禁用',
+                style: TextStyle(
+                  color: FirebaseSyncConfig.shouldSync()
+                      ? Colors.green
+                      : Colors.red,
+                ),
+              ),
+              onTap: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Firebase 同步: ${FirebaseSyncConfig.shouldSync() ? "已啟用（生產環境）" : "已禁用（測試環境）"}\n'
+                      '位置: lib/utils/firebase_sync_config.dart\n'
+                      '修改 kEnableFirebaseSync 以切換',
+                    ),
+                    duration: const Duration(seconds: 4),
+                  ),
+                );
+              },
+            ),
         ],
       ),
     );
+  }
+
+  /// 顯示同步診斷結果
+  void _showSyncDiagnostics(BuildContext context) async {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('數據同步診斷'),
+        content: FutureBuilder<SyncDiagnosisResult>(
+          future: DataSyncDiagnostics.diagnoseSync(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const CircularProgressIndicator();
+            }
+
+            final result = snapshot.data;
+            if (result == null) {
+              return const Text('診斷失敗');
+            }
+
+            return SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 狀態指示
+                  Row(
+                    children: [
+                      Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: result.isHealthy ? Colors.green : Colors.orange,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          result.message,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: result.isHealthy ? Colors.green : Colors.orange,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 詳細信息
+                  _buildDiagnosticRow('本地紀錄數', '${result.localRecordCount}'),
+                  _buildDiagnosticRow('Firebase 紀錄數', '${result.firebaseRecordCount}'),
+                  if (result.commonRecords > 0)
+                    _buildDiagnosticRow('重複的紀錄', '${result.commonRecords}'),
+                  if (result.onlyLocalRecords > 0)
+                    _buildDiagnosticRow(
+                      '只在本地的紀錄',
+                      '${result.onlyLocalRecords}',
+                      color: Colors.orange,
+                    ),
+                  if (result.onlyFirebaseRecords > 0)
+                    _buildDiagnosticRow(
+                      '只在 Firebase 的紀錄',
+                      '${result.onlyFirebaseRecords}',
+                      color: Colors.blue,
+                    ),
+
+                  if (result.discrepancyDetails != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.orange[200]!),
+                      ),
+                      child: Text(
+                        result.discrepancyDetails!,
+                        style: TextStyle(color: Colors.orange[800]),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('關閉'),
+          ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.refresh),
+            label: const Text('重新檢查'),
+            onPressed: () {
+              Navigator.pop(context);
+              _showSyncDiagnostics(context);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 構建診斷信息行
+  Widget _buildDiagnosticRow(String label, String value, {Color? color}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 啟動頁面導覽
+  void _launchPageTutorial(
+    BuildContext context,
+    String pageName,
+    List steps,
+  ) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('頁面導覽：前往 $pageName 頁面以開始導覽'),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+    Navigator.pop(context);
   }
 
   @override
