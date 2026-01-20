@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'daily_record_helpers.dart';
 import '../widgets/emotion_slider.dart';
-import 'daily_record_pages.dart';
 
 /// 新版：分類選擇 + 已選情緒評分
 /// TOP: 三大類情緒（整體狀態、壓力情緒、低落警訊）以 Chip 方式選擇
@@ -80,12 +79,38 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
         _buildCollapsibleSliderSection(context, selectedEmotions, emotionIndices),
 
         // ========================================
-        // BOTTOM SECTION: 日記頁面
+        // BOTTOM SECTION: 日記筆記區
         // ========================================
         Expanded(
           flex: 2,
-          child: DiaryPage(
-            onChangeNote: (_) {}, // DiaryPage 的回調
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '今日日記',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: TextField(
+                    maxLines: null,
+                    expands: true,
+                    decoration: InputDecoration(
+                      hintText: '寫下今天的感受、想法或發生的事...',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      contentPadding: const EdgeInsets.all(12),
+                    ),
+                    onChanged: (_) {}, // 可根據需要處理日記更新
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ],
