@@ -84,7 +84,9 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
         // ========================================
         Expanded(
           flex: 2,
-          child: DiaryPage(),
+          child: DiaryPage(
+            onChangeNote: (_) {}, // DiaryPage 的回調
+          ),
         ),
       ],
     );
