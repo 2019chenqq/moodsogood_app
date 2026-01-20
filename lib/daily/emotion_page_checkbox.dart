@@ -5,8 +5,9 @@ import 'daily_record_pages.dart';
 
 /// 新版：分類選擇 + 已選情緒評分
 /// TOP: 三大類情緒（整體狀態、壓力情緒、低落警訊）以 Chip 方式選擇
-/// BOTTOM: 已選情緒顯示 Slider (0~10)
-class EmotionPageCheckbox extends StatelessWidget {
+/// MIDDLE: 已選情緒顯示 Slider (0~10)，可收合
+/// BOTTOM: 日記頁面
+class EmotionPageCheckbox extends StatefulWidget {
   const EmotionPageCheckbox({
     super.key,
     required this.items,
@@ -24,6 +25,13 @@ class EmotionPageCheckbox extends StatelessWidget {
   final void Function(int index, bool checked) onToggleChecked;
   final void Function(int index, int value) onChangeValue;
 
+  @override
+  State<EmotionPageCheckbox> createState() => _EmotionPageCheckboxState();
+}
+
+class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
+  bool _isSliderExpanded = true; // 控制 slider 區域的展開/收合
+
   // 定義三大類情緒
   static const Map<String, List<String>> _emotionCategories = {
     '整體狀態': ['平靜', '開心', '有力量', '疲憊', '沒動力'],
@@ -37,10 +45,10 @@ class EmotionPageCheckbox extends StatelessWidget {
     final selectedEmotions = <EmotionItem>[];
     final emotionIndices = <String, int>{}; // 情緒名稱 -> index 映射
 
-    for (var i = 0; i < items.length; i++) {
-      emotionIndices[items[i].name] = i;
-      if (items[i].value != null) {
-        selectedEmotions.add(items[i]);
+    for (var i = 0; i < widget.items.length; i++) {
+      emotionIndices[widget.items[i].name] = i;
+      if (widget.items[i].value != null) {
+        selectedEmotions.add(widget.items[i]);
       }
     }
 
@@ -67,38 +75,90 @@ class EmotionPageCheckbox extends StatelessWidget {
         const Divider(height: 1, thickness: 2),
 
         // ========================================
-        // BOTTOM SECTION: 已選情緒評分區
+        // MIDDLE SECTION: 已選情緒評分區（可收合）
+        // ========================================
+        _buildCollapsibleSliderSection(context, selectedEmotions, emotionIndices),
+
+        // ========================================
+        // BOTTOM SECTION: 日記頁面
         // ========================================
         Expanded(
-          flex: 3,
-          child: Container(
-            color: Theme.of(context).colorScheme.surface,
-            child: selectedEmotions.isEmpty
-                ? Center(
-                    child: Text(
-                      '請從上方選擇情緒',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withOpacity(0.5),
-                          ),
-                    ),
-                  )
-                : ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: selectedEmotions.map((emotion) {
-                      final index = emotionIndices[emotion.name]!;
-                      return _buildSelectedEmotionCard(
-                        context,
-                        emotion: emotion,
-                        index: index,
-                      );
-                    }).toList(),
-                  ),
-          ),
+          flex: 2,
+          child: DiaryPage(),
         ),
       ],
+    );
+  }
+
+  /// 構建可收合的 Slider 區域
+  Widget _buildCollapsibleSliderSection(
+    BuildContext context,
+    List<EmotionItem> selectedEmotions,
+    Map<String, int> emotionIndices,
+  ) {
+    return Expanded(
+      flex: _isSliderExpanded ? 3 : 1,
+      child: Column(
+        children: [
+          // 標題欄 + 收合按鈕
+          Container(
+            color: Theme.of(context).colorScheme.surface,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '情緒評分',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                IconButton(
+                  icon: Icon(
+                    _isSliderExpanded
+                        ? Icons.expand_less
+                        : Icons.expand_more,
+                  ),
+                  onPressed: () {
+                    setState(() => _isSliderExpanded = !_isSliderExpanded);
+                  },
+                ),
+              ],
+            ),
+          ),
+
+          // 內容區（展開時顯示）
+          if (_isSliderExpanded)
+            Expanded(
+              child: Container(
+                color: Theme.of(context).colorScheme.surface,
+                child: selectedEmotions.isEmpty
+                    ? Center(
+                        child: Text(
+                          '請從上方選擇情緒',
+                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurface
+                                    .withOpacity(0.5),
+                              ),
+                        ),
+                      )
+                    : ListView(
+                        padding: const EdgeInsets.all(16),
+                        children: selectedEmotions.map((emotion) {
+                          final index = emotionIndices[emotion.name]!;
+                          return _buildSelectedEmotionCard(
+                            context,
+                            emotion: emotion,
+                            index: index,
+                          );
+                        }).toList(),
+                      ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -127,7 +187,7 @@ class EmotionPageCheckbox extends StatelessWidget {
           children: emotions.map((emotionName) {
             // 檢查這個情緒是否已存在於 items 中
             final index = emotionIndices[emotionName];
-            final isSelected = index != null && items[index].value != null;
+            final isSelected = index != null && widget.items[index].value != null;
 
             return FilterChip(
               label: Text(emotionName),
@@ -139,7 +199,7 @@ class EmotionPageCheckbox extends StatelessWidget {
                   // 暫時跳過或者可以擴展 API
                   return;
                 }
-                onToggleChecked(index, selected);
+                widget.onToggleChecked(index, selected);
               },
             );
           }).toList(),
@@ -175,7 +235,7 @@ class EmotionPageCheckbox extends StatelessWidget {
                 IconButton(
                   icon: const Icon(Icons.close),
                   tooltip: '移除',
-                  onPressed: () => onToggleChecked(index, false),
+                  onPressed: () => widget.onToggleChecked(index, false),
                 ),
               ],
             ),
@@ -183,7 +243,7 @@ class EmotionPageCheckbox extends StatelessWidget {
             EmotionSlider(
               label: emotion.name,
               value: emotion.value ?? 1,
-              onChanged: (v) => onChangeValue(index, v),
+              onChanged: (v) => widget.onChangeValue(index, v),
               leftIcon: 'assets/emotion/default.png',
               rightIcon: emotionRightIconMap[emotion.name] ??
                   'assets/emotion/default.png',
