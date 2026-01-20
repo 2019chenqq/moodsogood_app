@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'daily_record_helpers.dart';
 import 'daily_record_pages.dart';
 import '../widgets/emotion_slider.dart';
+import '../widgets/count_text_field.dart';
 
 /// 新版：分類選擇 + 已選情緒評分
 /// TOP: 三大類情緒（整體狀態、壓力情緒、低落警訊）以 Chip 方式選擇
@@ -31,17 +32,40 @@ class EmotionPageCheckbox extends StatefulWidget {
 
 class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
   bool _isSliderExpanded = true; // 控制 slider 區域的展開/收合
-  late TextEditingController _diaryNoteController; // 日記輸入控制器
+  
+  // 日記欄位控制器
+  late TextEditingController _titleCtrl;
+  late TextEditingController _contentCtrl;
+  late TextEditingController _songCtrl;
+  late TextEditingController _highlightCtrl;
+  late TextEditingController _metaphorCtrl;
+  late TextEditingController _conceitedCtrl;
+  late TextEditingController _proudOfCtrl;
+  late TextEditingController _selfCareCtrl;
 
   @override
   void initState() {
     super.initState();
-    _diaryNoteController = TextEditingController();
+    _titleCtrl = TextEditingController();
+    _contentCtrl = TextEditingController();
+    _songCtrl = TextEditingController();
+    _highlightCtrl = TextEditingController();
+    _metaphorCtrl = TextEditingController();
+    _conceitedCtrl = TextEditingController();
+    _proudOfCtrl = TextEditingController();
+    _selfCareCtrl = TextEditingController();
   }
 
   @override
   void dispose() {
-    _diaryNoteController.dispose();
+    _titleCtrl.dispose();
+    _contentCtrl.dispose();
+    _songCtrl.dispose();
+    _highlightCtrl.dispose();
+    _metaphorCtrl.dispose();
+    _conceitedCtrl.dispose();
+    _proudOfCtrl.dispose();
+    _selfCareCtrl.dispose();
     super.dispose();
   }
 
@@ -94,47 +118,91 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
           _buildCollapsibleSliderSection(context, selectedEmotions, emotionIndices),
 
           // ========================================
-          // BOTTOM SECTION: 日記筆記區
+          // BOTTOM SECTION: 日記欄位區
           // ========================================
           Container(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '今日日記',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                CountTextField(
+                  controller: _titleCtrl,
+                  label: '🖊️ 標題（可留白）',
+                  hint: '幫今天下一個小標題，也可以跳過…',
+                  minLines: 1,
+                  maxLines: 1,
+                  onAnyChanged: () {},
                 ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: _diaryNoteController,
-                  maxLines: 6,
-                  decoration: InputDecoration(
-                    hintText: '寫下今天的感受、想法或發生的事...',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    contentPadding: const EdgeInsets.all(12),
-                    filled: true,
-                    fillColor: Theme.of(context).colorScheme.surface,
-                  ),
+                CountTextField(
+                  controller: _contentCtrl,
+                  label: '📜 內容',
+                  hint: '留下一點點也很好…',
+                  minLines: 6,
+                  maxLines: 8,
+                  onAnyChanged: () {},
                 ),
                 const SizedBox(height: 12),
+                CountTextField(
+                  controller: _songCtrl,
+                  label: '🎧 今日的主題曲',
+                  hint: '歌名／連結／演出者…',
+                  minLines: 1,
+                  maxLines: 3,
+                  onAnyChanged: () {},
+                ),
+                const SizedBox(height: 12),
+                CountTextField(
+                  controller: _highlightCtrl,
+                  label: '✨ 今天最想記錄的瞬間',
+                  hint: '今天最想留住的畫面、對話或感受…',
+                  minLines: 3,
+                  maxLines: 8,
+                  onAnyChanged: () {},
+                ),
+                const SizedBox(height: 12),
+                CountTextField(
+                  controller: _metaphorCtrl,
+                  label: '🌚 今天的情緒像…',
+                  hint: '例：潮汐、霧氣、烈陽、厚被…',
+                  minLines: 1,
+                  maxLines: 3,
+                  onAnyChanged: () {},
+                ),
+                const SizedBox(height: 12),
+                CountTextField(
+                  controller: _conceitedCtrl,
+                  label: '🥇 為自己感到驕傲的是',
+                  hint: '完成了什麼、撐住了什麼、或小小突破…',
+                  minLines: 2,
+                  maxLines: 8,
+                  onAnyChanged: () {},
+                ),
+                const SizedBox(height: 12),
+                CountTextField(
+                  controller: _proudOfCtrl,
+                  label: '🌤️ 我做得不錯的地方',
+                  hint: '肯定一下今天的自己，哪怕是很小的事情…',
+                  minLines: 3,
+                  maxLines: 8,
+                  onAnyChanged: () {},
+                ),
+                const SizedBox(height: 12),
+                CountTextField(
+                  controller: _selfCareCtrl,
+                  label: '❤️‍🩹 我還能多照顧自己一點的地方',
+                  hint: '睡眠、飲食、邊界、運動或求助…下一步可以怎麼做？',
+                  minLines: 3,
+                  maxLines: 8,
+                  onAnyChanged: () {},
+                ),
+                const SizedBox(height: 16),
                 Align(
                   alignment: Alignment.centerRight,
                   child: ElevatedButton.icon(
                     onPressed: () {
-                      // 可根據需要保存日記內容
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            _diaryNoteController.text.isEmpty
-                                ? '請輸入日記內容'
-                                : '日記已保存',
-                          ),
-                        ),
+                        const SnackBar(content: Text('日記已保存')),
                       );
                     },
                     icon: const Icon(Icons.save),
