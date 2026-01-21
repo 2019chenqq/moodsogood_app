@@ -357,10 +357,10 @@ if (_prevDate != null || _nextDate != null) ...[
             ),
             const m.SizedBox(height: 12),
 
-            CountTextField(
-              controller: _songCtrl,
-              label: '🎧 今日的主題曲',
-              hint: '歌名／連結／演出者…',
+                        CountTextField(
+              controller: _metaphorCtrl,
+              label: '🌚 今天的情緒像…',
+              hint: '例：潮汐、霧氣、烈陽、厚被…',
               minLines: 1, maxLines: 3,
               onAnyChanged: _onAnyFieldChanged,
               textStyle: const m.TextStyle(color: m.Colors.black87),
@@ -383,37 +383,24 @@ if (_prevDate != null || _nextDate != null) ...[
             ),
             const m.SizedBox(height: 12),
 
-            CountTextField(
-              controller: _metaphorCtrl,
-              label: '🌚 今天的情緒像…',
-              hint: '例：潮汐、霧氣、烈陽、厚被…',
-              minLines: 1, maxLines: 3,
-              onAnyChanged: _onAnyFieldChanged,
-              textStyle: const m.TextStyle(color: m.Colors.black87),
-  hintStyle: m.TextStyle(color: m.Colors.black.withValues(alpha: 0.28)),
-  fillColor: m.Colors.white.withValues(alpha: 0.70),
-  borderColor: m.Colors.black.withValues(alpha: 0.18),
-            ),
-            const m.SizedBox(height: 12),
-
-            CountTextField(
-              controller: _conceitedCtrl,
-              label: '🥇 為自己感到驕傲的是',
-              hint: '完成了什麼、撐住了什麼、或小小突破…',
-              minLines: 2, maxLines: 10,
-              onAnyChanged: _onAnyFieldChanged,
-              textStyle: const m.TextStyle(color: m.Colors.black87),
-  hintStyle: m.TextStyle(color: m.Colors.black.withValues(alpha: 0.28)),
-  fillColor: m.Colors.white.withValues(alpha: 0.70),
-  borderColor: m.Colors.black.withValues(alpha: 0.18),
-            ),
-            const m.SizedBox(height: 12),
-
-            CountTextField(
+                          CountTextField(
               controller: _proudOfCtrl,
               label: '🌤️ 我做得不錯的地方',
-              hint: '肯定一下今天的自己，哪怕是很小的事情…',
+              hint: '肯定一下今天的自己，哪怕是很小的事情，例如：我有按時吃藥、我有出門散步…',
               minLines: 3, maxLines: 10,
+              onAnyChanged: _onAnyFieldChanged,
+              textStyle: const m.TextStyle(color: m.Colors.black87),
+  hintStyle: m.TextStyle(color: m.Colors.black.withValues(alpha: 0.28)),
+  fillColor: m.Colors.white.withValues(alpha: 0.70),
+  borderColor: m.Colors.black.withValues(alpha: 0.18),
+            ),
+            const m.SizedBox(height: 12),
+
+            CountTextField(
+              controller: _songCtrl,
+              label: '🎧 今日的主題曲',
+              hint: '歌名／連結／演出者…',
+              minLines: 1, maxLines: 3,
               onAnyChanged: _onAnyFieldChanged,
               textStyle: const m.TextStyle(color: m.Colors.black87),
   hintStyle: m.TextStyle(color: m.Colors.black.withValues(alpha: 0.28)),

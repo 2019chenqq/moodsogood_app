@@ -184,7 +184,7 @@ class DataSyncDiagnostics {
   static Future<bool> clearLocalDatabase() async {
     try {
       final repo = DailyRecordRepository();
-      await repo.clearAll();
+      await repo.clearAllRecords();
       return true;
     } catch (e) {
       debugPrint('❌ Failed to clear local database: $e');

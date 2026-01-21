@@ -8,7 +8,7 @@ import '../utils/firebase_sync_config.dart';
 class FirebaseSyncProvider extends ChangeNotifier {
   late FirebaseSyncConfig _config;
 
-  bool get isEnabled => _config.isEnabled;
+  bool get isEnabled => FirebaseSyncConfig.shouldSync();
 
   FirebaseSyncProvider() {
     _config = FirebaseSyncConfig();

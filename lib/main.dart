@@ -25,6 +25,7 @@ import 'app_lock_screen.dart';
 import 'service/iap_service.dart';
 import 'providers/pro_provider.dart';
 import 'utils/data_migration.dart';
+import 'UI/fortune_cookie_screen.dart';
 /* =========================== main =========================== */
 
 Future<void> main() async {
@@ -172,7 +173,15 @@ class MainApp extends StatelessWidget {
       // 關鍵：跟著 ThemeProvider 切換
       themeMode: themeProvider.themeMode,
 
-      home: const AuthGate(),
+      home: Builder(
+  builder: (context) => FortuneCookieScreen(
+    onEnterApp: () {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const AuthGate()),
+      );
+    },
+  ),
+),
     );
   }
 }

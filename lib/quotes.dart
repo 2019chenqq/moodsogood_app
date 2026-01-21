@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:math';
 
-class QuotesTitle extends StatelessWidget {
-  const QuotesTitle({super.key});
-  static const _quotes = <String> [
+// 共享的引言列表
+const List<String> _quotes = [
   "你累了嗎？那就先喘口氣吧🌿",
   "一件事做得糟，不代表你是糟糕的人，別輕易用事件定義自己了",
   "有時候逃避一下沒關係，人生不需要一直前進，汽油會燃盡，總需要熄火加油的⛽",
@@ -43,6 +43,18 @@ String _pickQuoteForToday() {
   final index = seed.abs() % _quotes.length;
   return _quotes[index];
 }
+
+String getRandomQuote() {
+  return _quotes[Random().nextInt(_quotes.length)];
+}
+
+class QuotesTitle extends StatelessWidget {
+  const QuotesTitle({super.key});
+
+   static String randomQuote([Random? rnd]) {
+    final r = rnd ?? Random();
+    return _quotes[r.nextInt(_quotes.length)];
+  }
 
 @override
 Widget build(BuildContext context) {

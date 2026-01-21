@@ -9,7 +9,6 @@ import '../utils/date_helper.dart';   // 確保引用正確
 import 'record_detail_screen.dart';   // 確保引用正確
 import '../models/period_cycle.dart';
 import '../widgets/main_drawer.dart';
-import '../quotes.dart';
 import '../pro/pro_page.dart';
 import '../providers/pro_provider.dart';
 import 'daily_record_repository.dart';
@@ -82,9 +81,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
     return Scaffold(
       drawer: const MainDrawer(),
       appBar: AppBar(
-        toolbarHeight: 120,
-  centerTitle: true,
-        title: const QuotesTitle(),
+        toolbarHeight: 60,
+        elevation: 0,
         bottom: TabBar(
           controller: _tabController,
           tabs: const [

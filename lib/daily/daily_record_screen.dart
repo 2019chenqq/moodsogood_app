@@ -7,7 +7,7 @@ import '../utils/date_helper.dart';
 import '../utils/firebase_sync_config.dart';
 import '../models/daily_record.dart';
 import '../widgets/main_drawer.dart';
-import '../quotes.dart';
+import '../diary/diary_home_page.dart';
 import 'daily_record_repository.dart';
 
 // Import refactored modules
@@ -648,6 +648,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   @override
   Widget build(BuildContext context) {
     final pages = [
+      // 情緒頁
       _pageWrapper(
         _useNewEmotionPage
             ? EmotionPageCheckbox(
@@ -810,14 +811,15 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         },
         onDeleteNap: (i) => setState(() => _naps.removeAt(i)),
       )),
+      // 日记页
+      const DiaryHomePage(),
     ];
 
     return Scaffold(
       drawer: const MainDrawer(),
       appBar: AppBar(
-        toolbarHeight: 120,
-        centerTitle: true,
-        title: const QuotesTitle(),
+        toolbarHeight: 60,
+        elevation: 0,
         actions: [
           if (_isSaving)
             const Padding(
@@ -838,6 +840,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       ),
       body: SafeArea(child: pages[_index]),
       bottomNavigationBar: BottomNavigationBar(
+        type: BottomNavigationBarType.fixed,
         currentIndex: _index,
         onTap: (i) => setState(() => _index = i),
         items: const [
@@ -845,8 +848,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
               icon: Icon(Icons.sentiment_satisfied), label: '情緒'),
           BottomNavigationBarItem(icon: Icon(Icons.healing), label: '症狀'),
           BottomNavigationBarItem(
-              icon: Icon(Icons.nightlight_round), label: '睡眠'),
-        ],
+              icon: Icon(Icons.nightlight_round), label: '睡眠'),          BottomNavigationBarItem(
+              icon: Icon(Icons.book), label: '日記'),        ],
       ),
     );
   }

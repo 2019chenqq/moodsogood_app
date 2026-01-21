@@ -7,7 +7,6 @@ import '/diary/diary_page_demo.dart';
 import '/diary/diary_repository.dart';
 import '../utils/date_helper.dart';
 import '../widgets/main_drawer.dart';
-import '../quotes.dart';
 
 // 簡化的日記數據結構，用於統一處理本地和 Firebase 數據
 class _DiaryItem {
@@ -122,9 +121,8 @@ class _DiaryHomePageState extends m.State<DiaryHomePage>
     return m.Scaffold(
       drawer: const MainDrawer(),
       appBar: m.AppBar(
-        toolbarHeight: 120,
-        centerTitle: true,
-        title: const QuotesTitle(),
+        toolbarHeight: 60,
+        elevation: 0,
         actions: [
           m.IconButton(
             icon: const m.Icon(m.Icons.today_outlined),

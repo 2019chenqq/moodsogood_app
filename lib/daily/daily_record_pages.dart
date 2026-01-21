@@ -496,43 +496,67 @@ class SleepPage extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
-        const Text('夜間睡眠狀況（可多選）',
-            style: TextStyle(fontWeight: FontWeight.w600)),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: (() {
-            const desired = [
-              '優',
-              '良好',
-              '早醒',
-              '多夢',
-              '淺眠',
-              '夜尿',
-              '睡睡醒醒',
-              '睡眠不足',
-              '入睡困難 (躺超過 30 分鐘才入睡)',
-              '睡眠中斷 (醒來後超過 30 分鐘才又入睡)',
-            ];
+        Card(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: ExpansionTile(
+            leading: const Icon(Icons.nightlight_outlined, color: Colors.deepPurple),
+            title: const Text('夜間睡眠狀況',
+                style: TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: Text(
+              flags.isEmpty ? '未選擇' : '已選 ${flags.length} 項',
+              style: TextStyle(color: Colors.grey[600], fontSize: 13),
+            ),
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('可多選',
+                        style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: (() {
+                        const desired = [
+                          '優',
+                          '良好',
+                          '早醒',
+                          '多夢',
+                          '淺眠',
+                          '夜尿',
+                          '睡睡醒醒',
+                          '睡眠不足',
+                          '入睡困難 (躺超過 30 分鐘才入睡)',
+                          '睡眠中斷 (醒來後超過 30 分鐘才又入睡)',
+                        ];
 
-            final list = SleepFlag.values.toList()
-              ..sort((a, b) {
-                int ia = desired.indexOf(sleepFlagLabel(a));
-                int ib = desired.indexOf(sleepFlagLabel(b));
-                if (ia < 0) ia = 999;
-                if (ib < 0) ib = 999;
-                return ia.compareTo(ib);
-              });
+                        final list = SleepFlag.values.toList()
+                          ..sort((a, b) {
+                            int ia = desired.indexOf(sleepFlagLabel(a));
+                            int ib = desired.indexOf(sleepFlagLabel(b));
+                            if (ia < 0) ia = 999;
+                            if (ib < 0) ib = 999;
+                            return ia.compareTo(ib);
+                          });
 
-            return list.map((f) {
-              final selected = flags.contains(f);
-              return FilterChip(
-                label: Text(sleepFlagLabel(f)),
-                selected: selected,
-                onSelected: (_) => onToggleFlag(f),
-              );
-            }).toList();
-          })(),
+                        return list.map((f) {
+                          final selected = flags.contains(f);
+                          return FilterChip(
+                            label: Text(sleepFlagLabel(f)),
+                            selected: selected,
+                            onSelected: (_) => onToggleFlag(f),
+                          );
+                        }).toList();
+                      })(),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 12),
         Card(
