@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:convert';
 import '../daily/daily_record_repository.dart';
-import '../models/daily_record.dart';
 
 /// 數據同步診斷和修復工具
 class DataSyncDiagnostics {
@@ -146,7 +144,7 @@ class DataSyncDiagnostics {
       final payload = <String, dynamic>{
         'date': Timestamp.fromDate(DateTime.parse(localRecord['date'] as String)),
         'emotions': emotions is Map
-            ? (emotions as Map).entries
+            ? emotions.entries
                 .map((e) => {'name': e.key, 'value': e.value})
                 .toList()
             : [],

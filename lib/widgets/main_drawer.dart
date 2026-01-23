@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; // 用於 kDebugMode
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart'; // 🔥 存照片用
 import 'package:image_picker/image_picker.dart';         // 🔥 選照片用
@@ -7,11 +8,13 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'dart:io';
 import '../daily/daily_record_screen.dart';
 import '../daily/daily_record_history.dart';
-import '../diary/diary_home_page.dart';
 import '../settings_page.dart';
 import '../pages/feesback_page.dart';
 import '../pro/pro_page.dart';
 import '../meds/medication_home_page.dart';
+import 'package:provider/provider.dart';
+import '../providers/pro_provider.dart';
+import '../utils/firebase_sync_config.dart';
 
 class MainDrawer extends StatefulWidget {
   const MainDrawer({super.key});
@@ -76,17 +79,17 @@ class _MainDrawerState extends State<MainDrawer> {
     }
   }
 
+  Future<void> _signOut() async {
+    final googleSignIn = GoogleSignIn();
+    await FirebaseAuth.instance.signOut();
+    await googleSignIn.signOut(); // ⭐ 這一行是關鍵
+  }
+
   @override
   Widget build(BuildContext context) {
     // 每次 build 都重新抓取 user，確保顯示最新的 photoURL
     final user = FirebaseAuth.instance.currentUser;
     final String? photoUrl = user?.photoURL;
-    final googleSignIn = GoogleSignIn();
-
-  Future<void> signOut() async {
-    await FirebaseAuth.instance.signOut();
-    await googleSignIn.signOut(); // ⭐ 這一行是關鍵
-  }
 
     return Drawer(
   child: ListView(
@@ -154,6 +157,61 @@ class _MainDrawerState extends State<MainDrawer> {
           color: Color.fromARGB(255, 179, 227, 222), // Drawer header 背景色
         ),
       ),
+      
+      // Pro 會員狀態卡片
+      Consumer<ProProvider>(
+        builder: (context, proProvider, _) => Container(
+          margin: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: proProvider.isPro
+                  ? [Colors.amber[300]!, Colors.amber[600]!]
+                  : [Colors.grey[300]!, Colors.grey[500]!],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    proProvider.isPro ? '✨ Pro 會員' : '📱 免費版',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    FirebaseSyncConfig.getDataRetention(),
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+              FilledButton(
+                onPressed: () {
+                  Navigator.pop(context); // 關閉 drawer
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ProPage()),
+                  );
+                },
+                child: Text(proProvider.isPro ? '已啟用' : '升級'),
+              ),
+            ],
+          ),
+        ),
+      ),
+      
           // 2. 選單項目
           ListTile(
             leading: const Icon(Icons.dashboard_outlined), // 圖示：每日紀錄
@@ -167,17 +225,17 @@ class _MainDrawerState extends State<MainDrawer> {
                             );
             },
           ),
-          ListTile(
-            leading: const Icon(Icons.auto_stories_outlined), // 圖示：日記
-            title: const Text('我的日記'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (_) => const DiaryHomePage()),
-              );
-            },
-          ),
+          // ListTile(
+          //   leading: const Icon(Icons.auto_stories_outlined), // 圖示：日記
+          //   title: const Text('我的日記'),
+          //   onTap: () {
+          //     Navigator.pop(context);
+          //     Navigator.pushReplacement(
+          //       context,
+          //       MaterialPageRoute(builder: (_) => const DiaryHomePage()),
+          //     );
+          //   },
+          // ),
           ListTile(
             leading: const Icon(Icons.insights), // 圖示：統計
             title: const Text('統計圖表'),
@@ -227,25 +285,25 @@ class _MainDrawerState extends State<MainDrawer> {
               );
             },
           ),
-ListTile(
-  leading: const Icon(Icons.workspace_premium_outlined),
-  title: const Text('升級至心晴 Pro'),
-  onTap: () {
-  Navigator.pop(context); // 關 drawer
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => const ProPage(),
-    ),
-  );
-  }
-  ),
+          ListTile(
+            leading: const Icon(Icons.workspace_premium_outlined),
+            title: const Text('升級至心晴 Pro'),
+            onTap: () {
+              Navigator.pop(context); // 關 drawer
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const ProPage(),
+                ),
+              );
+            },
+          ),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
             title: const Text('登出', style: TextStyle(color: Colors.red)),
             onTap: () async {
-  await signOut();
-}
+              await _signOut();
+            },
           ),
         ],
       ),

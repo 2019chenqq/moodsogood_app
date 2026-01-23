@@ -1,6 +1,4 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import '../models/daily_record.dart';
 import '../daily/daily_record_repository.dart';
 
 /// 數據遷移工具 - 處理免費版到 Pro 版的升級

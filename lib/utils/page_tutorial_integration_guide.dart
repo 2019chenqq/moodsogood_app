@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../widgets/interactive_tutorial.dart';
-import '../daily/daily_record_page_tutorial.dart';
 import '../utils/page_tutorial_controller.dart';
 
 /// 在頁面上集成導覽的示例和工具函數

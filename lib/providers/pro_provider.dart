@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 /// 🚧 開發/測試用開關：設為 true 時，所有使用者都能使用 Pro features
 /// 📌 正式上線前請改為 false
-const bool kDebugUnlockAllProFeatures = true;
+const bool kDebugUnlockAllProFeatures = false;
 
 typedef OnProUpgradeCallback = Future<void> Function();
 

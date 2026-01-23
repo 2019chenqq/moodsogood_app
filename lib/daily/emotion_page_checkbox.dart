@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'daily_record_helpers.dart';
 import 'daily_record_pages.dart';
 import '../widgets/emotion_slider.dart';
-import '../diary/diary_page_demo.dart';
 
 /// 新版：分類選擇 + 已選情緒評分
 /// TOP: 三大類情緒（整體狀態、壓力情緒、低落警訊）以 Chip 方式選擇
@@ -94,50 +93,50 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
           // ========================================
           // BOTTOM SECTION: 日記連結
           // ========================================
-          Container(
-            padding: const EdgeInsets.all(16),
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.notes_outlined,
-                    size: 56,
-                    color: Theme.of(context).colorScheme.primary.withOpacity(0.7),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    '今日日記',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '記錄今天的感受和故事',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withOpacity(0.6),
-                        ),
-                  ),
-                  const SizedBox(height: 24),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => DiaryPageDemo(date: DateTime.now()),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.open_in_new),
-                    label: const Text('打開日記'),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          // Container(
+          //   padding: const EdgeInsets.all(16),
+          //   child: Center(
+          //     child: Column(
+          //       mainAxisAlignment: MainAxisAlignment.center,
+          //       children: [
+          //         Icon(
+          //           Icons.notes_outlined,
+          //           size: 56,
+          //           color: Theme.of(context).colorScheme.primary.withOpacity(0.7),
+          //         ),
+          //         const SizedBox(height: 16),
+          //         Text(
+          //           '今日日記',
+          //           style: Theme.of(context).textTheme.titleLarge?.copyWith(
+          //                 fontWeight: FontWeight.bold,
+          //               ),
+          //         ),
+          //         const SizedBox(height: 8),
+          //         Text(
+          //           '記錄今天的感受和故事',
+          //           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          //                 color: Theme.of(context)
+          //                     .colorScheme
+          //                     .onSurface
+          //                     .withOpacity(0.6),
+          //               ),
+          //         ),
+          //         const SizedBox(height: 24),
+          //         ElevatedButton.icon(
+          //           onPressed: () {
+          //             Navigator.of(context).push(
+          //               MaterialPageRoute(
+          //                 builder: (context) => DiaryPageDemo(date: DateTime.now()),
+          //               ),
+          //             );
+          //           },
+          //           icon: const Icon(Icons.open_in_new),
+          //           label: const Text('打開日記'),
+          //         ),
+          //       ],
+          //     ),
+          //   ),
+          // ),
         ],
       ),
     );
