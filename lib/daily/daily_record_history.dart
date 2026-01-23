@@ -147,10 +147,10 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
     final isPro = proProvider.isPro;
     
     final endDate = DateTime.now();
-    // 免費版：90天   Pro版：無限期
+    // 免費版：2年   Pro版：無限期
     final startDate = isPro 
         ? DateTime(2020, 1, 1)  // Pro 用戶查詢所有數據
-        : endDate.subtract(const Duration(days: 90));  // 免費用戶只查詢最近 90 天
+        : endDate.subtract(const Duration(days: 730));  // 免費用戶只查詢最近 2 年
     
     debugPrint('📊 Loading records for ${isPro ? "Pro" : "Free"} user (from $startDate)');
     

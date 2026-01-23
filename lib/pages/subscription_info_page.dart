@@ -81,7 +81,7 @@ class SubscriptionInfoPage extends StatelessWidget {
             _buildFeatureComparison(
               context,
               '📅 資料保留期',
-              free: '最近 90 天',
+              free: '最近 2 年',
               pro: '永久保存',
               freeColor: Colors.blue,
               proColor: Colors.amber,
@@ -243,7 +243,7 @@ class SubscriptionInfoPage extends StatelessWidget {
               title: '📅 資料保留',
               description: isPro
                   ? '您的資料無限期保存，永不過期。'
-                  : '免費版本只保存最近 90 天的資料。超過 90 天的資料將被自動清除。',
+                  : '免費版本只保存最近 2 年的資料。超過 2 年的資料將被自動清除。',
               icon: Icons.calendar_today,
               backgroundColor: Colors.green[50] ?? Colors.white,
               iconColor: Colors.green,

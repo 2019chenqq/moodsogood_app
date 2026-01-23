@@ -24,7 +24,7 @@ class DataSyncDiagnostics {
       // 1. 獲取本地記錄數量
       final repo = DailyRecordRepository();
       final endDate = DateTime.now();
-      final startDate = endDate.subtract(const Duration(days: 90));
+      final startDate = endDate.subtract(const Duration(days: 730));
 
       final localRecords = await repo.getDailyRecordsByDateRange(
         userId: uid,
@@ -91,7 +91,7 @@ class DataSyncDiagnostics {
     try {
       final repo = DailyRecordRepository();
       final endDate = DateTime.now();
-      final startDate = endDate.subtract(const Duration(days: 90));
+      final startDate = endDate.subtract(const Duration(days: 730));
 
       final localRecords = await repo.getDailyRecordsByDateRange(
         userId: uid,

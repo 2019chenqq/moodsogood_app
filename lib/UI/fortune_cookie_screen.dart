@@ -22,6 +22,7 @@ class _FortuneCookieScreenState extends State<FortuneCookieScreen> {
   bool _isPlaying = false;
   bool _showQuote = false;
   bool _initialized = false;
+  bool _tapLocked = false;
 
   late final String _quote;
 
@@ -47,20 +48,18 @@ void initState() {
 }
 
   void _onVideoTick() {
-    final value = _vc.value;
-    if (!value.isInitialized || value.duration == Duration.zero) return;
+  final v = _vc.value;
+  if (!v.isInitialized) return;
 
-    // 播放到接近結尾 → 顯示紙條
-    final isAtEnd = value.position >= value.duration - const Duration(milliseconds: 80);
-    if (_isPlaying && isAtEnd && !_showQuote) {
-      _vc.pause();
-      if (!mounted) return;
-      setState(() {
-        _showQuote = true;
-        _isPlaying = false;
-      });
-    }
+  if (_isPlaying && v.isCompleted && !_showQuote) {
+    _vc.pause();
+    if (!mounted) return;
+    setState(() {
+      _showQuote = true;
+      _isPlaying = false;
+    });
   }
+}
 
   @override
   void dispose() {
@@ -72,32 +71,41 @@ void initState() {
   Future<void> _onTapCookie() async {
   if (_showQuote) return;
 
+  // ✅ 防止連點造成 seek/play 重入，最常見的卡死原因
+  if (_tapLocked) return;
+  _tapLocked = true;
+
+  debugPrint('🍪 tap cookie');
+
   try {
-    debugPrint('🍪 tap cookie');
+    // 先切到播放狀態（讓 UI 先顯示 VideoPlayer）
+    if (mounted) setState(() => _isPlaying = true);
 
-   // ✅ 等待初始化（避免一直被擋掉）
-await _initVideoFuture;
-if (!_vc.value.isInitialized) {
-  debugPrint('❌ video still not initialized after await');
-  return;
-}
+    await _initVideoFuture;
+    if (!_vc.value.isInitialized) {
+      debugPrint('❌ still not initialized');
+      if (mounted) setState(() => _isPlaying = false);
+      return;
+    }
 
-    setState(() => _isPlaying = true);
+    // 如果目前已經在播，就不要重播（避免卡）
+    if (_vc.value.isPlaying) {
+      debugPrint('ℹ️ already playing');
+      return;
+    }
 
     await _vc.seekTo(Duration.zero);
     await _vc.play();
 
-    debugPrint('▶ video play started');
+    debugPrint('▶ playing...');
   } catch (e, st) {
-    debugPrint('❌ _onTapCookie error: $e');
+    debugPrint('❌ play error: $e');
     debugPrint('$st');
-
-    if (mounted) {
-      setState(() => _isPlaying = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('動畫載入失敗，請檢查 mp4 資產路徑/宣告')),
-      );
-    }
+    if (mounted) setState(() => _isPlaying = false);
+  } finally {
+    // ✅ 稍微延遲解鎖，避免連點太快
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    _tapLocked = false;
   }
 }
 
@@ -115,27 +123,18 @@ Widget build(BuildContext context) {
       children: [
         // ===== 背景（霧面）=====
         Positioned.fill(
-          child: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF0F172A), // 深藍灰
-                  Color(0xFF111827), // 深灰藍
-                ],
-              ),
-            ),
-          ),
-        ),
+  child: Container(
+    color: const Color(0xFFF6E08E), // 幸運餅乾頁主背景色
+  ),
+),
         Positioned.fill(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-            child: Container(
-              color: Colors.black.withOpacity(0.25),
-            ),
-          ),
-        ),
+  child: BackdropFilter(
+    filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+    child: Container(
+      color: const Color(0xFFF6E08E).withOpacity(0.25),
+    ),
+  ),
+),
 
         // ===== 中央內容：餅乾 + 紙條 =====
         Center(
@@ -155,7 +154,7 @@ FutureBuilder<void>(
 
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
-      onTap: ready ? _onTapCookie : null,
+      onTap: (ready && !_isPlaying) ? _onTapCookie : null,
       child: Stack(
         alignment: Alignment.center,
         children: [
@@ -227,30 +226,22 @@ FutureBuilder<void>(
                 '點一下幸運餅乾',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.white.withOpacity(0.72),
-                      letterSpacing: 0.5,
-                    ),
+  color: const Color(0xFF9C7A2F),
+  letterSpacing: 0.5,
+),
               ),
             ),
           ),
         ),
-
-        // =====（可選）紙條出現後才允許「點背景進入 App」=====
-        if (_showQuote)
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _onTapBackground,
-              child: const SizedBox.shrink(),
-            ),
-          ),
       ],
     ),
   );
 }
 
   Widget _buildCookieVisual() {
-  if (_isPlaying && _vc.value.isInitialized) {
+  final showVideo = _vc.value.isInitialized && (_vc.value.isPlaying || _isPlaying);
+
+  if (showVideo) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
       child: AspectRatio(
@@ -285,17 +276,16 @@ class _QuoteStrip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.92),
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            blurRadius: 18,
-            spreadRadius: 0,
-            color: Colors.black.withOpacity(0.18),
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
+  color: const Color(0xFFF9EDB7),
+  borderRadius: BorderRadius.circular(18),
+  boxShadow: [
+    BoxShadow(
+      color: const Color(0xFFE0C86A).withOpacity(0.6),
+      blurRadius: 12,
+      offset: const Offset(0, 6),
+    ),
+  ],
+),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -304,8 +294,8 @@ class _QuoteStrip extends StatelessWidget {
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   height: 1.35,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF111827),
+                  color: const Color(0xFF6B4F1D),
+  fontWeight: FontWeight.w600,
                 ),
           ),
           const SizedBox(height: 10),

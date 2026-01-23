@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 /// 🔧 Firebase Sync Control Configuration (基於訂閱狀態)
 /// 
 /// 存儲策略：
-/// - 免費版：本地存儲（SQLite 只有 90 天）
+/// - 免費版：本地存儲（SQLite 只有 2 年）
 /// - 付費版（Pro）：Firebase 雲端存儲（永久保存 + 多設備同步）
 class FirebaseSyncConfig {
   static final FirebaseSyncConfig _instance =
@@ -49,6 +49,6 @@ class FirebaseSyncConfig {
 
   /// 獲取數據保留期描述
   static String getDataRetention() {
-    return _isPro() ? '永久保存（雲端備份）' : '最近 90 天';
+    return _isPro() ? '永久保存（雲端備份）' : '最近 2 年';
   }
 }
