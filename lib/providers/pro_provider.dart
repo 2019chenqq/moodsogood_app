@@ -11,10 +11,12 @@ class ProProvider extends ChangeNotifier {
   bool _loading = true;
   OnProUpgradeCallback? _onUpgradeCallback;
   bool _isMigrating = false;
+bool _remoteIsPro = false;   // Firestore / 登入同步來的
+bool? _debugOverrideIsPro;  // null = 不覆蓋
 
   /// 檢查使用者是否為 Pro
   /// 如果 kDebugUnlockAllProFeatures = true，則所有人都是 Pro
-  bool get isPro => kDebugUnlockAllProFeatures || _isPro;
+  bool get isPro => _debugOverrideIsPro ?? _remoteIsPro;
   
   bool get loading => _loading;
   bool get isMigrating => _isMigrating;
@@ -63,7 +65,7 @@ class ProProvider extends ChangeNotifier {
   }
 
   void lock() {
-    _isPro = false;
-    notifyListeners();
-  }
+  _debugOverrideIsPro = false;
+  notifyListeners();
+}
 }
