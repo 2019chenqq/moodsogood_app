@@ -361,77 +361,77 @@ class _SettingsPageState extends State<SettingsPage> {
             },
           ),
 
-          const Divider(),
+          // const Divider(),
 
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Text(
-              '詳細教學',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: Colors.grey[600],
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
+          // Padding(
+          //   padding: const EdgeInsets.all(16.0),
+          //   child: Text(
+          //     '詳細教學',
+          //     style: Theme.of(context).textTheme.titleSmall?.copyWith(
+          //       color: Colors.grey[600],
+          //       fontWeight: FontWeight.bold,
+          //     ),
+          //   ),
+          // ),
 
-          ListTile(
-            leading: const Icon(Icons.note_add),
-            title: const Text('每日紀錄詳細教學'),
-            subtitle: const Text('學習如何使用每日紀錄功能'),
-            onTap: () async {
-              await Navigator.of(context).push<bool>(
-                MaterialPageRoute(
-                  builder: (context) => const DailyRecordTutorialPage(),
-                ),
-              );
-            },
-          ),
+          // ListTile(
+          //   leading: const Icon(Icons.note_add),
+          //   title: const Text('每日紀錄詳細教學'),
+          //   subtitle: const Text('學習如何使用每日紀錄功能'),
+          //   onTap: () async {
+          //     await Navigator.of(context).push<bool>(
+          //       MaterialPageRoute(
+          //         builder: (context) => const DailyRecordTutorialPage(),
+          //       ),
+          //     );
+          //   },
+          // ),
 
-          ListTile(
-            leading: const Icon(Icons.book),
-            title: const Text('日記詳細教學'),
-            subtitle: const Text('學習如何使用日記功能'),
-            onTap: () async {
-              await Navigator.of(context).push<bool>(
-                MaterialPageRoute(
-                  builder: (context) => const DiaryTutorialPage(),
-                ),
-              );
-            },
-          ),
+          // ListTile(
+          //   leading: const Icon(Icons.book),
+          //   title: const Text('日記詳細教學'),
+          //   subtitle: const Text('學習如何使用日記功能'),
+          //   onTap: () async {
+          //     await Navigator.of(context).push<bool>(
+          //       MaterialPageRoute(
+          //         builder: (context) => const DiaryTutorialPage(),
+          //       ),
+          //     );
+          //   },
+          // ),
 
-          ListTile(
-            leading: const Icon(Icons.bar_chart),
-            title: const Text('統計分析教學'),
-            subtitle: const Text('學習如何查看和分析數據'),
-            onTap: () async {
-              await Navigator.of(context).push<bool>(
-                MaterialPageRoute(
-                  builder: (context) => const StatisticsTutorialPage(),
-                ),
-              );
-            },
-          ),
+          // ListTile(
+          //   leading: const Icon(Icons.bar_chart),
+          //   title: const Text('統計分析教學'),
+          //   subtitle: const Text('學習如何查看和分析數據'),
+          //   onTap: () async {
+          //     await Navigator.of(context).push<bool>(
+          //       MaterialPageRoute(
+          //         builder: (context) => const StatisticsTutorialPage(),
+          //       ),
+          //     );
+          //   },
+          // ),
 
-          const Divider(),
+          // const Divider(),
 
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Text(
-              '數據診斷',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: Colors.grey[600],
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
+          // Padding(
+          //   padding: const EdgeInsets.all(16.0),
+          //   child: Text(
+          //     '數據診斷',
+          //     style: Theme.of(context).textTheme.titleSmall?.copyWith(
+          //       color: Colors.grey[600],
+          //       fontWeight: FontWeight.bold,
+          //     ),
+          //   ),
+          // ),
 
-          ListTile(
-            leading: const Icon(Icons.analytics),
-            title: const Text('檢查數據同步狀態'),
-            subtitle: const Text('檢查本地和雲端數據是否一致'),
-            onTap: () => _showSyncDiagnostics(context),
-          ),
+          // ListTile(
+          //   leading: const Icon(Icons.analytics),
+          //   title: const Text('檢查數據同步狀態'),
+          //   subtitle: const Text('檢查本地和雲端數據是否一致'),
+          //   onTap: () => _showSyncDiagnostics(context),
+          // ),
 
           if (kDebugMode)
             ListTile(
