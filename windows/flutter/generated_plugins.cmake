@@ -10,6 +10,8 @@ list(APPEND FLUTTER_PLUGIN_LIST
   firebase_storage
   flutter_timezone
   flutter_tts
+  printing
+  share_plus
   url_launcher_windows
 )
 
