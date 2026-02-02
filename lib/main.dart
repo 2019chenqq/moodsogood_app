@@ -137,8 +137,9 @@ class MainApp extends StatelessWidget {
       // 淺色主題
       theme: ThemeData(
         useMaterial3: true,
+        fontFamily: 'LXGWWenKai',
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF80CBC4),
+          seedColor: const Color.fromARGB(255, 154, 170, 221),
           brightness: Brightness.light,
         ),
       ),
@@ -150,6 +151,7 @@ class MainApp extends StatelessWidget {
           brightness: Brightness.dark,
         ),
         useMaterial3: true,
+        fontFamily: 'LXGWWenKai',
         scaffoldBackgroundColor: const Color(0xFF121212),
         appBarTheme: const AppBarTheme(
           backgroundColor: Color(0xFF121212),

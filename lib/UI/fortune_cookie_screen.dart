@@ -228,6 +228,7 @@ FutureBuilder<void>(
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
   color: const Color(0xFF9C7A2F),
   letterSpacing: 0.5,
+  fontFamily: 'LXGWWenKai',
 ),
               ),
             ),
@@ -296,6 +297,7 @@ class _QuoteStrip extends StatelessWidget {
                   height: 1.35,
                   color: const Color(0xFF6B4F1D),
   fontWeight: FontWeight.w600,
+  fontFamily: 'LXGWWenKai',
                 ),
           ),
           const SizedBox(height: 10),

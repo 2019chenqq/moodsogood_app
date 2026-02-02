@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 
 /// 🚧 開發/測試用開關：設為 true 時，所有使用者都能使用 Pro features
 /// 📌 正式上線前請改為 false
-const bool kDebugUnlockAllProFeatures = false;
+const bool kDebugUnlockAllProFeatures = true;
 
 typedef OnProUpgradeCallback = Future<void> Function();
 
 class ProProvider extends ChangeNotifier {
-  bool _isPro = false;
+  bool _isPro = true;
   bool _loading = true;
   OnProUpgradeCallback? _onUpgradeCallback;
   bool _isMigrating = false;
@@ -16,7 +16,9 @@ bool? _debugOverrideIsPro;  // null = 不覆蓋
 
   /// 檢查使用者是否為 Pro
   /// 如果 kDebugUnlockAllProFeatures = true，則所有人都是 Pro
-  bool get isPro => _debugOverrideIsPro ?? _remoteIsPro;
+  bool get isPro => kDebugUnlockAllProFeatures
+      ? true
+      : (_debugOverrideIsPro ?? _remoteIsPro);
   
   bool get loading => _loading;
   bool get isMigrating => _isMigrating;
@@ -31,10 +33,11 @@ bool? _debugOverrideIsPro;  // null = 不覆蓋
     notifyListeners();
 
     // TODO：之後接 Google Play 訂閱檢查
-    // 現在先預設 false（不付費）
-    await Future.delayed(const Duration(milliseconds: 500));
+    // 暫時全域開啟 Pro 權限
+    await Future.delayed(const Duration(milliseconds: 200));
 
-    _isPro = false;
+    _remoteIsPro = true;
+    _isPro = true;
     _loading = false;
     notifyListeners();
   }
@@ -65,7 +68,8 @@ bool? _debugOverrideIsPro;  // null = 不覆蓋
   }
 
   void lock() {
-  _debugOverrideIsPro = false;
+  _debugOverrideIsPro = true;
   notifyListeners();
 }
 }
+

@@ -82,6 +82,8 @@ class EmotionPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final onSurface = colorScheme.onSurface;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -190,6 +192,9 @@ class SymptomPage extends StatelessWidget {
   Widget build(BuildContext context) {
     // 根據開關狀態決定顏色
     final colorScheme = Theme.of(context).colorScheme;
+    final onSurface = colorScheme.onSurface;
+    final outline = colorScheme.outlineVariant;
+    final muted = onSurface.withOpacity(0.65);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final activeColor = Colors.pinkAccent;
     // 開啟時的背景 (ON)
@@ -257,30 +262,47 @@ class SymptomPage extends StatelessWidget {
         // 2. 症狀列表
         Card(
           elevation: 0,
-          color: const Color(0xFFFFF1CC),
+          color: isDark
+              ? colorScheme.surfaceVariant.withOpacity(0.95)
+              : const Color(0xFFFFF1CC),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: Colors.amber.withOpacity(0.35), width: 1),
+            side: BorderSide(
+              color: isDark ? colorScheme.outline : outline.withOpacity(0.4),
+              width: 1,
+            ),
           ),
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.lightbulb_outline, color: Colors.amber.shade700),
+                Icon(
+                  Icons.lightbulb_outline,
+                  color: isDark
+                      ? onSurface.withOpacity(0.92)
+                      : Colors.amber.shade700,
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text('溫柔提醒',
-                          style: TextStyle(fontWeight: FontWeight.w700)),
-                      SizedBox(height: 6),
+                    children: [
+                      Text(
+                        '溫柔提醒',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: onSurface.withOpacity(isDark ? 0.98 : 0.9),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
                       Text(
                         '不用很完整，想到什麼寫什麼就好。\n'
                         '也可以先寫一個最明顯的感覺：例如「心悸」「胸悶」「頭痛」。',
-                        style:
-                            TextStyle(color: Colors.black54, height: 1.35),
+                        style: TextStyle(
+                          color: onSurface.withOpacity(isDark ? 0.9 : 0.8),
+                          height: 1.35,
+                        ),
                       ),
                     ],
                   ),
@@ -307,8 +329,8 @@ class SymptomPage extends StatelessWidget {
               elevation: 0,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
-                side: BorderSide(
-                    color: Colors.black.withOpacity(0.06), width: 1),
+                side:
+                    BorderSide(color: outline.withOpacity(0.7), width: 1),
               ),
               child: ListTile(
                 contentPadding:
@@ -320,8 +342,8 @@ class SymptomPage extends StatelessWidget {
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: isEmpty
-                        ? Colors.black.withOpacity(0.45)
-                        : Colors.black.withOpacity(0.9),
+                        ? onSurface.withOpacity(0.6)
+                        : onSurface.withOpacity(0.9),
                   ),
                 ),
                 subtitle: subtitleText == null
@@ -331,7 +353,7 @@ class SymptomPage extends StatelessWidget {
                         child: Text(
                           subtitleText,
                           style: TextStyle(
-                            color: Colors.black.withOpacity(0.45),
+                            color: onSurface.withOpacity(0.65),
                             height: 1.3,
                           ),
                         ),
@@ -428,6 +450,8 @@ class SleepPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final onSurface = colorScheme.onSurface;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -640,7 +664,10 @@ class SleepPage extends StatelessWidget {
                   ? '尚未設定'
                   : DateHelper.formatTime(finalWakeTime),
               style: TextStyle(
-                  color: finalWakeTime == null ? Colors.grey : Colors.black),
+                color: finalWakeTime == null
+                    ? colorScheme.onSurfaceVariant
+                    : onSurface,
+              ),
             ),
             onTap: onPickFinalWakeTime,
           ),

@@ -647,6 +647,9 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scaffoldBg =
+        isDark ? Theme.of(context).colorScheme.surface : const Color.fromARGB(255, 187, 198, 243);
     final pages = [
       // 情緒頁
       _pageWrapper(
@@ -815,30 +818,56 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       const DiaryHomePage(),
     ];
 
+    final isDiaryTab = _index == pages.length - 1;
+
     return Scaffold(
+      backgroundColor: scaffoldBg, // 淺色保持藍綠，深色改用系統底色
       drawer: const MainDrawer(),
       appBar: AppBar(
         toolbarHeight: 60,
         elevation: 0,
-        actions: [
-          if (_isSaving)
-            const Padding(
-              padding: EdgeInsets.only(right: 16),
-              child: SizedBox(
-                width: 20,
-                height: 80,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.save_outlined),
-              tooltip: '儲存',
-              onPressed: _saveAll,
-            ),
-        ],
+        actions: isDiaryTab
+            ? []
+            : [
+                if (_isSaving)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 16),
+                    child: SizedBox(
+                      width: 20,
+                      height: 80,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                else
+                  IconButton(
+                    icon: const Icon(Icons.save_outlined),
+                    tooltip: '儲存',
+                    onPressed: _saveAll,
+                  ),
+              ],
       ),
-      body: SafeArea(child: pages[_index]),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(child: pages[_index]),
+            if (!isDiaryTab)
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _isSaving ? null : _saveAll,
+                      icon: const Icon(Icons.save),
+                      label: Text(_isSaving ? '儲存中…' : '儲存全部'),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         currentIndex: _index,
