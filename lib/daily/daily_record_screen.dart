@@ -30,6 +30,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   bool _isSaving = false;
   bool _isPeriod = false;
   bool _useNewEmotionPage = true; // 可切換新舊情緒頁
+  int? _lastSuicidalValue;
   
   // ——— 目前紀錄日期與時間（給頁首顯示；docId 只吃日期） ———
   DateTime _recordDate = DateTime.now();
@@ -645,11 +646,55 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
 
   void _deleteEmotion(int i) => setState(() => _emotions.removeAt(i));
 
+  void _maybeShowEmergencyAlert() {
+    if (!mounted) return;
+
+    final suicidal = _emotions
+        .where((e) => e.name == '自殺意念')
+        .map((e) => e.value)
+        .firstOrNull;
+
+    final lastValue = _lastSuicidalValue ?? 0;
+    _lastSuicidalValue = suicidal ?? 0;
+
+    if (suicidal != null && suicidal >= 7 && lastValue < 7) {
+      showDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        builder: (context) => AlertDialog(
+          title: const Text('緊急提醒'),
+          content: const Text(
+            '自殺意念分數偏高，請立刻聯絡緊急求助專線或馬上前往急診。\n\n'
+            '【立即危險】\n'
+            '📞 撥打 119（救護車／急診）\n\n'
+            '【有人可以陪你】\n'
+            '📞 生命線\n'
+            '1995（24 小時）\n'
+            '對象：情緒崩潰、想活不下去、需要有人陪你撐過此刻\n\n'
+            '📞 安心專線（衛福部）\n'
+            '1925（24 小時）\n'
+            '對象：自殺意念、心理危機、重度低潮\n\n'
+            '📞 張老師\n'
+            '1980\n'
+            '服務時間：每日 9:00–22:00（依地區略有不同）\n'
+            '對象：情緒支持、談話陪伴',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('我知道了'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+ 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg =
-        isDark ? Theme.of(context).colorScheme.surface : const Color.fromARGB(255, 187, 198, 243);
+        isDark ? Theme.of(context).colorScheme.surface : const Color.fromARGB(255, 200, 206, 231);
     final pages = [
       // 情緒頁
       _pageWrapper(
@@ -665,11 +710,13 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
                       value: checked ? (_emotions[i].value ?? 5) : null,
                     );
                   });
+                  _maybeShowEmergencyAlert();
                 },
                 onChangeValue: (i, v) {
                   setState(() {
                     _emotions[i] = _emotions[i].copyWith(value: v);
                   });
+                  _maybeShowEmergencyAlert();
                 },
               )
             : EmotionPage(
@@ -681,6 +728,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
                   setState(() {
                     _emotions[i] = _emotions[i].copyWith(value: v);
                   });
+                  _maybeShowEmergencyAlert();
                 },
               ),
       ),
