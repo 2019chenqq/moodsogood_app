@@ -734,10 +734,12 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       ),
       _pageWrapper(SymptomPage(
         items: _symptoms,
-        onAdd: () => setState(
-          () => _symptoms.add(
-              SymptomItem(name: '症狀 ${_symptoms.length + 1}')),
-        ),
+        onAdd: () async {
+          final name = await showTextDialog(context, '新增症狀', '症狀名稱');
+          if (name != null && name.trim().isNotEmpty) {
+            setState(() => _symptoms.add(SymptomItem(name: name.trim())));
+          }
+        },
         onRename: (i) async {
           final name = await showTextDialog(
               context, '重新命名', _symptoms[i].name);
@@ -747,6 +749,20 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
           }
         },
         onDelete: (i) => setState(() => _symptoms.removeAt(i)),
+        onTogglePreset: (name, selected) {
+          setState(() {
+            if (selected) {
+              if (!_symptoms.any((s) => s.name == name)) {
+                _symptoms.add(SymptomItem(name: name));
+              }
+            } else {
+              _symptoms.removeWhere((s) => s.name == name);
+              if (_symptoms.isEmpty) {
+                _symptoms.add(SymptomItem(name: ''));
+              }
+            }
+          });
+        },
         isPeriod: _isPeriod,
         onTogglePeriod: (v) => setState(() => _isPeriod = v),
       )),

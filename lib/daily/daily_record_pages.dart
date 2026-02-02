@@ -173,6 +173,7 @@ class SymptomPage extends StatelessWidget {
   final VoidCallback onAdd;
   final Future<void> Function(int index) onRename;
   final void Function(int index) onDelete;
+  final void Function(String name, bool selected) onTogglePreset;
 
   // 接收外部傳入的狀態
   final bool isPeriod;
@@ -186,6 +187,7 @@ class SymptomPage extends StatelessWidget {
     required this.onDelete,
     required this.isPeriod,
     required this.onTogglePeriod,
+    required this.onTogglePreset,
   });
 
   @override
@@ -207,6 +209,41 @@ class SymptomPage extends StatelessWidget {
     final inactiveBg = isDark
         ? const Color(0xFF2A1C20) // 深色模式：帶有粉色調的深灰
         : const Color(0xFFFFF5F7); // 淺色模式：櫻花白
+
+    const presetSymptoms = <String>{
+      '心悸',
+      '胸悶',
+      '胸痛',
+      '呼吸困難',
+      '過度換氣',
+      '胃食道逆流',
+      '胃痛',
+      '腹痛',
+      '腹瀉',
+      '便秘',
+      '噁心反胃',
+      '嘔吐',
+      '脹氣',
+      '食慾不振',
+      '頭暈',
+      '頭痛',
+      '頭脹',
+      '眼睛乾澀',
+      '眼睛疲勞',
+      '視力模糊',
+      '不斷流淚',
+      '耳鳴',
+      '口乾舌燥',
+      '失去味覺',
+      '口腔苦澀',
+      '咽喉異物感',
+      '顫抖',
+      '發麻',
+      '手汗變多',
+      '肌肉緊繃',
+      '肌肉抽蓄',
+      '四肢無力',
+    };
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -314,59 +351,188 @@ class SymptomPage extends StatelessWidget {
 
         const SizedBox(height: 14),
 
-        // ✅ 症狀卡列表
-        ...List.generate(items.length, (i) {
-          final s = items[i];
-          final isEmpty = s.name.trim().isEmpty;
-
-          final subtitleText = (i == 0)
-              ? '今天身體或心裡，哪裡怪怪的嗎？'
-              : (isEmpty ? '點一下可以修改' : null);
-
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 14),
-            child: Card(
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side:
-                    BorderSide(color: outline.withOpacity(0.7), width: 1),
+        // 2. 心血管症狀（勾選）
+        Text(
+          '心血管與呼吸',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
               ),
-              child: ListTile(
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                title: Text(
-                  isEmpty
-                      ? (i == 0 ? '例如：手抖、疲倦、嗜睡…' : '症狀 ${i + 1}')
-                      : s.name,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: isEmpty
-                        ? onSurface.withOpacity(0.6)
-                        : onSurface.withOpacity(0.9),
-                  ),
-                ),
-                subtitle: subtitleText == null
-                    ? null
-                    : Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Text(
-                          subtitleText,
-                          style: TextStyle(
-                            color: onSurface.withOpacity(0.65),
-                            height: 1.3,
-                          ),
-                        ),
-                      ),
-                onTap: () => onRename(i),
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  onPressed: () => onDelete(i),
-                ),
+        ),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: ['心悸', '胸悶', '胸痛','呼吸不順', '過度換氣'].map((name) {
+            final isSelected = items.any((s) => s.name == name);
+            return FilterChip(
+              label: Text(name),
+              selected: isSelected,
+              onSelected: (selected) => onTogglePreset(name, selected),
+            );
+          }).toList(),
+        ),
+
+        const SizedBox(height: 12),
+
+        // 3. 消化系統（勾選）
+        Text(
+          '消化系統',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
               ),
-            ),
-          );
-        }),
+        ),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            '胃食道逆流',
+            '胃痛',
+            '腹痛',
+            '腹瀉',
+            '便秘',
+            '噁心反胃',
+            '嘔吐',
+            '脹氣',
+            '食慾不振',
+          ].map((name) {
+            final isSelected = items.any((s) => s.name == name);
+            return FilterChip(
+              label: Text(name),
+              selected: isSelected,
+              onSelected: (selected) => onTogglePreset(name, selected),
+            );
+          }).toList(),
+        ),
+
+        const SizedBox(height: 12),
+
+        // 4. 頭部（勾選）
+        Text(
+          '頭部',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+        ),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: ['頭暈', '頭痛', '頭脹'].map((name) {
+            final isSelected = items.any((s) => s.name == name);
+            return FilterChip(
+              label: Text(name),
+              selected: isSelected,
+              onSelected: (selected) => onTogglePreset(name, selected),
+            );
+          }).toList(),
+        ),
+
+        const SizedBox(height: 12),
+
+        // 5. 眼睛與耳朵（勾選）
+        Text(
+          '眼睛與耳朵',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+        ),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: ['眼睛乾澀', '眼睛疲勞', '視力模糊', '不斷流淚', '耳鳴'].map((name) {
+            final isSelected = items.any((s) => s.name == name);
+            return FilterChip(
+              label: Text(name),
+              selected: isSelected,
+              onSelected: (selected) => onTogglePreset(name, selected),
+            );
+          }).toList(),
+        ),
+
+        const SizedBox(height: 12),
+
+        // 6. 口腔與咽喉（勾選）
+        Text(
+          '口腔與咽喉',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+        ),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: ['口乾舌燥', '失去味覺', '口腔苦澀', '咽喉異物感'].map((name) {
+            final isSelected = items.any((s) => s.name == name);
+            return FilterChip(
+              label: Text(name),
+              selected: isSelected,
+              onSelected: (selected) => onTogglePreset(name, selected),
+            );
+          }).toList(),
+        ),
+
+        const SizedBox(height: 12),
+
+        // 7. 四肢與肌肉（勾選）
+        Text(
+          '四肢與肌肉',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+        ),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: ['顫抖', '發麻', '手汗變多', '肌肉緊繃', '肌肉抽蓄', '四肢無力']
+              .map((name) {
+            final isSelected = items.any((s) => s.name == name);
+            return FilterChip(
+              label: Text(name),
+              selected: isSelected,
+              onSelected: (selected) => onTogglePreset(name, selected),
+            );
+          }).toList(),
+        ),
+
+        const SizedBox(height: 12),
+
+        // 8. 自訂症狀清單
+        if (items
+            .asMap()
+            .entries
+            .any((e) => e.value.name.trim().isNotEmpty && !presetSymptoms.contains(e.value.name)))
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '自訂症狀清單',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: items.asMap().entries
+                    .where((e) =>
+                        e.value.name.trim().isNotEmpty &&
+                        !presetSymptoms.contains(e.value.name))
+                    .map((e) => InputChip(
+                          label: Text(e.value.name),
+                          onPressed: () => onRename(e.key),
+                          onDeleted: () => onDelete(e.key),
+                        ))
+                    .toList(),
+              ),
+            ],
+          ),
+
+        const SizedBox(height: 8),
 
         // 3. 新增按鈕
         OutlinedButton.icon(
