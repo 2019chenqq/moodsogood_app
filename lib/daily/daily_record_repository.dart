@@ -23,12 +23,14 @@ class DailyRecordRepository {
 
     try {
       final dbPath = await _getDatabasePath();
+      debugPrint('📍 Database path: $dbPath');
       _db = await openDatabase(
         dbPath,
         version: 1,
         onCreate: _onCreate,
       );
       _initialized = true;
+      debugPrint('✅ DailyRecordRepository initialized successfully');
     } catch (e) {
       print('DailyRecordRepository init error: $e');
       rethrow;
@@ -62,7 +64,10 @@ class DailyRecordRepository {
   /// 取得數據庫路徑
   Future<String> _getDatabasePath() async {
     final dir = await getApplicationDocumentsDirectory();
-    return '${dir.path}/moodsogood_daily_records.db';
+    final path = '${dir.path}/moodsogood_daily_records.db';
+    debugPrint('📁 Application Documents Directory: ${dir.path}');
+    debugPrint('📁 Full Database Path: $path');
+    return path;
   }
 
   /// 存儲日常記錄
@@ -86,10 +91,14 @@ class DailyRecordRepository {
     }
 
     try {
+      // 🔧 使用日期部分（YYYY-MM-DD）進行存儲，確保查詢時能正確匹配
+      final dateOnly = DateTime(date.year, date.month, date.day);
+      final dateStr = dateOnly.toIso8601String(); // 格式：2025-02-05
+      
       final record = {
         'id': id,
         'userId': userId,
-        'date': date.toIso8601String(),
+        'date': dateStr,  // 🔧 只保存日期部分，不包含時間
         'emotions': emotions != null ? jsonEncode(emotions) : null,
         'sleep': sleep != null ? jsonEncode(sleep) : null,
         'bodySymptoms': bodySymptoms != null ? jsonEncode(bodySymptoms) : null,
@@ -121,23 +130,23 @@ class DailyRecordRepository {
     if (!_initialized) await init();
 
     try {
-      // 按日期範圍查詢（整天）
-      final startOfDay = DateTime(date.year, date.month, date.day).toIso8601String();
-      final endOfDay = DateTime(date.year, date.month, date.day, 23, 59, 59).toIso8601String();
+      // 🔧 使用日期部分（YYYY-MM-DD）進行查詢，與保存時的格式一致
+      final dateOnly = DateTime(date.year, date.month, date.day);
+      final dateStr = dateOnly.toIso8601String();
       
-      debugPrint('🔍 getDailyRecord: userId=$userId, date=$date, startOfDay=$startOfDay, endOfDay=$endOfDay');
+      debugPrint('🔍 getDailyRecord: userId=$userId, date=$date, searching for dateStr=$dateStr');
       
       final results = await _db.query(
         'daily_records',
-        where: 'userId = ? AND date >= ? AND date <= ?',
-        whereArgs: [userId, startOfDay, endOfDay],
+        where: 'userId = ? AND date = ?',  // 🔧 精確匹配日期
+        whereArgs: [userId, dateStr],
         limit: 1,
       );
 
       debugPrint('✅ getDailyRecord query returned ${results.length} results');
       
       if (results.isEmpty) {
-        debugPrint('⚠️  No record found for $date');
+        debugPrint('⚠️  No record found for $dateStr');
         return null;
       }
 
@@ -157,9 +166,9 @@ class DailyRecordRepository {
     if (!_initialized) await init();
 
     try {
-      // 確保日期被正確比較（使用日期部分只）
+      // 🔧 使用日期部分（YYYY-MM-DD）進行比較，與保存時的格式一致
       final start = DateTime(startDate.year, startDate.month, startDate.day);
-      final end = DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59);
+      final end = DateTime(endDate.year, endDate.month, endDate.day);
       
       final startStr = start.toIso8601String();
       final endStr = end.toIso8601String();
@@ -178,6 +187,15 @@ class DailyRecordRepository {
       );
 
       debugPrint('✅ Query returned ${results.length} records');
+      if (results.isEmpty) {
+        debugPrint('⚠️  No records found. Debugging:');
+        // 診斷：列出所有記錄看看
+        final allRecords = await _db.query('daily_records');
+        debugPrint('   📋 Total records in database: ${allRecords.length}');
+        for (var rec in allRecords) {
+          debugPrint('   - ID: ${rec['id']}, UserID: ${rec['userId']}, Date: ${rec['date']}');
+        }
+      }
       return results.map(_decodeRecord).toList();
     } catch (e) {
       print('Error fetching daily records by date range: $e');

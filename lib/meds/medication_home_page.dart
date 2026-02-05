@@ -54,6 +54,7 @@ class MedicationHomePage extends StatefulWidget {
 
 class _MedicationHomePageState extends State<MedicationHomePage> {
   late Future<List<Map<String, dynamic>>> _future;
+  Future<void>? _pendingSync;  // 追蹤未完成的 Firebase 同步
 
   @override
   void initState() {
@@ -73,14 +74,18 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
     _future = MedicationLocalDB().getMedicationsForDisplay(uid);
     setState(() {});
 
-    // 背景同步 Firebase 後再刷新一次
-    _syncFromFirebase(uid);
+    // 背景同步 Firebase 後再刷新一次（如果有前一次未完成，等待它）
+    _pendingSync = _syncFromFirebase(uid);
   }
 
   Future<void> _syncFromFirebase(String uid) async {
-    await _mergeFirebaseIntoLocal(uid);
-    _future = MedicationLocalDB().getMedicationsForDisplay(uid);
-    if (mounted) setState(() {});
+    try {
+      await _mergeFirebaseIntoLocal(uid);
+      _future = MedicationLocalDB().getMedicationsForDisplay(uid);
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('背景同步失敗：$e');
+    }
   }
 
   @override
@@ -353,6 +358,8 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
   required String medId,
   required Map<String, dynamic> data,
 }) {
+  final isActive = (data['isActive'] as bool?) ?? true;
+  
   showModalBottomSheet(
     context: context,
     shape: const RoundedRectangleBorder(
@@ -378,36 +385,66 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
                   ),
                 );
                 if (updated == true) {
+                  // ⏱️ 稍微延遲，確保本地資料庫已完全寫入並可讀
+                  await Future.delayed(const Duration(milliseconds: 300));
                   _refresh();
                 }
 },
             ),
-            ListTile(
-              leading: const Icon(Icons.pause_circle_outline),
-              title: const Text('停藥（標記為已停用）'),
-              onTap: () async {
-                Navigator.pop(context);
-                // 本地更新
-                await MedicationLocalDB().updateMedication(uid, medId, {
-                  'isActive': false,
-                  'updatedAt': DateTime.now().toString(),
-                  'lastChangeAt': DateTime.now().toString(),
-                });
+            if (isActive)
+              ListTile(
+                leading: const Icon(Icons.pause_circle_outline),
+                title: const Text('停藥（標記為已停用）'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  // 本地更新
+                  await MedicationLocalDB().updateMedication(uid, medId, {
+                    'isActive': false,
+                    'updatedAt': DateTime.now().toString(),
+                    'lastChangeAt': DateTime.now().toString(),
+                  });
 
-                // Firebase 更新
-                await FirebaseFirestore.instance
-                    .collection('users')
-                    .doc(uid)
-                    .collection('medications')
-                    .doc(medId)
-                    .update({'isActive': false});
+                  // Firebase 更新
+                  await FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(uid)
+                      .collection('medications')
+                      .doc(medId)
+                      .update({'isActive': false});
 
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('已標記為停藥')),
-                );
-                _refresh();
-              },
-            ),
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('已標記為停藥')),
+                  );
+                  _refresh();
+                },
+              )
+            else
+              ListTile(
+                leading: const Icon(Icons.play_circle_outline),
+                title: const Text('恢復使用'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  // 本地更新
+                  await MedicationLocalDB().updateMedication(uid, medId, {
+                    'isActive': true,
+                    'updatedAt': DateTime.now().toString(),
+                    'lastChangeAt': DateTime.now().toString(),
+                  });
+
+                  // Firebase 更新
+                  await FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(uid)
+                      .collection('medications')
+                      .doc(medId)
+                      .update({'isActive': true});
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('已恢復使用')),
+                  );
+                  _refresh();
+                },
+              ),
             ListTile(
               leading: const Icon(Icons.delete_outline, color: Colors.red),
               title: const Text(

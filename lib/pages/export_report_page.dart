@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
 import '../models/daily_record.dart';
 import '../PDF/pdf_export_provider.dart';
 import '../PDF/export_config.dart';
@@ -115,37 +117,97 @@ class _ExportReportPageState extends State<ExportReportPage> {
 
   /// 執行導出
   void _handleExport() async {
-    final provider = context.read<PDFExportProvider>();
-    final config = ExportConfig(
-      startDate: _startDate,
-      endDate: _endDate,
-      includeDailyDetail: _includeDailyDetail,
-      includeLongDiary: _includeLongDiary,
-    );
+    try {
+      final provider = context.read<PDFExportProvider>();
+      final config = ExportConfig(
+        startDate: _startDate,
+        endDate: _endDate,
+        includeDailyDetail: _includeDailyDetail,
+        includeLongDiary: _includeLongDiary,
+      );
 
-    // 過濾指定日期範圍的記錄
-    final filteredRecords = widget.records
-        .where((r) =>
-            r.date.isAfter(_startDate.subtract(const Duration(days: 1))) &&
-            r.date.isBefore(_endDate.add(const Duration(days: 1))))
-        .toList();
+      // 獲取正確的輸出目錄
+      final outputDir = await _getOutputDirectory();
+      debugPrint('📂 PDF 將保存到: $outputDir');
 
-    final result = await provider.exportRecordsToPDF(
-      records: filteredRecords,
-      config: config,
-      outputDir: '/storage/emulated/0/Documents',
-      medications: widget.medications,
-      context: context,
-    );
+      // 過濾指定日期範圍的記錄
+      final filteredRecords = widget.records
+          .where((r) =>
+              r.date.isAfter(_startDate.subtract(const Duration(days: 1))) &&
+              r.date.isBefore(_endDate.add(const Duration(days: 1))))
+          .toList();
 
-    if (result?.success == true) {
+      final result = await provider.exportRecordsToPDF(
+        records: filteredRecords,
+        config: config,
+        outputDir: outputDir,
+        medications: widget.medications,
+        context: context,
+      );
+
+      if (result?.success == true) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ PDF 已保存\n${result!.filePath}'),
+              duration: const Duration(seconds: 5),
+            ),
+          );
+          debugPrint('✅ PDF 導出成功: ${result.filePath}');
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ 導出失敗: ${result?.error}'),
+              duration: const Duration(seconds: 5),
+            ),
+          );
+          debugPrint('❌ PDF 導出失敗: ${result?.error}');
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ 導出異常: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('PDF 已保存: ${result!.filePath}'),
-            duration: const Duration(seconds: 3),
+            content: Text('❌ 導出異常: $e'),
+            duration: const Duration(seconds: 5),
           ),
         );
+      }
+    }
+  }
+
+  /// 獲取輸出目錄（保存到內部存儲的 Documents 文件夾）
+  Future<String> _getOutputDirectory() async {
+    try {
+      // 優先使用內部存儲的 Documents 文件夾
+      final dir = Directory('/storage/emulated/0/Documents');
+      
+      // 確保目錄存在
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+      
+      debugPrint('📂 使用 Documents 文件夾: ${dir.path}');
+      return dir.path;
+    } catch (e) {
+      debugPrint('⚠️ 無法獲取 Documents，改用應用文件夾: $e');
+      try {
+        // 備選方案：使用應用程式文件夾
+        final appDir = await getApplicationDocumentsDirectory();
+        final pdfDir = Directory('${appDir.path}/PDF');
+        
+        if (!await pdfDir.exists()) {
+          await pdfDir.create(recursive: true);
+        }
+        
+        debugPrint('📂 使用應用文件夾: ${pdfDir.path}');
+        return pdfDir.path;
+      } catch (e) {
+        debugPrint('⚠️ 無法獲取應用文件夾，改用根目錄');
+        return '/storage/emulated/0';
       }
     }
   }
@@ -154,7 +216,7 @@ class _ExportReportPageState extends State<ExportReportPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('匯出醫療報告'),
+        title: const Text('匯出報告'),
         elevation: 0,
       ),
       body: SingleChildScrollView(

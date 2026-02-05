@@ -24,6 +24,7 @@ import 'daily/daily_record_repository.dart';
 import 'app_lock_screen.dart';
 import 'service/iap_service.dart';
 import 'providers/pro_provider.dart';
+import 'PDF/pdf_export_provider.dart'; // 引入 PDFExportProvider
 import 'utils/data_migration.dart';
 import 'UI/fortune_cookie_screen.dart';
 /* =========================== main =========================== */
@@ -80,6 +81,9 @@ Future<void> main() async {
         ChangeNotifierProvider<ProProvider>(
           create: (_) => ProProvider()..init(),
         ),
+        ChangeNotifierProvider<PDFExportProvider>(
+          create: (_) => PDFExportProvider(),
+        ),
       ],
       child: const MainApp(),
     ),
@@ -87,15 +91,16 @@ Future<void> main() async {
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
     // 在應用初始化後，註冊 Pro 狀態回調和升級回調
-    FirebaseSyncConfig.setProStatusCallback(() {
-      // 這會在執行時動態檢查 Pro 狀態
-      return false; // 稍後會由下面的方式更新
-    });
-
-    // 設置升級時的數據遷移回調
     final globalContext = rootNavigatorKey.currentContext;
     if (globalContext != null) {
       final proProvider = Provider.of<ProProvider>(globalContext, listen: false);
+      
+      // 🔧 修復：正確設置 Pro 狀態回調，讓 Firebase 同步與本地存儲保持同步
+      FirebaseSyncConfig.setProStatusCallback(() {
+        debugPrint('📡 Checking Pro status: ${proProvider.isPro}');
+        return proProvider.isPro;
+      });
+      
       final repository = DailyRecordRepository();
 
       proProvider.setOnUpgradeCallback(() async {

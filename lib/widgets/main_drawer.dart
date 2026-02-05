@@ -10,7 +10,6 @@ import '../daily/daily_record_screen.dart';
 import '../daily/daily_record_history.dart';
 import '../settings_page.dart';
 import '../pages/feesback_page.dart';
-import '../pages/export_report_page.dart'; // 引入導出報告頁面
 import '../pro/pro_page.dart';
 import '../meds/medication_home_page.dart';
 import 'package:provider/provider.dart';
@@ -27,7 +26,7 @@ class MainDrawer extends StatefulWidget {
 class _MainDrawerState extends State<MainDrawer> {
   bool _isUploading = false; // 用來控制轉圈圈
 
-  // 🔥 上傳照片的核心功能
+  /// 從 Firestore 加載日記記錄用於導出
   Future<void> _pickAndUploadImage() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -256,26 +255,6 @@ class _MainDrawerState extends State<MainDrawer> {
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(builder: (_) => const MedicationHomePage()),
-              );
-            },
-          ),
-
-          const Divider(),
-
-          // 匯出醫療報告
-          ListTile(
-            leading: const Icon(Icons.file_download_outlined),
-            title: const Text('匯出醫療報告'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ExportReportPage(
-                    records: const [], // TODO: 從 Provider 或 Firestore 獲取實際記錄
-                    medications: const [], // TODO: 從 Provider 或 Firestore 獲取實際用藥
-                  ),
-                ),
               );
             },
           ),

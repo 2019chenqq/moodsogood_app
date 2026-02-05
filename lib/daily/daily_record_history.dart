@@ -152,55 +152,63 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
         ? DateTime(2020, 1, 1)  // Pro 用戶查詢所有數據
         : endDate.subtract(const Duration(days: 730));  // 免費用戶只查詢最近 2 年
     
-    debugPrint('📊 Loading records for ${isPro ? "Pro" : "Free"} user (from $startDate)');
+    debugPrint('📊 Loading records for ${isPro ? "Pro" : "Free"} user');
+    debugPrint('👤 Using userId: $uid');
+    debugPrint('📅 Date range: $startDate to $endDate');
     
     final Map<String, DailyRecord> recordsMap = {};
 
-    // 免費用戶：只從本地加載
+    // 🔧 改進：總是嘗試從本地加載作為備份
+    // 這樣即使 Firebase 同步被禁用或失敗，仍然有數據可用
+    try {
+      final repo = DailyRecordRepository();
+      debugPrint('🔍 [LOCAL BACKUP] Loading records from local SQLite for user=$uid from $startDate to $endDate');
+      
+      final localRecords = await repo.getDailyRecordsByDateRange(
+        userId: uid,
+        startDate: startDate,
+        endDate: endDate,
+      );
+      
+      debugPrint('✅ Loaded ${localRecords.length} records from local database');
+      
+      for (var localRecord in localRecords) {
+        final record = _convertLocalRecordToDailyRecord(localRecord);
+        recordsMap[record.id] = record;
+        debugPrint('  📦 Local: ${record.id} (${record.date})');
+      }
+    } catch (e) {
+      debugPrint('❌ Local load failed (non-critical): $e');
+    }
+
+    // 免費用戶：從本地加載即可
     if (!isPro) {
-      try {
-        final repo = DailyRecordRepository();
-        debugPrint('🔍 [FREE USER] Loading records from local SQLite for user=$uid from $startDate to $endDate');
-        
-        final localRecords = await repo.getDailyRecordsByDateRange(
-          userId: uid,
-          startDate: startDate,
-          endDate: endDate,
-        );
-        
-        debugPrint('✅ Loaded ${localRecords.length} records from local database');
-        
-        for (var localRecord in localRecords) {
-          final record = _convertLocalRecordToDailyRecord(localRecord);
-          recordsMap[record.id] = record;
-          debugPrint('  📦 Local: ${record.id} (${record.date})');
-        }
-      } catch (e, st) {
-        debugPrint('❌ Failed to load local records: $e\nStacktrace: $st');
-      }
-    } 
-    // Pro 用戶：從 Firebase 加載
-    else {
-      try {
-        debugPrint('🔍 [PRO USER] Loading records from Firebase...');
-        final snapshot = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .collection('dailyRecords')
-            .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
-            .orderBy('date', descending: true)
-            .get();
+      debugPrint('✅ [FREE USER] Data loaded from local storage');
+      final allRecords = recordsMap.values.toList();
+      debugPrint('📊 Total records loaded: ${allRecords.length}');
+      return allRecords;
+    }
+    
+    // Pro 用戶：也從 Firebase 加載並合併
+    try {
+      debugPrint('🔍 [PRO USER] Loading records from Firebase...');
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('dailyRecords')
+          .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
+          .orderBy('date', descending: true)
+          .get();
 
-        debugPrint('✅ Loaded ${snapshot.docs.length} records from Firebase');
+      debugPrint('✅ Loaded ${snapshot.docs.length} records from Firebase');
 
-        for (var doc in snapshot.docs) {
-          final record = DailyRecord.fromFirestore(doc);
-          recordsMap[record.id] = record;
-          debugPrint('  ☁️  Firebase: ${record.id} (${record.date})');
-        }
-      } catch (e, st) {
-        debugPrint('❌ Failed to load Firebase records: $e\nStacktrace: $st');
+      for (var doc in snapshot.docs) {
+        final record = DailyRecord.fromFirestore(doc);
+        recordsMap[record.id] = record;
+        debugPrint('  ☁️  Firebase: ${record.id} (${record.date})');
       }
+    } catch (e, st) {
+      debugPrint('⚠️  Firebase load failed (using local data): $e\nStacktrace: $st');
     }
 
     final allRecords = recordsMap.values.toList();
@@ -228,9 +236,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
       overallMood: overallMood,
       symptoms: _parseBodySymptoms(record['bodySymptoms']),
       sleep: sleep,
-      isPeriod: record['periodData'] != null 
-          ? (record['periodData'] as Map?)?.containsKey('isPeriod') == true ? true : false
-          : false,
+      isPeriod: (record['periodData'] as Map?)?['isPeriod'] == true,
     );
   }
 
@@ -1057,11 +1063,10 @@ Widget _buildProLockedView({
           const SizedBox(height: 20),
           ElevatedButton(
             onPressed: () {
-              // ✅ 先用提示取代跳頁，避免 ProPage 不存在造成編譯錯
               Navigator.push(
-  context,
-  MaterialPageRoute(builder: (_) => const ProPage()),
-);
+                context,
+                MaterialPageRoute(builder: (_) => const ProPage()),
+              );
             },
             child: const Text('升級 Pro'),
           ),

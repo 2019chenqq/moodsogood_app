@@ -554,6 +554,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         final repo = DailyRecordRepository();
         debugPrint('🏁 Start saving to local database...');
         debugPrint('📅 Saving with date: $_recordDate (ISO: ${_recordDate.toIso8601String()})');
+        debugPrint('👤 Saving with userId: $uid');
         
         final emotionsToSave = Map<String, dynamic>.from(
           _emotions
