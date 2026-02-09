@@ -76,7 +76,7 @@ class _UpgradeCard extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
-              '解鎖 心晴 Pro',
+              '解鎖 心域 Pro',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),

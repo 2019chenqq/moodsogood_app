@@ -628,6 +628,8 @@ if (_medType == 'injection') ...[
         'lastChangeAt': (widget.initialData['lastChangeAt'] as String?) ?? '',
       };
 
+      debugPrint('💊 [SAVE] 藥物編輯：type=$_medType, intervalDays=$_intervalDays');
+
       // 1️⃣ 先更新本地端（一定要更新）
       await MedicationLocalDB().updateMedication(uid, widget.docId, medicationData);
       debugPrint('✅ 本地已更新: ${widget.docId}');

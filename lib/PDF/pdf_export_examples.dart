@@ -501,7 +501,7 @@ class PDFExportDemoApp extends StatelessWidget {
         create: (_) => PDFExportProvider(),
         child: Scaffold(
           appBar: AppBar(
-            title: const Text('心晴 - PDF 導出示例'),
+            title: const Text('心域 - PDF 導出示例'),
           ),
           body: ListView(
             padding: const EdgeInsets.all(16),

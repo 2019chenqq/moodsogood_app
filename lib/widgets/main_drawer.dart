@@ -287,7 +287,7 @@ class _MainDrawerState extends State<MainDrawer> {
           ),
           ListTile(
             leading: const Icon(Icons.workspace_premium_outlined),
-            title: const Text('升級至心晴 Pro'),
+            title: const Text('升級至心域 Pro'),
             onTap: () {
               Navigator.pop(context); // 關 drawer
               Navigator.push(

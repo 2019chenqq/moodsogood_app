@@ -39,7 +39,7 @@
 
     <application
         android:name="${applicationName}"
-        android:label="心晴 Heart shine"
+        android:label="心域"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="false">
 

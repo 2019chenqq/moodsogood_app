@@ -59,7 +59,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              '你的聲音能讓心晴變得更好 ✨',
+              '你的聲音能讓心域變得更好 ✨',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),

@@ -24,7 +24,7 @@ class _UpgradePageState extends State<UpgradePage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
-            '解鎖心晴 Pro 功能',
+            '解鎖心域 Pro 功能',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 12),
@@ -48,7 +48,7 @@ class _UpgradePageState extends State<UpgradePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('升級至心晴 Pro'),
+        title: const Text('升級至心域 Pro'),
       ),
       body: SafeArea(
         child: Padding(

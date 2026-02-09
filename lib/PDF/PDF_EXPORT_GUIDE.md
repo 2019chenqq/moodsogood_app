@@ -247,7 +247,7 @@ Future<PDFExportResult> exportToPDF({
 
 #### 檔名規則
 ```
-心晴_醫師摘要_YYYYMMDD-YYYYMMDD.pdf
+心域_醫師摘要_YYYYMMDD-YYYYMMDD.pdf
 ```
 
 #### 返回結果
@@ -549,7 +549,7 @@ class HomePage extends StatelessWidget {
 ```dart
 import 'package:share_plus/share_plus.dart';
 
-Share.shareXFiles([XFile(filePath)], text: '心晴醫療摘要');
+Share.shareXFiles([XFile(filePath)], text: '心域醫療摘要');
 ```
 
 ### Q5: 如何修改檔名格式？

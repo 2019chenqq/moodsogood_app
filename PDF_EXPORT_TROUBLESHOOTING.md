@@ -292,7 +292,7 @@ import 'package:share_plus/share_plus.dart';
 
 Share.shareXFiles(
   [XFile(filePath)],
-  text: '心晴醫療摘要',
+  text: '心域醫療摘要',
 );
 ```
 

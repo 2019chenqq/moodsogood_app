@@ -140,7 +140,7 @@ return ListView.separated(
   }
   }
 
-/// 心晴｜日記回顧（純 UI）
+/// 心域｜日記回顧（純 UI）
 /// 用法見文末 Navigator 範例
 class DiaryReviewScreen extends StatelessWidget {
   final String dateText;

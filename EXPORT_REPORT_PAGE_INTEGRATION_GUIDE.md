@@ -236,7 +236,7 @@ ExportConfig(
 ```dart
 PDFExportResult(
   success: true,
-  filePath: '/storage/emulated/0/Documents/心晴_醫師摘要_20240101-20240128.pdf',
+  filePath: '/storage/emulated/0/Documents/心域_醫師摘要_20240101-20240128.pdf',
   pageCount: 6,
   metrics: ExportMetrics(...),
   error: null,

@@ -327,9 +327,9 @@ pages.add(builder.buildCustomPage());
 ## 📦 檔名格式
 
 ```
-心晴_醫師摘要_YYYYMMDD-YYYYMMDD.pdf
+心域_醫師摘要_YYYYMMDD-YYYYMMDD.pdf
 
-示例: 心晴_醫師摘要_20240101-20240128.pdf
+示例: 心域_醫師摘要_20240101-20240128.pdf
 ```
 
 ## 🐛 調試技巧

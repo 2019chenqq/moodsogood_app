@@ -72,7 +72,7 @@ class PDFGeneratorImpl {
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
                   pw.Text(
-                    '心晴醫療摘要',
+                    '心域醫療摘要',
                     style: pw.TextStyle(fontSize: 9),
                   ),
                   pw.Text(
@@ -151,7 +151,7 @@ class PDFGeneratorImpl {
     final formatter = DateFormat('yyyyMMdd');
     final startStr = formatter.format(config.startDate);
     final endStr = formatter.format(config.endDate);
-    return '心晴_醫師摘要_$startStr-$endStr.pdf';
+    return '心域_醫師摘要_$startStr-$endStr.pdf';
   }
 }
 
@@ -208,7 +208,7 @@ class AdvancedPDFGenerator {
               pw.Spacer(),
               pw.Divider(),
               pw.Text(
-                '心晴醫療摘要 - 第 ${i + 1} 頁',
+                '心域醫療摘要 - 第 ${i + 1} 頁',
                 style: pw.TextStyle(fontSize: 9),
               ),
             ],
@@ -357,7 +357,7 @@ class AdvancedPDFGenerator {
     final formatter = DateFormat('yyyyMMdd');
     final startStr = formatter.format(config.startDate);
     final endStr = formatter.format(config.endDate);
-    return '心晴_醫師摘要_高級_$startStr-$endStr.pdf';
+    return '心域_醫師摘要_高級_$startStr-$endStr.pdf';
   }
 }
 

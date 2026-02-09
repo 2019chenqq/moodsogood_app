@@ -333,7 +333,7 @@ moodsogood_app/
 - ✅ 防呆（無數據提示）
 
 ### STEP 7: 輸出與分享
-- ✅ 檔名規則：心晴_醫師摘要_YYYYMMDD-YYYYMMDD.pdf
+- ✅ 檔名規則：心域_醫師摘要_YYYYMMDD-YYYYMMDD.pdf
 - ✅ 使用情境支援（分享、Email、儲存、當場開啟）
 
 ---

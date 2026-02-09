@@ -284,7 +284,7 @@ final result = await provider.exportRecordsToPDF(
 // 分享給其他醫療專業人士
 Share.shareXFiles(
   [XFile(filePath)],
-  text: '心晴健康記錄',
+  text: '心域健康記錄',
 );
 ```
 

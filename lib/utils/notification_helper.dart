@@ -7,8 +7,8 @@ import '../app_globals.dart';
 import '../daily/daily_record_screen.dart';
 
 const _channelId = 'heartshine_general';
-const _channelName = '心晴提醒';
-const _channelDescription = '心晴的提醒與每日通知';
+const _channelName = '心域提醒';
+const _channelDescription = '心域的提醒與每日通知';
 const _dailyRecordPayload = 'open_daily_record';
 
 class NotificationHelper {

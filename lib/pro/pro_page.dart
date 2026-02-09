@@ -132,7 +132,7 @@ class _ProPageState extends State<ProPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('升級至心晴 Pro'),
+        title: const Text('升級至心域 Pro'),
         centerTitle: true,
       ),
       body: ListView(

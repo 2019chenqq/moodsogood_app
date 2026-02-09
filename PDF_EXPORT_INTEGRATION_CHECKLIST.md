@@ -160,7 +160,7 @@ flutter run
 - [ ] 點擊導出按鈕
 - [ ] PDF 生成成功
 - [ ] 檔案已保存到指定目錄
-- [ ] 檔名格式正確 (心晴_醫師摘要_YYYYMMDD-YYYYMMDD.pdf)
+- [ ] 檔名格式正確 (心域_醫師摘要_YYYYMMDD-YYYYMMDD.pdf)
 
 ### 測試 2: 自訂配置
 - [ ] 可以選擇自訂日期範圍

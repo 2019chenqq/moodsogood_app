@@ -1,6 +1,6 @@
 {
-    "name": "moodsogood_app",
-    "short_name": "moodsogood_app",
+    "name": "心域",
+    "short_name": "心域",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

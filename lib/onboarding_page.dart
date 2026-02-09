@@ -171,7 +171,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
           const SizedBox(height: 40),
           
           Text(
-            '心晴 Heart Shine',
+            '心域',
             style: Theme.of(context).textTheme.headlineLarge?.copyWith(
               fontWeight: FontWeight.bold,
               color: Colors.blue,
@@ -506,7 +506,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
           const SizedBox(height: 16),
           
           Text(
-            '您已經了解了 心晴 Heart Shine 的主要功能。'
+            '您已經了解了 心域 的主要功能。'
             '現在可以開始記錄您的心理健康之旅。',
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
               color: Colors.grey[700],
@@ -550,7 +550,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
           const SizedBox(height: 40),
           
           Text(
-            '📱 我們很高興您選擇 心晴 Heart Shine 來支持您的心理健康！',
+            '📱 我們很高興您選擇 心域 來支持您的心理健康！',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: Colors.grey[600],
               fontStyle: FontStyle.italic,

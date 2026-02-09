@@ -152,7 +152,7 @@ await provider.exportRecordsToPDF(
 ## ❓ 常見問題
 
 ### Q: 生成的 PDF 在哪裡？
-**A**: 默認位置 `/storage/emulated/0/Documents/心晴_醫師摘要_*.pdf`
+**A**: 默認位置 `/storage/emulated/0/Documents/心域_醫師摘要_*.pdf`
 
 ### Q: 支援多少天的數據？
 **A**: 任意天數，默認最近 28 天

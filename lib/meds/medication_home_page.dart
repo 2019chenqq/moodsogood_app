@@ -55,6 +55,7 @@ class MedicationHomePage extends StatefulWidget {
 class _MedicationHomePageState extends State<MedicationHomePage> {
   late Future<List<Map<String, dynamic>>> _future;
   Future<void>? _pendingSync;  // 追蹤未完成的 Firebase 同步
+  int _refreshCounter = 0;  // 用於強制 FutureBuilder 重新構建
 
   @override
   void initState() {
@@ -66,13 +67,15 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
       _future = Future.value(<Map<String, dynamic>>[]);
-      setState(() {});
+      setState(() => _refreshCounter++);
       return;
     }
 
+    debugPrint('🔄 [REFRESH] 開始重新整理藥物列表 (count: $_refreshCounter)');
+
     // 先立即顯示本地資料
     _future = MedicationLocalDB().getMedicationsForDisplay(uid);
-    setState(() {});
+    setState(() => _refreshCounter++);
 
     // 背景同步 Firebase 後再刷新一次（如果有前一次未完成，等待它）
     _pendingSync = _syncFromFirebase(uid);
@@ -80,11 +83,20 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
 
   Future<void> _syncFromFirebase(String uid) async {
     try {
+      debugPrint('📱 [SYNC] 開始 Firebase 同步...');
       await _mergeFirebaseIntoLocal(uid);
+      debugPrint('✅ [SYNC] Firebase 合併完成，重新讀取本地資料');
+      
+      // 加入額外延遲，確保本地資料庫寫入完成
+      await Future.delayed(const Duration(milliseconds: 200));
+      
       _future = MedicationLocalDB().getMedicationsForDisplay(uid);
-      if (mounted) setState(() {});
+      if (mounted) {
+        setState(() => _refreshCounter++);
+        debugPrint('✅ [SYNC] UI 已更新 (count: $_refreshCounter)');
+      }
     } catch (e) {
-      debugPrint('背景同步失敗：$e');
+      debugPrint('❌ [SYNC] 背景同步失敗：$e');
     }
   }
 
@@ -146,6 +158,7 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
         ),
         body: FutureBuilder<List<Map<String, dynamic>>>(
           future: _future,
+          key: ValueKey(_refreshCounter),  // 強制重新構建
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
@@ -286,6 +299,8 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
             final startDate = med['startDate'];
             final intervalDays = med['intervalDays'];
 
+            debugPrint('💉 [INJECTION] medId=$medId, startDate=$startDate, intervalDays=$intervalDays');
+
             DateTime? start;
             if (startDate is String) {
               start = DateTime.tryParse(startDate);
@@ -304,6 +319,8 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
             final diffDays = nextDate != null
                 ? nextDate.difference(DateTime.now()).inDays
                 : null;
+
+            debugPrint('   → nextDate=$nextDate, diffDays=$diffDays');
 
             return _MedicationCard(
               docId: medId,
@@ -385,9 +402,20 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
                   ),
                 );
                 if (updated == true) {
-                  // ⏱️ 稍微延遲，確保本地資料庫已完全寫入並可讀
-                  await Future.delayed(const Duration(milliseconds: 300));
+                  // ⏱️ 延遲以確保本地資料庫完全寫入
+                  debugPrint('⏳ 編輯完成，等待資料庫同步...');
+                  await Future.delayed(const Duration(milliseconds: 800));
+                  
+                  // 立即刷新本地資料
+                  debugPrint('🔄 開始刷新本地資料...');
                   _refresh();
+                  
+                  // 等待 Firebase 同步完成
+                  if (_pendingSync != null) {
+                    debugPrint('⏳ 等待 Firebase 同步...');
+                    await _pendingSync;
+                    debugPrint('✅ Firebase 同步完成');
+                  }
                 }
 },
             ),

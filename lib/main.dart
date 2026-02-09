@@ -94,14 +94,30 @@ Future<void> main() async {
     final globalContext = rootNavigatorKey.currentContext;
     if (globalContext != null) {
       final proProvider = Provider.of<ProProvider>(globalContext, listen: false);
+      final repository = DailyRecordRepository();
       
       // 🔧 修復：正確設置 Pro 狀態回調，讓 Firebase 同步與本地存儲保持同步
       FirebaseSyncConfig.setProStatusCallback(() {
         debugPrint('📡 Checking Pro status: ${proProvider.isPro}');
         return proProvider.isPro;
       });
-      
-      final repository = DailyRecordRepository();
+
+      // 📱 應用啟動時：如果是 Pro 用戶，自動同步本地數據到 Firebase
+      Future.delayed(const Duration(milliseconds: 500), () async {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user != null && proProvider.isPro) {
+          debugPrint('🔄 Pro user detected - syncing local data to Firebase...');
+          try {
+            final result = await DataMigration().migrateLocalToFirebase(
+              userId: user.uid,
+              repository: repository,
+            );
+            debugPrint('✅ 應用啟動同步完成: $result');
+          } catch (e) {
+            debugPrint('⚠️  應用啟動同步失敗: $e');
+          }
+        }
+      });
 
       proProvider.setOnUpgradeCallback(() async {
         // 升級時自動遷移本地數據到 Firebase
@@ -111,7 +127,7 @@ Future<void> main() async {
             userId: user.uid,
             repository: repository,
           );
-          debugPrint('📊 數據遷移結果: $result');
+          debugPrint('📊 用戶升級 - 數據遷移結果: $result');
         }
       });
     }
@@ -266,7 +282,7 @@ class LoginPage extends StatelessWidget {
               children: [
                 Icon(Icons.favorite, size: 72, color: Colors.teal[200]),
                 const SizedBox(height: 12),
-                Text('心晴 Heart shine',
+                Text('心域',
                     style: Theme.of(context).textTheme.headlineSmall),
                 const SizedBox(height: 24),
                 FilledButton.icon(

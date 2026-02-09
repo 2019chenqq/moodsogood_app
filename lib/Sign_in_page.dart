@@ -125,7 +125,7 @@ class _SignInPageState extends State<SignInPage> {
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            '心晴 heart shine',
+                            '心域',
                             style: theme.textTheme.headlineSmall?.copyWith(
                               color: Colors.white,
                               fontWeight: FontWeight.w700,

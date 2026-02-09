@@ -25,18 +25,18 @@ class MainActivity : FlutterActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 "heartshine_general",
-                "心晴提醒",
+                "心域提醒",
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "心晴的提醒與每日通知"
+                description = "心域的提醒與每日通知"
             }
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             nm.createNotificationChannel(channel)
         }
         // 確保 native side 的 notification channel 存在（Android O+）
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            val name = "心晴提醒"
-            val descriptionText = "心晴的提醒與每日通知"
+            val name = "心域提醒"
+            val descriptionText = "心域的提醒與每日通知"
             val importance = NotificationManager.IMPORTANCE_HIGH
             val channel = NotificationChannel("heartshine_general", name, importance).apply {
                 description = descriptionText

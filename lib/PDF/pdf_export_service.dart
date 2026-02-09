@@ -144,7 +144,7 @@ class PDFExportService {
     final startStr = formatter.format(config.startDate);
     final endStr = formatter.format(config.endDate);
 
-    return '心晴_醫師摘要_$startStr-$endStr.pdf';
+    return '心域_醫師摘要_$startStr-$endStr.pdf';
   }
 }
 
