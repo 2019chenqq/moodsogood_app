@@ -183,7 +183,7 @@ Opacity(
         Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => const LegalMarkdownPage(
             title: '服務條款',
-            assetPath: 'assets/legal/心晴_服務條款_zh-TW.md',
+            assetPath: 'assets/legal/心域_服務條款_zh-TW.md',
           ),
         ));
       }),
@@ -192,7 +192,7 @@ Opacity(
         Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => const LegalMarkdownPage(
             title: '隱私權政策',
-            assetPath: 'assets/legal/心晴_隱私權政策_zh-TW.md',
+            assetPath: 'assets/legal/心域_隱私權政策_zh-TW.md',
           ),
         ));
       }),
