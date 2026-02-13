@@ -6,12 +6,10 @@ import 'package:image_picker/image_picker.dart';         // 🔥 選照片用
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'dart:io';
-import '../daily/daily_record_screen.dart';
-import '../daily/daily_record_history.dart';
 import '../settings_page.dart';
 import '../pages/feesback_page.dart';
 import '../pro/pro_page.dart';
-import '../meds/medication_home_page.dart';
+import '../pages/hub_pages.dart';
 import 'package:provider/provider.dart';
 import '../providers/pro_provider.dart';
 import '../utils/firebase_sync_config.dart';
@@ -212,49 +210,59 @@ class _MainDrawerState extends State<MainDrawer> {
         ),
       ),
       
-          // 2. 選單項目
+          // 2. 主要分區（與底部導航一致）
           ListTile(
-            leading: const Icon(Icons.dashboard_outlined), // 圖示：每日紀錄
-            title: const Text('每日紀錄 (首頁)'),
-            onTap: () {
-              Navigator.pop(context); // 關閉側邊欄
-              // 跳轉並取代當前頁面 (避免按上一頁鬼打牆)
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (_) => const DailyRecordScreen()),
-                            );
-            },
-          ),
-          // ListTile(
-          //   leading: const Icon(Icons.auto_stories_outlined), // 圖示：日記
-          //   title: const Text('我的日記'),
-          //   onTap: () {
-          //     Navigator.pop(context);
-          //     Navigator.pushReplacement(
-          //       context,
-          //       MaterialPageRoute(builder: (_) => const DiaryHomePage()),
-          //     );
-          //   },
-          // ),
-          ListTile(
-            leading: const Icon(Icons.insights), // 圖示：統計
-            title: const Text('統計圖表'),
+            leading: const Icon(Icons.edit_note),
+            title: const Text('紀錄'),
             onTap: () {
               Navigator.pop(context);
               Navigator.pushReplacement(
                 context,
-                MaterialPageRoute(builder: (_) => const DailyRecordHistory()),
+                MaterialPageRoute(builder: (_) => const RecordHubPage()),
               );
             },
           ),
           ListTile(
-            leading: const Icon(Icons.medication_outlined),
-            title: const Text('藥物'),
+            leading: const Icon(Icons.forum_outlined),
+            title: const Text('討論區'),
             onTap: () {
               Navigator.pop(context);
               Navigator.pushReplacement(
                 context,
-                MaterialPageRoute(builder: (_) => const MedicationHomePage()),
+                MaterialPageRoute(builder: (_) => const DiscussionHubPage()),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.spa_outlined),
+            title: const Text('放鬆區'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (_) => const RelaxHubPage()),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.mail_outline),
+            title: const Text('樹洞郵局'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (_) => const TreeholePostOfficePage()),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.place_outlined),
+            title: const Text('據點'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (_) => const LocationsHubPage()),
               );
             },
           ),

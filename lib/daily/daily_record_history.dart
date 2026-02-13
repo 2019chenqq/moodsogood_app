@@ -27,7 +27,10 @@ const Map<String, String> ksleepFlagMap = {
   };
 const bool kDemoUnlockAll = true;
 class DailyRecordHistory extends StatefulWidget {
-  const DailyRecordHistory({super.key});
+  const DailyRecordHistory({super.key, this.initialTab = 0});
+
+  /// 0: 列表與週報, 1: 情緒趨勢圖
+  final int initialTab;
 
   @override
   State<DailyRecordHistory> createState() => _DailyRecordHistoryState();
@@ -56,7 +59,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    final safeIndex = widget.initialTab.clamp(0, 1);
+    _tabController = TabController(length: 2, vsync: this, initialIndex: safeIndex);
   }
 
   @override
@@ -83,6 +87,11 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
       appBar: AppBar(
         toolbarHeight: 60,
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          tooltip: '返回',
+          onPressed: () => Navigator.maybePop(context),
+        ),
         bottom: TabBar(
           controller: _tabController,
           tabs: const [

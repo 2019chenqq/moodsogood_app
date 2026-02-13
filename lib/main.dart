@@ -20,6 +20,7 @@ import 'utils/firebase_sync_config.dart';
 import 'providers/theme_provider.dart';
 import 'providers/firebase_sync_provider.dart';
 import 'daily/daily_record_screen.dart';
+import 'pages/hub_pages.dart';
 import 'daily/daily_record_repository.dart';
 import 'app_lock_screen.dart';
 import 'service/iap_service.dart';
@@ -27,6 +28,13 @@ import 'providers/pro_provider.dart';
 import 'PDF/pdf_export_provider.dart'; // 引入 PDFExportProvider
 import 'utils/data_migration.dart';
 import 'UI/fortune_cookie_screen.dart';
+import 'community/community_home_page.dart';
+import 'community/room_page.dart';
+import 'community/post_detail_page.dart';
+import 'community/compose_post_page.dart';
+import 'community/providers/rooms_provider.dart';
+import 'community/providers/room_feed_provider.dart';
+import 'community/providers/post_thread_provider.dart';
 /* =========================== main =========================== */
 
 Future<void> main() async {
@@ -342,7 +350,26 @@ class _LockWrapperState extends State<LockWrapper> {
       return AppLockScreen(onUnlocked: _onUnlocked);
     }
 
-    // ✅ 解鎖後，或沒開啟鎖定，就進入 DailyRecordScreen
-    return const DailyRecordScreen();
+    // ✅ 解鎖後，或沒開啟鎖定，就進入紀錄首頁
+    return const RecordHubPage();
+  }
+}
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Community Demo',
+      theme: ThemeData(useMaterial3: true),
+      initialRoute: CommunityHomePage.routeName,
+      routes: {
+        CommunityHomePage.routeName: (_) => const CommunityHomePage(),
+        RoomPage.routeName: (_) => const RoomPage(),
+        PostDetailPage.routeName: (_) => const PostDetailPage(),
+        ComposePostPage.routeName: (_) => const ComposePostPage(),
+      },
+      // 你原本的 app 若有 BottomNav，就把 CommunityHomePage 放到那個 tab 內即可
+    );
   }
 }

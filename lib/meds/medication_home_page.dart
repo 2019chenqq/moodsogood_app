@@ -115,6 +115,11 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
         drawer: const MainDrawer(),
         appBar: AppBar(
           title: const Text('藥物'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            tooltip: '返回',
+            onPressed: () => Navigator.maybePop(context),
+          ),
           bottom: const TabBar(
             tabs: [
               Tab(text: '目前使用藥物'),
@@ -426,11 +431,14 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
                 onTap: () async {
                   Navigator.pop(context);
                   // 本地更新
-                  await MedicationLocalDB().updateMedication(uid, medId, {
-                    'isActive': false,
-                    'updatedAt': DateTime.now().toString(),
-                    'lastChangeAt': DateTime.now().toString(),
-                  });
+                  final nowStr = DateTime.now().toString();
+                  await MedicationLocalDB().updateMedicationStatus(
+                    uid,
+                    medId,
+                    isActive: false,
+                    updatedAt: nowStr,
+                    lastChangeAt: nowStr,
+                  );
 
                   // Firebase 更新
                   await FirebaseFirestore.instance
@@ -453,11 +461,14 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
                 onTap: () async {
                   Navigator.pop(context);
                   // 本地更新
-                  await MedicationLocalDB().updateMedication(uid, medId, {
-                    'isActive': true,
-                    'updatedAt': DateTime.now().toString(),
-                    'lastChangeAt': DateTime.now().toString(),
-                  });
+                  final nowStr = DateTime.now().toString();
+                  await MedicationLocalDB().updateMedicationStatus(
+                    uid,
+                    medId,
+                    isActive: true,
+                    updatedAt: nowStr,
+                    lastChangeAt: nowStr,
+                  );
 
                   // Firebase 更新
                   await FirebaseFirestore.instance

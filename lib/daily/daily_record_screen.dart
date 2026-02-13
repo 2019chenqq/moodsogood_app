@@ -891,25 +891,29 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       appBar: AppBar(
         toolbarHeight: 60,
         elevation: 0,
-        actions: isDiaryTab
-            ? []
-            : [
-                if (_isSaving)
-                  const Padding(
-                    padding: EdgeInsets.only(right: 16),
-                    child: SizedBox(
-                      width: 20,
-                      height: 80,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
-                else
-                  IconButton(
-                    icon: const Icon(Icons.save_outlined),
-                    tooltip: '儲存',
-                    onPressed: _saveAll,
-                  ),
-              ],
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          tooltip: '返回',
+          onPressed: () => Navigator.maybePop(context),
+        ),
+        actions: [
+          if (!isDiaryTab)
+            if (_isSaving)
+              const Padding(
+                padding: EdgeInsets.only(right: 16),
+                child: SizedBox(
+                  width: 20,
+                  height: 80,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            else
+              IconButton(
+                icon: const Icon(Icons.save_outlined),
+                tooltip: '儲存',
+                onPressed: _saveAll,
+              ),
+        ],
       ),
       body: SafeArea(
         child: Column(

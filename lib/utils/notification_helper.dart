@@ -4,7 +4,7 @@ import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../app_globals.dart';
-import '../daily/daily_record_screen.dart';
+import '../pages/hub_pages.dart';
 
 const _channelId = 'heartshine_general';
 const _channelName = '心域提醒';
@@ -347,7 +347,7 @@ class NotificationHelper {
     if (navigator == null) return false;
 
     navigator.pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const DailyRecordScreen()),
+      MaterialPageRoute(builder: (_) => const RecordHubPage()),
       (_) => false,
     );
     return true;

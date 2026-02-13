@@ -9,9 +9,7 @@ import 'package:provider/provider.dart'; // 🔥 引入 Provider
 
 // 引入你的 Provider 和 頁面
 import '../providers/menu_provider.dart'; 
-import '../daily/daily_record_screen.dart';
-import '../diary/diary_home_page.dart';
-import '../daily/daily_record_history.dart';
+import 'pages/hub_pages.dart';
 
 import 'Sign_in_page.dart';
 import 'settings_page.dart';
@@ -33,11 +31,13 @@ class _HomeShellState extends m.State<HomeShell> {
   String _email = '';
   bool _isUploading = false;
 
-  // 🔥 定義三個主要頁面
+  // 🔥 定義底部導航頁面
   final List<m.Widget> _pages = const [
-    DailyRecordScreen(),   // Index 0: 首頁 (每日紀錄)
-    DiaryHomePage(),       // Index 1: 日記
-    DailyRecordHistory(),  // Index 2: 統計
+    RecordHubPage(),          // Index 0: 紀錄
+    DiscussionHubPage(),      // Index 1: 討論區
+    RelaxHubPage(),           // Index 2: 放鬆區
+    TreeholePostOfficePage(), // Index 3: 樹洞郵局
+    LocationsHubPage(),       // Index 4: 據點
   ];
 
   @override
@@ -226,39 +226,6 @@ class _HomeShellState extends m.State<HomeShell> {
               ),
             ),
             
-            // 🔥 1. 首頁 (每日紀錄)
-            m.ListTile(
-              leading: const m.Icon(m.Icons.home),
-              title: const m.Text('首頁 (每日紀錄)'),
-              selected: currentIndex == 0, // 標記目前選中
-              onTap: () {
-                m.Navigator.pop(context); // 關閉側邊欄
-                menuProvider.setIndex(0); // 切換到第 0 頁
-              },
-            ),
-
-            // 🔥 2. 我的日記 (取代原本的個人資料)
-            m.ListTile(
-              leading: const m.Icon(m.Icons.book),
-              title: const m.Text('我的日記'),
-              selected: currentIndex == 1,
-              onTap: () {
-                m.Navigator.pop(context);
-                menuProvider.setIndex(1); // 切換到第 1 頁
-              },
-            ),
-
-            // 🔥 3. 統計圖表
-            m.ListTile(
-              leading: const m.Icon(m.Icons.bar_chart),
-              title: const m.Text('統計圖表'),
-              selected: currentIndex == 2,
-              onTap: () {
-                m.Navigator.pop(context);
-                menuProvider.setIndex(2); // 切換到第 2 頁
-              },
-            ),
-
             m.Divider(),
 
             // 設定 (獨立頁面，使用跳轉)
@@ -294,6 +261,33 @@ class _HomeShellState extends m.State<HomeShell> {
       body: m.IndexedStack(
         index: currentIndex,
         children: _pages,
+      ),
+      bottomNavigationBar: m.BottomNavigationBar(
+        type: m.BottomNavigationBarType.fixed,
+        currentIndex: currentIndex,
+        onTap: menuProvider.setIndex,
+        items: const [
+          m.BottomNavigationBarItem(
+            icon: m.Icon(m.Icons.edit_note),
+            label: '紀錄',
+          ),
+          m.BottomNavigationBarItem(
+            icon: m.Icon(m.Icons.forum_outlined),
+            label: '討論區',
+          ),
+          m.BottomNavigationBarItem(
+            icon: m.Icon(m.Icons.spa_outlined),
+            label: '放鬆區',
+          ),
+          m.BottomNavigationBarItem(
+            icon: m.Icon(m.Icons.mail_outline),
+            label: '樹洞郵局',
+          ),
+          m.BottomNavigationBarItem(
+            icon: m.Icon(m.Icons.place_outlined),
+            label: '據點',
+          ),
+        ],
       ),
     );
   }

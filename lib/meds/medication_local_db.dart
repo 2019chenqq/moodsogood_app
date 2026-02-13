@@ -148,6 +148,35 @@ class MedicationLocalDB {
     }
   }
 
+  // 僅更新「停用/恢復」狀態（避免覆蓋其他欄位）
+  Future<void> updateMedicationStatus(
+    String uid,
+    String docId, {
+    required bool isActive,
+    String? updatedAt,
+    String? lastChangeAt,
+  }) async {
+    try {
+      final db = await database;
+      debugPrint('📝 更新藥物狀態 - docId: $docId, uid: $uid, isActive: $isActive');
+
+      await db.update(
+        'medications',
+        {
+          'isActive': isActive ? 1 : 0,
+          if (updatedAt != null) 'updatedAt': updatedAt,
+          if (lastChangeAt != null) 'lastChangeAt': lastChangeAt,
+        },
+        where: 'id = ? AND uid = ?',
+        whereArgs: [docId, uid],
+      );
+      debugPrint('✅ 藥物狀態更新成功');
+    } catch (e) {
+      debugPrint('❌ updateMedicationStatus 失敗：$e');
+      rethrow;
+    }
+  }
+
   // 删除藥物
   Future<void> deleteMedication(String uid, String docId) async {
     final db = await database;
