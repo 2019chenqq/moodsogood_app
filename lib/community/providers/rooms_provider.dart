@@ -1,8 +1,11 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../models/room.dart';
 
 class RoomsProvider extends ChangeNotifier {
-  final List<Room> rooms = const [
+  final List<Room> _baseRooms = const [
     Room(
       id: 'mood_down',
       name: '情緒低落',
@@ -35,11 +38,45 @@ class RoomsProvider extends ChangeNotifier {
     ),
   ];
 
+  List<Room> _extraRooms = [];
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _roomsSub;
+
+  RoomsProvider() {
+    _listenRooms();
+  }
+
+  List<Room> get rooms => [..._baseRooms, ..._extraRooms];
+
+  void _listenRooms() {
+    _roomsSub = FirebaseFirestore.instance
+        .collection('community_rooms')
+        .orderBy('createdAt', descending: false)
+        .snapshots()
+        .listen((snap) {
+      _extraRooms = snap.docs.map((doc) {
+        final data = doc.data();
+        return Room(
+          id: doc.id,
+          name: (data['name'] ?? '未命名看板').toString(),
+          description: (data['description'] ?? '').toString(),
+          icon: Icons.forum_outlined,
+        );
+      }).toList();
+      notifyListeners();
+    });
+  }
+
   Room? byId(String id) {
     try {
       return rooms.firstWhere((r) => r.id == id);
     } catch (_) {
       return null;
     }
+  }
+
+  @override
+  void dispose() {
+    _roomsSub?.cancel();
+    super.dispose();
   }
 }

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'utils/anon_name.dart';
 
 import 'providers/post_thread_provider.dart';
 import 'providers/room_feed_provider.dart';
 import 'widgets/empathy_bar.dart';
 import 'widgets/safety_banner.dart';
+import 'widgets/community_style.dart';
 
 class PostDetailPage extends StatelessWidget {
   static const routeName = '/community/post';
@@ -22,7 +24,42 @@ class PostDetailPage extends StatelessWidget {
           final ctrl = TextEditingController();
 
           return Scaffold(
-            appBar: AppBar(title: const Text('貼文')),
+            backgroundColor: CommunityStyle.background,
+            appBar: AppBar(
+              title: const Text('貼文'),
+              elevation: 0,
+              backgroundColor: CommunityStyle.surfaceSoft,
+              foregroundColor: CommunityStyle.text,
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: '刪除貼文',
+                  onPressed: () async {
+                    final ok = await showDialog<bool>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('刪除貼文？'),
+                        content: const Text('刪除後無法復原。'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('取消'),
+                          ),
+                          FilledButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            child: const Text('刪除'),
+                          ),
+                        ],
+                      ),
+                    );
+
+                    if (ok == true && context.mounted) {
+                      Navigator.pop(context, true);
+                    }
+                  },
+                ),
+              ],
+            ),
             body: Column(
               children: [
                 const Padding(
@@ -34,6 +71,9 @@ class PostDetailPage extends StatelessWidget {
                     padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
                     children: [
                       Card(
+                        color: CommunityStyle.surface,
+                        shape: CommunityStyle.cardShape,
+                        elevation: 0.5,
                         child: Padding(
                           padding: const EdgeInsets.all(14),
                           child: Column(
@@ -66,6 +106,9 @@ class PostDetailPage extends StatelessWidget {
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 10),
                           child: Card(
+                            color: CommunityStyle.surface,
+                            shape: CommunityStyle.cardShape,
+                            elevation: 0.5,
                             child: Padding(
                               padding: const EdgeInsets.all(12),
                               child: Column(
@@ -95,19 +138,37 @@ class PostDetailPage extends StatelessWidget {
                             controller: ctrl,
                             decoration: InputDecoration(
                               hintText: '匿名回應…',
+                              filled: true,
+                              fillColor: CommunityStyle.surface,
+                              hintStyle: const TextStyle(color: CommunityStyle.muted),
                               border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(14),
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: const BorderSide(color: CommunityStyle.outline),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: const BorderSide(color: CommunityStyle.outline),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: const BorderSide(color: CommunityStyle.accent, width: 1.2),
                               ),
                             ),
                           ),
                         ),
                         const SizedBox(width: 10),
                         IconButton.filled(
-                          onPressed: () {
-                            thread.addComment(ctrl.text);
+                          onPressed: () async {
+                            final anonName = await AnonNameService.getOrCreate();
+
+                            thread.addComment(ctrl.text, anonName);
                             ctrl.clear();
                             FocusScope.of(context).unfocus();
                           },
+                          style: IconButton.styleFrom(
+                            backgroundColor: CommunityStyle.accent,
+                            foregroundColor: Colors.white,
+                          ),
                           icon: const Icon(Icons.send),
                         ),
                       ],

@@ -28,13 +28,12 @@ import 'providers/pro_provider.dart';
 import 'PDF/pdf_export_provider.dart'; // 引入 PDFExportProvider
 import 'utils/data_migration.dart';
 import 'UI/fortune_cookie_screen.dart';
+import 'community/providers/rooms_provider.dart';
 import 'community/community_home_page.dart';
 import 'community/room_page.dart';
 import 'community/post_detail_page.dart';
 import 'community/compose_post_page.dart';
-import 'community/providers/rooms_provider.dart';
-import 'community/providers/room_feed_provider.dart';
-import 'community/providers/post_thread_provider.dart';
+import 'onboarding_page.dart';
 /* =========================== main =========================== */
 
 Future<void> main() async {
@@ -92,6 +91,9 @@ Future<void> main() async {
         ChangeNotifierProvider<PDFExportProvider>(
           create: (_) => PDFExportProvider(),
         ),
+        ChangeNotifierProvider<RoomsProvider>(
+          create: (_) => RoomsProvider(),
+        ),
       ],
       child: const MainApp(),
     ),
@@ -144,6 +146,8 @@ Future<void> main() async {
   });
 }
 
+
+
 class MainApp extends StatelessWidget {
   const MainApp({super.key});
 
@@ -155,6 +159,7 @@ class MainApp extends StatelessWidget {
       navigatorKey: rootNavigatorKey,
       scaffoldMessengerKey: rootMessengerKey,
       debugShowCheckedModeBanner: false,
+
       locale: const Locale('zh', 'TW'),
       supportedLocales: const [Locale('zh', 'TW'), Locale('en')],
       localizationsDelegates: const [
@@ -186,10 +191,7 @@ class MainApp extends StatelessWidget {
           backgroundColor: Color(0xFF121212),
           surfaceTintColor: Colors.transparent,
         ),
-        cardTheme: const CardThemeData(
-          color: Color(0xFF1E1E1E),
-          surfaceTintColor: Colors.transparent,
-        ),
+      
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: const Color(0xFF1E1E1E),
@@ -203,16 +205,79 @@ class MainApp extends StatelessWidget {
 
       // 關鍵：跟著 ThemeProvider 切換
       themeMode: themeProvider.themeMode,
+      routes: {
+        CommunityHomePage.routeName: (_) => const CommunityHomePage(),
+        RoomPage.routeName: (_) => const RoomPage(),
+        PostDetailPage.routeName: (_) => const PostDetailPage(),
+        ComposePostPage.routeName: (_) => const ComposePostPage(),
+      },
 
-      home: Builder(
-  builder: (context) => FortuneCookieScreen(
-    onEnterApp: () {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const AuthGate()),
+      home: const FirstLaunchGate(),
+    );
+  }
+}
+
+class FirstLaunchGate extends StatefulWidget {
+  const FirstLaunchGate({super.key});
+
+  @override
+  State<FirstLaunchGate> createState() => _FirstLaunchGateState();
+}
+
+class _FirstLaunchGateState extends State<FirstLaunchGate> {
+  bool _ready = false;
+  bool _openingOnboarding = false;
+  bool _postOnboardingToRecordHub = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkOnboarding();
+  }
+
+  Future<void> _checkOnboarding() async {
+    final prefs = await SharedPreferences.getInstance();
+    final seen = prefs.getBool('has_seen_onboarding') ?? false;
+
+    if (!seen && !_openingOnboarding) {
+      _openingOnboarding = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        final result = await Navigator.of(context).push<bool>(
+          MaterialPageRoute(builder: (_) => const OnboardingPage()),
+        );
+        if (!mounted) return;
+        setState(() {
+          _postOnboardingToRecordHub = result == true;
+          _ready = true;
+        });
+      });
+      return;
+    }
+
+    if (mounted) {
+      setState(() => _ready = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_ready) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
       );
-    },
-  ),
-),
+    }
+
+    if (_postOnboardingToRecordHub) {
+      return const RecordHubPage();
+    }
+
+    return FortuneCookieScreen(
+      onEnterApp: () {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const AuthGate()),
+        );
+      },
     );
   }
 }
@@ -352,24 +417,5 @@ class _LockWrapperState extends State<LockWrapper> {
 
     // ✅ 解鎖後，或沒開啟鎖定，就進入紀錄首頁
     return const RecordHubPage();
-  }
-}
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Community Demo',
-      theme: ThemeData(useMaterial3: true),
-      initialRoute: CommunityHomePage.routeName,
-      routes: {
-        CommunityHomePage.routeName: (_) => const CommunityHomePage(),
-        RoomPage.routeName: (_) => const RoomPage(),
-        PostDetailPage.routeName: (_) => const PostDetailPage(),
-        ComposePostPage.routeName: (_) => const ComposePostPage(),
-      },
-      // 你原本的 app 若有 BottomNav，就把 CommunityHomePage 放到那個 tab 內即可
-    );
   }
 }

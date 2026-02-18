@@ -3,10 +3,12 @@ import 'package:provider/provider.dart';
 
 import 'post_detail_page.dart';
 import 'compose_post_page.dart';
+import 'models/post.dart';
 import 'providers/rooms_provider.dart';
 import 'providers/room_feed_provider.dart';
 import 'widgets/post_list_item.dart';
 import 'widgets/safety_banner.dart';
+import 'widgets/community_style.dart';
 
 class RoomPage extends StatelessWidget {
   static const routeName = '/community/room';
@@ -14,23 +16,49 @@ class RoomPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final roomId = ModalRoute.of(context)!.settings.arguments as String;
+    final args = ModalRoute.of(context)!.settings.arguments;
+    String roomId;
+    Post? initialPost;
+
+    if (args is String) {
+      roomId = args;
+    } else if (args is Map) {
+      roomId = args['roomId'] as String;
+      initialPost = args['initialPost'] as Post?;
+    } else {
+      throw ArgumentError('RoomPage requires roomId arguments');
+    }
+
     final room = context.read<RoomsProvider>().byId(roomId);
 
     return ChangeNotifierProvider(
-      create: (_) => RoomFeedProvider(roomId),
+      create: (_) => RoomFeedProvider(roomId, initialPost: initialPost),
       child: Builder(
         builder: (context) {
           final feed = context.watch<RoomFeedProvider>();
 
           return Scaffold(
-            appBar: AppBar(title: Text(room?.name ?? '房間')),
+            backgroundColor: CommunityStyle.background,
+            appBar: AppBar(
+              title: Text(room?.name ?? '房間'),
+              elevation: 0,
+              backgroundColor: CommunityStyle.surfaceSoft,
+              foregroundColor: CommunityStyle.text,
+            ),
             floatingActionButton: FloatingActionButton(
-              onPressed: () => Navigator.pushNamed(
-                context,
-                ComposePostPage.routeName,
-                arguments: roomId,
-              ),
+              onPressed: () async {
+                final post = await Navigator.pushNamed(
+                  context,
+                  ComposePostPage.routeName,
+                  arguments: roomId,
+                ) as Post?;
+
+                if (post != null) {
+                  feed.addPost(post);
+                }
+              },
+              backgroundColor: CommunityStyle.accent,
+              foregroundColor: Colors.white,
               child: const Icon(Icons.edit),
             ),
             body: Column(
@@ -53,11 +81,17 @@ class RoomPage extends StatelessWidget {
                         final post = feed.posts[i];
                         return PostListItem(
                           post: post,
-                          onTap: () => Navigator.pushNamed(
-                            context,
-                            PostDetailPage.routeName,
-                            arguments: post.id,
-                          ),
+                          onTap: () async {
+                            final deleted = await Navigator.pushNamed(
+                              context,
+                              PostDetailPage.routeName,
+                              arguments: post.id,
+                            ) as bool?;
+
+                            if (deleted == true) {
+                              feed.deletePost(post.id);
+                            }
+                          },
                           onReact: (type) => feed.react(post.id, type),
                         );
                       },

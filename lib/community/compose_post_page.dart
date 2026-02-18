@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'utils/anon_name.dart';
 
 import 'models/post.dart';
 import 'providers/rooms_provider.dart';
 import 'providers/room_feed_provider.dart';
+import 'widgets/community_style.dart';
 
 class ComposePostPage extends StatefulWidget {
   static const routeName = '/community/compose';
@@ -17,6 +19,13 @@ class _ComposePostPageState extends State<ComposePostPage> {
   final _ctrl = TextEditingController();
   bool _allowReplies = true;
   String? _selectedRoomId;
+  String _anonName = '匿名者';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAnonName();
+  }
 
   @override
   void didChangeDependencies() {
@@ -33,12 +42,26 @@ class _ComposePostPageState extends State<ComposePostPage> {
     super.dispose();
   }
 
+  Future<void> _loadAnonName() async {
+    final name = await AnonNameService.getOrCreate();
+    if (!mounted) return;
+    setState(() => _anonName = name);
+  }
+
+  String get _effectiveAnonName => _anonName.trim().isEmpty ? '匿名者' : _anonName.trim();
+
   @override
   Widget build(BuildContext context) {
     final roomsProvider = context.watch<RoomsProvider>();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('發一篇匿名貼文')),
+      backgroundColor: CommunityStyle.background,
+      appBar: AppBar(
+        title: const Text('發一篇匿名貼文'),
+        elevation: 0,
+        backgroundColor: CommunityStyle.surfaceSoft,
+        foregroundColor: CommunityStyle.text,
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -49,7 +72,22 @@ class _ComposePostPageState extends State<ComposePostPage> {
                   .map((r) => DropdownMenuItem(value: r.id, child: Text(r.name)))
                   .toList(),
               onChanged: (v) => setState(() => _selectedRoomId = v),
-              decoration: const InputDecoration(labelText: '選擇房間'),
+              decoration: const InputDecoration(
+                labelText: '選擇房間',
+                filled: true,
+                fillColor: CommunityStyle.surface,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '匿名身分：$_effectiveAnonName',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: CommunityStyle.muted),
+              ),
             ),
             const SizedBox(height: 12),
             Expanded(
@@ -59,7 +97,21 @@ class _ComposePostPageState extends State<ComposePostPage> {
                 expands: true,
                 decoration: InputDecoration(
                   hintText: '你想說什麼？',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                  filled: true,
+                  fillColor: CommunityStyle.surface,
+                  hintStyle: const TextStyle(color: CommunityStyle.muted),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(color: CommunityStyle.outline),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(color: CommunityStyle.outline),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(color: CommunityStyle.accent, width: 1.2),
+                  ),
                 ),
               ),
             ),
@@ -82,19 +134,18 @@ class _ComposePostPageState extends State<ComposePostPage> {
                   final post = Post(
                     id: 'new_${DateTime.now().millisecondsSinceEpoch}',
                     roomId: roomId,
-                    authorAnonId: '你',
+                    authorAnonId: _effectiveAnonName,
                     content: text,
                     createdAt: DateTime.now(),
                     allowReplies: _allowReplies,
                   );
 
-                  // ⚠ MVP：如果你是從 RoomPage 進來，RoomFeedProvider 在上一頁存在，
-                  // 你可以用 Navigator.pop 回去後再 insert。這裡先簡化：直接 pop。
-                  Navigator.pop(context);
-
-                  // 進階：你要做到「發文後立即插入列表」，我下一步可以幫你加
-                  // (用 result 回傳 post 給 RoomPage，再 feed.addPost)
+                  Navigator.pop(context, post);
                 },
+                style: FilledButton.styleFrom(
+                  backgroundColor: CommunityStyle.accent,
+                  foregroundColor: Colors.white,
+                ),
                 child: const Text('發送'),
               ),
             ),

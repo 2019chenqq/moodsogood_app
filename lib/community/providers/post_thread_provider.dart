@@ -54,15 +54,17 @@ class PostThreadProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void addComment(String text) {
+  void addComment(String text, String authorAnonId) {
     final t = text.trim();
     if (t.isEmpty) return;
+
+    final author = authorAnonId.trim().isEmpty ? '匿名者' : authorAnonId.trim();
 
     _comments.add(
       Comment(
         id: 'c${_comments.length + 1}_$postId',
         postId: postId,
-        authorAnonId: '你',
+        authorAnonId: author,
         content: t,
         createdAt: DateTime.now(),
       ),

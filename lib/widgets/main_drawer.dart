@@ -13,6 +13,7 @@ import '../pages/hub_pages.dart';
 import 'package:provider/provider.dart';
 import '../providers/pro_provider.dart';
 import '../utils/firebase_sync_config.dart';
+import '../community/utils/anon_name.dart';
 
 class MainDrawer extends StatefulWidget {
   const MainDrawer({super.key});
@@ -94,15 +95,21 @@ class _MainDrawerState extends State<MainDrawer> {
     padding: EdgeInsets.zero,
     children: [
       UserAccountsDrawerHeader(
-        accountName: const SizedBox.shrink(),
-
-        accountEmail: Text(
-          _isUploading ? '正在上傳...' : (user?.email ?? ''),
-          style: const TextStyle(
-            color: Color.fromARGB(255, 25, 107, 231), // 帳號文字顏色
-            fontSize: 17,
-          ),
+        accountName: FutureBuilder<String>(
+          future: AnonNameService.getOrCreate(),
+          builder: (context, snapshot) {
+            final name = snapshot.data ?? '匿名者';
+            return Text(
+              '匿名：$name',
+              style: const TextStyle(
+                color: Color.fromARGB(255, 25, 107, 231),
+                fontSize: 17,
+              ),
+            );
+          },
         ),
+
+        accountEmail: const SizedBox.shrink(),
 
         // 🔥 頭貼區塊（完整整合）
         currentAccountPicture: GestureDetector(

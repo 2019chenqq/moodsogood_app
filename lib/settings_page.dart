@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // 需要安裝這個來存設定
+import 'community/utils/anon_name.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
@@ -24,6 +25,7 @@ class _SettingsPageState extends State<SettingsPage> {
   final _oldPinController = TextEditingController();
   final _newPinController = TextEditingController();
   final _confirmPinController = TextEditingController();
+  String _anonName = '匿名者';
 
   @override
   void dispose() {
@@ -150,6 +152,19 @@ class _SettingsPageState extends State<SettingsPage> {
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Text('隱私', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+          ),
+
+          ListTile(
+            title: const Text('討論區匿名稱呼'),
+            subtitle: Text('$_anonName（不可修改）'),
+            trailing: const Icon(Icons.lock_outline),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              '系統自動產生且不可修改，避免使用本名與不當名稱。',
+              style: TextStyle(color: Colors.grey[600], fontSize: 12),
+            ),
           ),
 
           SwitchListTile(
@@ -520,6 +535,10 @@ class _SettingsPageState extends State<SettingsPage> {
       _reminderTime = TimeOfDay(hour: h, minute: m);
       _appLockEnabled = prefs.getBool('appLockEnabled') ?? false;
     });
+
+    final anonName = await AnonNameService.getOrCreate();
+    if (!mounted) return;
+    setState(() => _anonName = anonName);
   }
 
   // 儲存並設定通知

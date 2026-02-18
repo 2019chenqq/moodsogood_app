@@ -6,8 +6,11 @@ enum ReactType { hug, listen, hope, heart }
 class RoomFeedProvider extends ChangeNotifier {
   final String roomId;
 
-  RoomFeedProvider(this.roomId) {
+  RoomFeedProvider(this.roomId, {Post? initialPost}) {
     _seed();
+    if (initialPost != null) {
+      _posts.insert(0, initialPost);
+    }
   }
 
   final List<Post> _posts = [];
@@ -78,6 +81,13 @@ class RoomFeedProvider extends ChangeNotifier {
 
   void addPost(Post post) {
     _posts.insert(0, post);
+    notifyListeners();
+  }
+
+  void deletePost(String postId) {
+    final idx = _posts.indexWhere((p) => p.id == postId);
+    if (idx < 0) return;
+    _posts.removeAt(idx);
     notifyListeners();
   }
 }

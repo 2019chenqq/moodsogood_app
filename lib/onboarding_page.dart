@@ -37,104 +37,103 @@ class _OnboardingPageState extends State<OnboardingPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            // 頁面指示器 (在頂部)
-            Padding(
-              padding: const EdgeInsets.only(top: 16.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(
-                  5,
-                  (index) => Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    width: _currentPage == index ? 12 : 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: _currentPage == index
-                          ? Colors.blue
-                          : Colors.grey[300],
-                      borderRadius: BorderRadius.circular(4),
+    return WillPopScope(
+      onWillPop: () async => false,
+      child: Scaffold(
+        body: SafeArea(
+          child: Column(
+            children: [
+              // 頁面指示器 (在頂部)
+              Padding(
+                padding: const EdgeInsets.only(top: 16.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(
+                    5,
+                    (index) => Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      width: _currentPage == index ? 12 : 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: _currentPage == index
+                            ? Colors.blue
+                            : Colors.grey[300],
+                        borderRadius: BorderRadius.circular(4),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            
-            // 主內容區域
-            Expanded(
-              child: PageView(
-                controller: _pageController,
-                onPageChanged: (index) {
-                  setState(() {
-                    _currentPage = index;
-                  });
-                },
-                children: [
-                  // 第1頁：歡迎
-                  _buildWelcomePage(),
-                  
-                  // 第2頁：每日紀錄
-                  _buildDailyRecordPage(),
-                  
-                  // 第3頁：日記
-                  _buildDiaryPage(),
-                  
-                  // 第4頁：統計分析
-                  _buildStatisticsPage(),
-                  
-                  // 第5頁：設定與開始
-                  _buildGetStartedPage(),
-                ],
+
+              // 主內容區域
+              Expanded(
+                child: PageView(
+                  controller: _pageController,
+                  onPageChanged: (index) {
+                    setState(() {
+                      _currentPage = index;
+                    });
+                  },
+                  children: [
+                    // 第1頁：歡迎
+                    _buildWelcomePage(),
+
+                    // 第2頁：每日紀錄
+                    _buildDailyRecordPage(),
+
+                    // 第3頁：日記
+                    _buildDiaryPage(),
+
+                    // 第4頁：統計分析
+                    _buildStatisticsPage(),
+
+                    // 第5頁：設定與開始
+                    _buildGetStartedPage(),
+                  ],
+                ),
               ),
-            ),
-            
-            // 底部按鈕區域
-            Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  // 上一頁按鈕
-                  if (_currentPage > 0)
-                    OutlinedButton(
-                      onPressed: () {
-                        _pageController.previousPage(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeInOut,
-                        );
-                      },
-                      child: const Text('上一頁'),
-                    )
-                  else
+
+              // 底部按鈕區域
+              Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // 上一頁按鈕
+                    if (_currentPage > 0)
+                      OutlinedButton(
+                        onPressed: () {
+                          _pageController.previousPage(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOut,
+                          );
+                        },
+                        child: const Text('上一頁'),
+                      )
+                    else
+                      const SizedBox(width: 80),
+
                     const SizedBox(width: 80),
-                  
-                  // 跳過按鈕（所有頁面都有）
-                  TextButton(
-                    onPressed: _completeOnboarding,
-                    child: const Text('跳過'),
-                  ),
-                  
-                  // 下一頁/開始按鈕
-                  ElevatedButton(
-                    onPressed: () {
-                      if (_currentPage < 4) {
-                        _pageController.nextPage(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeInOut,
-                        );
-                      } else {
-                        _completeOnboarding();
-                      }
-                    },
-                    child: Text(_currentPage == 4 ? '開始使用' : '下一頁'),
-                  ),
-                ],
+
+                    // 下一頁/開始按鈕
+                    ElevatedButton(
+                      onPressed: () {
+                        if (_currentPage < 4) {
+                          _pageController.nextPage(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOut,
+                          );
+                        } else {
+                          _completeOnboarding();
+                        }
+                      },
+                      child: Text(_currentPage == 4 ? '開始使用' : '下一頁'),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

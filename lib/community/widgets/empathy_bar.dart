@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../providers/room_feed_provider.dart';
+import 'community_style.dart';
 
 class EmpathyBar extends StatelessWidget {
   final int hug, listen, hope, heart;
@@ -35,10 +36,17 @@ class EmpathyBar extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          border: Border.all(color: Theme.of(context).dividerColor),
+          color: CommunityStyle.surface,
+          border: Border.all(color: CommunityStyle.outline),
           borderRadius: BorderRadius.circular(999),
         ),
-        child: Text(label),
+        child: Text(
+          label,
+          style: Theme.of(context)
+              .textTheme
+              .labelMedium
+              ?.copyWith(color: CommunityStyle.text),
+        ),
       ),
     );
   }

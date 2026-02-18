@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/post.dart';
 import '../providers/room_feed_provider.dart';
 import 'empathy_bar.dart';
+import 'community_style.dart';
 
 class PostListItem extends StatelessWidget {
   final Post post;
@@ -20,6 +21,9 @@ class PostListItem extends StatelessWidget {
     final time = _friendlyTime(post.createdAt);
 
     return Card(
+      color: CommunityStyle.surface,
+      shape: CommunityStyle.cardShape,
+      elevation: 0.5,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
@@ -31,9 +35,18 @@ class PostListItem extends StatelessWidget {
               Row(
                 children: [
                   Text('匿名者 ${post.authorAnonId}',
-                      style: Theme.of(context).textTheme.labelLarge),
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelLarge
+                          ?.copyWith(color: CommunityStyle.text)),
                   const Spacer(),
-                  Text(time, style: Theme.of(context).textTheme.labelSmall),
+                  Text(
+                    time,
+                    style: Theme.of(context)
+                        .textTheme
+                        .labelSmall
+                        ?.copyWith(color: CommunityStyle.muted),
+                  ),
                 ],
               ),
               const SizedBox(height: 10),
@@ -41,7 +54,10 @@ class PostListItem extends StatelessWidget {
                 post.content,
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodyMedium,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: CommunityStyle.text),
               ),
               const SizedBox(height: 12),
               EmpathyBar(
@@ -53,7 +69,10 @@ class PostListItem extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text('回覆 ${post.replyCount}',
-                  style: Theme.of(context).textTheme.bodySmall),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: CommunityStyle.muted)),
             ],
           ),
         ),
