@@ -204,21 +204,12 @@ Widget _buildChatRoomsTab(BuildContext context, List<Room> rooms) {
 
 // 申請看板 Tab
 Widget _buildBoardRequestTab(BuildContext context) {
-  final user = FirebaseAuth.instance.currentUser;
-
   return CustomScrollView(
     slivers: [
       SliverToBoxAdapter(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildBoardRequestCard(context),
-              const SizedBox(height: 16),
-              _buildRequestStatusList(context, user?.uid ?? ''),
-            ],
-          ),
+          child: _buildBoardRequestCard(context),
         ),
       ),
     ],
@@ -319,10 +310,6 @@ Widget _buildBoardRequestTab(BuildContext context) {
           return bTime.compareTo(aTime); // 降序
         });
         docs = docs.take(5).toList();
-
-        for (final doc in docs) {
-          _ensureRoomForApprovedRequest(doc);
-        }
 
         return Column(
           children: docs.map((doc) {

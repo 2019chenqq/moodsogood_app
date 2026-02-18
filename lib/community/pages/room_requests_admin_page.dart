@@ -37,21 +37,35 @@ class _RoomRequestsAdminPageState extends State<RoomRequestsAdminPage> {
             .collection(_requestsCollection)
             .snapshots(),
         builder: (context, snap) {
+          debugPrint('📋 Admin page - connectionState: ${snap.connectionState}');
+          debugPrint('📋 Admin page - hasData: ${snap.hasData}, docs: ${snap.data?.docs.length ?? 0}');
+          
           if (snap.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (!snap.hasError) {
-            debugPrint('✅ Admin requests loaded');
-          } else {
+          if (snap.hasError) {
             debugPrint('❌ Admin query error: ${snap.error}');
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text('讀取申請失敗：${snap.error}'),
+                ],
+              ),
+            );
           }
 
           if (!snap.hasData || snap.data!.docs.isEmpty) {
+            debugPrint('ℹ️ Admin page - 沒有申請');
             return const Center(
               child: Text('沒有申請'),
             );
           }
+
+          debugPrint('✅ Admin page - 加載 ${snap.data!.docs.length} 個申請');
 
           // 在客户端排序
           var docs = snap.data!.docs;

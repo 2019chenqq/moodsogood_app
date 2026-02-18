@@ -33,9 +33,8 @@ service cloud.firestore {
       // 登入者可建立申請
       allow create: if request.auth != null;
 
-      // 申請者只能讀自己的申請
-      allow read: if request.auth != null
-                  && resource.data.requesterUid == request.auth.uid;
+      // 所有登入者可讀取所有申請（UI 層級檢查誰能審核）
+      allow read: if request.auth != null;
 
       // 申請者可更新自己的申請
       allow update: if request.auth != null
