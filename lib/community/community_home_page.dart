@@ -311,6 +311,29 @@ Widget _buildBoardRequestTab(BuildContext context) {
         });
         docs = docs.take(5).toList();
 
+        // 過濾掉已批准但看板已刪除的申請
+        docs = docs.where((doc) {
+          final data = doc.data();
+          final status = (data['status'] ?? 'pending').toString();
+          final roomId = (data['roomId'] ?? '').toString();
+          
+          // 如果是已批准但沒有 roomId，說明看板已被刪除，過濾掉
+          if (status == 'approved' && roomId.isEmpty) {
+            return false;
+          }
+          return true;
+        }).toList();
+
+        if (docs.isEmpty) {
+          return Text(
+            '尚無申請紀錄。',
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: CommunityStyle.muted),
+          );
+        }
+
         return Column(
           children: docs.map((doc) {
             final data = doc.data();

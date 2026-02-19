@@ -92,7 +92,8 @@ class RoomPage extends StatelessWidget {
                               feed.deletePost(post.id);
                             }
                           },
-                          onReact: (type) => feed.react(post.id, type),
+                            onReact: (type, wasReacted) =>
+                              feed.react(post.id, type, wasReacted),
                         );
                       },
                     ),

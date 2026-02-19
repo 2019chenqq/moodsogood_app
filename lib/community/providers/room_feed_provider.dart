@@ -57,23 +57,23 @@ class RoomFeedProvider extends ChangeNotifier {
     ]);
   }
 
-  void react(String postId, ReactType type) {
+  void react(String postId, ReactType type, bool wasReacted) {
     final idx = _posts.indexWhere((p) => p.id == postId);
     if (idx < 0) return;
 
     final p = _posts[idx];
     switch (type) {
       case ReactType.hug:
-        p.hug += 1;
+        p.hug = (p.hug + (wasReacted ? -1 : 1)).clamp(0, 999);
         break;
       case ReactType.listen:
-        p.listen += 1;
+        p.listen = (p.listen + (wasReacted ? -1 : 1)).clamp(0, 999);
         break;
       case ReactType.hope:
-        p.hope += 1;
+        p.hope = (p.hope + (wasReacted ? -1 : 1)).clamp(0, 999);
         break;
       case ReactType.heart:
-        p.heart += 1;
+        p.heart = (p.heart + (wasReacted ? -1 : 1)).clamp(0, 999);
         break;
     }
     notifyListeners();

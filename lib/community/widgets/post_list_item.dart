@@ -7,7 +7,7 @@ import 'community_style.dart';
 class PostListItem extends StatelessWidget {
   final Post post;
   final VoidCallback onTap;
-  final void Function(ReactType type) onReact;
+  final void Function(ReactType type, bool wasReacted) onReact;
 
   const PostListItem({
     super.key,
@@ -61,10 +61,7 @@ class PostListItem extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               EmpathyBar(
-                hug: post.hug,
-                listen: post.listen,
-                hope: post.hope,
-                heart: post.heart,
+                post: post,
                 onReact: onReact,
               ),
               const SizedBox(height: 8),

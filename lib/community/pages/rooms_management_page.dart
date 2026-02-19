@@ -183,18 +183,20 @@ class _RoomsManagementPageState extends State<RoomsManagementPage> {
   void _confirmDeleteRoom(BuildContext context, String roomId, String roomName) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('確認刪除'),
         content: Text('確定要刪除看板「$roomName」嗎？'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('取消'),
           ),
           FilledButton(
             onPressed: () async {
-              Navigator.pop(context);
-              await _deleteRoom(context, roomId, roomName);
+              Navigator.pop(dialogContext);
+              // ⚠️ 在異步前先取得 ScaffoldMessenger
+              final scaffoldMessenger = ScaffoldMessenger.of(context);
+              await _deleteRoom(scaffoldMessenger, roomId, roomName);
             },
             style: FilledButton.styleFrom(
               backgroundColor: Colors.red,
@@ -206,10 +208,26 @@ class _RoomsManagementPageState extends State<RoomsManagementPage> {
     );
   }
 
-  Future<void> _deleteRoom(BuildContext context, String roomId, String roomName) async {
+  Future<void> _deleteRoom(
+    ScaffoldMessengerState messenger,
+    String roomId,
+    String roomName,
+  ) async {
     try {
       debugPrint('🗑️ 開始刪除看板：$roomId ($roomName)');
 
+      // 1. 找到對應的申請並清空 roomId
+      final requestsSnap = await FirebaseFirestore.instance
+          .collection('community_room_requests')
+          .where('roomId', isEqualTo: roomId)
+          .get();
+      
+      for (final doc in requestsSnap.docs) {
+        await doc.reference.update({'roomId': ''});
+        debugPrint('📋 已清空申請 ${doc.id} 的 roomId');
+      }
+
+      // 2. 刪除看板
       await FirebaseFirestore.instance
           .collection(_roomsCollection)
           .doc(roomId)
@@ -218,14 +236,16 @@ class _RoomsManagementPageState extends State<RoomsManagementPage> {
       debugPrint('✅ 看板已刪除：$roomId');
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      
+      messenger.showSnackBar(
         SnackBar(content: Text('✅ 看板「$roomName」已刪除')),
       );
     } catch (e) {
       debugPrint('❌ 刪除看板失敗：$e');
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      
+      messenger.showSnackBar(
         SnackBar(content: Text('❌ 刪除失敗：$e')),
       );
     }

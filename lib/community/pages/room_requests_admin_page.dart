@@ -67,13 +67,33 @@ class _RoomRequestsAdminPageState extends State<RoomRequestsAdminPage> {
 
           debugPrint('✅ Admin page - 加載 ${snap.data!.docs.length} 個申請');
 
-          // 在客户端排序
+          // 在客户端排序和過濾
           var docs = snap.data!.docs;
           docs.sort((a, b) {
             final aTime = (a.data()['createdAt'] as Timestamp?)?.toDate() ?? DateTime(1970);
             final bTime = (b.data()['createdAt'] as Timestamp?)?.toDate() ?? DateTime(1970);
             return bTime.compareTo(aTime); // 降序
           });
+          
+          // 過濾掉已批准但看板已刪除的申請
+          docs = docs.where((doc) {
+            final data = doc.data();
+            final status = (data['status'] ?? 'pending').toString();
+            final roomId = (data['roomId'] ?? '').toString();
+            
+            // 如果是已批准但沒有 roomId，說明看板已被刪除，過濾掉
+            if (status == 'approved' && roomId.isEmpty) {
+              return false;
+            }
+            return true;
+          }).toList();
+          
+          if (docs.isEmpty) {
+            debugPrint('ℹ️ Admin page - 沒有有效申請');
+            return const Center(
+              child: Text('沒有申請'),
+            );
+          }
           return ListView.separated(
             padding: const EdgeInsets.all(16),
             itemCount: docs.length,

@@ -1,7 +1,9 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'utils/anon_name.dart';
 
+import 'models/post.dart';
 import 'providers/post_thread_provider.dart';
 import 'providers/room_feed_provider.dart';
 import 'widgets/empathy_bar.dart';
@@ -12,6 +14,12 @@ class PostDetailPage extends StatelessWidget {
   static const routeName = '/community/post';
   const PostDetailPage({super.key});
 
+  static const List<String> _adminUids = [
+    'Z6lq7OaKreebFWI9yyGRQiMZPcr1' // TODO: 填入管理員 UID
+  ];
+
+  bool _isAdmin(String? uid) => uid != null && _adminUids.contains(uid);
+
   @override
   Widget build(BuildContext context) {
     final postId = ModalRoute.of(context)!.settings.arguments as String;
@@ -21,12 +29,27 @@ class PostDetailPage extends StatelessWidget {
       child: Builder(
         builder: (context) {
           final thread = context.watch<PostThreadProvider>();
+          final currentUid = FirebaseAuth.instance.currentUser?.uid;
+          final isAdmin = _isAdmin(currentUid);
           final ctrl = TextEditingController();
+          final inputFocus = FocusNode();
 
           return Scaffold(
             backgroundColor: CommunityStyle.background,
             appBar: AppBar(
-              title: const Text('貼文'),
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('貼文'),
+                  Text(
+                    currentUid == null ? '未登入' : 'UID: $currentUid',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: CommunityStyle.muted),
+                  ),
+                ],
+              ),
               elevation: 0,
               backgroundColor: CommunityStyle.surfaceSoft,
               foregroundColor: CommunityStyle.text,
@@ -89,11 +112,19 @@ class PostDetailPage extends StatelessWidget {
                               ),
                               const SizedBox(height: 12),
                               EmpathyBar(
-                                hug: thread.hug,
-                                listen: thread.listen,
-                                hope: thread.hope,
-                                heart: thread.heart,
-                                onReact: (t) => thread.react(t),
+                                post: Post(
+                                  id: postId,
+                                  roomId: '',
+                                  authorAnonId: 'A17',
+                                  content: '',
+                                  createdAt: DateTime.now(),
+                                  hug: thread.hug,
+                                  listen: thread.listen,
+                                  hope: thread.hope,
+                                  heart: thread.heart,
+                                ),
+                                onReact: (t, wasReacted) =>
+                                    thread.react(t, wasReacted),
                               ),
                             ],
                           ),
@@ -101,6 +132,14 @@ class PostDetailPage extends StatelessWidget {
                       ),
                       const SizedBox(height: 10),
                       Text('回覆', style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 4),
+                      Text(
+                        '只有自己留言或管理員可以刪除',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: CommunityStyle.muted),
+                      ),
                       const SizedBox(height: 8),
                       ...thread.comments.map((c) {
                         return Padding(
@@ -114,8 +153,97 @@ class PostDetailPage extends StatelessWidget {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('匿名者 ${c.authorAnonId}',
-                                      style: Theme.of(context).textTheme.labelLarge),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: InkWell(
+                                          onTap: () {
+                                            final mention = '@${c.authorAnonId} ';
+                                            if (!ctrl.text.startsWith(mention)) {
+                                              ctrl.text = '${mention}${ctrl.text}';
+                                              ctrl.selection = TextSelection.collapsed(
+                                                offset: ctrl.text.length,
+                                              );
+                                            }
+                                            FocusScope.of(context).requestFocus(inputFocus);
+                                          },
+                                          child: Text(
+                                            '匿名者 ${c.authorAnonId}',
+                                            style: Theme.of(context).textTheme.labelLarge,
+                                          ),
+                                        ),
+                                      ),
+                                      if (isAdmin || (currentUid != null && c.authorUid == currentUid))
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            if (currentUid != null && c.authorUid == currentUid)
+                                              IconButton(
+                                                icon: const Icon(Icons.edit_outlined),
+                                                tooltip: '編輯留言',
+                                                onPressed: () async {
+                                                  final controller = TextEditingController(text: c.content);
+                                                  final ok = await showDialog<bool>(
+                                                    context: context,
+                                                    builder: (context) => AlertDialog(
+                                                      title: const Text('編輯留言'),
+                                                      content: TextField(
+                                                        controller: controller,
+                                                        minLines: 2,
+                                                        maxLines: 4,
+                                                        decoration: const InputDecoration(
+                                                          hintText: '輸入新的留言內容',
+                                                        ),
+                                                      ),
+                                                      actions: [
+                                                        TextButton(
+                                                          onPressed: () => Navigator.pop(context, false),
+                                                          child: const Text('取消'),
+                                                        ),
+                                                        FilledButton(
+                                                          onPressed: () => Navigator.pop(context, true),
+                                                          child: const Text('儲存'),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  );
+
+                                                  if (ok == true) {
+                                                    thread.updateComment(c.id, controller.text);
+                                                  }
+                                                },
+                                              ),
+                                            IconButton(
+                                              icon: const Icon(Icons.delete_outline),
+                                              tooltip: '刪除留言',
+                                              onPressed: () async {
+                                                final ok = await showDialog<bool>(
+                                                  context: context,
+                                                  builder: (context) => AlertDialog(
+                                                    title: const Text('刪除留言？'),
+                                                    content: const Text('刪除後無法復原。'),
+                                                    actions: [
+                                                      TextButton(
+                                                        onPressed: () => Navigator.pop(context, false),
+                                                        child: const Text('取消'),
+                                                      ),
+                                                      FilledButton(
+                                                        onPressed: () => Navigator.pop(context, true),
+                                                        child: const Text('刪除'),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                );
+
+                                                if (ok == true) {
+                                                  thread.deleteComment(c.id);
+                                                }
+                                              },
+                                            ),
+                                          ],
+                                        ),
+                                    ],
+                                  ),
                                   const SizedBox(height: 6),
                                   Text(c.content),
                                 ],
@@ -136,6 +264,7 @@ class PostDetailPage extends StatelessWidget {
                         Expanded(
                           child: TextField(
                             controller: ctrl,
+                            focusNode: inputFocus,
                             decoration: InputDecoration(
                               hintText: '匿名回應…',
                               filled: true,
@@ -160,8 +289,9 @@ class PostDetailPage extends StatelessWidget {
                         IconButton.filled(
                           onPressed: () async {
                             final anonName = await AnonNameService.getOrCreate();
+                            final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
-                            thread.addComment(ctrl.text, anonName);
+                            thread.addComment(ctrl.text, anonName, authorUid: uid);
                             ctrl.clear();
                             FocusScope.of(context).unfocus();
                           },

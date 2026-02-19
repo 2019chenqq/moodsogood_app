@@ -16,13 +16,14 @@ class PostThreadProvider extends ChangeNotifier {
 
   final List<Comment> _comments = [];
   List<Comment> get comments => List.unmodifiable(_comments);
-
+  
   void _seed() {
     _comments.addAll([
       Comment(
         id: 'c1_$postId',
         postId: postId,
         authorAnonId: '月光22',
+        authorUid: '',
         content: '我懂你…那種重到呼吸都覺得費力的感覺。',
         createdAt: DateTime.now().subtract(const Duration(minutes: 20)),
       ),
@@ -30,31 +31,33 @@ class PostThreadProvider extends ChangeNotifier {
         id: 'c2_$postId',
         postId: postId,
         authorAnonId: '雨聲',
+        authorUid: '',
         content: '你不是一個人。願意說出來已經很勇敢了。',
         createdAt: DateTime.now().subtract(const Duration(minutes: 15)),
       ),
     ]);
   }
 
-  void react(ReactType type) {
+  void react(ReactType type, bool wasReacted) {
+    // 切換反應：已按就取消（-1），未按就按下（+1）
     switch (type) {
       case ReactType.hug:
-        hug += 1;
+        hug = (hug + (wasReacted ? -1 : 1)).clamp(0, 999);
         break;
       case ReactType.listen:
-        listen += 1;
+        listen = (listen + (wasReacted ? -1 : 1)).clamp(0, 999);
         break;
       case ReactType.hope:
-        hope += 1;
+        hope = (hope + (wasReacted ? -1 : 1)).clamp(0, 999);
         break;
       case ReactType.heart:
-        heart += 1;
+        heart = (heart + (wasReacted ? -1 : 1)).clamp(0, 999);
         break;
     }
     notifyListeners();
   }
 
-  void addComment(String text, String authorAnonId) {
+  void addComment(String text, String authorAnonId, {String authorUid = ''}) {
     final t = text.trim();
     if (t.isEmpty) return;
 
@@ -65,9 +68,35 @@ class PostThreadProvider extends ChangeNotifier {
         id: 'c${_comments.length + 1}_$postId',
         postId: postId,
         authorAnonId: author,
+        authorUid: authorUid,
         content: t,
         createdAt: DateTime.now(),
       ),
+    );
+    notifyListeners();
+  }
+
+  void deleteComment(String commentId) {
+    final idx = _comments.indexWhere((c) => c.id == commentId);
+    if (idx < 0) return;
+    _comments.removeAt(idx);
+    notifyListeners();
+  }
+
+  void updateComment(String commentId, String newContent) {
+    final idx = _comments.indexWhere((c) => c.id == commentId);
+    if (idx < 0) return;
+    final trimmed = newContent.trim();
+    if (trimmed.isEmpty) return;
+
+    final old = _comments[idx];
+    _comments[idx] = Comment(
+      id: old.id,
+      postId: old.postId,
+      authorAnonId: old.authorAnonId,
+      authorUid: old.authorUid,
+      content: trimmed,
+      createdAt: old.createdAt,
     );
     notifyListeners();
   }
