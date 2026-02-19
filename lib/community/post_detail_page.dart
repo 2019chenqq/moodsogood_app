@@ -22,10 +22,16 @@ class PostDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final postId = ModalRoute.of(context)!.settings.arguments as String;
+    final args = ModalRoute.of(context)!.settings.arguments;
+    if (args is! Post) {
+      return const Scaffold(
+        body: Center(child: Text('找不到貼文內容')),
+      );
+    }
+    final post = args;
 
     return ChangeNotifierProvider(
-      create: (_) => PostThreadProvider(postId),
+      create: (_) => PostThreadProvider(post.id, post),
       child: Builder(
         builder: (context) {
           final thread = context.watch<PostThreadProvider>();
@@ -102,27 +108,16 @@ class PostDetailPage extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('匿名者 A17',
+                              Text('匿名者 ${post.authorAnonId}',
                                   style: Theme.of(context).textTheme.labelLarge),
                               const SizedBox(height: 10),
                               Text(
-                                '（示範）這裡放貼文全文。之後接 Firestore 時，'
-                                '用 postId 去取貼文內容。',
+                                post.content,
                                 style: Theme.of(context).textTheme.bodyMedium,
                               ),
                               const SizedBox(height: 12),
                               EmpathyBar(
-                                post: Post(
-                                  id: postId,
-                                  roomId: '',
-                                  authorAnonId: 'A17',
-                                  content: '',
-                                  createdAt: DateTime.now(),
-                                  hug: thread.hug,
-                                  listen: thread.listen,
-                                  hope: thread.hope,
-                                  heart: thread.heart,
-                                ),
+                                post: post,
                                 onReact: (t, wasReacted) =>
                                     thread.react(t, wasReacted),
                               ),

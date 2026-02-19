@@ -85,7 +85,7 @@ class RoomPage extends StatelessWidget {
                             final deleted = await Navigator.pushNamed(
                               context,
                               PostDetailPage.routeName,
-                              arguments: post.id,
+                              arguments: post,
                             ) as bool?;
 
                             if (deleted == true) {
