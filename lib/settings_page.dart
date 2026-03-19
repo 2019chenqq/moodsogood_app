@@ -1,17 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // 需要安裝這個來存設定
-import 'community/utils/anon_name.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'utils/notification_helper.dart';
 import 'providers/theme_provider.dart';
-import 'providers/pro_provider.dart';
 import 'onboarding_page.dart';
 import 'utils/data_sync_diagnostics.dart';
-import 'utils/firebase_sync_config.dart';
-import 'pages/subscription_info_page.dart';
-import 'pro/pro_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -25,7 +20,6 @@ class _SettingsPageState extends State<SettingsPage> {
   final _oldPinController = TextEditingController();
   final _newPinController = TextEditingController();
   final _confirmPinController = TextEditingController();
-  String _anonName = '匿名者';
 
   @override
   void dispose() {
@@ -37,10 +31,8 @@ class _SettingsPageState extends State<SettingsPage> {
 
   bool _isReminderOn = false;
   TimeOfDay _reminderTime = const TimeOfDay(hour: 22, minute: 0); // 預設晚上 10 點
-@override
+  @override
   Widget build(BuildContext context) {
-    final proProvider = context.watch<ProProvider>();
-    
     return Scaffold(
       appBar: AppBar(title: const Text('設定')),
       body: ListView(
@@ -86,8 +78,8 @@ class _SettingsPageState extends State<SettingsPage> {
           //   ),
           SwitchListTile(
             title: const Text('每日提醒'),
-            subtitle: Text(_isReminderOn 
-                ? '將於每天 ${_reminderTime.format(context)} 提醒' 
+            subtitle: Text(_isReminderOn
+                ? '將於每天 ${_reminderTime.format(context)} 提醒'
                 : '提醒已關閉'),
             value: _isReminderOn,
             onChanged: (val) {
@@ -100,7 +92,8 @@ class _SettingsPageState extends State<SettingsPage> {
               title: const Text('提醒時間'),
               trailing: Text(
                 _reminderTime.format(context),
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
               onTap: () async {
                 final picked = await showTimePicker(
@@ -112,8 +105,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 }
               },
             ),
-            const Divider(), // 分隔線
-          
+          const Divider(), // 分隔線
+
           Consumer<ThemeProvider>(
             builder: (context, themeProvider, child) {
               return Column(
@@ -121,7 +114,9 @@ class _SettingsPageState extends State<SettingsPage> {
                 children: [
                   const Padding(
                     padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: Text('外觀', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+                    child: Text('外觀',
+                        style: TextStyle(
+                            color: Colors.grey, fontWeight: FontWeight.bold)),
                   ),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -147,58 +142,44 @@ class _SettingsPageState extends State<SettingsPage> {
                       },
                     ),
                   ),
-                const Divider(),
-
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text('隱私', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
-          ),
-
-          ListTile(
-            title: const Text('討論區匿名稱呼'),
-            subtitle: Text('$_anonName（不可修改）'),
-            trailing: const Icon(Icons.lock_outline),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Text(
-              '系統自動產生且不可修改，避免使用本名與不當名稱。',
-              style: TextStyle(color: Colors.grey[600], fontSize: 12),
-            ),
-          ),
-
-          SwitchListTile(
-            title: const Text('啟用 App 密碼鎖定'),
-            subtitle: const Text('打開 App 時需要輸入密碼才能查看日記'),
-            value: _appLockEnabled,
-            onChanged: (val) async {
-              if (val) {
-                // 開啟時先設定一組密碼
-                final ok = await _showSetPinDialog();
-                if (ok) {
-                  final prefs = await SharedPreferences.getInstance();
-                  await prefs.setBool('appLockEnabled', true);
-                  setState(() => _appLockEnabled = true);
-                }
-              } else {
-                // 關閉鎖定
-                final prefs = await SharedPreferences.getInstance();
-                await prefs.setBool('appLockEnabled', false);
-                // 可以選擇是否刪除密碼
-                // await prefs.remove('appLockPin');
-                setState(() => _appLockEnabled = false);
-              }
-            },
-          ),
-
-          if (_appLockEnabled)
-            ListTile(
-  leading: const Icon(Icons.password),
-  title: const Text('變更解鎖密碼'),
-  subtitle: const Text('修改打開 App 時使用的解鎖密碼'),
-  enabled: _appLockEnabled,                 // 只有開啟密碼鎖定時才能按
-  onTap: _appLockEnabled ? _showChangePinDialog : null,
-),
+                  const Divider(),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    child: Text('隱私',
+                        style: TextStyle(
+                            color: Colors.grey, fontWeight: FontWeight.bold)),
+                  ),
+                  SwitchListTile(
+                    title: const Text('啟用 App 密碼鎖定'),
+                    subtitle: const Text('打開 App 時需要輸入密碼才能查看日記'),
+                    value: _appLockEnabled,
+                    onChanged: (val) async {
+                      if (val) {
+                        // 開啟時先設定一組密碼
+                        final ok = await _showSetPinDialog();
+                        if (ok) {
+                          final prefs = await SharedPreferences.getInstance();
+                          await prefs.setBool('appLockEnabled', true);
+                          setState(() => _appLockEnabled = true);
+                        }
+                      } else {
+                        // 關閉鎖定
+                        final prefs = await SharedPreferences.getInstance();
+                        await prefs.setBool('appLockEnabled', false);
+                        // 可以選擇是否刪除密碼
+                        // await prefs.remove('appLockPin');
+                        setState(() => _appLockEnabled = false);
+                      }
+                    },
+                  ),
+                  if (_appLockEnabled)
+                    ListTile(
+                      leading: const Icon(Icons.password),
+                      title: const Text('變更解鎖密碼'),
+                      subtitle: const Text('修改打開 App 時使用的解鎖密碼'),
+                      enabled: _appLockEnabled, // 只有開啟密碼鎖定時才能按
+                      onTap: _appLockEnabled ? _showChangePinDialog : null,
+                    ),
                 ],
               );
             },
@@ -208,7 +189,9 @@ class _SettingsPageState extends State<SettingsPage> {
 
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text('說明', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+            child: Text('說明',
+                style:
+                    TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
           ),
 
           ListTile(
@@ -381,6 +364,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   /// 顯示同步診斷結果
+  // ignore: unused_element
   void _showSyncDiagnostics(BuildContext context) async {
     showDialog(
       context: context,
@@ -410,7 +394,8 @@ class _SettingsPageState extends State<SettingsPage> {
                         width: 12,
                         height: 12,
                         decoration: BoxDecoration(
-                          color: result.isHealthy ? Colors.green : Colors.orange,
+                          color:
+                              result.isHealthy ? Colors.green : Colors.orange,
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -420,7 +405,8 @@ class _SettingsPageState extends State<SettingsPage> {
                           result.message,
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: result.isHealthy ? Colors.green : Colors.orange,
+                            color:
+                                result.isHealthy ? Colors.green : Colors.orange,
                           ),
                         ),
                       ),
@@ -430,7 +416,8 @@ class _SettingsPageState extends State<SettingsPage> {
 
                   // 詳細信息
                   _buildDiagnosticRow('本地紀錄數', '${result.localRecordCount}'),
-                  _buildDiagnosticRow('Firebase 紀錄數', '${result.firebaseRecordCount}'),
+                  _buildDiagnosticRow(
+                      'Firebase 紀錄數', '${result.firebaseRecordCount}'),
                   if (result.commonRecords > 0)
                     _buildDiagnosticRow('重複的紀錄', '${result.commonRecords}'),
                   if (result.onlyLocalRecords > 0)
@@ -505,6 +492,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   /// 啟動頁面導覽
+  // ignore: unused_element
   void _launchPageTutorial(
     BuildContext context,
     String pageName,
@@ -535,106 +523,99 @@ class _SettingsPageState extends State<SettingsPage> {
       _reminderTime = TimeOfDay(hour: h, minute: m);
       _appLockEnabled = prefs.getBool('appLockEnabled') ?? false;
     });
-
-    final anonName = await AnonNameService.getOrCreate();
-    if (!mounted) return;
-    setState(() => _anonName = anonName);
   }
 
   // 儲存並設定通知
-Future<void> _updateSettings(bool isOn, TimeOfDay time) async {
-  // 1. 更新畫面上的開關與時間
-  setState(() {
-    _isReminderOn = isOn;
-    _reminderTime = time;
-  });
+  Future<void> _updateSettings(bool isOn, TimeOfDay time) async {
+    // 1. 更新畫面上的開關與時間
+    setState(() {
+      _isReminderOn = isOn;
+      _reminderTime = time;
+    });
 
-  // 2. 儲存設定
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setBool('isReminderOn', isOn);
-  await prefs.setInt('reminderHour', time.hour);
-  await prefs.setInt('reminderMinute', time.minute);
+    // 2. 儲存設定
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isReminderOn', isOn);
+    await prefs.setInt('reminderHour', time.hour);
+    await prefs.setInt('reminderMinute', time.minute);
 
-  // 3. 初始化通知（保險再呼叫一次）
-  final helper = NotificationHelper();
-  await helper.init();
-
-  if (!mounted) return;
-
-  // 4. 要求權限
-  final platform = helper.notificationsPlugin
-      .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
-  if (platform != null) {
-    await platform.requestExactAlarmsPermission();
-    await platform.requestNotificationsPermission();
-  }
-
-//   // 5. 根據開關決定行為
-  if (isOn) {
-    // 先取消舊的，避免重複排
-    await helper.cancelNotification(1);
-
-    // 檢查權限是否真的被授予
-    final android = helper.notificationsPlugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
-    final notifEnabled = await android?.areNotificationsEnabled() ?? false;
-    debugPrint('🔔 通知已啟用: $notifEnabled');
-
-
-    if (!notifEnabled) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('❌ 需要允許通知權限才能使用提醒功能'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      return;
-    }
-
-//     // 🕐 若設定時間已過，改成明天
-    final now = TimeOfDay.now();
-    bool isAfterNow = time.hour > now.hour ||
-        (time.hour == now.hour && time.minute > now.minute);
-    final adjustedTime = isAfterNow
-        ? time
-        : TimeOfDay(hour: (time.hour + 24) % 24, minute: time.minute);
-
-    // 使用 WorkManager（適用於小米等嚴格系統）
-    final success = await helper.scheduleDailyNotificationWithWorkManager(
-      time: adjustedTime,
-      payload: '/home',
-    );
+    // 3. 初始化通知（保險再呼叫一次）
+    final helper = NotificationHelper();
+    await helper.init();
 
     if (!mounted) return;
 
-    final messenger = ScaffoldMessenger.of(context);
-    final adjustedTimeLabel = adjustedTime.format(context);
+    // 4. 要求權限
+    final platform = helper.notificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    if (platform != null) {
+      await platform.requestExactAlarmsPermission();
+      await platform.requestNotificationsPermission();
+    }
 
-    debugPrint('✅ 已建立每日提醒（WorkManager）：$adjustedTimeLabel');
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          success 
-            ? '已設定每日提醒：$adjustedTimeLabel ✅\n' 
-            : '設定提醒失敗，請檢查權限'
-        ),
-        backgroundColor: success ? Colors.green : Colors.orange,
-      ),
-    );
-  } else {
-    // 關閉提醒
-    await helper.cancelDailyNotificationWithWorkManager();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已關閉每日提醒 ❎')),
+//   // 5. 根據開關決定行為
+    if (isOn) {
+      // 先取消舊的，避免重複排
+      await helper.cancelNotification(1);
+
+      // 檢查權限是否真的被授予
+      final android = helper.notificationsPlugin
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+      final notifEnabled = await android?.areNotificationsEnabled() ?? false;
+      debugPrint('🔔 通知已啟用: $notifEnabled');
+
+      if (!notifEnabled) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('❌ 需要允許通知權限才能使用提醒功能'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+//     // 🕐 若設定時間已過，改成明天
+      final now = TimeOfDay.now();
+      bool isAfterNow = time.hour > now.hour ||
+          (time.hour == now.hour && time.minute > now.minute);
+      final adjustedTime = isAfterNow
+          ? time
+          : TimeOfDay(hour: (time.hour + 24) % 24, minute: time.minute);
+
+      // 使用 WorkManager（適用於小米等嚴格系統）
+      final success = await helper.scheduleDailyNotificationWithWorkManager(
+        time: adjustedTime,
+        payload: '/home',
       );
+
+      if (!mounted) return;
+
+      final messenger = ScaffoldMessenger.of(context);
+      final adjustedTimeLabel = adjustedTime.format(context);
+
+      debugPrint('✅ 已建立每日提醒（WorkManager）：$adjustedTimeLabel');
+      messenger.showSnackBar(
+        SnackBar(
+          content:
+              Text(success ? '已設定每日提醒：$adjustedTimeLabel ✅\n' : '設定提醒失敗，請檢查權限'),
+          backgroundColor: success ? Colors.green : Colors.orange,
+        ),
+      );
+    } else {
+      // 關閉提醒
+      await helper.cancelDailyNotificationWithWorkManager();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已關閉每日提醒 ❎')),
+        );
+      }
     }
   }
-  }
+
   Future<bool> _showSetPinDialog() async {
     final pinController = TextEditingController();
     final confirmController = TextEditingController();
@@ -719,121 +700,122 @@ Future<void> _updateSettings(bool isOn, TimeOfDay time) async {
 
     return result ?? false;
   }
+
   Future<void> _showChangePinDialog() async {
-  final prefs = await SharedPreferences.getInstance();
-  // ⚠️ 一定要用 app_lock_screen.dart 裡用的同一個 key
-  final savedPin = prefs.getString('appLockPin') ?? '';
+    final prefs = await SharedPreferences.getInstance();
+    // ⚠️ 一定要用 app_lock_screen.dart 裡用的同一個 key
+    final savedPin = prefs.getString('appLockPin') ?? '';
 
-  if (!mounted) return;
+    if (!mounted) return;
 
-  String? errorText;
+    String? errorText;
 
-  await showDialog(
-    context: context,
-    barrierDismissible: false,
-    builder: (context) {
-      return StatefulBuilder(
-        builder: (context, setState) {
-          return AlertDialog(
-            title: const Text('變更解鎖密碼'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: _oldPinController,
-                    obscureText: true,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: '目前密碼',
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('變更解鎖密碼'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: _oldPinController,
+                      obscureText: true,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: '目前密碼',
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _newPinController,
-                    obscureText: true,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: '新密碼（6 位數）',
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _confirmPinController,
-                    obscureText: true,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: '再次輸入新密碼',
-                    ),
-                  ),
-                  if (errorText != null) ...[
                     const SizedBox(height: 8),
-                    Text(
-                      errorText!,
-                      style: const TextStyle(color: Colors.red),
+                    TextField(
+                      controller: _newPinController,
+                      obscureText: true,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: '新密碼（6 位數）',
+                      ),
                     ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _confirmPinController,
+                      obscureText: true,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: '再次輸入新密碼',
+                      ),
+                    ),
+                    if (errorText != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        errorText!,
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  _oldPinController.clear();
-                  _newPinController.clear();
-                  _confirmPinController.clear();
-                  Navigator.of(context).pop();
-                },
-                child: const Text('取消'),
-              ),
-              FilledButton(
-                onPressed: () async {
-                  final navigator = Navigator.of(context);
-                  final messenger = ScaffoldMessenger.of(context);
-                  final oldPin = _oldPinController.text.trim();
-                  final newPin = _newPinController.text.trim();
-                  final confirmPin = _confirmPinController.text.trim();
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    _oldPinController.clear();
+                    _newPinController.clear();
+                    _confirmPinController.clear();
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    final navigator = Navigator.of(context);
+                    final messenger = ScaffoldMessenger.of(context);
+                    final oldPin = _oldPinController.text.trim();
+                    final newPin = _newPinController.text.trim();
+                    final confirmPin = _confirmPinController.text.trim();
 
-                  // 1. 已經有舊密碼時，要先驗證
-                  if (savedPin.isNotEmpty && oldPin != savedPin) {
-                    setState(() => errorText = '目前密碼輸入錯誤');
-                    return;
-                  }
+                    // 1. 已經有舊密碼時，要先驗證
+                    if (savedPin.isNotEmpty && oldPin != savedPin) {
+                      setState(() => errorText = '目前密碼輸入錯誤');
+                      return;
+                    }
 
-                  // 2. 新密碼不能空白
-                  if (newPin.isEmpty) {
-                    setState(() => errorText = '新密碼不能為空白');
-                    return;
-                  }
+                    // 2. 新密碼不能空白
+                    if (newPin.isEmpty) {
+                      setState(() => errorText = '新密碼不能為空白');
+                      return;
+                    }
 
-                  // 3. 兩次新密碼要一樣
-                  if (newPin != confirmPin) {
-                    setState(() => errorText = '兩次輸入的新密碼不一致');
-                    return;
-                  }
+                    // 3. 兩次新密碼要一樣
+                    if (newPin != confirmPin) {
+                      setState(() => errorText = '兩次輸入的新密碼不一致');
+                      return;
+                    }
 
-                  // 4. 寫回 SharedPreferences（跟 AppLockScreen 用同一個 key）
-                  await prefs.setString('appLockPin', newPin);
+                    // 4. 寫回 SharedPreferences（跟 AppLockScreen 用同一個 key）
+                    await prefs.setString('appLockPin', newPin);
 
-                  _oldPinController.clear();
-                  _newPinController.clear();
-                  _confirmPinController.clear();
+                    _oldPinController.clear();
+                    _newPinController.clear();
+                    _confirmPinController.clear();
 
-                  if (!mounted) return;
+                    if (!mounted) return;
 
-                  navigator.pop();
+                    navigator.pop();
 
-                  messenger.showSnackBar(
-                    const SnackBar(content: Text('解鎖密碼已更新')),
-                  );
-                },
-                child: const Text('儲存'),
-              ),
-            ],
-          );
-        },
-      );
-    },
-  );
-}
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('解鎖密碼已更新')),
+                    );
+                  },
+                  child: const Text('儲存'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
 }

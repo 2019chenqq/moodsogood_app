@@ -5,10 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:provider/provider.dart'; // 🔥 引入 Provider
 
-// 引入你的 Provider 和 頁面
-import '../providers/menu_provider.dart';
+// 引入頁面
 import 'pages/hub_pages.dart';
 
 import 'Sign_in_page.dart';
@@ -33,10 +31,6 @@ class _HomeShellState extends m.State<HomeShell> {
   // 🔥 定義底部導航頁面
   final List<m.Widget> _pages = const [
     RecordHubPage(), // Index 0: 紀錄
-    DiscussionHubPage(), // Index 1: 討論區
-    RelaxHubPage(), // Index 2: 放鬆區
-    TreeholePostOfficePage(), // Index 3: 樹洞郵局
-    LocationsHubPage(), // Index 4: 據點
   ];
 
   @override
@@ -147,9 +141,7 @@ class _HomeShellState extends m.State<HomeShell> {
 
   @override
   m.Widget build(m.BuildContext context) {
-    // 🔥 監聽 MenuProvider 知道現在要顯示第幾頁
-    final menuProvider = Provider.of<MenuProvider>(context);
-    final currentIndex = menuProvider.currentIndex;
+    const currentIndex = 0;
 
     return m.Scaffold(
       // 🔥 這裡很重要：如果現在顯示的是首頁(Index 0)，才顯示 AppBar
@@ -270,33 +262,7 @@ class _HomeShellState extends m.State<HomeShell> {
         index: currentIndex,
         children: _pages,
       ),
-      bottomNavigationBar: m.BottomNavigationBar(
-        type: m.BottomNavigationBarType.fixed,
-        currentIndex: currentIndex,
-        onTap: menuProvider.setIndex,
-        items: const [
-          m.BottomNavigationBarItem(
-            icon: m.Icon(m.Icons.edit_note),
-            label: '紀錄',
-          ),
-          m.BottomNavigationBarItem(
-            icon: m.Icon(m.Icons.forum_outlined),
-            label: '討論區',
-          ),
-          m.BottomNavigationBarItem(
-            icon: m.Icon(m.Icons.spa_outlined),
-            label: '放鬆區',
-          ),
-          m.BottomNavigationBarItem(
-            icon: m.Icon(m.Icons.mail_outline),
-            label: '樹洞郵局',
-          ),
-          m.BottomNavigationBarItem(
-            icon: m.Icon(m.Icons.place_outlined),
-            label: '據點',
-          ),
-        ],
-      ),
+      // 已切回精簡版：僅保留「紀錄 + 設定」
     );
   }
 }

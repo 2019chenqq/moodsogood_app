@@ -7,13 +7,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 
 import 'dart:io';
 import '../settings_page.dart';
-import '../pages/feesback_page.dart';
-import '../pro/pro_page.dart';
 import '../pages/hub_pages.dart';
-import 'package:provider/provider.dart';
-import '../providers/pro_provider.dart';
-import '../utils/firebase_sync_config.dart';
-import '../community/utils/anon_name.dart';
 import '../Sign_in_page.dart';
 
 class MainDrawer extends StatefulWidget {
@@ -109,27 +103,22 @@ class _MainDrawerState extends State<MainDrawer> {
     // 每次 build 都重新抓取 user，確保顯示最新的 photoURL
     final user = FirebaseAuth.instance.currentUser;
     final String? photoUrl = user?.photoURL;
+    final displayName = (user?.displayName ?? '').trim();
+    final accountName = displayName.isEmpty ? '使用者' : displayName;
 
     return Drawer(
       child: ListView(
         padding: EdgeInsets.zero,
         children: [
           UserAccountsDrawerHeader(
-            accountName: FutureBuilder<String>(
-              future: AnonNameService.getOrCreate(),
-              builder: (context, snapshot) {
-                final name = snapshot.data ?? '匿名者';
-                return Text(
-                  '匿名：$name',
-                  style: const TextStyle(
-                    color: Color.fromARGB(255, 25, 107, 231),
-                    fontSize: 17,
-                  ),
-                );
-              },
+            accountName: Text(
+              accountName,
+              style: const TextStyle(
+                color: Color.fromARGB(255, 25, 107, 231),
+                fontSize: 17,
+              ),
             ),
-
-            accountEmail: const SizedBox.shrink(),
+            accountEmail: Text(user?.email ?? ''),
 
             // 🔥 頭貼區塊（完整整合）
             currentAccountPicture: GestureDetector(
@@ -182,61 +171,7 @@ class _MainDrawerState extends State<MainDrawer> {
             ),
           ),
 
-          // Pro 會員狀態卡片
-          Consumer<ProProvider>(
-            builder: (context, proProvider, _) => Container(
-              margin: const EdgeInsets.all(16),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: proProvider.isPro
-                      ? [Colors.amber[300]!, Colors.amber[600]!]
-                      : [Colors.grey[300]!, Colors.grey[500]!],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        proProvider.isPro ? '✨ Pro 會員' : '📱 免費版',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          fontSize: 16,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        FirebaseSyncConfig.getDataRetention(),
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                  FilledButton(
-                    onPressed: () {
-                      Navigator.pop(context); // 關閉 drawer
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const ProPage()),
-                      );
-                    },
-                    child: Text(proProvider.isPro ? '已啟用' : '升級'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // 2. 主要分區（與底部導航一致）
+          // 主要分區
           ListTile(
             leading: const Icon(Icons.edit_note),
             title: const Text('紀錄'),
@@ -245,51 +180,6 @@ class _MainDrawerState extends State<MainDrawer> {
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(builder: (_) => const RecordHubPage()),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.forum_outlined),
-            title: const Text('討論區'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (_) => const DiscussionHubPage()),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.spa_outlined),
-            title: const Text('放鬆區'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (_) => const RelaxHubPage()),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.mail_outline),
-            title: const Text('樹洞郵局'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const TreeholePostOfficePage()),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.place_outlined),
-            title: const Text('據點'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (_) => const LocationsHubPage()),
               );
             },
           ),
@@ -304,32 +194,6 @@ class _MainDrawerState extends State<MainDrawer> {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const SettingsPage()),
-              );
-            },
-          ),
-          const Divider(),
-
-          ListTile(
-            leading: const Icon(Icons.feedback_outlined),
-            title: const Text('回饋與建議'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const FeedbackPage()),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.workspace_premium_outlined),
-            title: const Text('升級至心域 Pro'),
-            onTap: () {
-              Navigator.pop(context); // 關 drawer
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const ProPage(),
-                ),
               );
             },
           ),
