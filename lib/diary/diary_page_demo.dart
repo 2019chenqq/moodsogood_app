@@ -17,16 +17,15 @@ class DiaryPageDemo extends m.StatefulWidget {
 }
 
 class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
- 
   // ---------------- UI 狀態（控制器） ----------------
-  final _titleCtrl     = m.TextEditingController();
-  final _contentCtrl   = m.TextEditingController();
-  final _songCtrl      = m.TextEditingController();
+  final _titleCtrl = m.TextEditingController();
+  final _contentCtrl = m.TextEditingController();
+  final _songCtrl = m.TextEditingController();
   final _highlightCtrl = m.TextEditingController();
-  final _metaphorCtrl  = m.TextEditingController();
+  final _metaphorCtrl = m.TextEditingController();
   final _conceitedCtrl = m.TextEditingController(); // 為自己感到驕傲的是
-  final _proudOfCtrl   = m.TextEditingController(); // 我做得不錯的地方
-  final _selfCareCtrl  = m.TextEditingController(); // 我還能多照顧自己一點
+  final _proudOfCtrl = m.TextEditingController(); // 我做得不錯的地方
+  final _selfCareCtrl = m.TextEditingController(); // 我還能多照顧自己一點
 
   // ---------------- 自動儲存 ----------------
   Timer? _debouncer;
@@ -41,23 +40,26 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   // String get _uid => FirebaseAuth.instance.currentUser!.uid;
 
   // 正規化到當天 00:00:00
-  DateTime get _day => DateTime(widget.date.year, widget.date.month, widget.date.day);
+  DateTime get _day =>
+      DateTime(widget.date.year, widget.date.month, widget.date.day);
 
- String get _docId => DateHelper.toId(_day);
+  String get _docId => DateHelper.toId(_day);
 
   // 日記文件：users/{uid}/diary/{yyyy-MM-dd}
-  DocumentReference<Map<String, dynamic>> get _docRef => FirebaseFirestore.instance
-      .collection('users').doc(FirebaseAuth.instance.currentUser!.uid)
-      .collection('diary') // TODO: 若你的日記集合名不同（例如 diaries），改這裡
-      .doc(_docId);
+  DocumentReference<Map<String, dynamic>> get _docRef =>
+      FirebaseFirestore.instance
+          .collection('users')
+          .doc(FirebaseAuth.instance.currentUser!.uid)
+          .collection('diary') // TODO: 若你的日記集合名不同（例如 diaries），改這裡
+          .doc(_docId);
 
   // ---------------- 生命週期 ----------------
   @override
   void initState() {
     super.initState();
-    _loadDraft();          // 讀入當日已存的內容（如有）
-    _attachAutoSave();     // 綁定每欄位防彈跳自動儲存
-    _loadNeighbors();      // 查上一筆/下一筆
+    _loadDraft(); // 讀入當日已存的內容（如有）
+    _attachAutoSave(); // 綁定每欄位防彈跳自動儲存
+    _loadNeighbors(); // 查上一筆/下一筆
   }
 
   @override
@@ -77,14 +79,14 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   // 從控制器值更新 UI 的輔助函數
   void _updateUIFromData(Map<String, dynamic> data) {
     if (!mounted) return;
-    _titleCtrl.text     = (data['title']     ?? '') as String;
-    _contentCtrl.text   = (data['content']   ?? '') as String;
-    _songCtrl.text      = (data['themeSong'] ?? '') as String;
+    _titleCtrl.text = (data['title'] ?? '') as String;
+    _contentCtrl.text = (data['content'] ?? '') as String;
+    _songCtrl.text = (data['themeSong'] ?? '') as String;
     _highlightCtrl.text = (data['highlight'] ?? '') as String;
-    _metaphorCtrl.text  = (data['metaphor']  ?? '') as String;
+    _metaphorCtrl.text = (data['metaphor'] ?? '') as String;
     _conceitedCtrl.text = (data['conceited'] ?? '') as String;
-    _proudOfCtrl.text   = (data['proudOf']   ?? '') as String;
-    _selfCareCtrl.text  = (data['selfCare']  ?? '') as String;
+    _proudOfCtrl.text = (data['proudOf'] ?? '') as String;
+    _selfCareCtrl.text = (data['selfCare'] ?? '') as String;
     setState(() {}); // 更新字數
   }
 
@@ -101,7 +103,8 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
 
       // 2. 再嘗試從 Firebase 加載（如果有新的會覆蓋）
       try {
-        final snap = await _docRef.get(const GetOptions(source: Source.serverAndCache));
+        final snap =
+            await _docRef.get(const GetOptions(source: Source.serverAndCache));
         final data = snap.data();
         if (data != null && mounted) {
           m.debugPrint('📔 Loaded diary from Firebase, updating local');
@@ -117,8 +120,14 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
 
   void _attachAutoSave() {
     for (final c in [
-      _titleCtrl, _contentCtrl, _songCtrl, _highlightCtrl,
-      _metaphorCtrl, _conceitedCtrl, _proudOfCtrl, _selfCareCtrl,
+      _titleCtrl,
+      _contentCtrl,
+      _songCtrl,
+      _highlightCtrl,
+      _metaphorCtrl,
+      _conceitedCtrl,
+      _proudOfCtrl,
+      _selfCareCtrl,
     ]) {
       c.removeListener(_onAnyFieldChanged);
       c.addListener(_onAnyFieldChanged);
@@ -135,24 +144,23 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid == null) return;
-      
+
       // Only sync to Firebase if enabled
       if (FirebaseSyncConfig.shouldSync()) {
         await _docRef.set({
-          'date'     : Timestamp.fromDate(_day),
-          'title'    : _titleCtrl.text.trim(),
-          'content'  : _contentCtrl.text.trim(),
+          'date': Timestamp.fromDate(_day),
+          'title': _titleCtrl.text.trim(),
+          'content': _contentCtrl.text.trim(),
           'themeSong': _songCtrl.text.trim(),
           'highlight': _highlightCtrl.text.trim(),
-          'metaphor' : _metaphorCtrl.text.trim(),
+          'metaphor': _metaphorCtrl.text.trim(),
           'conceited': _conceitedCtrl.text.trim(),
-          'proudOf'  : _proudOfCtrl.text.trim(),
-          'selfCare' : _selfCareCtrl.text.trim(),
-
+          'proudOf': _proudOfCtrl.text.trim(),
+          'selfCare': _selfCareCtrl.text.trim(),
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
       }
-      
+
       // Always save to local database
       try {
         final repo = DiaryRepository();
@@ -170,9 +178,12 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
       } catch (e) {
         m.debugPrint('❌ Failed to save diary locally: $e');
       }
-      
+
       if (!mounted) return;
-      setState(() { _saving = false; _savedAt = DateTime.now(); });
+      setState(() {
+        _saving = false;
+        _savedAt = DateTime.now();
+      });
     } on FirebaseException catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -186,7 +197,8 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   Future<void> _loadNeighbors() async {
     try {
       final col = FirebaseFirestore.instance
-          .collection('users').doc(FirebaseAuth.instance.currentUser!.uid)
+          .collection('users')
+          .doc(FirebaseAuth.instance.currentUser!.uid)
           .collection('diary'); // ⚠️ 確認這裡的集合名稱跟你的日記一樣 (diary 或 dailyRecords)
 
       // 確保用當日 00:00:00 的 Timestamp 進行比較
@@ -212,22 +224,23 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
         _prevDate = prevSnap.docs.isNotEmpty
             ? (prevSnap.docs.first.data()['date'] as Timestamp).toDate()
             : null;
-            
+
         _nextDate = nextSnap.docs.isNotEmpty
             ? (nextSnap.docs.first.data()['date'] as Timestamp).toDate()
             : null;
       });
-      
+
       // debugPrint('Prev: $_prevDate, Next: $_nextDate');
     } catch (e) {
       m.debugPrint('neighbors error: $e');
     }
   }
+
 // 切換到指定日期
   void _openDiary(DateTime d) {
     // 1. 確保拿到的是純淨的日期物件 (00:00:00)
     final targetDate = DateTime(d.year, d.month, d.day);
-    
+
     // 2. 使用 pushReplacement 切換頁面，避免堆疊過多層
     m.Navigator.of(context).pushReplacement(
       m.MaterialPageRoute(
@@ -236,29 +249,73 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
     );
   }
 
-  // 清空欄位
-  Future<void> _confirmAndClear() async {
+  // 刪除整天日記（雲端 + 本地）
+  Future<void> _confirmAndDeleteDay() async {
     final ok = await m.showDialog<bool>(
       context: context,
       builder: (_) => m.AlertDialog(
-        title: const m.Text('清空當日內容？'),
-        content: const m.Text('這會把所有欄位清成空白（仍會保留這一天的文件）。'),
+        title: const m.Text('刪除這一天的日記？'),
+        content: const m.Text('這會刪除整天日記資料（不是只清空欄位）。此動作無法復原。'),
         actions: [
-          m.TextButton(onPressed: () => m.Navigator.pop(context, false), child: const m.Text('取消')),
-          m.FilledButton(onPressed: () => m.Navigator.pop(context, true), child: const m.Text('清空')),
+          m.TextButton(
+              onPressed: () => m.Navigator.pop(context, false),
+              child: const m.Text('取消')),
+          m.FilledButton(
+              onPressed: () => m.Navigator.pop(context, true),
+              child: const m.Text('刪除')),
         ],
       ),
     );
     if (ok != true) return;
-    _titleCtrl.clear();
-    _contentCtrl.clear();
-    _songCtrl.clear();
-    _highlightCtrl.clear();
-    _metaphorCtrl.clear();
-    _conceitedCtrl.clear();
-    _proudOfCtrl.clear();
-    _selfCareCtrl.clear();
-    _onAnyFieldChanged(); // 觸發儲存
+
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) {
+        if (!mounted) return;
+        m.ScaffoldMessenger.of(context).showSnackBar(
+          const m.SnackBar(content: m.Text('請先登入')),
+        );
+        return;
+      }
+
+      // 先刪除雲端資料（若有）
+      if (FirebaseSyncConfig.shouldSync()) {
+        await _docRef.delete();
+      }
+
+      // 再刪除本地資料
+      final repo = DiaryRepository();
+      await repo.deleteByDate(_day);
+
+      if (!mounted) return;
+      m.ScaffoldMessenger.of(context).showSnackBar(
+        const m.SnackBar(content: m.Text('已刪除當日日記')),
+      );
+
+      if (m.Navigator.of(context).canPop()) {
+        m.Navigator.of(context).pop(true);
+      } else {
+        _titleCtrl.clear();
+        _contentCtrl.clear();
+        _songCtrl.clear();
+        _highlightCtrl.clear();
+        _metaphorCtrl.clear();
+        _conceitedCtrl.clear();
+        _proudOfCtrl.clear();
+        _selfCareCtrl.clear();
+        setState(() {});
+      }
+    } on FirebaseException catch (e) {
+      if (!mounted) return;
+      m.ScaffoldMessenger.of(context).showSnackBar(
+        m.SnackBar(content: m.Text('刪除失敗：${e.code}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      m.ScaffoldMessenger.of(context).showSnackBar(
+        m.SnackBar(content: m.Text('刪除失敗：$e')),
+      );
+    }
   }
 
   // ---------------- UI ----------------
@@ -271,102 +328,100 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
         title: m.Text('編輯日記 - ${_day.month}/${_day.day}'),
         actions: [
           m.IconButton(
-            tooltip: '清空內容',
-            icon: const m.Icon(m.Icons.clear_all_outlined),
-            onPressed: _confirmAndClear,
+            tooltip: '刪除當日日記',
+            icon: const m.Icon(m.Icons.delete_outline),
+            onPressed: _confirmAndDeleteDay,
           ),
           if (_saving)
             const m.Padding(
               padding: m.EdgeInsets.symmetric(horizontal: 12),
               child: m.Center(
-                child: m.SizedBox(width: 16, height: 16,
-                  child: m.CircularProgressIndicator(strokeWidth: 2)),
+                child: m.SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: m.CircularProgressIndicator(strokeWidth: 2)),
               ),
             )
           else if (_savedAt != null)
             m.Padding(
               padding: const m.EdgeInsets.only(right: 12),
-              child: m.Center(child: m.Text('已儲存', style: m.Theme.of(context).textTheme.labelMedium)),
+              child: m.Center(
+                  child: m.Text('已儲存',
+                      style: m.Theme.of(context).textTheme.labelMedium)),
             ),
         ],
       ),
       body: m.SafeArea(
         child: m.ListView(
-          padding: const m.EdgeInsets.fromLTRB(16, 16, 16, 28),
+          padding: const m.EdgeInsets.fromLTRB(16, 8, 16, 28),
           children: [
-          _DateHeaderCard(date: d),
-const m.SizedBox(height: 12),
+            _DateHeaderCard(date: d),
+            const m.SizedBox(height: 12),
 
 // 只有當有上一筆或下一筆時才顯示按鈕區
-if (_prevDate != null || _nextDate != null) ...[
-  m.Row(
-    mainAxisAlignment: m.MainAxisAlignment.spaceBetween, // 改成 spaceBetween 會比較開闊，看你喜好
-    children: [
-      // <--- 上一筆按鈕
-      if (_prevDate != null)
-        m.TextButton.icon(
-          icon: const m.Icon(m.Icons.chevron_left),
-          // 使用 Helper 顯示漂亮日期，例如 "11/28"
-          label: m.Text('上一篇 (${DateHelper.toDisplay(_prevDate!).substring(5)})'), 
-          onPressed: () => _openDiary(_prevDate!),
-        )
-      else
-        const m.SizedBox(), // 佔位用
+            if (_prevDate != null || _nextDate != null) ...[
+              m.Row(
+                mainAxisAlignment: m.MainAxisAlignment
+                    .spaceBetween, // 改成 spaceBetween 會比較開闊，看你喜好
+                children: [
+                  // <--- 上一筆按鈕
+                  if (_prevDate != null)
+                    m.TextButton.icon(
+                      icon: const m.Icon(m.Icons.chevron_left),
+                      // 使用 Helper 顯示漂亮日期，例如 "11/28"
+                      label: m.Text(
+                          '上一篇 (${DateHelper.toDisplay(_prevDate!).substring(5)})'),
+                      onPressed: () => _openDiary(_prevDate!),
+                    )
+                  else
+                    const m.SizedBox(), // 佔位用
 
-      // ---> 下一筆按鈕
-      if (_nextDate != null)
-        m.TextButton.icon(
-          // 讓圖示在文字右邊 (利用 Directionality 或自訂 Row，這裡用簡單的 Row)
-          label: m.Text('下一篇 (${DateHelper.toDisplay(_nextDate!).substring(5)})'),
-          icon: const m.Icon(m.Icons.chevron_right),
-          // 調整 icon 方向讓它在右邊
-          iconAlignment: m.IconAlignment.end, 
-          onPressed: () => _openDiary(_nextDate!),
-        )
-      else
-        const m.SizedBox(),
-    ],
-  ),
-  const m.SizedBox(height: 8),
-],
+                  // ---> 下一筆按鈕
+                  if (_nextDate != null)
+                    m.TextButton.icon(
+                      // 讓圖示在文字右邊 (利用 Directionality 或自訂 Row，這裡用簡單的 Row)
+                      label: m.Text(
+                          '下一篇 (${DateHelper.toDisplay(_nextDate!).substring(5)})'),
+                      icon: const m.Icon(m.Icons.chevron_right),
+                      // 調整 icon 方向讓它在右邊
+                      iconAlignment: m.IconAlignment.end,
+                      onPressed: () => _openDiary(_nextDate!),
+                    )
+                  else
+                    const m.SizedBox(),
+                ],
+              ),
+              const m.SizedBox(height: 8),
+            ],
 
             // --------- 各欄位（右下角字數、自動儲存） ---------
             CountTextField(
               controller: _titleCtrl,
               label: '🖊️ 標題（可留白）',
               hint: '幫今天下一個小標題，也可以跳過…',
-                      minLines: 1, maxLines: 1,
+              minLines: 1,
+              maxLines: 1,
               onAnyChanged: _onAnyFieldChanged,
-                        textStyle: const m.TextStyle(color: m.Colors.black87),
-  hintStyle: m.TextStyle(color: m.Colors.black.withValues(alpha: 0.28)),
-  fillColor: m.Colors.white.withValues(alpha: 0.70),
-  borderColor: m.Colors.black.withValues(alpha: 0.18),),
+            ),
             const m.SizedBox(height: 12),
-            
 
             CountTextField(
               controller: _contentCtrl,
               label: '📜 內容',
               hint: '留下一點點也很好…',
-              minLines: 8, maxLines: 10,
+              minLines: 8,
+              maxLines: 10,
               onAnyChanged: _onAnyFieldChanged,
-              textStyle: const m.TextStyle(color: m.Colors.black87),
-  hintStyle: m.TextStyle(color: m.Colors.black.withValues(alpha: 0.28)),
-  fillColor: m.Colors.white.withValues(alpha: 0.70),
-  borderColor: m.Colors.black.withValues(alpha: 0.18),
             ),
             const m.SizedBox(height: 12),
 
-                        CountTextField(
+            CountTextField(
               controller: _metaphorCtrl,
               label: '🌚 今天的情緒像…',
               hint: '例：潮汐、霧氣、烈陽、厚被…',
-              minLines: 1, maxLines: 3,
+              minLines: 1,
+              maxLines: 3,
               onAnyChanged: _onAnyFieldChanged,
-              textStyle: const m.TextStyle(color: m.Colors.black87),
-  hintStyle: m.TextStyle(color: m.Colors.black.withValues(alpha: 0.28)),
-  fillColor: m.Colors.white.withValues(alpha: 0.70),
-  borderColor: m.Colors.black.withValues(alpha: 0.18),
             ),
             const m.SizedBox(height: 12),
 
@@ -374,25 +429,19 @@ if (_prevDate != null || _nextDate != null) ...[
               controller: _highlightCtrl,
               label: '✨ 今天最想記錄的瞬間',
               hint: '今天最想留住的畫面、對話或感受…',
-              minLines: 3, maxLines: 10,
+              minLines: 3,
+              maxLines: 10,
               onAnyChanged: _onAnyFieldChanged,
-              textStyle: const m.TextStyle(color: m.Colors.black87),
-  hintStyle: m.TextStyle(color: m.Colors.black.withValues(alpha: 0.28)),
-  fillColor: m.Colors.white.withValues(alpha: 0.70),
-  borderColor: m.Colors.black.withValues(alpha: 0.18),
             ),
             const m.SizedBox(height: 12),
 
-                          CountTextField(
+            CountTextField(
               controller: _proudOfCtrl,
               label: '🌤️ 我做得不錯的地方',
               hint: '肯定一下今天的自己，哪怕是很小的事情，例如：我有按時吃藥、我有出門散步…',
-              minLines: 3, maxLines: 10,
+              minLines: 3,
+              maxLines: 10,
               onAnyChanged: _onAnyFieldChanged,
-              textStyle: const m.TextStyle(color: m.Colors.black87),
-  hintStyle: m.TextStyle(color: m.Colors.black.withValues(alpha: 0.28)),
-  fillColor: m.Colors.white.withValues(alpha: 0.70),
-  borderColor: m.Colors.black.withValues(alpha: 0.18),
             ),
             const m.SizedBox(height: 12),
 
@@ -400,12 +449,9 @@ if (_prevDate != null || _nextDate != null) ...[
               controller: _songCtrl,
               label: '🎧 今日的主題曲',
               hint: '歌名／連結／演出者…',
-              minLines: 1, maxLines: 3,
+              minLines: 1,
+              maxLines: 3,
               onAnyChanged: _onAnyFieldChanged,
-              textStyle: const m.TextStyle(color: m.Colors.black87),
-  hintStyle: m.TextStyle(color: m.Colors.black.withValues(alpha: 0.28)),
-  fillColor: m.Colors.white.withValues(alpha: 0.70),
-  borderColor: m.Colors.black.withValues(alpha: 0.18),
             ),
             const m.SizedBox(height: 12),
 
@@ -413,12 +459,9 @@ if (_prevDate != null || _nextDate != null) ...[
               controller: _selfCareCtrl,
               label: '❤️‍🩹 我還能多照顧自己一點的地方',
               hint: '睡眠、飲食、邊界、運動或求助…下一步可以怎麼做？',
-              minLines: 3, maxLines: 10,
+              minLines: 3,
+              maxLines: 10,
               onAnyChanged: _onAnyFieldChanged,
-              textStyle: const m.TextStyle(color: m.Colors.black87),
-  hintStyle: m.TextStyle(color: m.Colors.black.withValues(alpha: 0.28)),
-  fillColor: m.Colors.white.withValues(alpha: 0.70),
-  borderColor: m.Colors.black.withValues(alpha: 0.18),
             ),
           ],
         ),
@@ -434,10 +477,10 @@ class _DateHeaderCard extends m.StatelessWidget {
 
   @override
   m.Widget build(m.BuildContext context) {
-    final text = DateHelper.toDisplay(date);     // yyyy-MM-dd
+    final text = DateHelper.toDisplay(date); // yyyy-MM-dd
 
     return m.Container(
-      margin: const m.EdgeInsets.fromLTRB(16, 12, 16, 8),
+      margin: const m.EdgeInsets.fromLTRB(16, 4, 16, 8),
       padding: const m.EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: m.BoxDecoration(
         color: m.Colors.white,
@@ -451,7 +494,10 @@ class _DateHeaderCard extends m.StatelessWidget {
         ],
         // 淺淺的底：不會干擾整體
         gradient: m.LinearGradient(
-          colors: [m.Colors.black.withValues(alpha: 0.04), m.Colors.black.withValues(alpha: 0.02)],
+          colors: [
+            m.Colors.black.withValues(alpha: 0.04),
+            m.Colors.black.withValues(alpha: 0.02)
+          ],
           begin: m.Alignment.topLeft,
           end: m.Alignment.bottomRight,
         ),
@@ -482,7 +528,8 @@ class _DateHeaderCard extends m.StatelessWidget {
 
   // ---------- helpers ----------
 
-  String _weekdayZh(int wd) => const ['一','二','三','四','五','六','日'][wd - 1];
+  String _weekdayZh(int wd) =>
+      const ['一', '二', '三', '四', '五', '六', '日'][wd - 1];
 
   m.Widget _chip(String text) {
     return m.Container(
@@ -505,9 +552,9 @@ class CountTextField extends m.StatelessWidget {
   final String label;
   final String? hint;
   final m.TextStyle? textStyle;
-final m.TextStyle? hintStyle;
-final m.Color? fillColor;
-final m.Color? borderColor;
+  final m.TextStyle? hintStyle;
+  final m.Color? fillColor;
+  final m.Color? borderColor;
   final int minLines;
   final int maxLines;
   final void Function()? onAnyChanged;
@@ -518,21 +565,33 @@ final m.Color? borderColor;
     required this.label,
     this.hint,
     required this.minLines,
-  required this.maxLines,
-  this.onAnyChanged,
-  this.textStyle,
-  this.hintStyle,
-  this.fillColor,
-  this.borderColor,
-    });
+    required this.maxLines,
+    this.onAnyChanged,
+    this.textStyle,
+    this.hintStyle,
+    this.fillColor,
+    this.borderColor,
+  });
 
   @override
   m.Widget build(m.BuildContext context) {
+    final cs = m.Theme.of(context).colorScheme;
+    final effectiveTextStyle =
+        (textStyle ?? const m.TextStyle(fontSize: 16, height: 1.5)).copyWith(
+      color: textStyle?.color ?? cs.onSurface,
+    );
+    final effectiveHintStyle =
+        (hintStyle ?? const m.TextStyle(fontSize: 16, height: 1.5)).copyWith(
+      color: hintStyle?.color ?? cs.onSurfaceVariant,
+    );
+    final effectiveCounterColor = cs.onSurfaceVariant;
+
     return m.Card(
       elevation: 1.5,
       shadowColor: m.Colors.black12,
       color: m.Theme.of(context).cardColor,
-      shape: m.RoundedRectangleBorder(borderRadius: m.BorderRadius.circular(20)),
+      shape:
+          m.RoundedRectangleBorder(borderRadius: m.BorderRadius.circular(20)),
       child: m.Padding(
         padding: const m.EdgeInsets.fromLTRB(16, 14, 16, 16),
         child: m.Column(
@@ -541,40 +600,35 @@ final m.Color? borderColor;
             m.Text(label, style: m.Theme.of(context).textTheme.titleMedium),
             const m.SizedBox(height: 8),
             m.TextField(
-  controller: controller,
-  minLines: minLines,
-  maxLines: maxLines,
-  textAlign: m.TextAlign.justify,              // ★ 兩端對齊（保留）
-  textAlignVertical: m.TextAlignVertical.top,  // ★ 文字從上方開始（保留）
-  keyboardType: m.TextInputType.multiline,
-  textInputAction: m.TextInputAction.newline,
+              controller: controller,
+              minLines: minLines,
+              maxLines: maxLines,
+              textAlign: m.TextAlign.justify, // ★ 兩端對齊（保留）
+              textAlignVertical: m.TextAlignVertical.top, // ★ 文字從上方開始（保留）
+              keyboardType: m.TextInputType.multiline,
+              textInputAction: m.TextInputAction.newline,
 
-  // ✅ 輸入文字顏色（更深、更好讀）
-  style: const m.TextStyle(
-    color: m.Colors.black87,
-    fontSize: 16,
-    height: 1.5,
-  ),
+              // 依主題自動調整文字顏色
+              style: effectiveTextStyle,
 
-  decoration: m.InputDecoration(
-    hintText: hint,
+              decoration: m.InputDecoration(
+                hintText: hint,
 
-    // ✅ 提示字顏色（更淡，跟輸入字明顯區分）
-    hintStyle: m.TextStyle(
-      color: m.Colors.black.withValues(alpha: 0.28),
-      fontSize: 16,
-      height: 1.5,
-    ),
+                // 依主題自動調整提示字顏色
+                hintStyle: effectiveHintStyle,
 
-    border: m.InputBorder.none,
-  ),
-  onChanged: (_) => onAnyChanged?.call(),
+                border: m.InputBorder.none,
+              ),
+              onChanged: (_) => onAnyChanged?.call(),
             ),
             m.Align(
               alignment: m.Alignment.bottomRight,
               child: m.Text(
                 '${controller.text.characters.length} 字',
-                style: m.Theme.of(context).textTheme.labelSmall?.copyWith(color: m.Colors.black45),
+                style: m.Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(color: effectiveCounterColor),
               ),
             ),
           ],

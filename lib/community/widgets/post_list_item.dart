@@ -34,11 +34,13 @@ class PostListItem extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Text('匿名者 ${post.authorAnonId}',
-                      style: Theme.of(context)
-                          .textTheme
-                          .labelLarge
-                          ?.copyWith(color: CommunityStyle.text)),
+                    Text(
+                    post.authorAnonId,
+                    style: Theme.of(context)
+                      .textTheme
+                      .labelLarge
+                      ?.copyWith(color: CommunityStyle.text),
+                    ),
                   const Spacer(),
                   Text(
                     time,

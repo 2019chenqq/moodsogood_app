@@ -11,7 +11,7 @@ class ProProvider extends ChangeNotifier {
   bool _loading = true;
   OnProUpgradeCallback? _onUpgradeCallback;
   bool _isMigrating = false;
-bool _remoteIsPro = false;   // Firestore / 登入同步來的
+bool _remoteIsPro = true;   // Firestore / 登入同步來的
 bool? _debugOverrideIsPro;  // null = 不覆蓋
 
   /// 檢查使用者是否為 Pro
@@ -33,7 +33,7 @@ bool? _debugOverrideIsPro;  // null = 不覆蓋
     notifyListeners();
 
     // TODO：之後接 Google Play 訂閱檢查
-    // 暫時全域開啟 Pro 權限
+    // 全域開啟 Pro 權限
     await Future.delayed(const Duration(milliseconds: 200));
 
     _remoteIsPro = true;
@@ -68,7 +68,7 @@ bool? _debugOverrideIsPro;  // null = 不覆蓋
   }
 
   void lock() {
-  _debugOverrideIsPro = true;
+  _debugOverrideIsPro = false;
   notifyListeners();
 }
 }

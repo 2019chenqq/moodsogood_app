@@ -108,8 +108,10 @@ class PostDetailPage extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('匿名者 ${post.authorAnonId}',
-                                  style: Theme.of(context).textTheme.labelLarge),
+                              Text(
+                                post.authorAnonId,
+                                style: Theme.of(context).textTheme.labelLarge,
+                              ),
                               const SizedBox(height: 10),
                               Text(
                                 post.content,
@@ -163,7 +165,7 @@ class PostDetailPage extends StatelessWidget {
                                             FocusScope.of(context).requestFocus(inputFocus);
                                           },
                                           child: Text(
-                                            '匿名者 ${c.authorAnonId}',
+                                            c.authorAnonId,
                                             style: Theme.of(context).textTheme.labelLarge,
                                           ),
                                         ),

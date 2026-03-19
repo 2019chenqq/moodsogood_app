@@ -18,23 +18,23 @@ class DiaryEntry {
   final String? selfCare;
 
   DiaryEntry({
-  this.id,
-  required this.date,
-  required this.title,
-  required this.content,
-  this.moodScore,
-  this.moodKeyword,
-  // ★ 這五個是新加的，可為 null，建構子要接起來
-  this.themeSong,
-  this.highlight,
-  this.metaphor,
-  this.proudOf,
-  this.selfCare,
-  // 時間欄位給預設值
-  DateTime? createdAt,
-  DateTime? updatedAt,
-})  : createdAt = createdAt ?? DateTime.now(),
-      updatedAt = updatedAt ?? DateTime.now();
+    this.id,
+    required this.date,
+    required this.title,
+    required this.content,
+    this.moodScore,
+    this.moodKeyword,
+    // ★ 這五個是新加的，可為 null，建構子要接起來
+    this.themeSong,
+    this.highlight,
+    this.metaphor,
+    this.proudOf,
+    this.selfCare,
+    // 時間欄位給預設值
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  })  : createdAt = createdAt ?? DateTime.now(),
+        updatedAt = updatedAt ?? DateTime.now();
 
   DiaryEntry copyWith({
     int? id,
@@ -134,16 +134,22 @@ class DiaryRepository {
           selfCare TEXT
         );
         ''');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_diary_date ON diary_entries(date DESC);');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_diary_date ON diary_entries(date DESC);');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           // 添加新欄位（如果舊資料庫不存在這些欄位）
-          await db.execute('ALTER TABLE diary_entries ADD COLUMN themeSong TEXT;');
-          await db.execute('ALTER TABLE diary_entries ADD COLUMN highlight TEXT;');
-          await db.execute('ALTER TABLE diary_entries ADD COLUMN metaphor TEXT;');
-          await db.execute('ALTER TABLE diary_entries ADD COLUMN proudOf TEXT;');
-          await db.execute('ALTER TABLE diary_entries ADD COLUMN selfCare TEXT;');
+          await db
+              .execute('ALTER TABLE diary_entries ADD COLUMN themeSong TEXT;');
+          await db
+              .execute('ALTER TABLE diary_entries ADD COLUMN highlight TEXT;');
+          await db
+              .execute('ALTER TABLE diary_entries ADD COLUMN metaphor TEXT;');
+          await db
+              .execute('ALTER TABLE diary_entries ADD COLUMN proudOf TEXT;');
+          await db
+              .execute('ALTER TABLE diary_entries ADD COLUMN selfCare TEXT;');
         }
       },
     );
@@ -179,7 +185,8 @@ class DiaryRepository {
 
   Future<DiaryEntry?> getById(int id) async {
     final db = await _open();
-    final rows = await db.query('diary_entries', where: 'id = ?', whereArgs: [id], limit: 1);
+    final rows = await db.query('diary_entries',
+        where: 'id = ?', whereArgs: [id], limit: 1);
     if (rows.isEmpty) return null;
     return DiaryEntry.fromMap(rows.first);
   }
@@ -211,5 +218,16 @@ class DiaryRepository {
   Future<int> delete(int id) async {
     final db = await _open();
     return db.delete('diary_entries', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// 按日期刪除整天日記（yyyy-MM-dd）
+  Future<int> deleteByDate(DateTime date) async {
+    final db = await _open();
+    final dateStr = date.toIso8601String().split('T')[0];
+    return db.delete(
+      'diary_entries',
+      where: 'date LIKE ?',
+      whereArgs: ['$dateStr%'],
+    );
   }
 }
