@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-
 import 'legal_markdown_page.dart';
 
 class SignInPage extends StatefulWidget {
@@ -97,7 +96,8 @@ class _SignInPageState extends State<SignInPage> {
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.18),
                         borderRadius: BorderRadius.circular(28),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.35)),
+                        border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.35)),
                       ),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -118,7 +118,7 @@ class _SignInPageState extends State<SignInPage> {
                             ),
                             child: ClipOval(
                               child: Image.asset(
-                                'assets/icons/app_icon.png',
+                                'assets/icons/app_logo.png',
                                 fit: BoxFit.cover,
                               ),
                             ),
@@ -149,14 +149,16 @@ class _SignInPageState extends State<SignInPage> {
                               onPressed: _loading ? null : _handleGoogleSignIn,
                               icon: _loading
                                   ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                              )
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2, color: Colors.white),
+                                    )
                                   : const Icon(Icons.login_rounded),
                               label: Text(_loading ? '正在登入…' : '使用 Google 登入'),
                               style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
                                 ),
@@ -169,36 +171,41 @@ class _SignInPageState extends State<SignInPage> {
 
                           const SizedBox(height: 12),
 // 低調的條款區
-Opacity(
-  opacity: 0.85,
-  child: Wrap(
-    alignment: WrapAlignment.center,
-    spacing: 6,
-    children: [
-      Text(
-        '登入即代表同意',
-        style: theme.textTheme.bodySmall?.copyWith(color: Colors.white),
-      ),
-      _link('服務條款', () {
-        Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => const LegalMarkdownPage(
-            title: '服務條款',
-            assetPath: 'assets/legal/心域_服務條款_zh-TW.md',
-          ),
-        ));
-      }),
-      Text('與', style: theme.textTheme.bodySmall?.copyWith(color: Colors.white)),
-      _link('隱私權政策', () {
-        Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => const LegalMarkdownPage(
-            title: '隱私權政策',
-            assetPath: 'assets/legal/心域_隱私權政策_zh-TW.md',
-          ),
-        ));
-      }),
-    ],
-  ),
-),
+                          Opacity(
+                            opacity: 0.85,
+                            child: Wrap(
+                              alignment: WrapAlignment.center,
+                              spacing: 6,
+                              children: [
+                                Text(
+                                  '登入即代表同意',
+                                  style: theme.textTheme.bodySmall
+                                      ?.copyWith(color: Colors.white),
+                                ),
+                                _link('服務條款', () {
+                                  Navigator.of(context).push(MaterialPageRoute(
+                                    builder: (_) => const LegalMarkdownPage(
+                                      title: '服務條款',
+                                      assetPath:
+                                          'assets/legal/心域_服務條款_zh-TW.md',
+                                    ),
+                                  ));
+                                }),
+                                Text('與',
+                                    style: theme.textTheme.bodySmall
+                                        ?.copyWith(color: Colors.white)),
+                                _link('隱私權政策', () {
+                                  Navigator.of(context).push(MaterialPageRoute(
+                                    builder: (_) => const LegalMarkdownPage(
+                                      title: '隱私權政策',
+                                      assetPath:
+                                          'assets/legal/心域_隱私權政策_zh-TW.md',
+                                    ),
+                                  ));
+                                }),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -213,19 +220,20 @@ Opacity(
   }
 
   // 小元件：白字的文字按鈕
-Widget _link(String text, VoidCallback onTap) {
-  return InkWell(
-    onTap: onTap,
-    child: Text(
-      text,
-      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            decoration: TextDecoration.underline,
-            color: Colors.white, // 你目前底色為深，維持白字
-            fontWeight: FontWeight.w600,
-          ),
-    ),
-  );
-}
+  Widget _link(String text, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              decoration: TextDecoration.underline,
+              color: Colors.white, // 你目前底色為深，維持白字
+              fontWeight: FontWeight.w600,
+            ),
+      ),
+    );
+  }
+
   // 柔光圓形
   Widget _blurBall(double size, Color color) {
     return Container(

@@ -1,19 +1,18 @@
-
 import 'dart:io';
 import 'package:flutter/material.dart' as m;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart'; // 🔥 引入 Provider
 
 // 引入你的 Provider 和 頁面
-import '../providers/menu_provider.dart'; 
+import '../providers/menu_provider.dart';
 import 'pages/hub_pages.dart';
 
 import 'Sign_in_page.dart';
 import 'settings_page.dart';
-
 
 class HomeShell extends m.StatefulWidget {
   const HomeShell({super.key});
@@ -33,11 +32,11 @@ class _HomeShellState extends m.State<HomeShell> {
 
   // 🔥 定義底部導航頁面
   final List<m.Widget> _pages = const [
-    RecordHubPage(),          // Index 0: 紀錄
-    DiscussionHubPage(),      // Index 1: 討論區
-    RelaxHubPage(),           // Index 2: 放鬆區
+    RecordHubPage(), // Index 0: 紀錄
+    DiscussionHubPage(), // Index 1: 討論區
+    RelaxHubPage(), // Index 2: 放鬆區
     TreeholePostOfficePage(), // Index 3: 樹洞郵局
-    LocationsHubPage(),       // Index 4: 據點
+    LocationsHubPage(), // Index 4: 據點
   ];
 
   @override
@@ -128,10 +127,17 @@ class _HomeShellState extends m.State<HomeShell> {
 
   Future<void> _signOut() async {
     try {
+      final googleSignIn = GoogleSignIn();
       await _auth.signOut();
+      await googleSignIn.signOut();
+      try {
+        await googleSignIn.disconnect();
+      } catch (_) {}
+
       if (mounted) {
-        m.Navigator.of(context).pushReplacement(
+        m.Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
           m.MaterialPageRoute(builder: (_) => const SignInPage()),
+          (route) => false,
         );
       }
     } catch (e) {
@@ -148,8 +154,8 @@ class _HomeShellState extends m.State<HomeShell> {
     return m.Scaffold(
       // 🔥 這裡很重要：如果現在顯示的是首頁(Index 0)，才顯示 AppBar
       // 如果是日記頁或統計頁，因為它們自己有 AppBar，所以這裡隱藏，避免雙重標題
- // 其他頁面不顯示這個 AppBar
-      
+      // 其他頁面不顯示這個 AppBar
+
       drawer: m.Drawer(
         child: m.ListView(
           padding: m.EdgeInsets.zero,
@@ -171,12 +177,14 @@ class _HomeShellState extends m.State<HomeShell> {
                             m.CircleAvatar(
                               radius: 40,
                               backgroundColor: m.Colors.white,
-                              backgroundImage: _photoUrl != null && !_isUploading
-                                  ? m.NetworkImage(_photoUrl!)
-                                  : null,
+                              backgroundImage:
+                                  _photoUrl != null && !_isUploading
+                                      ? m.NetworkImage(_photoUrl!)
+                                      : null,
                               child: (_photoUrl == null && !_isUploading)
                                   ? const m.Icon(m.Icons.person,
-                                      size: 50, color: m.Color.fromARGB(255, 6, 213, 192))
+                                      size: 50,
+                                      color: m.Color.fromARGB(255, 6, 213, 192))
                                   : null,
                             ),
                             if (_isUploading)
@@ -225,7 +233,7 @@ class _HomeShellState extends m.State<HomeShell> {
                 ],
               ),
             ),
-            
+
             m.Divider(),
 
             // 設定 (獨立頁面，使用跳轉)
@@ -236,12 +244,11 @@ class _HomeShellState extends m.State<HomeShell> {
                 m.Navigator.pop(context);
                 m.Navigator.push(
                   context,
-                  m.MaterialPageRoute(
-                      builder: (_) => const SettingsPage()),
+                  m.MaterialPageRoute(builder: (_) => const SettingsPage()),
                 );
               },
             ),
-            
+
             m.ListTile(
               leading: const m.Icon(m.Icons.help),
               title: const m.Text('幫助與回饋'),
@@ -250,13 +257,14 @@ class _HomeShellState extends m.State<HomeShell> {
             m.Divider(),
             m.ListTile(
               leading: const m.Icon(m.Icons.logout, color: m.Colors.red),
-              title: const m.Text('登出', style: m.TextStyle(color: m.Colors.red)),
+              title:
+                  const m.Text('登出', style: m.TextStyle(color: m.Colors.red)),
               onTap: _signOut,
             ),
           ],
         ),
       ),
-      
+
       // 🔥 核心：使用 IndexedStack 來保持頁面狀態
       body: m.IndexedStack(
         index: currentIndex,

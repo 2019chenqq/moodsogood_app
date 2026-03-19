@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'; // 用於 kDebugMode
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart'; // 🔥 存照片用
-import 'package:image_picker/image_picker.dart';         // 🔥 選照片用
+import 'package:image_picker/image_picker.dart'; // 🔥 選照片用
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'dart:io';
@@ -14,6 +14,7 @@ import 'package:provider/provider.dart';
 import '../providers/pro_provider.dart';
 import '../utils/firebase_sync_config.dart';
 import '../community/utils/anon_name.dart';
+import '../Sign_in_page.dart';
 
 class MainDrawer extends StatefulWidget {
   const MainDrawer({super.key});
@@ -34,7 +35,7 @@ class _MainDrawerState extends State<MainDrawer> {
       // 1. 從相簿選照片
       final ImagePicker picker = ImagePicker();
       final XFile? image = await picker.pickImage(
-        source: ImageSource.gallery, 
+        source: ImageSource.gallery,
         maxWidth: 512, // 縮小一點，節省流量
         maxHeight: 512,
         imageQuality: 70,
@@ -79,9 +80,28 @@ class _MainDrawerState extends State<MainDrawer> {
   }
 
   Future<void> _signOut() async {
-    final googleSignIn = GoogleSignIn();
-    await FirebaseAuth.instance.signOut();
-    await googleSignIn.signOut(); // ⭐ 這一行是關鍵
+    try {
+      final googleSignIn = GoogleSignIn();
+      await FirebaseAuth.instance.signOut();
+      await googleSignIn.signOut();
+
+      // 盡可能斷開 Google 連線，下一次會重新選帳號
+      try {
+        await googleSignIn.disconnect();
+      } catch (_) {}
+
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const SignInPage()),
+        (route) => false,
+      );
+    } catch (e) {
+      debugPrint('登出失敗: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('登出失敗：$e')),
+      );
+    }
   }
 
   @override
@@ -91,132 +111,131 @@ class _MainDrawerState extends State<MainDrawer> {
     final String? photoUrl = user?.photoURL;
 
     return Drawer(
-  child: ListView(
-    padding: EdgeInsets.zero,
-    children: [
-      UserAccountsDrawerHeader(
-        accountName: FutureBuilder<String>(
-          future: AnonNameService.getOrCreate(),
-          builder: (context, snapshot) {
-            final name = snapshot.data ?? '匿名者';
-            return Text(
-              '匿名：$name',
-              style: const TextStyle(
-                color: Color.fromARGB(255, 25, 107, 231),
-                fontSize: 17,
-              ),
-            );
-          },
-        ),
-
-        accountEmail: const SizedBox.shrink(),
-
-        // 🔥 頭貼區塊（完整整合）
-        currentAccountPicture: GestureDetector(
-          onTap: _isUploading ? null : _pickAndUploadImage,
-          child: Stack(
-            children: [
-              CircleAvatar(
-                radius: 40,
-                backgroundColor: Colors.white,
-                backgroundImage:
-                    photoUrl != null ? NetworkImage(photoUrl) : null,
-                child: photoUrl == null
-                    ? const Icon(Icons.person,
-                        size: 40, color: Colors.grey)
-                    : null,
-              ),
-
-              // 上傳中 → 顯示轉圈
-              if (_isUploading)
-                const Positioned.fill(
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          UserAccountsDrawerHeader(
+            accountName: FutureBuilder<String>(
+              future: AnonNameService.getOrCreate(),
+              builder: (context, snapshot) {
+                final name = snapshot.data ?? '匿名者';
+                return Text(
+                  '匿名：$name',
+                  style: const TextStyle(
+                    color: Color.fromARGB(255, 25, 107, 231),
+                    fontSize: 17,
                   ),
-                ),
-
-              // 未上傳 → 相機提示
-              if (!_isUploading)
-                Positioned(
-                  bottom: 0,
-                  right: 0,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.camera_alt,
-                      size: 14,
-                      color: Color(0xFF4BB0C6),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-
-        decoration: const BoxDecoration(
-          color: Color.fromARGB(255, 179, 227, 222), // Drawer header 背景色
-        ),
-      ),
-      
-      // Pro 會員狀態卡片
-      Consumer<ProProvider>(
-        builder: (context, proProvider, _) => Container(
-          margin: const EdgeInsets.all(16),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: proProvider.isPro
-                  ? [Colors.amber[300]!, Colors.amber[600]!]
-                  : [Colors.grey[300]!, Colors.grey[500]!],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+                );
+              },
             ),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+
+            accountEmail: const SizedBox.shrink(),
+
+            // 🔥 頭貼區塊（完整整合）
+            currentAccountPicture: GestureDetector(
+              onTap: _isUploading ? null : _pickAndUploadImage,
+              child: Stack(
                 children: [
-                  Text(
-                    proProvider.isPro ? '✨ Pro 會員' : '📱 免費版',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      fontSize: 16,
-                    ),
+                  CircleAvatar(
+                    radius: 40,
+                    backgroundColor: Colors.white,
+                    backgroundImage:
+                        photoUrl != null ? NetworkImage(photoUrl) : null,
+                    child: photoUrl == null
+                        ? const Icon(Icons.person, size: 40, color: Colors.grey)
+                        : null,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    FirebaseSyncConfig.getDataRetention(),
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
+
+                  // 上傳中 → 顯示轉圈
+                  if (_isUploading)
+                    const Positioned.fill(
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     ),
+
+                  // 未上傳 → 相機提示
+                  if (!_isUploading)
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.camera_alt,
+                          size: 14,
+                          color: Color(0xFF4BB0C6),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+
+            decoration: const BoxDecoration(
+              color: Color.fromARGB(255, 179, 227, 222), // Drawer header 背景色
+            ),
+          ),
+
+          // Pro 會員狀態卡片
+          Consumer<ProProvider>(
+            builder: (context, proProvider, _) => Container(
+              margin: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: proProvider.isPro
+                      ? [Colors.amber[300]!, Colors.amber[600]!]
+                      : [Colors.grey[300]!, Colors.grey[500]!],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        proProvider.isPro ? '✨ Pro 會員' : '📱 免費版',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        FirebaseSyncConfig.getDataRetention(),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                  FilledButton(
+                    onPressed: () {
+                      Navigator.pop(context); // 關閉 drawer
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ProPage()),
+                      );
+                    },
+                    child: Text(proProvider.isPro ? '已啟用' : '升級'),
                   ),
                 ],
               ),
-              FilledButton(
-                onPressed: () {
-                  Navigator.pop(context); // 關閉 drawer
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const ProPage()),
-                  );
-                },
-                child: Text(proProvider.isPro ? '已啟用' : '升級'),
-              ),
-            ],
+            ),
           ),
-        ),
-      ),
-      
+
           // 2. 主要分區（與底部導航一致）
           ListTile(
             leading: const Icon(Icons.edit_note),
@@ -258,7 +277,8 @@ class _MainDrawerState extends State<MainDrawer> {
               Navigator.pop(context);
               Navigator.pushReplacement(
                 context,
-                MaterialPageRoute(builder: (_) => const TreeholePostOfficePage()),
+                MaterialPageRoute(
+                    builder: (_) => const TreeholePostOfficePage()),
               );
             },
           ),

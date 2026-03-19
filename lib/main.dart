@@ -37,12 +37,12 @@ import 'onboarding_page.dart';
 /* =========================== main =========================== */
 
 Future<void> main() async {
-
   debugPrint('🚀 App startup starting...');
 
   WidgetsFlutterBinding.ensureInitialized();
 
-  await AndroidAlarmManager.initialize(); // :contentReference[oaicite:3]{index=3}
+  await AndroidAlarmManager
+      .initialize(); // :contentReference[oaicite:3]{index=3}
 
   debugPrint('🔥 Firebase initializing...');
   await Firebase.initializeApp(
@@ -103,9 +103,10 @@ Future<void> main() async {
     // 在應用初始化後，註冊 Pro 狀態回調和升級回調
     final globalContext = rootNavigatorKey.currentContext;
     if (globalContext != null) {
-      final proProvider = Provider.of<ProProvider>(globalContext, listen: false);
+      final proProvider =
+          Provider.of<ProProvider>(globalContext, listen: false);
       final repository = DailyRecordRepository();
-      
+
       // 🔧 修復：正確設置 Pro 狀態回調，讓 Firebase 同步與本地存儲保持同步
       FirebaseSyncConfig.setProStatusCallback(() {
         debugPrint('📡 Checking Pro status: ${proProvider.isPro}');
@@ -116,7 +117,8 @@ Future<void> main() async {
       Future.delayed(const Duration(milliseconds: 500), () async {
         final user = FirebaseAuth.instance.currentUser;
         if (user != null && proProvider.isPro) {
-          debugPrint('🔄 Pro user detected - syncing local data to Firebase...');
+          debugPrint(
+              '🔄 Pro user detected - syncing local data to Firebase...');
           try {
             final result = await DataMigration().migrateLocalToFirebase(
               userId: user.uid,
@@ -145,8 +147,6 @@ Future<void> main() async {
     NotificationHelper().processPendingNavigation();
   });
 }
-
-
 
 class MainApp extends StatelessWidget {
   const MainApp({super.key});
@@ -191,7 +191,6 @@ class MainApp extends StatelessWidget {
           backgroundColor: Color(0xFF121212),
           surfaceTintColor: Colors.transparent,
         ),
-      
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: const Color(0xFF1E1E1E),
@@ -269,7 +268,8 @@ class _FirstLaunchGateState extends State<FirstLaunchGate> {
     }
 
     if (_postOnboardingToRecordHub) {
-      return const RecordHubPage();
+      // 導覽結束後仍需經過登入流程，避免直接進入主頁造成「無法登出／看不到 Google 登入」
+      return const AuthGate();
     }
 
     return FortuneCookieScreen(
@@ -302,12 +302,13 @@ class AuthGate extends StatelessWidget {
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.active) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(
+              body: Center(child: CircularProgressIndicator()));
         }
         if (snap.data == null) {
-          return const SignInPage();      // 未登入
+          return const SignInPage(); // 未登入
         }
-        return const LockWrapper();         // 已登入，先檢查鎖定
+        return const LockWrapper(); // 已登入，先檢查鎖定
       },
     );
   }
@@ -343,6 +344,7 @@ class LoginPage extends StatelessWidget {
           .showSnackBar(SnackBar(content: Text('登入失敗：$e')));
     }
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -355,8 +357,7 @@ class LoginPage extends StatelessWidget {
               children: [
                 Icon(Icons.favorite, size: 72, color: Colors.teal[200]),
                 const SizedBox(height: 12),
-                Text('心域',
-                    style: Theme.of(context).textTheme.headlineSmall),
+                Text('心域', style: Theme.of(context).textTheme.headlineSmall),
                 const SizedBox(height: 24),
                 FilledButton.icon(
                   onPressed: () => _signInWithGoogle(context),
@@ -371,6 +372,7 @@ class LoginPage extends StatelessWidget {
     );
   }
 }
+
 class LockWrapper extends StatefulWidget {
   const LockWrapper({super.key});
 
