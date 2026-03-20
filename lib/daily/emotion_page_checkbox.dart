@@ -44,9 +44,11 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
 
   // 定義三大類情緒
   static const Map<String, List<String>> _emotionCategories = {
-    '整體狀態': ['平靜', '開心', '有力量', '疲憊', '沒動力'],
-    '壓力情緒': ['焦慮', '緊張', '壓力大', '煩躁', '生氣'],
-    '低落警訊': ['難過', '憂鬱', '無助', '崩潰感', '自殺意念'],
+    '喜悅': ['快樂', '興奮', '愉悅', '滿足', '自在'],
+    '厭惡': ['厭倦', '無聊', '反感', '痛恨', '煩悶'],
+    '悲傷': ['低落', '憂鬱', '孤單', '絕望', '沮喪'],
+    '恐懼': ['緊張', '擔心', '惶恐', '焦慮', '忐忑不安'],
+    '憤怒': ['生氣', '暴躁', '忌妒', '惱羞成怒'],
   };
 
   @override
@@ -88,7 +90,8 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
           // ========================================
           // MIDDLE SECTION: 已選情緒評分區（可收合）
           // ========================================
-          _buildCollapsibleSliderSection(context, selectedEmotions, emotionIndices),
+          _buildCollapsibleSliderSection(
+              context, selectedEmotions, emotionIndices),
 
           // ========================================
           // BOTTOM SECTION: 日記連結
@@ -171,7 +174,8 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
                     tooltip: '評分說明',
                     iconSize: 20,
                     padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    constraints:
+                        const BoxConstraints(minWidth: 32, minHeight: 32),
                     onPressed: () {
                       showDialog<void>(
                         context: context,
@@ -192,9 +196,7 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
               ),
               IconButton(
                 icon: Icon(
-                  _isSliderExpanded
-                      ? Icons.expand_less
-                      : Icons.expand_more,
+                  _isSliderExpanded ? Icons.expand_less : Icons.expand_more,
                 ),
                 onPressed: () {
                   setState(() => _isSliderExpanded = !_isSliderExpanded);
@@ -266,7 +268,8 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
           children: emotions.map((emotionName) {
             // 檢查這個情緒是否已存在於 items 中
             final index = emotionIndices[emotionName];
-            final isSelected = index != null && widget.items[index].value != null;
+            final isSelected =
+                index != null && widget.items[index].value != null;
 
             return FilterChip(
               label: Text(emotionName),

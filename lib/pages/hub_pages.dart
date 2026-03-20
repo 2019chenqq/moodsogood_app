@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../widgets/main_drawer.dart';
 import '../daily/daily_record_screen.dart';
 import '../daily/daily_record_history.dart';
+import '../diary/diary_home_page.dart';
 import '../meds/medication_home_page.dart';
 import '../community/community_home_page.dart';
 
@@ -33,6 +34,13 @@ class RecordHubPage extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
           _RecordEntryCard(
+            icon: Icons.book_outlined,
+            title: '日記',
+            subtitle: '獨立日記頁與歷史日記',
+            onTap: () => _push(context, const DiaryHomePage()),
+          ),
+          const SizedBox(height: 10),
+          _RecordEntryCard(
             icon: Icons.edit_note,
             title: '紀錄',
             subtitle: '開始填寫今日紀錄',
@@ -43,7 +51,8 @@ class RecordHubPage extends StatelessWidget {
             icon: Icons.history,
             title: '紀錄歷程',
             subtitle: '列表與週報',
-            onTap: () => _push(context, const DailyRecordHistory(initialTab: 0)),
+            onTap: () =>
+                _push(context, const DailyRecordHistory(initialTab: 0)),
           ),
           const SizedBox(height: 10),
           _RecordEntryCard(

@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../utils/date_helper.dart';
 import '../utils/firebase_sync_config.dart';
+import '../widgets/emotion_slider.dart';
 import 'diary_repository.dart';
 
 class DiaryPageDemo extends m.StatefulWidget {
@@ -26,6 +27,9 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   final _conceitedCtrl = m.TextEditingController(); // 為自己感到驕傲的是
   final _proudOfCtrl = m.TextEditingController(); // 我做得不錯的地方
   final _selfCareCtrl = m.TextEditingController(); // 我還能多照顧自己一點
+  int _overallMoodScore = 5;
+  int _overallHealthScore = 5;
+  int _overallSleepScore = 5;
 
   // ---------------- 自動儲存 ----------------
   Timer? _debouncer;
@@ -87,6 +91,9 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
     _conceitedCtrl.text = (data['conceited'] ?? '') as String;
     _proudOfCtrl.text = (data['proudOf'] ?? '') as String;
     _selfCareCtrl.text = (data['selfCare'] ?? '') as String;
+    _overallMoodScore = (data['overallMood'] as num?)?.toInt() ?? 5;
+    _overallHealthScore = (data['overallHealth'] as num?)?.toInt() ?? 5;
+    _overallSleepScore = (data['overallSleepQuality'] as num?)?.toInt() ?? 5;
     setState(() {}); // 更新字數
   }
 
@@ -157,6 +164,9 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
           'conceited': _conceitedCtrl.text.trim(),
           'proudOf': _proudOfCtrl.text.trim(),
           'selfCare': _selfCareCtrl.text.trim(),
+          'overallMood': _overallMoodScore,
+          'overallHealth': _overallHealthScore,
+          'overallSleepQuality': _overallSleepScore,
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
       }
@@ -358,6 +368,25 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
             _DateHeaderCard(date: d),
             const m.SizedBox(height: 12),
 
+            _OverallSlidersCard(
+              overallMoodScore: _overallMoodScore,
+              overallHealthScore: _overallHealthScore,
+              overallSleepScore: _overallSleepScore,
+              onMoodChanged: (v) {
+                setState(() => _overallMoodScore = v);
+                _onAnyFieldChanged();
+              },
+              onHealthChanged: (v) {
+                setState(() => _overallHealthScore = v);
+                _onAnyFieldChanged();
+              },
+              onSleepChanged: (v) {
+                setState(() => _overallSleepScore = v);
+                _onAnyFieldChanged();
+              },
+            ),
+            const m.SizedBox(height: 12),
+
 // 只有當有上一筆或下一筆時才顯示按鈕區
             if (_prevDate != null || _nextDate != null) ...[
               m.Row(
@@ -541,6 +570,88 @@ class _DateHeaderCard extends m.StatelessWidget {
       child: m.Text(
         text,
         style: const m.TextStyle(fontSize: 12, height: 1.0, letterSpacing: 0.2),
+      ),
+    );
+  }
+}
+
+class _OverallSlidersCard extends m.StatelessWidget {
+  final int overallMoodScore;
+  final int overallHealthScore;
+  final int overallSleepScore;
+  final m.ValueChanged<int> onMoodChanged;
+  final m.ValueChanged<int> onHealthChanged;
+  final m.ValueChanged<int> onSleepChanged;
+
+  const _OverallSlidersCard({
+    required this.overallMoodScore,
+    required this.overallHealthScore,
+    required this.overallSleepScore,
+    required this.onMoodChanged,
+    required this.onHealthChanged,
+    required this.onSleepChanged,
+  });
+
+  @override
+  m.Widget build(m.BuildContext context) {
+    return m.Card(
+      elevation: 1.5,
+      shape:
+          m.RoundedRectangleBorder(borderRadius: m.BorderRadius.circular(20)),
+      child: m.Padding(
+        padding: const m.EdgeInsets.fromLTRB(16, 12, 16, 14),
+        child: m.Column(
+          crossAxisAlignment: m.CrossAxisAlignment.start,
+          children: [
+            m.Text(
+              '今日整體狀態',
+              style: m.Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: m.FontWeight.w700,
+                  ),
+            ),
+            const m.SizedBox(height: 6),
+            m.Text('今天的整體情緒如何？',
+                style: m.Theme.of(context).textTheme.titleSmall),
+            EmotionSlider(
+              label: '今天的整體情緒如何？',
+              value: overallMoodScore,
+              onChanged: onMoodChanged,
+              leftIcon: 'assets/emotion/default.png',
+              rightIcon: 'assets/emotion/overall.png',
+              gradientColors: const [
+                m.Color(0xFF9AD0EC),
+                m.Color(0xFFFFE08A),
+              ],
+            ),
+            const m.SizedBox(height: 6),
+            m.Text('今天的健康狀況如何？',
+                style: m.Theme.of(context).textTheme.titleSmall),
+            EmotionSlider(
+              label: '今天的健康狀況如何？',
+              value: overallHealthScore,
+              onChanged: onHealthChanged,
+              leftIcon: 'assets/emotion/default.png',
+              rightIcon: 'assets/emotion/energy.png',
+              gradientColors: const [
+                m.Color(0xFF9AD0EC),
+                m.Color(0xFFFFE08A),
+              ],
+            ),
+            const m.SizedBox(height: 6),
+            m.Text('整體睡眠品質', style: m.Theme.of(context).textTheme.titleSmall),
+            EmotionSlider(
+              label: '整體睡眠品質',
+              value: overallSleepScore,
+              onChanged: onSleepChanged,
+              leftIcon: 'assets/emotion/tired.png',
+              rightIcon: 'assets/emotion/happy.png',
+              gradientColors: const [
+                m.Color(0xFF9AD0EC),
+                m.Color(0xFFFFE08A),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

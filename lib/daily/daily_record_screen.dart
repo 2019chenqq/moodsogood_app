@@ -7,7 +7,6 @@ import '../utils/date_helper.dart';
 import '../utils/firebase_sync_config.dart';
 import '../models/daily_record.dart';
 import '../widgets/main_drawer.dart';
-import '../diary/diary_home_page.dart';
 import 'daily_record_repository.dart';
 
 // Import refactored modules
@@ -31,7 +30,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   bool _isPeriod = false;
   bool _useNewEmotionPage = true; // 可切換新舊情緒頁
   int? _lastSuicidalValue;
-  
+
   // ——— 目前紀錄日期與時間（給頁首顯示；docId 只吃日期） ———
   DateTime _recordDate = DateTime.now();
   TimeOfDay _recordTime = TimeOfDay.now();
@@ -139,14 +138,15 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     }
 
     final docId = DateHelper.toId(date);
-    debugPrint('🔄 _loadExistingData called: uid=$uid, date=$date (ISO: ${date.toIso8601String()}), docId=$docId');
+    debugPrint(
+        '🔄 _loadExistingData called: uid=$uid, date=$date (ISO: ${date.toIso8601String()}), docId=$docId');
 
     try {
       // 1. 先嘗試從本地 SQLite 加載
       final repo = DailyRecordRepository();
       debugPrint('📦 Attempting to load from local SQLite...');
       var localData = await repo.getDailyRecord(userId: uid, date: date);
-      
+
       if (localData != null) {
         debugPrint('✅ Loaded record from local SQLite: $docId');
         _applyLocalRecordData(localData, date);
@@ -154,7 +154,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       }
 
       debugPrint('⚠️  No local record found, trying Firebase...');
-      
+
       // 2. 如果本地沒有，再從 Firebase 加載
       final doc = await FirebaseFirestore.instance
           .collection('users')
@@ -169,7 +169,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         final record = DailyRecord.fromFirestore(doc);
         _applyFirebaseRecordData(record, date);
       } else {
-        debugPrint('⚠️  No record found in Firebase either, loading period state...');
+        debugPrint(
+            '⚠️  No record found in Firebase either, loading period state...');
         // B. 今日沒有紀錄 → 自動推算生理期（看昨天）
         await _loadPeriodState(date);
 
@@ -184,7 +185,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   /// 從本地 SQLite 記錄應用數據
   void _applyLocalRecordData(Map<String, dynamic> data, DateTime date) {
     debugPrint('🔄 _applyLocalRecordData: data keys = ${data.keys.toList()}');
-    
+
     // 解析 emotions 和其他 JSON 字段
     List<Emotion> emotions = [];
     if (data['emotions'] != null) {
@@ -268,9 +269,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       // 應用情緒
       if (emotions.isNotEmpty) {
         for (var i = 0; i < _emotions.length; i++) {
-          final savedEmotion = emotions
-              .where((e) => e.name == _emotions[i].name)
-              .firstOrNull;
+          final savedEmotion =
+              emotions.where((e) => e.name == _emotions[i].name).firstOrNull;
           if (savedEmotion != null) {
             _emotions[i] = EmotionItem(
               _emotions[i].name,
@@ -324,7 +324,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
 
       // 生理期狀態
       _isPeriod = periodData?['isPeriod'] ?? false;
-      
+
       debugPrint('✅ All data applied to UI successfully');
     });
   }
@@ -403,19 +403,28 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       tookHypnotic: sleepMap['tookHypnotic'] ?? false,
       hypnoticName: sleepMap['hypnoticName'],
       hypnoticDose: sleepMap['hypnoticDose'],
-      sleepTime: sleepMap['sleepTime'] != null ? DateHelper.parseTime(sleepMap['sleepTime']) : null,
-      wakeTime: sleepMap['wakeTime'] != null ? DateHelper.parseTime(sleepMap['wakeTime']) : null,
-      finalWakeTime: sleepMap['finalWakeTime'] != null ? DateHelper.parseTime(sleepMap['finalWakeTime']) : null,
+      sleepTime: sleepMap['sleepTime'] != null
+          ? DateHelper.parseTime(sleepMap['sleepTime'])
+          : null,
+      wakeTime: sleepMap['wakeTime'] != null
+          ? DateHelper.parseTime(sleepMap['wakeTime'])
+          : null,
+      finalWakeTime: sleepMap['finalWakeTime'] != null
+          ? DateHelper.parseTime(sleepMap['finalWakeTime'])
+          : null,
       midWakeList: sleepMap['midWakeList'],
       flags: List<String>.from(sleepMap['flags'] ?? []),
       note: sleepMap['note'],
       quality: sleepMap['quality'],
       naps: (sleepMap['naps'] as List?)
-          ?.map((n) => NapItem(
-            start: DateHelper.parseTime(n['start']) ?? const TimeOfDay(hour: 0, minute: 0),
-            end: DateHelper.parseTime(n['end']) ?? const TimeOfDay(hour: 0, minute: 0),
-          ))
-          .toList() ?? [],
+              ?.map((n) => NapItem(
+                    start: DateHelper.parseTime(n['start']) ??
+                        const TimeOfDay(hour: 0, minute: 0),
+                    end: DateHelper.parseTime(n['end']) ??
+                        const TimeOfDay(hour: 0, minute: 0),
+                  ))
+              .toList() ??
+          [],
     );
   }
 
@@ -553,24 +562,26 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       try {
         final repo = DailyRecordRepository();
         debugPrint('🏁 Start saving to local database...');
-        debugPrint('📅 Saving with date: $_recordDate (ISO: ${_recordDate.toIso8601String()})');
+        debugPrint(
+            '📅 Saving with date: $_recordDate (ISO: ${_recordDate.toIso8601String()})');
         debugPrint('👤 Saving with userId: $uid');
-        
-        final emotionsToSave = Map<String, dynamic>.from(
-          _emotions
-              .where((e) => e.value != null && e.name != '整體情緒') // Exclude overallMood from emotions
-              .toList()
-              .asMap()
-              .map((k, v) => MapEntry(v.name, v.value))
-        );
+
+        final emotionsToSave = Map<String, dynamic>.from(_emotions
+            .where((e) =>
+                e.value != null &&
+                e.name != '整體情緒') // Exclude overallMood from emotions
+            .toList()
+            .asMap()
+            .map((k, v) => MapEntry(v.name, v.value)));
         debugPrint('📊 Emotions to save: $emotionsToSave');
-        
+
         final symptomsToSave = _symptoms
             .map((s) => s.name)
             .where((name) => name.isNotEmpty)
             .toList();
-        debugPrint('🩹 Symptoms to save: $symptomsToSave (from _symptoms: ${_symptoms.map((s) => s.name).toList()})');
-        
+        debugPrint(
+            '🩹 Symptoms to save: $symptomsToSave (from _symptoms: ${_symptoms.map((s) => s.name).toList()})');
+
         await repo.saveDailyRecord(
           id: docId,
           userId: uid,
@@ -578,9 +589,13 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
           emotions: emotionsToSave,
           bodySymptoms: symptomsToSave,
           sleep: {
-            'sleepTime': sleepTime != null ? DateHelper.formatTime(sleepTime!) : null,
-            'wakeTime': wakeTime != null ? DateHelper.formatTime(wakeTime!) : null,
-            'finalWakeTime': finalWakeTime != null ? DateHelper.formatTime(finalWakeTime!) : null,
+            'sleepTime':
+                sleepTime != null ? DateHelper.formatTime(sleepTime!) : null,
+            'wakeTime':
+                wakeTime != null ? DateHelper.formatTime(wakeTime!) : null,
+            'finalWakeTime': finalWakeTime != null
+                ? DateHelper.formatTime(finalWakeTime!)
+                : null,
             'midWakeList': midWakeList,
             'quality': sleepQuality,
             'tookHypnotic': tookHypnotic,
@@ -690,12 +705,13 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       );
     }
   }
- 
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final scaffoldBg =
-        isDark ? Theme.of(context).colorScheme.surface : const Color.fromARGB(255, 200, 206, 231);
+    final scaffoldBg = isDark
+        ? Theme.of(context).colorScheme.surface
+        : const Color.fromARGB(255, 200, 206, 231);
     final pages = [
       // 情緒頁
       _pageWrapper(
@@ -742,11 +758,10 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
           }
         },
         onRename: (i) async {
-          final name = await showTextDialog(
-              context, '重新命名', _symptoms[i].name);
+          final name = await showTextDialog(context, '重新命名', _symptoms[i].name);
           if (name != null && name.trim().isNotEmpty) {
-            setState(() => _symptoms[i] =
-                _symptoms[i].copyWith(name: name.trim()));
+            setState(
+                () => _symptoms[i] = _symptoms[i].copyWith(name: name.trim()));
           }
         },
         onDelete: (i) => setState(() => _symptoms.removeAt(i)),
@@ -803,8 +818,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         },
         finalWakeTime: finalWakeTime,
         onPickFinalWakeTime: () async {
-          final t =
-              await showTimePicker(context: context, initialTime: TimeOfDay.now());
+          final t = await showTimePicker(
+              context: context, initialTime: TimeOfDay.now());
           if (t != null) setState(() => finalWakeTime = t);
         },
         midWakeCtrl: _midWakeCtrl,
@@ -874,16 +889,12 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
             );
             return;
           }
-          setState(
-              () => _naps[i] = _naps[i].copyWith(start: start, end: end));
+          setState(() => _naps[i] = _naps[i].copyWith(start: start, end: end));
         },
         onDeleteNap: (i) => setState(() => _naps.removeAt(i)),
       )),
-      // 日记页
-      const DiaryHomePage(),
     ];
-
-    final isDiaryTab = _index == pages.length - 1;
+    final currentIndex = _index >= pages.length ? 0 : _index;
 
     return Scaffold(
       backgroundColor: scaffoldBg, // 淺色保持藍綠，深色改用系統底色
@@ -897,57 +908,55 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
           onPressed: () => Navigator.maybePop(context),
         ),
         actions: [
-          if (!isDiaryTab)
-            if (_isSaving)
-              const Padding(
-                padding: EdgeInsets.only(right: 16),
-                child: SizedBox(
-                  width: 20,
-                  height: 80,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              )
-            else
-              IconButton(
-                icon: const Icon(Icons.save_outlined),
-                tooltip: '儲存',
-                onPressed: _saveAll,
+          if (_isSaving)
+            const Padding(
+              padding: EdgeInsets.only(right: 16),
+              child: SizedBox(
+                width: 20,
+                height: 80,
+                child: CircularProgressIndicator(strokeWidth: 2),
               ),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.save_outlined),
+              tooltip: '儲存',
+              onPressed: _saveAll,
+            ),
         ],
       ),
       body: SafeArea(
         child: Column(
           children: [
-            Expanded(child: pages[_index]),
-            if (!isDiaryTab)
-              SafeArea(
-                top: false,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: _isSaving ? null : _saveAll,
-                      icon: const Icon(Icons.save),
-                      label: Text(_isSaving ? '儲存中…' : '儲存全部'),
-                    ),
+            Expanded(child: pages[currentIndex]),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _isSaving ? null : _saveAll,
+                    icon: const Icon(Icons.save),
+                    label: Text(_isSaving ? '儲存中…' : '儲存全部'),
                   ),
                 ),
               ),
+            ),
           ],
         ),
       ),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
-        currentIndex: _index,
+        currentIndex: currentIndex,
         onTap: (i) => setState(() => _index = i),
         items: const [
           BottomNavigationBarItem(
               icon: Icon(Icons.sentiment_satisfied), label: '情緒'),
           BottomNavigationBarItem(icon: Icon(Icons.healing), label: '症狀'),
           BottomNavigationBarItem(
-              icon: Icon(Icons.nightlight_round), label: '睡眠'),          BottomNavigationBarItem(
-              icon: Icon(Icons.book), label: '日記'),        ],
+              icon: Icon(Icons.nightlight_round), label: '睡眠'),
+        ],
       ),
     );
   }

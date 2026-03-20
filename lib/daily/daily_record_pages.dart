@@ -196,7 +196,6 @@ class SymptomPage extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final onSurface = colorScheme.onSurface;
     final outline = colorScheme.outlineVariant;
-    final muted = onSurface.withOpacity(0.65);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final activeColor = Colors.pinkAccent;
     // 開啟時的背景 (ON)
@@ -362,7 +361,7 @@ class SymptomPage extends StatelessWidget {
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: ['心悸', '胸悶', '胸痛','呼吸不順', '過度換氣'].map((name) {
+          children: ['心悸', '胸悶', '胸痛', '呼吸不順', '過度換氣'].map((name) {
             final isSelected = items.any((s) => s.name == name);
             return FilterChip(
               label: Text(name),
@@ -487,8 +486,7 @@ class SymptomPage extends StatelessWidget {
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: ['顫抖', '發麻', '手汗變多', '肌肉緊繃', '肌肉抽蓄', '四肢無力']
-              .map((name) {
+          children: ['顫抖', '發麻', '手汗變多', '肌肉緊繃', '肌肉抽蓄', '四肢無力'].map((name) {
             final isSelected = items.any((s) => s.name == name);
             return FilterChip(
               label: Text(name),
@@ -501,10 +499,9 @@ class SymptomPage extends StatelessWidget {
         const SizedBox(height: 12),
 
         // 8. 自訂症狀清單
-        if (items
-            .asMap()
-            .entries
-            .any((e) => e.value.name.trim().isNotEmpty && !presetSymptoms.contains(e.value.name)))
+        if (items.asMap().entries.any((e) =>
+            e.value.name.trim().isNotEmpty &&
+            !presetSymptoms.contains(e.value.name)))
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -518,7 +515,9 @@ class SymptomPage extends StatelessWidget {
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: items.asMap().entries
+                children: items
+                    .asMap()
+                    .entries
                     .where((e) =>
                         e.value.name.trim().isNotEmpty &&
                         !presetSymptoms.contains(e.value.name))
@@ -625,8 +624,8 @@ class SleepPage extends StatelessWidget {
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: SwitchListTile(
-            secondary: const Icon(Icons.medication_outlined,
-                color: Colors.purple),
+            secondary:
+                const Icon(Icons.medication_outlined, color: Colors.purple),
             title: const Text('前一晚是否有吃安眠藥？'),
             value: tookHypnotic,
             onChanged: onToggleHypnotic,
@@ -679,9 +678,8 @@ class SleepPage extends StatelessWidget {
           child: ListTile(
             leading: const Icon(Icons.bed_outlined, color: Colors.indigo),
             title: const Text('前一日準備睡覺時間'),
-            subtitle: Text(sleepTime == null
-                ? '—'
-                : DateHelper.formatTime(sleepTime!)),
+            subtitle: Text(
+                sleepTime == null ? '—' : DateHelper.formatTime(sleepTime!)),
             onTap: onPickSleepTime,
           ),
         ),
@@ -690,7 +688,8 @@ class SleepPage extends StatelessWidget {
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: ExpansionTile(
-            leading: const Icon(Icons.nightlight_outlined, color: Colors.deepPurple),
+            leading:
+                const Icon(Icons.nightlight_outlined, color: Colors.deepPurple),
             title: const Text('夜間睡眠狀況',
                 style: TextStyle(fontWeight: FontWeight.w600)),
             subtitle: Text(
@@ -753,16 +752,14 @@ class SleepPage extends StatelessWidget {
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: ListTile(
-            leading:
-                const Icon(Icons.star_border_rounded, color: Colors.amber),
+            leading: const Icon(Icons.star_border_rounded, color: Colors.amber),
             title: const Text('自覺睡眠品質'),
             subtitle: Text(sleepQuality == null ? '—' : '$sleepQuality'),
             onTap: onPickValue,
           ),
         ),
         const SizedBox(height: 12),
-        const Text('睡眠註記',
-            style: TextStyle(fontWeight: FontWeight.w600)),
+        const Text('睡眠註記', style: TextStyle(fontWeight: FontWeight.w600)),
         TextField(
           minLines: 1,
           maxLines: 3,
@@ -794,13 +791,12 @@ class SleepPage extends StatelessWidget {
                   children: [
                     const Text('💡 紀錄小撇步',
                         style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.brown)),
+                            fontWeight: FontWeight.bold, color: Colors.brown)),
                     const SizedBox(height: 4),
                     Text(
                       '半夜醒來或剛睡醒時不想開 App？\n試試「手機截圖」！起床後再看相簿時間回填即可，減少看螢幕的焦慮。',
-                      style: TextStyle(
-                          fontSize: 13, color: Colors.brown.shade700),
+                      style:
+                          TextStyle(fontSize: 13, color: Colors.brown.shade700),
                     ),
                   ],
                 ),
@@ -851,8 +847,7 @@ class SleepPage extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        const Text('小睡（可新增多筆)',
-            style: TextStyle(fontWeight: FontWeight.w600)),
+        const Text('小睡（可新增多筆)', style: TextStyle(fontWeight: FontWeight.w600)),
         ...List.generate(naps.length, (i) {
           final n = naps[i];
           return Card(
