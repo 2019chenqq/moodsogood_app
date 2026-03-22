@@ -77,26 +77,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   }
 
   // ——— 情緒/症狀/睡眠本地狀態 ———
-  final List<EmotionItem> _emotions = [
-    // 整體狀態
-    EmotionItem('平靜'),
-    EmotionItem('開心'),
-    EmotionItem('有力量'),
-    EmotionItem('疲憊'),
-    EmotionItem('沒動力'),
-    // 壓力情緒
-    EmotionItem('焦慮'),
-    EmotionItem('緊張'),
-    EmotionItem('壓力大'),
-    EmotionItem('煩躁'),
-    EmotionItem('生氣'),
-    // 低落警訊
-    EmotionItem('難過'),
-    EmotionItem('憂鬱'),
-    EmotionItem('無助'),
-    EmotionItem('崩潰感'),
-    EmotionItem('自殺意念'),
-  ];
+  final List<EmotionItem> _emotions =
+      kEmotionCheckboxNames.map((name) => EmotionItem(name)).toList();
 
   final List<SymptomItem> _symptoms = [SymptomItem(name: '')];
 

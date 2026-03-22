@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'utils/anon_name.dart';
 
 import 'models/post.dart';
@@ -126,21 +127,41 @@ class _ComposePostPageState extends State<ComposePostPage> {
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                onPressed: () {
+                // 1. 加上 async
+                onPressed: () async {
                   final roomId = _selectedRoomId ?? roomsProvider.rooms.first.id;
                   final text = _ctrl.text.trim();
                   if (text.isEmpty) return;
 
-                  final post = Post(
-                    id: 'new_${DateTime.now().millisecondsSinceEpoch}',
-                    roomId: roomId,
-                    authorAnonId: _effectiveAnonName,
-                    content: text,
-                    createdAt: DateTime.now(),
-                    allowReplies: _allowReplies,
+                  // 2. 為了避免用戶狂按按鈕，可以在這裡加一個簡單的 Loading 提示
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('發送中...')),
                   );
 
-                  Navigator.pop(context, post);
+                  try {
+                    // 3. 呼叫我們部署在 Firebase 的 Cloud Function
+                    final callable = FirebaseFunctions.instance.httpsCallable('createCommunityPost');
+                    
+                    // 傳遞資料給後端 (注意：這裡完全不傳匿名名稱，讓後端自己去查！)
+                    await callable.call({
+                      'roomId': roomId,
+                      'content': text,
+                      'allowReplies': _allowReplies,
+                    });
+
+                    // 4. 發文成功後，關閉這個頁面
+                    if (context.mounted) {
+                      Navigator.pop(context, true); // 回傳 true 代表發文成功
+                    }
+                  } catch (e) {
+                    // 5. 如果發生錯誤 (例如沒網路、後端報錯)
+                    print("發文失敗: $e");
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('發文失敗，請稍後再試。')),
+                      );
+                    }
+                  }
                 },
                 style: FilledButton.styleFrom(
                   backgroundColor: CommunityStyle.accent,

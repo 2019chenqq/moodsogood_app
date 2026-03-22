@@ -34,6 +34,8 @@ import 'community/room_page.dart';
 import 'community/post_detail_page.dart';
 import 'community/compose_post_page.dart';
 import 'onboarding_page.dart';
+import 'utils/secure_storage_service.dart';
+import 'pin_setup_screen.dart';
 /* =========================== main =========================== */
 
 Future<void> main() async {
@@ -120,11 +122,11 @@ Future<void> main() async {
           debugPrint(
               '🔄 Pro user detected - syncing local data to Firebase...');
           try {
-            final result = await DataMigration().migrateLocalToFirebase(
-              userId: user.uid,
-              repository: repository,
-            );
-            debugPrint('✅ 應用啟動同步完成: $result');
+            // final result = await DataMigration().migrateLocalToFirebase(
+            //   userId: user.uid,
+            //   repository: repository,
+            // );
+            // debugPrint('✅ 應用啟動同步完成: $result');
           } catch (e) {
             debugPrint('⚠️  應用啟動同步失敗: $e');
           }
@@ -135,11 +137,11 @@ Future<void> main() async {
         // 升級時自動遷移本地數據到 Firebase
         final user = FirebaseAuth.instance.currentUser;
         if (user != null) {
-          final result = await DataMigration().migrateLocalToFirebase(
-            userId: user.uid,
-            repository: repository,
-          );
-          debugPrint('📊 用戶升級 - 數據遷移結果: $result');
+          // final result = await DataMigration().migrateLocalToFirebase(
+          //   userId: user.uid,
+          //   repository: repository,
+          // );
+          // debugPrint('📊 用戶升級 - 數據遷移結果: $result');
         }
       });
     }
@@ -308,7 +310,8 @@ class AuthGate extends StatelessWidget {
         if (snap.data == null) {
           return const SignInPage(); // 未登入
         }
-        return const LockWrapper(); // 已登入，先檢查鎖定
+        // 👇 把原本的 return const LockWrapper(); 改成這行 👇
+        return const EncryptionGate(); // 已登入，先檢查端到端加密金鑰
       },
     );
   }
@@ -419,5 +422,58 @@ class _LockWrapperState extends State<LockWrapper> {
 
     // ✅ 解鎖後，或沒開啟鎖定，就進入紀錄首頁
     return const RecordHubPage();
+  }
+}
+/* =========================== Encryption Gate (端到端加密守門員) =========================== */
+class EncryptionGate extends StatefulWidget {
+  const EncryptionGate({super.key});
+
+  @override
+  State<EncryptionGate> createState() => _EncryptionGateState();
+}
+
+class _EncryptionGateState extends State<EncryptionGate> {
+  bool _loading = true;
+  bool _hasKey = false;
+  bool _e2eConfigured = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkEncryptionKey();
+  }
+
+  Future<void> _checkEncryptionKey() async {
+    final prefs = await SharedPreferences.getInstance();
+    final configured = (prefs.getBool('e2eConfigured') ?? false) ||
+        (prefs.getString('e2ePin')?.isNotEmpty ?? false);
+
+    // 去手機的硬體保險箱找鑰匙
+    final key = await SecureStorageService.getOrRecoverKey();
+    if (mounted) {
+      setState(() {
+        _hasKey = (key != null);
+        _e2eConfigured = configured;
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (!_hasKey && !_e2eConfigured) {
+      // 找不到保險箱金鑰，代表是剛下載的新用戶，或是剛更新的舊用戶
+      // 強制進入設定 6 位數安全碼的畫面！
+      return const PinSetupScreen();
+    }
+
+    // 金鑰確認無誤！放行進入原本的 App 鎖檢查與首頁
+    return const LockWrapper();
   }
 }

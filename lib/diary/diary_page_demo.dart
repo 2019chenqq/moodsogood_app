@@ -3,11 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart' as m;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../utils/date_helper.dart';
 import '../utils/firebase_sync_config.dart';
 import '../widgets/emotion_slider.dart';
 import 'diary_repository.dart';
+import '../utils/secure_storage_service.dart';
+import '../utils/encryption_service.dart';
 
 class DiaryPageDemo extends m.StatefulWidget {
   final DateTime date;
@@ -100,7 +103,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   // 從本地 SQLite + Firebase 加載日記
   Future<void> _loadDraft() async {
     try {
-      // 1. 先從本地 SQLite 加載
+      // 1. 先從本地 SQLite 加載 (本地是明文，直接顯示)
       final repo = DiaryRepository();
       final localEntry = await repo.getByDate(_day);
       if (localEntry != null && mounted) {
@@ -108,14 +111,41 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
         _updateUIFromData(localEntry.toMap());
       }
 
-      // 2. 再嘗試從 Firebase 加載（如果有新的會覆蓋）
+      // 2. 再嘗試從 Firebase 加載（抓下來的可能是密文）
       try {
-        final snap =
-            await _docRef.get(const GetOptions(source: Source.serverAndCache));
+        final snap = await _docRef.get(const GetOptions(source: Source.serverAndCache));
         final data = snap.data();
         if (data != null && mounted) {
-          m.debugPrint('📔 Loaded diary from Firebase, updating local');
-          _updateUIFromData(data);
+          m.debugPrint('📔 Loaded diary from Firebase, decrypting...');
+          
+          // 🔑 去保險箱拿鑰匙並啟動解密小幫手
+          final key = await SecureStorageService.getOrRecoverKey();
+          EncryptionService? encService;
+          if (key != null) encService = EncryptionService(key);
+
+          // 🔓 建立一個輔助函數來解密文字
+          String decrypt(dynamic value) {
+            final str = (value ?? '') as String;
+            if (encService != null && str.contains(':')) {
+              return encService.decryptData(str);
+            }
+            return str; // 如果沒有冒號，代表它是舊的明文，直接回傳
+          }
+
+          // 將解密後的資料重新組裝，更新到畫面上
+          final decryptedData = {
+            ...data, // 保留不用加密的欄位 (如 date, overallMood 等分數)
+            'title': decrypt(data['title']),
+            'content': decrypt(data['content']),
+            'themeSong': decrypt(data['themeSong']),
+            'highlight': decrypt(data['highlight']),
+            'metaphor': decrypt(data['metaphor']),
+            'conceited': decrypt(data['conceited']),
+            'proudOf': decrypt(data['proudOf']),
+            'selfCare': decrypt(data['selfCare']),
+          };
+
+          _updateUIFromData(decryptedData);
         }
       } catch (e) {
         m.debugPrint('📔 Firebase load skipped or failed: $e');
@@ -147,31 +177,48 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
     _debouncer = Timer(const Duration(milliseconds: 700), _saveDraft);
   }
 
-  Future<void> _saveDraft() async {
+  Uri? _extractSongUrl(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return null;
+
+    final match = RegExp(
+      r'(https?:\/\/[^\s]+|www\.[^\s]+)',
+      caseSensitive: false,
+    ).firstMatch(trimmed);
+
+    if (match == null) return null;
+
+    var rawUrl = match.group(0) ?? '';
+    if (rawUrl.isEmpty) return null;
+
+    if (rawUrl.startsWith('www.')) {
+      rawUrl = 'https://$rawUrl';
+    }
+
+    return Uri.tryParse(rawUrl);
+  }
+
+  Future<void> _openSongUrl() async {
+    final uri = _extractSongUrl(_songCtrl.text);
+    if (uri == null) return;
+
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched && mounted) {
+      m.ScaffoldMessenger.of(context).showSnackBar(
+        const m.SnackBar(content: m.Text('連結打不開，請檢查網址格式')),
+      );
+    }
+  }
+
+ Future<void> _saveDraft() async {
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid == null) return;
 
-      // Only sync to Firebase if enabled
-      if (FirebaseSyncConfig.shouldSync()) {
-        await _docRef.set({
-          'date': Timestamp.fromDate(_day),
-          'title': _titleCtrl.text.trim(),
-          'content': _contentCtrl.text.trim(),
-          'themeSong': _songCtrl.text.trim(),
-          'highlight': _highlightCtrl.text.trim(),
-          'metaphor': _metaphorCtrl.text.trim(),
-          'conceited': _conceitedCtrl.text.trim(),
-          'proudOf': _proudOfCtrl.text.trim(),
-          'selfCare': _selfCareCtrl.text.trim(),
-          'overallMood': _overallMoodScore,
-          'overallHealth': _overallHealthScore,
-          'overallSleepQuality': _overallSleepScore,
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
-
-      // Always save to local database
+      // ==========================================
+      // 步驟 1：💾 永遠先存一份「明文」到本地資料庫
+      // 保證不管網路斷線或加密失敗，用戶打的字絕對不會不見！
+      // ==========================================
       try {
         final repo = DiaryRepository();
         await repo.upsert(DiaryEntry(
@@ -184,22 +231,65 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
           proudOf: _proudOfCtrl.text.trim(),
           selfCare: _selfCareCtrl.text.trim(),
         ));
-        m.debugPrint('✅ Diary saved to local database');
+        m.debugPrint('✅ 本地 SQLite 儲存成功');
       } catch (e) {
-        m.debugPrint('❌ Failed to save diary locally: $e');
+        m.debugPrint('❌ 本地儲存失敗: $e');
       }
 
+      // ==========================================
+      // 步驟 2：☁️ 嘗試加密並上傳到 Firebase (獨立區塊，失敗不影響本地)
+      // ==========================================
+      if (FirebaseSyncConfig.shouldSync()) {
+        try {
+          // 🔑 從保險箱拿出金鑰
+          final key = await SecureStorageService.getOrRecoverKey();
+          if (key == null) {
+            throw Exception('找不到保險箱金鑰');
+          }
+
+          // 啟動加密小幫手
+          final encService = EncryptionService(key);
+
+          // 🔒 將所有文字欄位進行加密
+          await _docRef.set({
+            'date': Timestamp.fromDate(_day),
+            'title': encService.encryptData(_titleCtrl.text.trim()),
+            'content': encService.encryptData(_contentCtrl.text.trim()),
+            'themeSong': encService.encryptData(_songCtrl.text.trim()),
+            'highlight': encService.encryptData(_highlightCtrl.text.trim()),
+            'metaphor': encService.encryptData(_metaphorCtrl.text.trim()),
+            'conceited': encService.encryptData(_conceitedCtrl.text.trim()),
+            'proudOf': encService.encryptData(_proudOfCtrl.text.trim()),
+            'selfCare': encService.encryptData(_selfCareCtrl.text.trim()),
+            'overallMood': _overallMoodScore,
+            'overallHealth': _overallHealthScore,
+            'overallSleepQuality': _overallSleepScore,
+            'updatedAt': FieldValue.serverTimestamp(),
+            'isEncrypted': true,
+          }, SetOptions(merge: true));
+          
+          m.debugPrint('✅ 雲端加密儲存成功');
+          
+        } catch (e) {
+          m.debugPrint('⚠️ 雲端加密上傳失敗 (已暫存於本地): $e');
+          // 這裡故意拿掉 Snackbar，避免用戶在打字時一直被跳出的紅字打擾
+        }
+      }
+
+      // ==========================================
+      // 步驟 3：更新 UI 顯示「已儲存」
+      // 只要本地有存成功，我們就讓用戶安心
+      // ==========================================
       if (!mounted) return;
       setState(() {
         _saving = false;
         _savedAt = DateTime.now();
       });
-    } on FirebaseException catch (e) {
+
+    } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      m.ScaffoldMessenger.of(context).showSnackBar(
-        m.SnackBar(content: m.Text('儲存失敗：${e.code}')),
-      );
+      m.debugPrint('自動儲存發生未預期的錯誤: $e');
     }
   }
 
@@ -482,6 +572,27 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
               maxLines: 3,
               onAnyChanged: _onAnyFieldChanged,
             ),
+            if (_extractSongUrl(_songCtrl.text) != null)
+              m.Align(
+                alignment: m.Alignment.centerLeft,
+                child: m.InkWell(
+                  onTap: _openSongUrl,
+                  borderRadius: m.BorderRadius.circular(6),
+                  child: m.Padding(
+                    padding: const m.EdgeInsets.symmetric(vertical: 4),
+                    child: m.Text(
+                      _extractSongUrl(_songCtrl.text).toString(),
+                      maxLines: 1,
+                      overflow: m.TextOverflow.ellipsis,
+                      style: const m.TextStyle(
+                        color: m.Color(0xFF1976D2),
+                        decoration: m.TextDecoration.underline,
+                        fontWeight: m.FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             const m.SizedBox(height: 12),
 
             CountTextField(

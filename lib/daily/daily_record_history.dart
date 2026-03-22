@@ -12,6 +12,7 @@ import '../widgets/main_drawer.dart';
 import '../pro/pro_page.dart';
 import '../providers/pro_provider.dart';
 import 'daily_record_repository.dart';
+import 'emotion_page_checkbox.dart';
 
 const Map<String, String> ksleepFlagMap = {
     'good': '優',
@@ -477,7 +478,7 @@ bool _isHistoryLocked(bool isPro) {
   Widget _buildProChartContent(
   BuildContext context,
   List<DailyRecord> allRecords,
-  Set<String> emotionNames,
+  List<String> emotionNames,
   List<PeriodCycle> cycles,
   bool isPro,
 ) {
@@ -580,7 +581,7 @@ bool _isHistoryLocked(bool isPro) {
 
       // ===== 圖表本體（唯一可以被鎖的地方）=====
       SizedBox(
-        height: 180,
+        height: 215,
         child: SizedBox(
           width: double.infinity,
           child: Stack(
@@ -649,13 +650,12 @@ bool _isHistoryLocked(bool isPro) {
     );
   }
   
-  // 遍歷所有資料，找出有實際數據的情緒標籤
-  Set<String> _extractEmotionNames(List<DailyRecord> records) {
+  // 遍歷所有資料，找出曾被選過的情緒標籤（排序跟情緒紀錄頁一致）
+  List<String> _extractEmotionNames(List<DailyRecord> records) {
     final names = <String>{};
-    
-    debugPrint('🔍 Extracting emotion names from ${records.length} records');
-    
-    // 只加入有 value 數據的情緒（不包含「整體情緒」）
+
+    debugPrint('🔍 Extracting selected emotion names from ${records.length} records');
+
     for (var r in records) {
       for (var e in r.emotions) {
         if (e.name.isNotEmpty && e.value != null && e.name != '整體情緒') {
@@ -663,9 +663,30 @@ bool _isHistoryLocked(bool isPro) {
         }
       }
     }
-    
-    debugPrint('✅ Extracted ${names.length} unique emotions: $names');
-    return names;
+
+    final orderMap = <String, int>{
+      for (int i = 0; i < kEmotionCheckboxNames.length; i++)
+        kEmotionCheckboxNames[i]: i,
+    };
+
+    final sortedNames = names.toList()
+      ..sort((a, b) {
+        final ia = orderMap[a];
+        final ib = orderMap[b];
+
+        // 兩者都在情緒紀錄頁清單內：照清單順序
+        if (ia != null && ib != null) return ia.compareTo(ib);
+
+        // 只要其中一個在清單內，清單內的排前面
+        if (ia != null) return -1;
+        if (ib != null) return 1;
+
+        // 兩者都不在預設清單：用名稱穩定排序
+        return a.compareTo(b);
+      });
+
+    debugPrint('✅ Extracted ${sortedNames.length} selected emotions: $sortedNames');
+    return sortedNames;
   }
 
   // 篩選邏輯
@@ -759,182 +780,367 @@ class _ChartWidget extends StatelessWidget {
     required this.targetEmotion,
     required this.useMovingAverage,
   });
-List<VerticalRangeAnnotation> buildPeriodRanges(List<DailyRecord> records) {
-  final List<VerticalRangeAnnotation> list = [];
 
-  int? startIndex; // 連續經期的開始
-  for (int i = 0; i < records.length; i++) {
-    final r = records[i];
-    final isPeriod = r.isPeriod;
+  /// 正規化日期（去除時間部分）
+  DateTime _norm(DateTime d) => DateTime(d.year, d.month, d.day);
 
-    if (isPeriod) {
-      startIndex ??= i; // 開始新的經期段
-    }
+  /// 建立經期粉紅區塊（依照日期距離 startDate 的天數作為 x 座標）
+  List<VerticalRangeAnnotation> _buildPeriodRanges(
+      List<DailyRecord> sorted, DateTime startDate) {
+    final List<VerticalRangeAnnotation> list = [];
+    int? periodStartDay;
 
-    // 結束點（遇到非經期 or 最後一天）
-    if ((!isPeriod || i == records.length - 1) && startIndex != null) {
-      final endIndex = isPeriod ? i : i - 1;
-
-      list.add(
-        VerticalRangeAnnotation(
-          x1: startIndex.toDouble(),
-          x2: endIndex.toDouble() + 0.5,
+    for (var r in sorted) {
+      final dayD = _norm(r.date).difference(startDate).inDays;
+      if (r.isPeriod) {
+        periodStartDay ??= dayD;
+      } else if (periodStartDay != null) {
+        list.add(VerticalRangeAnnotation(
+          x1: periodStartDay.toDouble() - 0.5,
+          x2: (dayD - 1).toDouble() + 0.5,
           color: Colors.pink.withValues(alpha: 0.15),
-        ),
-      );
-
-      startIndex = null; // 重置
+        ));
+        periodStartDay = null;
+      }
     }
+    // 若最後一筆仍為經期
+    if (periodStartDay != null && sorted.isNotEmpty) {
+      final lastDay = _norm(sorted.last.date).difference(startDate).inDays;
+      list.add(VerticalRangeAnnotation(
+        x1: periodStartDay.toDouble() - 0.5,
+        x2: lastDay.toDouble() + 0.5,
+        color: Colors.pink.withValues(alpha: 0.15),
+      ));
+    }
+    return list;
   }
-
-  return list;
-}
 
   @override
-Widget build(BuildContext context) {
-  if (records.length < 2) {
-    return const Center(child: Text('資料不足，無法顯示趨勢圖'));
-  }
-
-  // ===== 1️⃣ 準備情緒曲線點 =====
-  final spots = <FlSpot>[];
-
-  for (int i = 0; i < records.length; i++) {
-    final r = records[i];
-
-    double? value;
-    if (useMovingAverage) {
-      value = _calcMA7(r.date);
-    } else {
-      value = _getValue(r);
+  Widget build(BuildContext context) {
+    if (records.isEmpty) {
+      return const Center(child: Text('資料不足，無法顯示趨勢圖'));
     }
 
-    if (value != null) {
-      spots.add(FlSpot(i.toDouble(), value));
+    // ===== 1️⃣ 整理資料：依日期排序，建立「日期 → 數值」對照表 =====
+    final sorted = List<DailyRecord>.from(records)
+      ..sort((a, b) => a.date.compareTo(b.date));
+
+    final Map<DateTime, double> dateValueMap = {}; // 可用實值（實線/實心點）
+    final Map<DateTime, double> emptyPointValueMap = {}; // MA 視窗不足（空心點/虛線）
+    for (var r in sorted) {
+      final d = _norm(r.date);
+
+      if (useMovingAverage) {
+        final filledDays = _countFilledIn7Days(r.date);
+        final v = _calcMA7(r.date, precomputedCount: filledDays);
+
+        if (v != null) {
+          if (filledDays >= 3) {
+            // ✅ 前 7 天有 >=3 天有值：正常計算
+            dateValueMap[d] = v;
+          } else if (filledDays > 0) {
+            // ⚪ 前 7 天有值但 <3 天：顯示空點 + 走虛線
+            emptyPointValueMap[d] = v;
+          }
+        }
+      } else {
+        final v = _getValue(r);
+        if (v != null) {
+          dateValueMap[d] = v;
+        }
+      }
     }
-  }
 
-  if (spots.isEmpty) {
-    return const Center(child: Text('此情緒目前沒有數據'));
-  }
+    if (dateValueMap.isEmpty && emptyPointValueMap.isEmpty) {
+      return const Center(child: Text('此情緒目前沒有數據'));
+    }
 
-  // ===== 2️⃣ 🔥 在這裡「一次性」產生經期粉紅區塊 =====
-  final periodRanges = buildPeriodRanges(records);
-  debugPrint('🩸 periodRanges count = ${periodRanges.length}');
+    final sortedDates = {
+      ...dateValueMap.keys,
+      ...emptyPointValueMap.keys,
+    }.toList()
+      ..sort();
+    final recordedCount = sortedDates.length;
+    final startDate = sortedDates.first;
+    final endDate = sortedDates.last;
+    final totalDays = endDate.difference(startDate).inDays + 1;
 
-  final lineColor = useMovingAverage ? Colors.orange : Colors.teal;
+    // x 軸值 = 距離第一個有紀錄日期的天數
+    int dayIdx(DateTime d) => _norm(d).difference(startDate).inDays;
 
-  // ===== 3️⃣ 繪製圖表 =====
-  return LineChart(
-    LineChartData(
-      minY: 0,
-      maxY: 10,
+    final lineColor = useMovingAverage ? Colors.orange : Colors.teal;
 
-      // 🌸 經期粉紅色背景
-      rangeAnnotations: RangeAnnotations(
-        verticalRangeAnnotations: periodRanges,
-      ),
+    // ≥ 3 天才畫折線；否則只顯示圓點
+    final showLine = recordedCount >= 3;
 
-      gridData: FlGridData(
-        show: true,
-        horizontalInterval: 2,
-        drawVerticalLine: false,
-      ),
+    // ===== 3️⃣ 建立 LineChartBarData =====
+    final List<LineChartBarData> barDatas = [];
+    bool hasDashedSegments = false;
 
-      titlesData: FlTitlesData(
-        topTitles: const AxisTitles(
-          sideTitles: SideTitles(showTitles: false),
-        ),
-        rightTitles: const AxisTitles(
-          sideTitles: SideTitles(showTitles: false),
-        ),
-        leftTitles: AxisTitles(
-          sideTitles: SideTitles(
-            showTitles: true,
-            interval: 2,
-            reservedSize: 30,
-            getTitlesWidget: (v, m) =>
-                Text(v.toInt().toString()),
+    double? pointY(DateTime d) => dateValueMap[d] ?? emptyPointValueMap[d];
+
+    if (!showLine) {
+      // 📍 圓點模式（< 3 天）：只顯示圓點，無連線
+      barDatas.add(LineChartBarData(
+        spots: dateValueMap.keys
+            .map((d) => FlSpot(dayIdx(d).toDouble(), dateValueMap[d]!))
+            .toList(),
+        isCurved: false,
+        barWidth: 0,
+        color: Colors.transparent,
+        dotData: FlDotData(
+          show: true,
+          getDotPainter: (spot, percent, bar, index) => FlDotCirclePainter(
+            radius: 6,
+            color: lineColor,
+            strokeWidth: 2,
+            strokeColor: lineColor.withValues(alpha: 0.4),
           ),
         ),
-        bottomTitles: AxisTitles(
-          sideTitles: SideTitles(
-            showTitles: true,
-            interval: 1,
-            getTitlesWidget: (val, meta) {
-              final index = val.toInt();
-              if (index < 0 || index >= records.length) {
-                return const SizedBox.shrink();
-              }
+        belowBarData: BarAreaData(show: false),
+      ));
 
-              final int interval = records.length > 10 ? 5 : 1;
-              if (index % interval != 0) {
-                return const SizedBox.shrink();
-              }
-
-              final d = records[index].date;
-              return Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  '${d.month}/${d.day}',
-                  style: const TextStyle(fontSize: 10),
-                ),
-              );
-            },
-          ),
-        ),
-      ),
-
-      borderData: FlBorderData(show: false),
-
-      lineBarsData: [
-        LineChartBarData(
-          spots: spots,
-          isCurved: true,
-          color: lineColor,
-          barWidth: 3,
-          dotData: const FlDotData(show: false),
-          belowBarData: BarAreaData(
+      // MA 視窗不足（<3 天）時顯示空心點
+      if (emptyPointValueMap.isNotEmpty) {
+        hasDashedSegments = true;
+        barDatas.add(LineChartBarData(
+          spots: emptyPointValueMap.keys
+              .map((d) => FlSpot(dayIdx(d).toDouble(), emptyPointValueMap[d]!))
+              .toList(),
+          isCurved: false,
+          barWidth: 0,
+          color: Colors.transparent,
+          dotData: FlDotData(
             show: true,
-            color: lineColor.withValues(alpha: 0.15),
+            getDotPainter: (spot, percent, bar, index) => FlDotCirclePainter(
+              radius: 5,
+              color: Colors.white,
+              strokeWidth: 2,
+              strokeColor: lineColor.withValues(alpha: 0.8),
+            ),
+          ),
+          belowBarData: BarAreaData(show: false),
+        ));
+      }
+    } else {
+      // 📈 折線模式（≥ 3 天）
+      // 實線：在有資料的位置連線，缺漏天插入 nullSpot 使線段斷開
+      final solidSpots = <FlSpot>[];
+      for (int d = 0; d < totalDays; d++) {
+        final date = startDate.add(Duration(days: d));
+        final v = dateValueMap[_norm(date)]; // 只有有效 MA 才走實線
+        solidSpots.add(v != null ? FlSpot(d.toDouble(), v) : FlSpot.nullSpot);
+      }
+      barDatas.add(LineChartBarData(
+        spots: solidSpots,
+        isCurved: true,
+        color: lineColor,
+        barWidth: 3,
+        dotData: FlDotData(
+          show: true,
+          getDotPainter: (spot, percent, bar, index) => FlDotCirclePainter(
+            radius: 4,
+            color: lineColor,
+            strokeWidth: 0,
           ),
         ),
-      ],
-    ),
-  );
-}
+        belowBarData: BarAreaData(
+          show: true,
+          color: lineColor.withValues(alpha: 0.12),
+        ),
+      ));
 
+      // MA 視窗不足（<3 天）時顯示空心點
+      if (emptyPointValueMap.isNotEmpty) {
+        hasDashedSegments = true;
+        barDatas.add(LineChartBarData(
+          spots: emptyPointValueMap.keys
+              .map((d) => FlSpot(dayIdx(d).toDouble(), emptyPointValueMap[d]!))
+              .toList(),
+          isCurved: false,
+          barWidth: 0,
+          color: Colors.transparent,
+          dotData: FlDotData(
+            show: true,
+            getDotPainter: (spot, percent, bar, index) => FlDotCirclePainter(
+              radius: 5,
+              color: Colors.white,
+              strokeWidth: 2,
+              strokeColor: lineColor.withValues(alpha: 0.8),
+            ),
+          ),
+          belowBarData: BarAreaData(show: false),
+        ));
+      }
+
+      // 虛線：跨越「缺漏天」或「空心點」的連線段
+      for (int i = 0; i < sortedDates.length - 1; i++) {
+        final d1 = sortedDates[i];
+        final d2 = sortedDates[i + 1];
+        final y1 = pointY(d1);
+        final y2 = pointY(d2);
+        if (y1 == null || y2 == null) continue;
+
+        final bool hasMissingCalendar = d2.difference(d1).inDays > 1;
+        final bool includeEmptyPoint =
+            emptyPointValueMap.containsKey(d1) || emptyPointValueMap.containsKey(d2);
+
+        if (hasMissingCalendar || includeEmptyPoint) {
+          hasDashedSegments = true;
+          barDatas.add(LineChartBarData(
+            spots: [
+              FlSpot(dayIdx(d1).toDouble(), y1),
+              FlSpot(dayIdx(d2).toDouble(), y2),
+            ],
+            isCurved: false,
+            color: lineColor.withValues(alpha: 0.5),
+            barWidth: 2,
+            dashArray: [6, 5],
+            dotData: const FlDotData(show: false),
+            belowBarData: BarAreaData(show: false),
+          ));
+        }
+      }
+    }
+
+    // ===== 4️⃣ 經期粉紅區塊 =====
+    final periodRanges = _buildPeriodRanges(sorted, startDate);
+
+    // ===== 5️⃣ X 軸標籤：只在有紀錄的位置顯示，最多 7 個 =====
+    final labelPositions = <int>{};
+    if (sortedDates.isNotEmpty) {
+      final step = ((sortedDates.length - 1) / 6).ceil().clamp(1, sortedDates.length);
+      for (int i = 0; i < sortedDates.length; i += step) {
+        labelPositions.add(dayIdx(sortedDates[i]));
+      }
+      labelPositions.add(dayIdx(sortedDates.last));
+    }
+
+    // ===== 6️⃣ 繪製折線圖 =====
+    final chart = LineChart(
+      LineChartData(
+        minY: 0,
+        maxY: 10,
+        minX: 0,
+        maxX: (totalDays - 1).toDouble(),
+        rangeAnnotations: RangeAnnotations(
+          verticalRangeAnnotations: periodRanges,
+        ),
+        gridData: FlGridData(
+          show: true,
+          horizontalInterval: 2,
+          drawVerticalLine: false,
+        ),
+        titlesData: FlTitlesData(
+          topTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              interval: 2,
+              reservedSize: 30,
+              getTitlesWidget: (v, m) => Text(v.toInt().toString()),
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              interval: 1,
+              getTitlesWidget: (val, meta) {
+                final d = val.toInt();
+                if (!labelPositions.contains(d)) return const SizedBox.shrink();
+                final date = startDate.add(Duration(days: d));
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    '${date.month}/${date.day}',
+                    style: const TextStyle(fontSize: 10),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        borderData: FlBorderData(show: false),
+        lineBarsData: barDatas,
+      ),
+    );
+
+    // ===== 7️⃣ 組合圖表 + 虛線提示文字 =====
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: chart),
+        if (hasDashedSegments)
+          Padding(
+            padding: const EdgeInsets.only(top: 6, left: 36),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 22,
+                  height: 14,
+                  child: CustomPaint(
+                    painter: _DashedLegendPainter(
+                        color: lineColor.withValues(alpha: 0.6)),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '虛線代表當日無紀錄',
+                  style: TextStyle(
+                      fontSize: 11, color: Colors.grey.shade500),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
 
   // 取得單日特定情緒數值
   double? _getValue(DailyRecord r) {
     if (targetEmotion == '整體情緒') return r.overallMood;
-    // 找特定情緒
     try {
-      final e = r.emotions.firstWhere((element) => element.name == targetEmotion);
+      final e =
+          r.emotions.firstWhere((element) => element.name == targetEmotion);
       return e.value?.toDouble();
     } catch (_) {
       return null;
     }
   }
 
-  // 計算 7 日移動平均
-  double? _calcMA7(DateTime targetDate) {
-    // 找出 targetDate 以及前 6 天 (共 7 天) 的所有紀錄
-    // 注意：這裡假設 fullRecords 是已經依照日期排序好的
-    
-    final windowStart = DateTime(targetDate.year, targetDate.month, targetDate.day).subtract(const Duration(days: 6));
-    
+  // 計算 targetDate 往前 7 天（含當天）中，有填值的天數
+  int _countFilledIn7Days(DateTime targetDate) {
+    final windowStart =
+        DateTime(targetDate.year, targetDate.month, targetDate.day)
+            .subtract(const Duration(days: 6));
     final windowRecords = fullRecords.where((r) {
-      // 必須 <= targetDate 且 >= windowStart
-      // 因為 r.date 可能有時間，統一正規化比較保險，但這裡簡化處理直接比
       return !r.date.isAfter(targetDate) && !r.date.isBefore(windowStart);
     }).toList();
 
+    int count = 0;
+    for (var r in windowRecords) {
+      if (_getValue(r) != null) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  // 計算 7 日移動平均
+  double? _calcMA7(DateTime targetDate, {int? precomputedCount}) {
+    final windowStart =
+        DateTime(targetDate.year, targetDate.month, targetDate.day)
+            .subtract(const Duration(days: 6));
+    final windowRecords = fullRecords.where((r) {
+      return !r.date.isAfter(targetDate) && !r.date.isBefore(windowStart);
+    }).toList();
     if (windowRecords.isEmpty) return null;
 
     double total = 0;
     int count = 0;
-
     for (var r in windowRecords) {
       final v = _getValue(r);
       if (v != null) {
@@ -943,9 +1149,38 @@ Widget build(BuildContext context) {
       }
     }
 
-    if (count == 0) return null;
-    return total / count;
+    // 若外部已有算過填值天數，優先使用，避免重複邏輯差異
+    final effectiveCount = precomputedCount ?? count;
+    if (effectiveCount == 0) return null;
+    return total / effectiveCount;
   }
+}
+
+/// 虛線圖例畫筆（用於圖表下方的圖例小線條）
+class _DashedLegendPainter extends CustomPainter {
+  final Color color;
+  _DashedLegendPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+    const dashWidth = 4.0;
+    const dashSpace = 3.0;
+    double x = 0;
+    final y = size.height / 2;
+    while (x < size.width) {
+      final end = (x + dashWidth).clamp(0.0, size.width);
+      canvas.drawLine(Offset(x, y), Offset(end, y), paint);
+      x += dashWidth + dashSpace;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedLegendPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 // 列舉與 DateFilter 定義保持不變

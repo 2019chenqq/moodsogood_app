@@ -346,7 +346,15 @@ Future<void> _clearRecord(BuildContext context) async {
               if (record.symptoms.isEmpty)
                 const ListTile(title: Text('無症狀紀錄', style: TextStyle(color: Colors.grey)))
               else
-                ...record.symptoms.map((s) => ListTile(title: Text(s))),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: Text(
+                    record.symptoms
+                        .where((symptom) => symptom.trim().isNotEmpty)
+                        .join('、'),
+                    style: Theme.of(context).textTheme.bodyLarge,
+                  ),
+                ),
 
               const Divider(height: 32),
 
@@ -360,20 +368,22 @@ Future<void> _clearRecord(BuildContext context) async {
                   style: valueStyle,
                 ),
               ),
-              ListTile(
-                title: Text('藥物名稱', style: titleStyle),
-                trailing: Text(
-                  (sleep.hypnoticName ?? '').isEmpty ? '-' : sleep.hypnoticName!,
-                  style: valueStyle,
+              if (sleep.tookHypnotic) ...[
+                ListTile(
+                  title: Text('藥物名稱', style: titleStyle),
+                  trailing: Text(
+                    (sleep.hypnoticName ?? '').isEmpty ? '-' : sleep.hypnoticName!,
+                    style: valueStyle,
+                  ),
                 ),
-              ),
-              ListTile(
-                title: Text('劑量', style: titleStyle),
-                trailing: Text(
-                  (sleep.hypnoticDose ?? '').isEmpty ? '-' : sleep.hypnoticDose!,
-                  style: valueStyle,
+                ListTile(
+                  title: Text('劑量', style: titleStyle),
+                  trailing: Text(
+                    (sleep.hypnoticDose ?? '').isEmpty ? '-' : sleep.hypnoticDose!,
+                    style: valueStyle,
+                  ),
                 ),
-              ),
+              ],
               ListTile(
                 title: Text('入睡時間', style: titleStyle),
                 // 使用 Helper

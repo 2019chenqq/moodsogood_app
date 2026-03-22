@@ -3,6 +3,19 @@ import 'daily_record_helpers.dart';
 import 'daily_record_pages.dart';
 import '../widgets/emotion_slider.dart';
 
+const Map<String, List<String>> kEmotionCheckboxCategories = {
+  '喜悅': ['快樂', '興奮', '愉悅', '滿足', '自在'],
+  '厭惡': ['厭倦', '無聊', '反感', '煩悶'],
+  '悲傷': ['低落', '憂鬱', '孤單', '絕望', '沮喪'],
+  '恐懼': ['緊張', '擔心', '惶恐', '焦慮', '忐忑不安'],
+  '憤怒': ['生氣', '暴躁', '忌妒', '惱羞成怒'],
+  '危險警訊': ['自殺意念'],
+};
+
+final List<String> kEmotionCheckboxNames = List.unmodifiable(
+  kEmotionCheckboxCategories.values.expand((emotions) => emotions),
+);
+
 /// 新版：分類選擇 + 已選情緒評分
 /// TOP: 三大類情緒（整體狀態、壓力情緒、低落警訊）以 Chip 方式選擇
 /// MIDDLE: 已選情緒顯示 Slider (0~10)，可收合
@@ -42,15 +55,6 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
     super.dispose();
   }
 
-  // 定義三大類情緒
-  static const Map<String, List<String>> _emotionCategories = {
-    '喜悅': ['快樂', '興奮', '愉悅', '滿足', '自在'],
-    '厭惡': ['厭倦', '無聊', '反感', '痛恨', '煩悶'],
-    '悲傷': ['低落', '憂鬱', '孤單', '絕望', '沮喪'],
-    '恐懼': ['緊張', '擔心', '惶恐', '焦慮', '忐忑不安'],
-    '憤怒': ['生氣', '暴躁', '忌妒', '惱羞成怒'],
-  };
-
   @override
   Widget build(BuildContext context) {
     // 從 items 中找出已選擇的情緒（value != null）
@@ -74,7 +78,7 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: _emotionCategories.entries.map((category) {
+              children: kEmotionCheckboxCategories.entries.map((category) {
                 return _buildCategorySection(
                   context,
                   categoryName: category.key,
