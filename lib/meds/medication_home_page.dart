@@ -20,31 +20,46 @@ const List<String> kTimeOrder = [
 
 DateTime _startOfDay(DateTime d) => DateTime(d.year, d.month, d.day);
 
+int _dateOnlyDiffDays(DateTime from, DateTime to) {
+  final f = _startOfDay(from);
+  final t = _startOfDay(to);
+  return t.difference(f).inDays;
+}
+
+DateTime? _parseFlexibleDate(dynamic value) {
+  if (value is DateTime) return value;
+  if (value is Timestamp) return value.toDate();
+  if (value is String && value.isNotEmpty) return DateTime.tryParse(value);
+  if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
+  return null;
+}
+
+String? _injectionBadgeText({
+  required DateTime? startDate,
+  required DateTime? lastChangeAt,
+  required int? intervalDays,
+  required DateTime today,
+}) {
+  if (startDate == null || intervalDays == null || intervalDays <= 0) return null;
+
+  // 優先使用最近一次調整日當作「上次施打/更新基準日」
+  final anchor = _startOfDay(lastChangeAt ?? startDate);
+  final dueDate = anchor.add(Duration(days: intervalDays));
+  final diff = _dateOnlyDiffDays(today, dueDate);
+
+  if (diff >= 0) {
+    return '剩 $diff 天';
+  }
+
+  return '逾期 ${-diff} 天';
+}
+
 String _fmtMd(DateTime dt) {
   final m = dt.month.toString().padLeft(2, '0');
   final d = dt.day.toString().padLeft(2, '0');
   return '$m/$d';
 }
 
-/// 依 startDate + intervalDays 推算「下一次注射日」
-/// - 若今天剛好是注射日，回傳今天（剩 0 天）
-DateTime _nextInjectionDate({
-  required DateTime startDate,
-  required int intervalDays,
-  required DateTime today,
-}) {
-  final s = _startOfDay(startDate);
-  final t = _startOfDay(today);
-
-  if (t.isBefore(s)) return s;
-
-  final diffDays = t.difference(s).inDays;
-  final mod = diffDays % intervalDays;
-
-  if (mod == 0) return t; // 今天就是注射日
-  final addDays = intervalDays - mod;
-  return t.add(Duration(days: addDays));
-}
 class MedicationHomePage extends StatefulWidget {
   const MedicationHomePage({super.key});
 
@@ -301,37 +316,27 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
           _SectionTitle(title: '長效針', count: injectionMeds.length),
           ...injectionMeds.map((med) {
             final medId = med['id'] as String? ?? '';
-            final startDate = med['startDate'];
-            final intervalDays = med['intervalDays'];
+            final startDate = _parseFlexibleDate(med['startDate']);
+            final lastChangeAt = _parseFlexibleDate(med['lastChangeAt']);
+            final intervalDays = (med['intervalDays'] is int)
+                ? med['intervalDays'] as int
+                : int.tryParse('${med['intervalDays'] ?? ''}');
+            final badgeText = _injectionBadgeText(
+              startDate: startDate,
+              lastChangeAt: lastChangeAt,
+              intervalDays: intervalDays,
+              today: DateTime.now(),
+            );
 
-            debugPrint('💉 [INJECTION] medId=$medId, startDate=$startDate, intervalDays=$intervalDays');
-
-            DateTime? start;
-            if (startDate is String) {
-              start = DateTime.tryParse(startDate);
-            } else if (startDate is DateTime) {
-              start = startDate;
-            }
-
-            final nextDate = (start != null && intervalDays != null)
-                ? _nextInjectionDate(
-                    startDate: start,
-                    intervalDays: intervalDays as int,
-                    today: DateTime.now(),
-                  )
-                : null;
-
-            final diffDays = nextDate != null
-                ? nextDate.difference(DateTime.now()).inDays
-                : null;
-
-            debugPrint('   → nextDate=$nextDate, diffDays=$diffDays');
+            debugPrint(
+              '💉 [INJECTION] medId=$medId, start=$startDate, lastChangeAt=$lastChangeAt, intervalDays=$intervalDays, badge=$badgeText',
+            );
 
             return _MedicationCard(
               docId: medId,
               data: {
                 ...med,
-                if (diffDays != null) '_badgeOverride': '剩 $diffDays 天',
+                if (badgeText != null) '_badgeOverride': badgeText,
               },
               onTap: () {
                 _showMedActions(context, uid: uid, medId: medId, data: med);

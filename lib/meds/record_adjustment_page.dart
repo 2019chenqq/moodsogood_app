@@ -8,7 +8,7 @@ import 'medication_local_db.dart';
 import 'add_medication_page.dart';
 import 'record_adjustment_history_page.dart';
 
-enum MedChangeType {unchanged, doseChanged, stopped }
+enum MedChangeType { unchanged, added, doseChanged, stopped }
 
 class RecordAdjustmentPage extends StatefulWidget {
   const RecordAdjustmentPage({super.key});
@@ -23,6 +23,7 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
 
   // 每顆藥的暫存變動
   final Map<String, _MedDraft> _draftByDocId = {};
+  final Set<String> _sessionNewlyAddedDocIds = <String>{};
 
   bool _saving = false;
 
@@ -473,11 +474,42 @@ Future<void> _editDose({
 
 
   Future<void> _addNewMedication() async {
-    await Navigator.push(
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    final before = await _getMedsForAdjustment(uid);
+    final beforeIds = before
+        .map((m) => (m['id'] as String?) ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    final added = await Navigator.push<bool>(
       context,
       MaterialPageRoute(builder: (_) => const AddMedicationPage()),
     );
-    // 回來後 StreamBuilder 會自動更新清單
+
+    if (added != true) return;
+
+    final after = await _getMedsForAdjustment(uid);
+    final afterMap = <String, Map<String, dynamic>>{
+      for (final m in after)
+        if (((m['id'] as String?) ?? '').isNotEmpty) (m['id'] as String): m,
+    };
+    final afterIds = afterMap.keys.toSet();
+    final newIds = afterIds.difference(beforeIds);
+
+    setState(() {
+      _sessionNewlyAddedDocIds.addAll(newIds);
+
+      for (final id in newIds) {
+        final med = afterMap[id];
+        if (med == null) continue;
+
+        final draft = _draftByDocId.putIfAbsent(id, () => _MedDraft.fromMap(med));
+        draft.type = MedChangeType.added;
+        draft.newDose = draft.oldDose;
+      }
+    });
   }
 
   Future<void> _pickDate() async {
@@ -502,14 +534,16 @@ Future<void> _editDose({
 
     // 只取有變動的 items（無變化的不寫入）
     final changed = _draftByDocId.entries
-        .where((e) => e.value.type != MedChangeType.unchanged)
+      .where((e) =>
+        e.value.type != MedChangeType.unchanged ||
+        _sessionNewlyAddedDocIds.contains(e.key))
         .toList();
 
     debugPrint('🔍 檢查變動：${_draftByDocId.length} 顆藥物，${changed.length} 顆有變動');
 
     if (changed.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('目前沒有任何變動。請至少選一顆藥做「調整」或「停藥」。')),
+        const SnackBar(content: Text('目前沒有任何變動。請至少選一顆藥做「新增／調整／停藥」。')),
       );
       return;
     }
@@ -536,13 +570,17 @@ Future<void> _editDose({
       final items = changed.map((e) {
         final docId = e.key;
         final d = e.value;
+        final isAddedThisSession =
+            d.type == MedChangeType.added || _sessionNewlyAddedDocIds.contains(docId);
+
+        final itemType = isAddedThisSession ? MedChangeType.added.name : d.type.name;
 
         return <String, dynamic>{
           'medDocId': docId,
           'name': d.name,
-          'type': d.type.name, // unchanged/doseChanged/stopped
-          'oldDose': d.oldDose,
-          'newDose': d.newDose,
+          'type': itemType, // added/doseChanged/stopped
+          'oldDose': isAddedThisSession ? null : d.oldDose,
+          'newDose': isAddedThisSession ? (d.newDose ?? d.oldDose) : d.newDose,
           'unit': d.unit,
           'stopReason': d.stopReason,
         };
@@ -595,6 +633,8 @@ Future<void> _editDose({
         if (d.type == MedChangeType.doseChanged) {
           patch['dose'] = d.newDose; // double
           patch['isActive'] = true;
+        } else if (d.type == MedChangeType.added) {
+          patch['isActive'] = true;
         } else if (d.type == MedChangeType.stopped) {
           patch['isActive'] = false;
         }
@@ -615,6 +655,8 @@ Future<void> _editDose({
 
           if (d.type == MedChangeType.doseChanged) {
             updated['dose'] = d.newDose;
+            updated['isActive'] = true;
+          } else if (d.type == MedChangeType.added) {
             updated['isActive'] = true;
           } else if (d.type == MedChangeType.stopped) {
             updated['isActive'] = false;
@@ -681,6 +723,8 @@ Future<void> _editDose({
     switch (t) {
       case MedChangeType.unchanged:
         return '維持原劑量';
+      case MedChangeType.added:
+        return '新增';
       case MedChangeType.doseChanged:
         return '調整';
       case MedChangeType.stopped:

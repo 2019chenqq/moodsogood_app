@@ -192,6 +192,8 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
       final newDose = it['newDose'];
 
       switch (type) {
+        case 'added':
+          return '$name：新增 ${newDose ?? ''} $unit';
         case 'doseChanged':
           return '$name：${oldDose ?? ''}→${newDose ?? ''} $unit';
         case 'stopped':
@@ -236,7 +238,9 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
                   final stopReason = (it['stopReason'] ?? '').toString().trim();
 
                   String line;
-                  if (type == 'doseChanged') {
+                  if (type == 'added') {
+                    line = '新增：${newDose ?? ''} $unit';
+                  } else if (type == 'doseChanged') {
                     line = '調整：${oldDose ?? ''} → ${newDose ?? ''} $unit';
                   } else if (type == 'stopped') {
                     line = stopReason.isEmpty ? '停藥' : '停藥（原因：$stopReason）';
