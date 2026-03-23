@@ -4,6 +4,7 @@ import '../daily/daily_record_screen.dart';
 import '../daily/daily_record_history.dart';
 import '../diary/diary_home_page.dart';
 import '../meds/medication_home_page.dart';
+import '../meds/medication_checkin_page.dart';
 import '../community/community_home_page.dart';
 
 class RecordHubPage extends StatelessWidget {
@@ -60,6 +61,13 @@ class RecordHubPage extends StatelessWidget {
             title: '藥物紀錄',
             subtitle: '管理用藥與回診調整',
             onTap: () => _push(context, const MedicationHomePage()),
+          ),
+          const SizedBox(height: 10),
+          _RecordEntryCard(
+            icon: Icons.task_alt,
+            title: '服藥打卡',
+            subtitle: '按時勾選今日服藥狀態',
+            onTap: () => _push(context, const MedicationCheckinPage()),
           ),
         ],
       ),

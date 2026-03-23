@@ -5,11 +5,13 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../app_globals.dart';
 import '../pages/hub_pages.dart';
+import '../meds/medication_checkin_page.dart';
 
 const _channelId = 'heartshine_general';
 const _channelName = '心域提醒';
 const _channelDescription = '心域的提醒與每日通知';
 const _dailyRecordPayload = 'open_daily_record';
+const _medicationCheckinPayload = 'open_medication_checkin';
 
 class NotificationHelper {
   static final NotificationHelper _instance = NotificationHelper._internal();
@@ -17,6 +19,7 @@ class NotificationHelper {
   NotificationHelper._internal();
 
   static const int kDailyAlarmId = 10001;
+  static const String medicationCheckinPayload = _medicationCheckinPayload;
 
   final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
@@ -128,8 +131,7 @@ class NotificationHelper {
         android: androidDetails,
         iOS: const DarwinNotificationDetails(),
       ),
-      // payload: payload ?? '/home',
-      payload: _dailyRecordPayload,
+      payload: payload ?? _dailyRecordPayload,
 
     );
   }
@@ -240,7 +242,8 @@ class NotificationHelper {
         androidScheduleMode: _exactAlarmAllowed
             ? AndroidScheduleMode.exactAllowWhileIdle
             : AndroidScheduleMode.inexactAllowWhileIdle,
-        payload: _dailyRecordPayload,
+        matchDateTimeComponents: DateTimeComponents.time,
+        payload: payload ?? _dailyRecordPayload,
       );
       debugPrint('✅ 已成功建立每日排程：$scheduledDate');
 
@@ -339,6 +342,9 @@ class NotificationHelper {
     if (payload == _dailyRecordPayload) {
       return _navigateToDailyRecord();
     }
+    if (payload == _medicationCheckinPayload) {
+      return _navigateToMedicationCheckin();
+    }
     return false;
   }
 
@@ -348,6 +354,17 @@ class NotificationHelper {
 
     navigator.pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const RecordHubPage()),
+      (_) => false,
+    );
+    return true;
+  }
+
+  bool _navigateToMedicationCheckin() {
+    final navigator = rootNavigatorKey.currentState;
+    if (navigator == null) return false;
+
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const MedicationCheckinPage()),
       (_) => false,
     );
     return true;
