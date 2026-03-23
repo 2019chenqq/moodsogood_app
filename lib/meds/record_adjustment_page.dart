@@ -8,7 +8,7 @@ import 'medication_local_db.dart';
 import 'add_medication_page.dart';
 import 'record_adjustment_history_page.dart';
 
-enum MedChangeType { unchanged, added, doseChanged, stopped }
+enum MedChangeType { unchanged, added, injected, doseChanged, stopped }
 
 class RecordAdjustmentPage extends StatefulWidget {
   const RecordAdjustmentPage({super.key});
@@ -267,6 +267,7 @@ String _toStr(dynamic v, [String fallback = '']) {
 
     final times = (med['times'] as List?)?.whereType<String>().toList() ?? const <String>[];
     final isActive = (med['isActive'] as bool?) ?? true;
+    final isInjectionMed = (med['type'] as String?) == 'injection';
 
     // 卡片視覺：有變動就稍微凸顯
     final changed = draft.type != MedChangeType.unchanged;
@@ -343,6 +344,17 @@ String _toStr(dynamic v, [String fallback = '']) {
                     draft.newDose ??= _doseToDouble(dose);
                   }),
                 ),
+                if (isInjectionMed)
+                  _choiceChip(
+                    context,
+                    label: '已施打',
+                    selected: draft.type == MedChangeType.injected,
+                    onTap: () => setState(() {
+                      draft.type = MedChangeType.injected;
+                      draft.newDose = null;
+                      draft.stopReason = null;
+                    }),
+                  ),
                 _choiceChip(
                   context,
                   label: '停藥',
@@ -578,7 +590,7 @@ Future<void> _editDose({
         return <String, dynamic>{
           'medDocId': docId,
           'name': d.name,
-          'type': itemType, // added/doseChanged/stopped
+          'type': itemType, // added/injected/doseChanged/stopped
           'oldDose': isAddedThisSession ? null : d.oldDose,
           'newDose': isAddedThisSession ? (d.newDose ?? d.oldDose) : d.newDose,
           'unit': d.unit,
@@ -633,6 +645,8 @@ Future<void> _editDose({
         if (d.type == MedChangeType.doseChanged) {
           patch['dose'] = d.newDose; // double
           patch['isActive'] = true;
+        } else if (d.type == MedChangeType.injected) {
+          patch['isActive'] = true;
         } else if (d.type == MedChangeType.added) {
           patch['isActive'] = true;
         } else if (d.type == MedChangeType.stopped) {
@@ -655,6 +669,8 @@ Future<void> _editDose({
 
           if (d.type == MedChangeType.doseChanged) {
             updated['dose'] = d.newDose;
+            updated['isActive'] = true;
+          } else if (d.type == MedChangeType.injected) {
             updated['isActive'] = true;
           } else if (d.type == MedChangeType.added) {
             updated['isActive'] = true;
@@ -725,6 +741,8 @@ Future<void> _editDose({
         return '維持原劑量';
       case MedChangeType.added:
         return '新增';
+      case MedChangeType.injected:
+        return '已施打';
       case MedChangeType.doseChanged:
         return '調整';
       case MedChangeType.stopped:
@@ -759,23 +777,7 @@ class _MedDraft {
     required this.oldDose,
     required this.type,
     this.newDose,
-    this.stopReason,
   });
-
-  factory _MedDraft.fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
-    final d = doc.data();
-    final name = (d['name'] as String?) ?? '未命名藥物';
-    final unit = (d['unit'] as String?) ?? 'mg';
-    final dose = d['dose'];
-    final oldDose = (dose is int) ? dose.toDouble() : (dose is double ? dose : 0.0);
-
-    return _MedDraft(
-      name: name,
-      unit: unit,
-      oldDose: oldDose,
-      type: MedChangeType.unchanged,
-    );
-  }
 
   factory _MedDraft.fromMap(Map<String, dynamic> m) {
     final name = (m['name'] as String?) ?? '未命名藥物';

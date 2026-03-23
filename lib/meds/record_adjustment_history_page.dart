@@ -179,7 +179,7 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
   }
 
   /// 讀你目前的 items schema：
-  /// { name, type(unchanged/doseChanged/stopped), oldDose, newDose, unit, stopReason }
+  /// { name, type(added/injected/doseChanged/stopped), oldDose, newDose, unit, stopReason }
   static String _buildSummary(List items) {
     if (items.isEmpty) return '（本次沒有任何變更）';
 
@@ -194,6 +194,10 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
       switch (type) {
         case 'added':
           return '$name：新增 ${newDose ?? ''} $unit';
+        case 'injected':
+          return '$name：已施打';
+        case 'injection':
+          return '$name：已施打';
         case 'doseChanged':
           return '$name：${oldDose ?? ''}→${newDose ?? ''} $unit';
         case 'stopped':
@@ -240,6 +244,8 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
                   String line;
                   if (type == 'added') {
                     line = '新增：${newDose ?? ''} $unit';
+                  } else if (type == 'injected' || type == 'injection') {
+                    line = '已施打';
                   } else if (type == 'doseChanged') {
                     line = '調整：${oldDose ?? ''} → ${newDose ?? ''} $unit';
                   } else if (type == 'stopped') {
