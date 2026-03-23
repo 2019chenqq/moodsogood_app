@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -43,8 +44,9 @@ Future<void> main() async {
 
   WidgetsFlutterBinding.ensureInitialized();
 
-  await AndroidAlarmManager
-      .initialize(); // :contentReference[oaicite:3]{index=3}
+  if (Platform.isAndroid) {
+  await AndroidAlarmManager.initialize();
+}
 
   debugPrint('🔥 Firebase initializing...');
   await Firebase.initializeApp(
