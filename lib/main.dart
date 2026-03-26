@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -19,14 +20,12 @@ import 'utils/notification_helper.dart';
 import 'utils/firebase_sync_config.dart';
 import 'providers/theme_provider.dart';
 import 'providers/firebase_sync_provider.dart';
-import 'daily/daily_record_screen.dart';
 import 'pages/hub_pages.dart';
 import 'daily/daily_record_repository.dart';
 import 'app_lock_screen.dart';
 import 'service/iap_service.dart';
 import 'providers/pro_provider.dart';
 import 'PDF/pdf_export_provider.dart'; // 引入 PDFExportProvider
-import 'utils/data_migration.dart';
 import 'UI/fortune_cookie_screen.dart';
 import 'community/providers/rooms_provider.dart';
 import 'community/community_home_page.dart';
@@ -36,6 +35,10 @@ import 'community/compose_post_page.dart';
 import 'onboarding_page.dart';
 import 'utils/secure_storage_service.dart';
 import 'pin_setup_screen.dart';
+
+bool _firebaseReady = false;
+String? _startupIssueMessage;
+
 /* =========================== main =========================== */
 
 Future<void> main() async {
@@ -43,14 +46,27 @@ Future<void> main() async {
 
   WidgetsFlutterBinding.ensureInitialized();
 
-  await AndroidAlarmManager
-      .initialize(); // :contentReference[oaicite:3]{index=3}
+  if (Platform.isAndroid) {
+    try {
+      await AndroidAlarmManager.initialize();
+    } catch (error, stackTrace) {
+      debugPrint('⚠️ AndroidAlarmManager initialization failed: $error');
+      debugPrint('$stackTrace');
+    }
+  }
 
   debugPrint('🔥 Firebase initializing...');
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-  debugPrint('✅ Firebase initialized');
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    _firebaseReady = true;
+    debugPrint('✅ Firebase initialized');
+  } catch (error, stackTrace) {
+    _startupIssueMessage = _buildStartupIssueMessage(error);
+    debugPrint('❌ Firebase initialization failed: $error');
+    debugPrint('$stackTrace');
+  }
 
   // 先載入主題設定
   final themeProvider = ThemeProvider();
@@ -102,12 +118,16 @@ Future<void> main() async {
   );
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!_firebaseReady) {
+      NotificationHelper().processPendingNavigation();
+      return;
+    }
+
     // 在應用初始化後，註冊 Pro 狀態回調和升級回調
     final globalContext = rootNavigatorKey.currentContext;
     if (globalContext != null) {
       final proProvider =
           Provider.of<ProProvider>(globalContext, listen: false);
-      final repository = DailyRecordRepository();
 
       // 🔧 修復：正確設置 Pro 狀態回調，讓 Firebase 同步與本地存儲保持同步
       FirebaseSyncConfig.setProStatusCallback(() {
@@ -148,6 +168,14 @@ Future<void> main() async {
 
     NotificationHelper().processPendingNavigation();
   });
+}
+
+String _buildStartupIssueMessage(Object error) {
+  if (Platform.isIOS && error is UnsupportedError) {
+    return 'iOS Firebase 尚未設定完成。請補上 ios/Runner/GoogleService-Info.plist，並重新產生包含 iOS 設定的 firebase_options.dart。';
+  }
+
+  return '應用啟動失敗：$error';
 }
 
 class MainApp extends StatelessWidget {
@@ -213,7 +241,63 @@ class MainApp extends StatelessWidget {
         ComposePostPage.routeName: (_) => const ComposePostPage(),
       },
 
-      home: const FirstLaunchGate(),
+      home: _firebaseReady
+          ? const FirstLaunchGate()
+          : StartupIssueScreen(message: _startupIssueMessage),
+    );
+  }
+}
+
+class StartupIssueScreen extends StatelessWidget {
+  const StartupIssueScreen({super.key, this.message});
+
+  final String? message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final issue = message ?? _startupIssueMessage ?? '應用啟動時發生未知錯誤。';
+
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.cloud_off_rounded,
+                    size: 72,
+                    color: theme.colorScheme.error,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'iOS 啟動失敗',
+                    style: theme.textTheme.headlineSmall,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    issue,
+                    style: theme.textTheme.bodyLarge,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    '目前專案只有 Android 的 Firebase 設定，iOS 端缺少對應設定，所以會在啟動 Firebase 時中斷。',
+                    style: theme.textTheme.bodyMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -300,6 +384,10 @@ class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
   @override
   Widget build(BuildContext context) {
+    if (!_firebaseReady) {
+      return StartupIssueScreen(message: _startupIssueMessage);
+    }
+
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snap) {
@@ -424,6 +512,7 @@ class _LockWrapperState extends State<LockWrapper> {
     return const RecordHubPage();
   }
 }
+
 /* =========================== Encryption Gate (端到端加密守門員) =========================== */
 class EncryptionGate extends StatefulWidget {
   const EncryptionGate({super.key});

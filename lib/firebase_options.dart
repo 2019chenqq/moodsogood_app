@@ -17,29 +17,17 @@ import 'package:flutter/foundation.dart'
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
-      throw UnsupportedError(
-        'DefaultFirebaseOptions have not been configured for web - '
-        'you can reconfigure this by running the FlutterFire CLI again.',
-      );
+      return web;
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
         return android;
       case TargetPlatform.iOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for ios - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return ios;
       case TargetPlatform.macOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for macos - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return macos;
       case TargetPlatform.windows:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for windows - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return windows;
       case TargetPlatform.linux:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for linux - '
@@ -54,9 +42,57 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyDOUcSXP6D6JZyXtu6By355gHETT2VDsfM',
-    appId: '1:510475967619:android:938fa0816ac94a78c2cfb6',
+    appId: '1:510475967619:android:39381422489f4ce3c2cfb6',
     messagingSenderId: '510475967619',
     projectId: 'moodsogood-9e45b',
+    databaseURL: 'https://moodsogood-9e45b-default-rtdb.firebaseio.com',
     storageBucket: 'moodsogood-9e45b.firebasestorage.app',
   );
+
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'AIzaSyAuZv4YZA0VTKqSyYJ_mXnrYyF9Aal9GbY',
+    appId: '1:510475967619:web:c21c9d28fd763507c2cfb6',
+    messagingSenderId: '510475967619',
+    projectId: 'moodsogood-9e45b',
+    authDomain: 'moodsogood-9e45b.firebaseapp.com',
+    databaseURL: 'https://moodsogood-9e45b-default-rtdb.firebaseio.com',
+    storageBucket: 'moodsogood-9e45b.firebasestorage.app',
+    measurementId: 'G-4656TJE15Q',
+  );
+
+  static const FirebaseOptions macos = FirebaseOptions(
+    apiKey: 'AIzaSyBhm2ZvTQLGeA9j0AWK72arX8Sma6ZLZZ8',
+    appId: '1:510475967619:ios:1ca12400e9de202dc2cfb6',
+    messagingSenderId: '510475967619',
+    projectId: 'moodsogood-9e45b',
+    databaseURL: 'https://moodsogood-9e45b-default-rtdb.firebaseio.com',
+    storageBucket: 'moodsogood-9e45b.firebasestorage.app',
+    androidClientId: '510475967619-36ebvpau9hhfqbckbnpmrfp16aj6ac99.apps.googleusercontent.com',
+    iosClientId: '510475967619-3e3got4hsp0p08q1etbeu0udljahuuha.apps.googleusercontent.com',
+    iosBundleId: 'com.example.moodsogoodApp',
+  );
+
+  static const FirebaseOptions ios = FirebaseOptions(
+    apiKey: 'AIzaSyBhm2ZvTQLGeA9j0AWK72arX8Sma6ZLZZ8',
+    appId: '1:510475967619:ios:90d8ea53ddd381f1c2cfb6',
+    messagingSenderId: '510475967619',
+    projectId: 'moodsogood-9e45b',
+    databaseURL: 'https://moodsogood-9e45b-default-rtdb.firebaseio.com',
+    storageBucket: 'moodsogood-9e45b.firebasestorage.app',
+    androidClientId: '510475967619-36ebvpau9hhfqbckbnpmrfp16aj6ac99.apps.googleusercontent.com',
+    iosClientId: '510475967619-9k82vsnh96b78vr22iumdip8mu5hi877.apps.googleusercontent.com',
+    iosBundleId: 'com.heartshine.app',
+  );
+
+  static const FirebaseOptions windows = FirebaseOptions(
+    apiKey: 'AIzaSyAuZv4YZA0VTKqSyYJ_mXnrYyF9Aal9GbY',
+    appId: '1:510475967619:web:9a39afd788ed8934c2cfb6',
+    messagingSenderId: '510475967619',
+    projectId: 'moodsogood-9e45b',
+    authDomain: 'moodsogood-9e45b.firebaseapp.com',
+    databaseURL: 'https://moodsogood-9e45b-default-rtdb.firebaseio.com',
+    storageBucket: 'moodsogood-9e45b.firebasestorage.app',
+    measurementId: 'G-6V8GPG3ZW3',
+  );
+
 }
