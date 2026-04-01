@@ -230,12 +230,18 @@ class _ExportReportPageState extends State<ExportReportPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    '📅 選擇報告期間',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  Row(
+                    children: const [
+                      Icon(Icons.calendar_today, size: 16, color: Colors.black87),
+                      SizedBox(width: 6),
+                      Text(
+                        '選擇報告期間',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 12),
                   Row(
@@ -277,12 +283,18 @@ class _ExportReportPageState extends State<ExportReportPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    '⚙️ 報告選項',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  Row(
+                    children: const [
+                      Icon(Icons.settings, size: 16, color: Colors.black87),
+                      SizedBox(width: 6),
+                      Text(
+                        '報告選項',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 12),
                   CheckboxListTile(
@@ -315,12 +327,18 @@ class _ExportReportPageState extends State<ExportReportPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    '👀 報告預覽',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  Row(
+                    children: const [
+                      Icon(Icons.preview, size: 16, color: Colors.black87),
+                      SizedBox(width: 6),
+                      Text(
+                        '報告預覽',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 12),
                   _buildPreviewCard(),
@@ -482,7 +500,8 @@ class _ExportReportPageState extends State<ExportReportPage> {
         children: [
           // 情緒摘要
           _buildPreviewSection(
-            '😊 情緒摘要',
+            Icons.mood,
+            '情緒摘要',
             _buildEmotionPreview(metrics),
           ),
           const SizedBox(height: 16),
@@ -490,7 +509,8 @@ class _ExportReportPageState extends State<ExportReportPage> {
           // 睡眠摘要
           if (metrics.sleepMetrics != null)
             _buildPreviewSection(
-              '😴 睡眠摘要',
+              Icons.bedtime,
+              '睡眠摘要',
               _buildSleepPreview(metrics),
             ),
           if (metrics.sleepMetrics != null) const SizedBox(height: 16),
@@ -498,14 +518,16 @@ class _ExportReportPageState extends State<ExportReportPage> {
           // 症狀摘要
           if (metrics.symptoms.isNotEmpty)
             _buildPreviewSection(
-              '🏥 症狀摘要',
+              Icons.local_hospital,
+              '症狀摘要',
               _buildSymptomPreview(metrics),
             ),
           if (metrics.symptoms.isNotEmpty) const SizedBox(height: 16),
 
           // AI 摘要
           _buildPreviewSection(
-            '🤖 分析摘要',
+            Icons.auto_awesome,
+            '分析摘要',
             Text(
               _previewSummary ?? '無摘要',
               style: TextStyle(
@@ -521,17 +543,23 @@ class _ExportReportPageState extends State<ExportReportPage> {
   }
 
   /// 構建預覽段落
-  Widget _buildPreviewSection(String title, Widget content) {
+  Widget _buildPreviewSection(IconData icon, String title, Widget content) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.bold,
-            color: Colors.black87,
-          ),
+        Row(
+          children: [
+            Icon(icon, size: 14, color: Colors.black87),
+            const SizedBox(width: 4),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 8),
         content,

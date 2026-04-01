@@ -35,6 +35,8 @@
 			<array>
 				<string>com.googleusercontent.apps.510475967619-9k82vsnh96b78vr22iumdip8mu5hi877</string>
 			</array>
+			<key>ITSAppUsesNonExemptEncryption</key>
+<false/>
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>

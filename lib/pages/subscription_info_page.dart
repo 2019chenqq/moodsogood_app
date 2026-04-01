@@ -38,12 +38,23 @@ class SubscriptionInfoPage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    isPro ? '✨ Pro 會員' : '📱 免費版',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isPro ? Icons.auto_awesome : Icons.phone_android,
+                        size: 22,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        isPro ? 'Pro 會員' : '免費版',
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 12),
                   Text(
@@ -71,7 +82,8 @@ class SubscriptionInfoPage extends StatelessWidget {
 
             _buildFeatureComparison(
               context,
-              '☁️ 資料存儲',
+              Icons.cloud,
+              '資料存儲',
               free: '本地存儲',
               pro: 'Firebase 雲端',
               freeColor: Colors.blue,
@@ -80,7 +92,8 @@ class SubscriptionInfoPage extends StatelessWidget {
 
             _buildFeatureComparison(
               context,
-              '📅 資料保留期',
+              Icons.calendar_today,
+              '資料保留期',
               free: '最近 2 年',
               pro: '永久保存',
               freeColor: Colors.blue,
@@ -89,36 +102,40 @@ class SubscriptionInfoPage extends StatelessWidget {
 
             _buildFeatureComparison(
               context,
-              '📱 多設備同步',
-              free: '❌ 不支持',
-              pro: '✅ 支持',
+              Icons.sync_alt,
+              '多設備同步',
+              free: '不支持',
+              pro: '支持',
               freeColor: Colors.blue,
               proColor: Colors.amber,
             ),
 
             _buildFeatureComparison(
               context,
-              '🔄 自動備份',
-              free: '❌ 無備份',
-              pro: '✅ 自動備份',
+              Icons.backup,
+              '自動備份',
+              free: '無備份',
+              pro: '自動備份',
               freeColor: Colors.blue,
               proColor: Colors.amber,
             ),
 
             _buildFeatureComparison(
               context,
-              '📊 高級統計',
-              free: '⭐ 基礎功能',
-              pro: '⭐⭐⭐ 完整功能',
+              Icons.bar_chart,
+              '高級統計',
+              free: '基礎功能',
+              pro: '完整功能',
               freeColor: Colors.blue,
               proColor: Colors.amber,
             ),
 
             _buildFeatureComparison(
               context,
-              '🔐 隱私保護',
-              free: '✅ 本地加密',
-              pro: '✅ 雲端加密',
+              Icons.lock,
+              '隱私保護',
+              free: '本地加密',
+              pro: '雲端加密',
               freeColor: Colors.blue,
               proColor: Colors.amber,
             ),
@@ -138,12 +155,19 @@ class SubscriptionInfoPage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '🎉 升級到 Pro',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.amber[900],
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.celebration, size: 20, color: Colors.amber[900]),
+                        const SizedBox(width: 6),
+                        Text(
+                          '升級到 Pro',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.amber[900],
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -265,6 +289,7 @@ class SubscriptionInfoPage extends StatelessWidget {
 
   Widget _buildFeatureComparison(
     BuildContext context,
+    IconData icon,
     String feature, {
     required String free,
     required String pro,
@@ -277,9 +302,17 @@ class SubscriptionInfoPage extends StatelessWidget {
         children: [
           Expanded(
             flex: 2,
-            child: Text(
-              feature,
-              style: Theme.of(context).textTheme.bodyMedium,
+            child: Row(
+              children: [
+                Icon(icon, size: 16, color: Colors.grey[600]),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    feature,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+              ],
             ),
           ),
           Expanded(

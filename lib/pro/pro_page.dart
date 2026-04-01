@@ -80,7 +80,15 @@ class _ProPageState extends State<ProPage> {
 
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✨ 升級成功！歡迎加入 Pro 會員')),
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.auto_awesome, size: 18, color: Colors.white),
+                SizedBox(width: 8),
+                Expanded(child: Text('升級成功！歡迎加入 Pro 會員')),
+              ],
+            ),
+          ),
         );
 
         if (mounted) {
@@ -153,13 +161,20 @@ class _ProPageState extends State<ProPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  '✨ Pro 會員版本',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Icon(Icons.auto_awesome, size: 20, color: Colors.white),
+                    SizedBox(width: 8),
+                    Text(
+                      'Pro 會員版本',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
                 const Text(
@@ -183,31 +198,36 @@ class _ProPageState extends State<ProPage> {
 
           _buildFeatureComparison(
             context,
-            '☁️ 資料存儲',
+            Icons.cloud,
+            '資料存儲',
             free: '本地存儲',
             pro: 'Firebase 雲端',
           ),
           _buildFeatureComparison(
             context,
-            '📅 資料保留期',
+            Icons.calendar_today,
+            '資料保留期',
             free: '最近 2 年',
             pro: '永久保存',
           ),
           _buildFeatureComparison(
             context,
-            '📱 多設備同步',
-            free: '❌ 不支持',
-            pro: '✅ 支持',
+            Icons.sync_alt,
+            '多設備同步',
+            free: '不支持',
+            pro: '支持',
           ),
           _buildFeatureComparison(
             context,
-            '📊 查看歷程',
+            Icons.bar_chart,
+            '查看歷程',
             free: '最近 30 天',
             pro: '全部歷程',
           ),
           _buildFeatureComparison(
             context,
-            '📈 情緒趨勢圖',
+            Icons.trending_up,
+            '情緒趨勢圖',
             free: '最近 30 天',
             pro: '全部趨勢',
           ),
@@ -249,7 +269,7 @@ class _ProPageState extends State<ProPage> {
 
           const SizedBox(height: 20),
           const Text(
-            '💡 提示\n• 首次購買後可立即使用所有 Pro 功能\n• 可在 Google Play 帳戶設定中管理訂閱\n• 取消訂閱後，您仍可使用已同步到雲端的數據',
+            '提示\n• 首次購買後可立即使用所有 Pro 功能\n• 可在 Google Play 帳戶設定中管理訂閱\n• 取消訂閱後，您仍可使用已同步到雲端的數據',
             style: TextStyle(color: Colors.grey, fontSize: 12, height: 1.6),
           ),
         ],
@@ -259,6 +279,7 @@ class _ProPageState extends State<ProPage> {
 
   Widget _buildFeatureComparison(
     BuildContext context,
+    IconData icon,
     String title, {
     required String free,
     required String pro,
@@ -270,9 +291,15 @@ class _ProPageState extends State<ProPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              title,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+            Row(
+              children: [
+                Icon(icon, size: 16, color: Colors.grey[600]),
+                const SizedBox(width: 6),
+                Text(
+                  title,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             Row(

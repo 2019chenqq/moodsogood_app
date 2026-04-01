@@ -52,7 +52,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
 
  String? _periodLabel(DailyRecord r) {
   if (r.isPeriod == true) {
-    return '🌸 生理期';
+    return '生理期';
   }
   return null;
 }

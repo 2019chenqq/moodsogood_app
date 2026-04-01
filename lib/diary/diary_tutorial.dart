@@ -165,7 +165,7 @@ class _DiaryTutorialPageState extends State<DiaryTutorialPage> {
           ),
           const SizedBox(height: 24),
           _buildBenefitBox(
-            '📖 日記的好處',
+            '日記的好處',
             [
               '深入反思您的情感和經歷',
               '記錄詳細的事件和背景',

@@ -358,11 +358,6 @@ class _FirstLaunchGateState extends State<FirstLaunchGate> {
       return const AuthGate();
     }
 
-    // iOS 先跳過幸運餅乾動畫頁，避免 video 初始化造成黑屏。
-    if (Platform.isIOS) {
-      return const AuthGate();
-    }
-
     return FortuneCookieScreen(
       onEnterApp: () {
         Navigator.of(context).pushReplacement(

@@ -210,7 +210,7 @@ class SleepPage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('💡 紀錄小撇步',
+                    const Text('紀錄小撇步',
                         style: TextStyle(
                             fontWeight: FontWeight.bold, color: Colors.brown)),
                     const SizedBox(height: 4),

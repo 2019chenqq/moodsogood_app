@@ -59,7 +59,7 @@ class _MainDrawerState extends State<MainDrawer> {
       if (mounted) {
         setState(() => _isUploading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('大頭貼更新成功！🎉')),
+          const SnackBar(content: Text('大頭貼更新成功！')),
         );
       }
     } catch (e) {

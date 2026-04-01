@@ -210,14 +210,14 @@ class DiaryReviewScreen extends StatelessWidget {
             const SizedBox(height: 16),
             _SectionCard(
               icon: Icons.music_note_rounded,
-              label: '🎧 今日的主題曲',
+              label: '今日的主題曲',
               text: themeSong,
               placeholder: '—',
             ),
             const SizedBox(height: 12),
             _SectionCard(
               icon: Icons.local_florist_rounded,
-              label: '✨ 今天最想記錄的瞬間',
+              label: '今天最想記錄的瞬間',
               text: highlight,
               placeholder: '今天最想留住的畫面、對話或感受…',
               big: true,
@@ -225,21 +225,21 @@ class DiaryReviewScreen extends StatelessWidget {
             const SizedBox(height: 12),
             _SectionCard(
               icon: Icons.theater_comedy_rounded,
-              label: '🎭 今天的情緒像…',
+              label: '今天的情緒像…',
               text: metaphor,
               placeholder: '例：潮汐、霧氣、烈陽、玻璃珠…',
             ),
             const SizedBox(height: 12),
-                        _SectionCard(
+            _SectionCard(
               icon: Icons.theater_comedy_rounded,
-              label: '🏅 為自己感到驕傲的是',
+              label: '為自己感到驕傲的是',
               text: conceited,
               placeholder: '例：潮汐、霧氣、烈陽、玻璃珠…',
             ),
             const SizedBox(height: 12),
             _SectionCard(
               icon: Icons.wb_sunny_rounded,
-              label: '🌤️ 我做得不錯的地方',
+              label: '我做得不錯的地方',
               text: proudOf,
               placeholder: '肯定一下今天的自己，哪怕是很小的事情。',
               big: true,
@@ -247,7 +247,7 @@ class DiaryReviewScreen extends StatelessWidget {
             const SizedBox(height: 12),
             _SectionCard(
               icon: Icons.volunteer_activism_rounded,
-              label: '🫶 我還能多照顧自己一點的地方',
+              label: '我還能多照顧自己一點的地方',
               text: selfCare,
               placeholder: '下一步可以怎麼做？睡眠、飲食、邊界、運動或求助…',
               big: true,

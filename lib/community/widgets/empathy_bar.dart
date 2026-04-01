@@ -39,7 +39,7 @@ class _EmpathyBarState extends State<EmpathyBar> {
       children: [
         _reactionChip(
           context,
-          '🫂',
+          Icons.volunteer_activism,
           post.hug,
           'hug',
           ReactType.hug,
@@ -47,7 +47,7 @@ class _EmpathyBarState extends State<EmpathyBar> {
         ),
         _reactionChip(
           context,
-          '👂',
+          Icons.hearing,
           post.listen,
           'listen',
           ReactType.listen,
@@ -55,7 +55,7 @@ class _EmpathyBarState extends State<EmpathyBar> {
         ),
         _reactionChip(
           context,
-          '🌱',
+          Icons.eco,
           post.hope,
           'hope',
           ReactType.hope,
@@ -63,7 +63,7 @@ class _EmpathyBarState extends State<EmpathyBar> {
         ),
         _reactionChip(
           context,
-          '💙',
+          Icons.favorite,
           post.heart,
           'heart',
           ReactType.heart,
@@ -75,7 +75,7 @@ class _EmpathyBarState extends State<EmpathyBar> {
 
   Widget _reactionChip(
     BuildContext context,
-    String emoji,
+    IconData icon,
     int count,
     String type,
     ReactType reactType,
@@ -102,7 +102,7 @@ class _EmpathyBarState extends State<EmpathyBar> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(emoji, style: const TextStyle(fontSize: 14)),
+            Icon(icon, size: 16, color: textColor),
             const SizedBox(width: 4),
             Text(
               count.toString(),

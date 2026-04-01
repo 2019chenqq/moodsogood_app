@@ -209,7 +209,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
               border: Border.all(color: Colors.blue[200]!),
             ),
             child: Text(
-              '✨ 完整的功能導覽只需 2 分鐘，'
+              '完整的功能導覽只需 2 分鐘，'
               '跟著我們了解如何最好地使用此應用！',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Colors.blue[800],
@@ -549,7 +549,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
           const SizedBox(height: 40),
           
           Text(
-            '📱 我們很高興您選擇 心域 來支持您的心理健康！',
+            '我們很高興您選擇 心域 來支持您的心理健康！',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: Colors.grey[600],
               fontStyle: FontStyle.italic,

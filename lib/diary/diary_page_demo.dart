@@ -516,7 +516,8 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
             // --------- 各欄位（右下角字數、自動儲存） ---------
             CountTextField(
               controller: _titleCtrl,
-              label: '🖊️ 標題（可留白）',
+              icon: m.Icons.edit,
+              label: '標題（可留白）',
               hint: '幫今天下一個小標題，也可以跳過…',
               minLines: 1,
               maxLines: 1,
@@ -526,7 +527,8 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
 
             CountTextField(
               controller: _contentCtrl,
-              label: '📜 內容',
+              icon: m.Icons.description,
+              label: '內容',
               hint: '留下一點點也很好…',
               minLines: 8,
               maxLines: 10,
@@ -536,7 +538,8 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
 
             CountTextField(
               controller: _metaphorCtrl,
-              label: '🌚 今天的情緒像…',
+              icon: m.Icons.mood,
+              label: '今天的情緒像…',
               hint: '例：潮汐、霧氣、烈陽、厚被…',
               minLines: 1,
               maxLines: 3,
@@ -546,7 +549,8 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
 
             CountTextField(
               controller: _highlightCtrl,
-              label: '✨ 今天最想記錄的瞬間',
+              icon: m.Icons.auto_awesome,
+              label: '今天最想記錄的瞬間',
               hint: '今天最想留住的畫面、對話或感受…',
               minLines: 3,
               maxLines: 10,
@@ -556,7 +560,8 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
 
             CountTextField(
               controller: _proudOfCtrl,
-              label: '🌤️ 我做得不錯的地方',
+              icon: m.Icons.wb_sunny,
+              label: '我做得不錯的地方',
               hint: '肯定一下今天的自己，哪怕是很小的事情，例如：我有按時吃藥、我有出門散步…',
               minLines: 3,
               maxLines: 10,
@@ -566,7 +571,8 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
 
             CountTextField(
               controller: _songCtrl,
-              label: '🎧 今日的主題曲',
+              icon: m.Icons.music_note,
+              label: '今日的主題曲',
               hint: '歌名／連結／演出者…',
               minLines: 1,
               maxLines: 3,
@@ -597,7 +603,8 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
 
             CountTextField(
               controller: _selfCareCtrl,
-              label: '❤️‍🩹 我還能多照顧自己一點的地方',
+              icon: m.Icons.favorite_border,
+              label: '我還能多照顧自己一點的地方',
               hint: '睡眠、飲食、邊界、運動或求助…下一步可以怎麼做？',
               minLines: 3,
               maxLines: 10,
@@ -771,6 +778,7 @@ class _OverallSlidersCard extends m.StatelessWidget {
 // ================== 小元件：帶字數的 TextField ==================
 class CountTextField extends m.StatelessWidget {
   final m.TextEditingController controller;
+  final m.IconData? icon;
   final String label;
   final String? hint;
   final m.TextStyle? textStyle;
@@ -784,6 +792,7 @@ class CountTextField extends m.StatelessWidget {
   const CountTextField({
     super.key,
     required this.controller,
+    this.icon,
     required this.label,
     this.hint,
     required this.minLines,
@@ -819,7 +828,20 @@ class CountTextField extends m.StatelessWidget {
         child: m.Column(
           crossAxisAlignment: m.CrossAxisAlignment.start,
           children: [
-            m.Text(label, style: m.Theme.of(context).textTheme.titleMedium),
+            m.Row(
+              children: [
+                if (icon != null) ...[
+                  m.Icon(icon, size: 18, color: cs.primary),
+                  const m.SizedBox(width: 6),
+                ],
+                m.Expanded(
+                  child: m.Text(
+                    label,
+                    style: m.Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+              ],
+            ),
             const m.SizedBox(height: 8),
             m.TextField(
               controller: controller,

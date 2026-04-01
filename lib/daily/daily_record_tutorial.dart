@@ -167,7 +167,8 @@ class _DailyRecordTutorialPageState extends State<DailyRecordTutorialPage> {
           ),
           const SizedBox(height: 24),
           _buildInfoBox(
-            title: '💡 提示',
+            icon: Icons.lightbulb_outline,
+            title: '提示',
             content: '定期記錄可以幫助您識別影響心理健康的模式。',
           ),
         ],
@@ -218,7 +219,8 @@ class _DailyRecordTutorialPageState extends State<DailyRecordTutorialPage> {
           ]),
           const SizedBox(height: 24),
           _buildInfoBox(
-            title: '❤️ 重要',
+            icon: Icons.warning_amber_rounded,
+            title: '重要',
             content: '如果您有自殺意念，請立即尋求專業幫助。',
           ),
         ],
@@ -270,7 +272,8 @@ class _DailyRecordTutorialPageState extends State<DailyRecordTutorialPage> {
           ]),
           const SizedBox(height: 24),
           _buildInfoBox(
-            title: '📝 建議',
+            icon: Icons.edit_note,
+            title: '建議',
             content: '詳細記錄症狀有助於您和醫療專業人員更好地協作。',
           ),
         ],
@@ -323,7 +326,8 @@ class _DailyRecordTutorialPageState extends State<DailyRecordTutorialPage> {
           ]),
           const SizedBox(height: 24),
           _buildInfoBox(
-            title: '🛏️ 提示',
+            icon: Icons.bedtime,
+            title: '提示',
             content: '睡眠不足會影響心理健康，請確保每晚充足睡眠。',
           ),
         ],
@@ -427,6 +431,7 @@ class _DailyRecordTutorialPageState extends State<DailyRecordTutorialPage> {
   }
 
   Widget _buildInfoBox({
+    required IconData icon,
     required String title,
     required String content,
   }) {
@@ -440,12 +445,18 @@ class _DailyRecordTutorialPageState extends State<DailyRecordTutorialPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: Colors.blue[900],
-            ),
+          Row(
+            children: [
+              Icon(icon, size: 16, color: Colors.blue[900]),
+              const SizedBox(width: 6),
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue[900],
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           Text(
