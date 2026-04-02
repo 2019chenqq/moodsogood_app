@@ -23,8 +23,8 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
   bool _loading = false;
 
   // 結果
-  Map<String, double> _beforeAvgSymptoms = {};
-  Map<String, double> _afterAvgSymptoms = {};
+  Map<String, double> _beforeSymptomRates = {};
+  Map<String, double> _afterSymptomRates = {};
   Map<String, double> _beforeAvgEmotions = {};
   Map<String, double> _afterAvgEmotions = {};
   int _beforeDaysCount = 0;
@@ -248,7 +248,7 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
   Widget _buildAnchorPicker() {
     return _Card(
       title: '調整日期（比對基準日）',
-      subtitle: '例如回診調藥日，會拿前後各 $_windowDays 天來算平均',
+      subtitle: '例如回診調藥日，會拿前段 $_windowDays 天與後段 $_windowDays 天做比較',
       child: Row(
         children: [
           Expanded(
@@ -333,8 +333,8 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
       );
 
       final afterRange = _dateRange(
-        start: _anchorDate.add(const Duration(days: 1)), // 從隔天開始
-        endExclusive: _anchorDate.add(Duration(days: _windowDays + 1)),
+        start: _anchorDate, // 從調整當天開始
+        endExclusive: _anchorDate.add(Duration(days: _windowDays)),
       );
 
       final beforeDocs = await _fetchDailyRecords(uid, beforeRange.$1, beforeRange.$2);
@@ -344,8 +344,8 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
       final afterAgg = _aggregateDailyRecords(afterDocs);
 
       setState(() {
-        _beforeAvgSymptoms = beforeAgg.symptomAvg;
-        _afterAvgSymptoms = afterAgg.symptomAvg;
+        _beforeSymptomRates = beforeAgg.symptomRate;
+        _afterSymptomRates = afterAgg.symptomRate;
         _beforeAvgEmotions = beforeAgg.emotionAvg;
         _afterAvgEmotions = afterAgg.emotionAvg;
         _beforeDaysCount = beforeAgg.daysCount;
@@ -370,24 +370,40 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
   DateTime startInclusive,
   DateTime endExclusive,
 ) async {
+  if (!startInclusive.isBefore(endExclusive)) {
+    return [];
+  }
+
   String id(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-'
       '${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
 
+  final recordsRef = FirebaseFirestore.instance
+      .collection('users')
+      .doc(uid)
+      .collection('dailyRecords');
+
+  final byDate = await recordsRef
+      .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startInclusive))
+      .where('date', isLessThan: Timestamp.fromDate(endExclusive))
+      .get();
+
   final startId = id(startInclusive);
   // endExclusive 不含，所以用「前一天」作為 endId（含）
   final endId = id(endExclusive.subtract(const Duration(days: 1)));
 
-  final q = await FirebaseFirestore.instance
-      .collection('users')
-      .doc(uid)
-      .collection('dailyRecords')
+  final byDocId = await recordsRef
       .where(FieldPath.documentId, isGreaterThanOrEqualTo: startId)
       .where(FieldPath.documentId, isLessThanOrEqualTo: endId)
       .get();
 
-  return q.docs;
+  final merged = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{
+    for (final d in byDate.docs) d.id: d,
+    for (final d in byDocId.docs) d.id: d,
+  };
+
+  return merged.values.toList();
 }
 
   // -----------------------------
@@ -395,8 +411,7 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
   // -----------------------------
   _AggResult _aggregateDailyRecords(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
     // 累積 sum & count
-    final symptomSum = <String, double>{};
-    final symptomCount = <String, int>{};
+    final symptomDays = <String, int>{};
     final emotionSum = <String, double>{};
     final emotionCount = <String, int>{};
 
@@ -405,25 +420,38 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
     for (final d in docs) {
       final data = d.data();
 
-      // 你可能有：data['symptoms']、data['symptomScores']、data['emotions']、data['emotionScores']…
-      final symptoms = _normalizeNameScoreMap(
-        data['symptoms'] ?? data['symptomScores'],
+      final symptomNames = _normalizeSymptomNameSet(
+        data['symptoms'] ?? data['bodySymptoms'] ?? data['symptomScores'],
       );
-      final emotions = _normalizeNameScoreMap(
+      var emotions = _normalizeNameScoreMap(
         data['emotions'] ?? data['emotionScores'],
       );
 
-      if (symptoms.isNotEmpty || emotions.isNotEmpty) {
+      // 某些資料只存 overallMood，補成可比較欄位避免後段空白。
+      if (emotions.isEmpty) {
+        final overall = _toDouble(data['overallMood']);
+        if (overall != null) {
+          emotions = {'整體情緒': overall};
+        }
+      }
+
+      if (symptomNames.isNotEmpty || emotions.isNotEmpty) {
         daysWithAny += 1;
       }
 
-      for (final e in symptoms.entries) {
-        symptomSum[e.key] = (symptomSum[e.key] ?? 0) + e.value;
-        symptomCount[e.key] = (symptomCount[e.key] ?? 0) + 1;
+      for (final name in symptomNames) {
+        symptomDays[name] = (symptomDays[name] ?? 0) + 1;
       }
       for (final e in emotions.entries) {
         emotionSum[e.key] = (emotionSum[e.key] ?? 0) + e.value;
         emotionCount[e.key] = (emotionCount[e.key] ?? 0) + 1;
+      }
+    }
+
+    final symptomRate = <String, double>{};
+    if (daysWithAny > 0) {
+      for (final e in symptomDays.entries) {
+        symptomRate[e.key] = (e.value / daysWithAny) * 100;
       }
     }
 
@@ -439,9 +467,41 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
 
     return _AggResult(
       daysCount: daysWithAny,
-      symptomAvg: toAvg(symptomSum, symptomCount),
+      symptomRate: symptomRate,
       emotionAvg: toAvg(emotionSum, emotionCount),
     );
+  }
+
+  Set<String> _normalizeSymptomNameSet(dynamic raw) {
+    final out = <String>{};
+    if (raw == null) return out;
+
+    if (raw is List) {
+      for (final item in raw) {
+        if (item is String) {
+          final name = item.trim();
+          if (name.isNotEmpty) out.add(name);
+          continue;
+        }
+
+        if (item is Map) {
+          final name =
+              (item['name'] ?? item['title'] ?? item['symptom'] ?? '').toString().trim();
+          if (name.isNotEmpty) out.add(name);
+        }
+      }
+      return out;
+    }
+
+    if (raw is Map) {
+      for (final k in raw.keys) {
+        final name = (k ?? '').toString().trim();
+        if (name.isNotEmpty) out.add(name);
+      }
+      return out;
+    }
+
+    return out;
   }
 
   /// 支援兩種常見結構：
@@ -512,9 +572,11 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
         const SizedBox(height: 12),
 
         _CompareTable(
-          title: '症狀（平均）',
-          before: _beforeAvgSymptoms,
-          after: _afterAvgSymptoms,
+          title: '症狀（出現率）',
+          before: _beforeSymptomRates,
+          after: _afterSymptomRates,
+          isPercentage: true,
+          highlightThreshold: 50,
         ),
         const SizedBox(height: 12),
 
@@ -579,11 +641,15 @@ class _CompareTable extends StatelessWidget {
   final String title;
   final Map<String, double> before;
   final Map<String, double> after;
+  final bool isPercentage;
+  final double? highlightThreshold;
 
   const _CompareTable({
     required this.title,
     required this.before,
     required this.after,
+    this.isPercentage = false,
+    this.highlightThreshold,
   });
 
   @override
@@ -607,21 +673,54 @@ class _CompareTable extends StatelessWidget {
               final a = after[k];
               final diff = (a ?? 0) - (b ?? 0);
 
-              String fmt(double? x) => x == null ? '—' : x.toStringAsFixed(2);
+              String fmt(double? x) {
+                if (x == null) return '—';
+                final base = x.toStringAsFixed(isPercentage ? 1 : 2);
+                return isPercentage ? '$base%' : base;
+              }
+
+              String fmtDiff(double? b, double? a) {
+                if (b == null || a == null) return '—';
+                final value = (a - b).toStringAsFixed(isPercentage ? 1 : 2);
+                return isPercentage ? '$value%' : value;
+              }
+
+              Color? highlightColor(double? value) {
+                if (value == null || !isPercentage) return null;
+                if (highlightThreshold == null) return null;
+                if (value >= highlightThreshold!) {
+                  return Theme.of(context).colorScheme.error;
+                }
+                return null;
+              }
 
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: Row(
                   children: [
                     Expanded(child: Text(k)),
-                    SizedBox(width: 70, child: Text(fmt(b), textAlign: TextAlign.right)),
+                    SizedBox(
+                      width: 70,
+                      child: Text(
+                        fmt(b),
+                        textAlign: TextAlign.right,
+                        style: TextStyle(color: highlightColor(b)),
+                      ),
+                    ),
                     const SizedBox(width: 10),
-                    SizedBox(width: 70, child: Text(fmt(a), textAlign: TextAlign.right)),
+                    SizedBox(
+                      width: 70,
+                      child: Text(
+                        fmt(a),
+                        textAlign: TextAlign.right,
+                        style: TextStyle(color: highlightColor(a)),
+                      ),
+                    ),
                     const SizedBox(width: 10),
                     SizedBox(
                       width: 80,
                       child: Text(
-                        (b == null || a == null) ? '—' : diff.toStringAsFixed(2),
+                        fmtDiff(b, a),
                         textAlign: TextAlign.right,
                         style: TextStyle(
                           color: (b == null || a == null)
@@ -640,7 +739,7 @@ class _CompareTable extends StatelessWidget {
             }),
             const SizedBox(height: 4),
             Text(
-              '欄位：前段 / 後段 / 差值（後-前）',
+              '欄位：前段 / 後段 / 差值（後-前）${isPercentage ? '，單位 %' : ''}',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
@@ -655,12 +754,12 @@ class _CompareTable extends StatelessWidget {
 // -----------------------------
 class _AggResult {
   final int daysCount;
-  final Map<String, double> symptomAvg;
+  final Map<String, double> symptomRate;
   final Map<String, double> emotionAvg;
 
   _AggResult({
     required this.daysCount,
-    required this.symptomAvg,
+    required this.symptomRate,
     required this.emotionAvg,
   });
 }
