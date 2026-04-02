@@ -2,6 +2,8 @@
   import 'package:cloud_firestore/cloud_firestore.dart';
 import 'edit_medication_page.dart';
 import '../utils/firebase_sync_config.dart';
+import 'medication_local_db.dart';
+import 'medication_reminder_service.dart';
 
   Future<void> showMedicationMoreSheet({
   required BuildContext context,
@@ -63,6 +65,7 @@ import '../utils/firebase_sync_config.dart';
     }
     if (action == 'deactivate') {
       await _deactivateMedication(uid: uid, medId: medId);
+      await MedicationReminderService.syncDailyRemindersForActiveMeds();
 
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -73,6 +76,7 @@ import '../utils/firebase_sync_config.dart';
 
     if (action == 'activate') {
       await _activateMedication(uid: uid, medId: medId);
+      await MedicationReminderService.syncDailyRemindersForActiveMeds();
 
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -96,15 +100,8 @@ import '../utils/firebase_sync_config.dart';
 
       if (ok != true) return;
 
-      // Only delete from Firebase if sync is enabled
-      if (FirebaseSyncConfig.shouldSync()) {
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .collection('medications')
-            .doc(medId)
-            .delete();
-      }
+      await _deleteMedication(uid: uid, medId: medId);
+      await MedicationReminderService.syncDailyRemindersForActiveMeds();
 
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -121,6 +118,15 @@ import '../utils/firebase_sync_config.dart';
 
 
 Future<void> _deactivateMedication({required String uid, required String medId}) async {
+  final now = DateTime.now().toString();
+
+  await MedicationLocalDB().updateMedicationStatus(
+    uid,
+    medId,
+    isActive: false,
+    updatedAt: now,
+  );
+
   // Only sync to Firebase if enabled
   if (FirebaseSyncConfig.shouldSync()) {
     await FirebaseFirestore.instance
@@ -136,6 +142,15 @@ Future<void> _deactivateMedication({required String uid, required String medId})
 }
 
 Future<void> _activateMedication({required String uid, required String medId}) async {
+  final now = DateTime.now().toString();
+
+  await MedicationLocalDB().updateMedicationStatus(
+    uid,
+    medId,
+    isActive: true,
+    updatedAt: now,
+  );
+
   // Only sync to Firebase if enabled
   if (FirebaseSyncConfig.shouldSync()) {
     await FirebaseFirestore.instance
@@ -151,6 +166,8 @@ Future<void> _activateMedication({required String uid, required String medId}) a
 }
 
 Future<void> _deleteMedication({required String uid, required String medId}) async {
+  await MedicationLocalDB().deleteMedication(uid, medId);
+
   // Only sync to Firebase if enabled
   if (FirebaseSyncConfig.shouldSync()) {
     await FirebaseFirestore.instance

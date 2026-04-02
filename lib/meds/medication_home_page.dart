@@ -305,17 +305,23 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
         continue;
       }
 
-      final times = (med['times'] as List?)?.cast<String>() ?? <String>[];
-      if (times.isEmpty) {
-        groups['未設定']!.add(med);
-      } else {
-        for (final t in times) {
-          if (groups.containsKey(t)) {
-            groups[t]!.add(med);
-          } else {
-            groups['未設定']!.add(med);
-          }
+      final times = ((med['times'] as List?) ?? const [])
+          .whereType<String>()
+          .map((t) => t.trim())
+          .where((t) => t.isNotEmpty)
+          .toSet()
+          .toList();
+
+      var assigned = false;
+      for (final t in times) {
+        if (groups.containsKey(t) && t != '未設定') {
+          groups[t]!.add(med);
+          assigned = true;
         }
+      }
+
+      if (!assigned) {
+        groups['未設定']!.add(med);
       }
     }
 

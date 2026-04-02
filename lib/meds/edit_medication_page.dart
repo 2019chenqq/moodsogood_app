@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../utils/firebase_sync_config.dart';
 import 'medication_local_db.dart';
+import 'medication_reminder_service.dart';
 
 class EditMedicationPage extends StatefulWidget {
   final String docId;
@@ -658,6 +659,9 @@ if (_medType == 'injection') ...[
             }, SetOptions(merge: true));
         debugPrint('🔥 Firebase 已同步: ${widget.docId}');
       }
+
+      final reminderCount = await MedicationReminderService.syncDailyRemindersForActiveMeds();
+      debugPrint('🔔 服藥提醒已重建：$reminderCount 個時段');
 
       if (!mounted) return;
       Navigator.pop(context, true);

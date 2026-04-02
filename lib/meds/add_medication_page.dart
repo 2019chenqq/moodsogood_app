@@ -5,6 +5,9 @@ import 'dart:async';
 import 'drug_dictionary_service.dart';
 import '../utils/firebase_sync_config.dart';
 import 'medication_local_db.dart';
+import 'medication_reminder_service.dart';
+
+const List<String> kOralTimeSlots = ['早上', '中午', '下午', '晚上', '睡前', '需要時'];
 
 class AddMedicationPage extends StatefulWidget {
   const AddMedicationPage({super.key});
@@ -113,7 +116,6 @@ List<Map<String, String>> _drugSuggestions = [];
     '晚上': false,
     '睡前': false,
     '需要時': false, 
-    '回診時注射': false,// PRN
   };
 
   final Map<String, bool> _purposes = {
@@ -574,7 +576,14 @@ _SectionCard(
     }
 
     final name = _nameCtrl.text.trim();
-    final times = _timeSlots.entries.where((e) => e.value).map((e) => e.key).toList();
+    final times = _medType == 'injection'
+      ? <String>[]
+      : _timeSlots.entries
+        .where((e) => e.value)
+        .map((e) => e.key.trim())
+        .where((t) => kOralTimeSlots.contains(t))
+        .toSet()
+        .toList();
     final purposes = _purposes.entries.where((e) => e.value).map((e) => e.key).toList();
     final purposeOther = _purposeOtherCtrl.text.trim();
     final bodySymptomText = _bodySymptomCtrl.text.trim();
@@ -650,6 +659,9 @@ _SectionCard(
             });
         debugPrint('🔥 Firebase 已同步: $docId');
       }
+
+      final reminderCount = await MedicationReminderService.syncDailyRemindersForActiveMeds();
+      debugPrint('🔔 服藥提醒已重建：$reminderCount 個時段');
 
       if (!mounted) return;
       Navigator.pop(context, true);

@@ -220,7 +220,11 @@ class MedicationLocalDB {
   // 辅助方法：解码 List
   List<String> _decodeList(String? value) {
     if (value == null || value.isEmpty) return [];
-    return value.split(',').where((s) => s.isNotEmpty).toList();
+    return value
+        .split(',')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
   }
 
   // 转换为 Map（用于 UI 显示）

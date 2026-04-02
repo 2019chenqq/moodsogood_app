@@ -86,7 +86,11 @@ class MedicationReminderService {
     for (final med in activeOralMeds) {
       final name = ((med['name'] ?? med['nameZh'] ?? med['nameEn'] ?? '未命名藥物') as String)
           .trim();
-      final times = (med['times'] as List?)?.whereType<String>().toList() ?? const <String>[];
+      final times = ((med['times'] as List?) ?? const [])
+          .whereType<String>()
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toSet();
       for (final slot in times) {
         if (medsBySlot.containsKey(slot)) {
           medsBySlot[slot]!.add(name.isEmpty ? '未命名藥物' : name);
