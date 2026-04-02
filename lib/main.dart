@@ -57,15 +57,25 @@ Future<void> main() async {
 
   debugPrint('🔥 Firebase initializing...');
   try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+      debugPrint('✅ Firebase initialized');
+    } else {
+      debugPrint('ℹ️ Firebase already initialized, reusing existing app');
+    }
     _firebaseReady = true;
-    debugPrint('✅ Firebase initialized');
   } catch (error, stackTrace) {
-    _startupIssueMessage = _buildStartupIssueMessage(error);
-    debugPrint('❌ Firebase initialization failed: $error');
-    debugPrint('$stackTrace');
+    // Hot restart / isolate re-entry can hit duplicate-app; treat as ready.
+    if (error is FirebaseException && error.code == 'duplicate-app') {
+      _firebaseReady = true;
+      debugPrint('ℹ️ Firebase duplicate-app detected, using existing default app');
+    } else {
+      _startupIssueMessage = _buildStartupIssueMessage(error);
+      debugPrint('❌ Firebase initialization failed: $error');
+      debugPrint('$stackTrace');
+    }
   }
 
   // 先載入主題設定
@@ -171,6 +181,10 @@ Future<void> main() async {
 }
 
 String _buildStartupIssueMessage(Object error) {
+  if (error is FirebaseException && error.code == 'duplicate-app') {
+    return 'Firebase 已存在預設 App（[DEFAULT]），通常是熱重啟或重入初始化造成。系統會沿用既有連線。';
+  }
+
   if (Platform.isIOS && error is UnsupportedError) {
     return 'iOS Firebase 尚未設定完成。請補上 ios/Runner/GoogleService-Info.plist，並重新產生包含 iOS 設定的 firebase_options.dart。';
   }
