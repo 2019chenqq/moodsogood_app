@@ -24,7 +24,8 @@ class NotificationHelper {
   final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
-  FlutterLocalNotificationsPlugin get notificationsPlugin => _notificationsPlugin;
+  FlutterLocalNotificationsPlugin get notificationsPlugin =>
+      _notificationsPlugin;
 
   String? _pendingPayload;
 
@@ -42,11 +43,12 @@ class NotificationHelper {
     debugPrint('🕐 时区初始化完成：${tz.local.name}');
 
     // 使用現成的啟動 icon，避免缺少自訂資源導致 invalid_icon 錯誤
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
     const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: false,
-      requestBadgePermission: false,
-      requestSoundPermission: false,
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
     );
 
     const settings = InitializationSettings(
@@ -80,7 +82,8 @@ class NotificationHelper {
 
   /// 如果 App 是由點擊通知啟動，可以在啟動時呼叫這個方法讀出 payload
   Future<String?> getInitialNotificationPayload() async {
-    final details = await _notificationsPlugin.getNotificationAppLaunchDetails();
+    final details =
+        await _notificationsPlugin.getNotificationAppLaunchDetails();
     if (details?.didNotificationLaunchApp ?? false) {
       return details?.notificationResponse?.payload;
     }
@@ -116,7 +119,7 @@ class NotificationHelper {
       _channelName,
       channelDescription: _channelDescription,
       importance: Importance.max,
-      priority: Priority.high,      
+      priority: Priority.high,
       icon: '@mipmap/ic_launcher',
       enableVibration: true,
       enableLights: true,
@@ -132,38 +135,51 @@ class NotificationHelper {
         iOS: const DarwinNotificationDetails(),
       ),
       payload: payload ?? _dailyRecordPayload,
-
     );
   }
 
   /// =========================
   /// 確保通知權限
-
+  /// =========================
   Future<bool> _ensurePermissions() async {
-    final android = _notificationsPlugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
-    
+    final android = _notificationsPlugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+
     if (android != null) {
       final enabled = await android.areNotificationsEnabled() ?? false;
+      debugPrint('🔔 [確保權限] Android 通知狀態: $enabled');
+
       if (!enabled) {
-        return await android.requestNotificationsPermission() ?? false;
+        debugPrint('🔔 [確保權限] 請求 Android 通知權限...');
+        final result = await android.requestNotificationsPermission() ?? false;
+        debugPrint('🔔 [確保權限] Android 權限請求結果: $result');
+
+        // 等待系統處理
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        // 再檢查一次
+        final recheckEnabled = await android.areNotificationsEnabled() ?? false;
+        debugPrint('🔔 [確保權限] Android 重新檢查結果: $recheckEnabled');
+        return recheckEnabled;
       }
       return enabled;
     }
-    
-    final iOS = _notificationsPlugin
-        .resolvePlatformSpecificImplementation<
-            IOSFlutterLocalNotificationsPlugin>();
-    
+
+    final iOS = _notificationsPlugin.resolvePlatformSpecificImplementation<
+        IOSFlutterLocalNotificationsPlugin>();
+
     if (iOS != null) {
-      return await iOS.requestPermissions(
-        alert: true,
-        badge: true,
-        sound: true,
-      ) ?? false;
+      debugPrint('🔔 [確保權限] 請求 iOS 通知權限...');
+      final result = await iOS.requestPermissions(
+            alert: true,
+            badge: true,
+            sound: true,
+          ) ??
+          false;
+      debugPrint('🔔 [確保權限] iOS 權限請求結果: $result');
+      return result;
     }
-    
+
     return true;
   }
 
@@ -191,11 +207,11 @@ class NotificationHelper {
         ?.requestNotificationsPermission();
 
     // 要求精準鬧鐘權限
-    final android = _notificationsPlugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
+    final android = _notificationsPlugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
     if (android != null) {
-      _exactAlarmAllowed = await android.requestExactAlarmsPermission() ?? false;
+      _exactAlarmAllowed =
+          await android.requestExactAlarmsPermission() ?? false;
       debugPrint('🔔 精準鬧鐘權限: $_exactAlarmAllowed');
     }
 
@@ -247,8 +263,7 @@ class NotificationHelper {
       );
       debugPrint('✅ 已成功建立每日排程：$scheduledDate');
 
-      final pending =
-          await _notificationsPlugin.pendingNotificationRequests();
+      final pending = await _notificationsPlugin.pendingNotificationRequests();
       debugPrint('📌 目前排隊中的通知數量：${pending.length}');
       for (final p in pending) {
         debugPrint('  ▶ id=${p.id}, title=${p.title}, body=${p.body}');
@@ -258,7 +273,6 @@ class NotificationHelper {
       debugPrint('$st');
     }
   }
-
 
   /// 测试：5秒后跳出通知
   Future<void> scheduleTestNotificationIn5Seconds({String? payload}) async {
@@ -311,14 +325,13 @@ class NotificationHelper {
     }
   }
 
-
   Future<void> cancelNotification(int id) async {
     await _notificationsPlugin.cancel(id);
   }
 
   Future<void> requestExactAlarmPermission() async {
-    final androidImplementation = _notificationsPlugin
-        .resolvePlatformSpecificImplementation<
+    final androidImplementation =
+        _notificationsPlugin.resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
     await androidImplementation?.requestExactAlarmsPermission();
   }
@@ -416,8 +429,7 @@ class NotificationHelper {
 }
 
 @pragma('vm:entry-point')
-void notificationTapBackground(
-    NotificationResponse notificationResponse) {
+void notificationTapBackground(NotificationResponse notificationResponse) {
   NotificationHelper()
       .handleBackgroundNotificationResponse(notificationResponse);
 }

@@ -546,37 +546,87 @@ class _SettingsPageState extends State<SettingsPage> {
     if (!mounted) return;
 
     // 4. 要求權限
-    final platform = helper.notificationsPlugin
+    bool hasPermission = false;
+
+    // Android 權限
+    final androidPlatform = helper.notificationsPlugin
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
-    if (platform != null) {
-      await platform.requestExactAlarmsPermission();
-      await platform.requestNotificationsPermission();
+    if (androidPlatform != null) {
+      debugPrint('🔔 正在請求 Android 通知權限...');
+
+      // 先檢查當前狀態
+      final beforePermission = await androidPlatform.areNotificationsEnabled();
+      debugPrint('🔔 請求前 - 通知狀態: $beforePermission');
+
+      // 請求精準鬧鐘權限
+      final exactAlarmResult =
+          await androidPlatform.requestExactAlarmsPermission();
+      debugPrint('🔔 精準鬧鐘權限結果: $exactAlarmResult');
+
+      // 請求通知權限
+      final notifResult =
+          await androidPlatform.requestNotificationsPermission();
+      debugPrint('🔔 通知權限請求結果: $notifResult');
+
+      // 等待系統完全處理權限
+      await Future.delayed(const Duration(milliseconds: 1000));
+
+      // 驗證權限是否真的被授予
+      final afterPermission = await androidPlatform.areNotificationsEnabled();
+      debugPrint('🔔 請求後 - 通知狀態: $afterPermission');
+
+      hasPermission = afterPermission ?? false;
+
+      if (!hasPermission) {
+        debugPrint('⚠️ 通知權限仍未啟用，用戶可能在對話框中選擇了拒絕');
+      }
     }
+
+    // iOS 權限
+    final iosPlatform = helper.notificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin>();
+    if (iosPlatform != null) {
+      debugPrint('🔔 正在請求 iOS 通知權限...');
+      final iosResult = await iosPlatform.requestPermissions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      debugPrint('🔔 iOS 通知權限結果: $iosResult');
+      hasPermission = iosResult ?? false;
+    }
+
+    if (!mounted) return;
 
 //   // 5. 根據開關決定行為
     if (isOn) {
-      // 先取消舊的，避免重複排
-      await helper.cancelNotification(1);
+      // 如果平台檢查沒有執行（兩個都是 null），直接允許
+      if (androidPlatform == null && iosPlatform == null) {
+        hasPermission = true;
+      }
 
-      // 檢查權限是否真的被授予
-      final android = helper.notificationsPlugin
-          .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>();
-      final notifEnabled = await android?.areNotificationsEnabled() ?? false;
-      debugPrint('🔔 通知已啟用: $notifEnabled');
+      debugPrint('🔔 最終權限檢查: $hasPermission');
 
-      if (!notifEnabled) {
+      if (!hasPermission) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('❌ 需要允許通知權限才能使用提醒功能'),
-              backgroundColor: Colors.red,
+            SnackBar(
+              content: const Text(
+                '❌ 通知權限被拒絕\n'
+                '請前往 設定 > 應用程式 > [此應用] > 權限 > 通知，並啟用通知',
+              ),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 5),
             ),
           );
         }
-        return;
+        debugPrint('⚠️ 警告：權限檢查失敗，但將繼續嘗試排程通知');
       }
+
+      // 先取消舊的通知，避免重複排程
+      await helper.cancelNotification(1);
 
 //     // 🕐 若設定時間已過，改成明天
       final now = TimeOfDay.now();
@@ -586,18 +636,32 @@ class _SettingsPageState extends State<SettingsPage> {
           ? time
           : TimeOfDay(hour: (time.hour + 24) % 24, minute: time.minute);
 
-      // 使用 WorkManager（適用於小米等嚴格系統）
-      final success = await helper.scheduleDailyNotificationWithWorkManager(
-        time: adjustedTime,
-        payload: '/home',
-      );
+      // iOS 和 Android 使用不同的方案
+      bool success = false;
+      if (Theme.of(context).platform == TargetPlatform.iOS) {
+        // iOS 使用 flutter_local_notifications
+        await helper.scheduleDailyNotification(
+          id: 1,
+          title: '今天也辛苦了 💛',
+          body: '花一點時間記錄一下今天的心情吧。',
+          time: adjustedTime,
+          payload: '/home',
+        );
+        success = true;
+      } else {
+        // Android 使用 WorkManager（適用於小米等嚴格系統）
+        success = await helper.scheduleDailyNotificationWithWorkManager(
+          time: adjustedTime,
+          payload: '/home',
+        );
+      }
 
       if (!mounted) return;
 
       final messenger = ScaffoldMessenger.of(context);
       final adjustedTimeLabel = adjustedTime.format(context);
 
-      debugPrint('✅ 已建立每日提醒（WorkManager）：$adjustedTimeLabel');
+      debugPrint('✅ 已建立每日提醒：$adjustedTimeLabel');
       messenger.showSnackBar(
         SnackBar(
           content:
