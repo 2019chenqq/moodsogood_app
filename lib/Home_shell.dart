@@ -8,6 +8,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 
 // 引入頁面
 import 'pages/hub_pages.dart';
+import 'pages/feesback_page.dart';
 
 import 'Sign_in_page.dart';
 import 'settings_page.dart';
@@ -244,7 +245,13 @@ class _HomeShellState extends m.State<HomeShell> {
             m.ListTile(
               leading: const m.Icon(m.Icons.help),
               title: const m.Text('幫助與回饋'),
-              onTap: () {},
+              onTap: () {
+                m.Navigator.pop(context);
+                m.Navigator.push(
+                  context,
+                  m.MaterialPageRoute(builder: (_) => const FeedbackPage()),
+                );
+              },
             ),
             m.Divider(),
             m.ListTile(

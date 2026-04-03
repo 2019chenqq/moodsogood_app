@@ -7,6 +7,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 
 import 'dart:io';
 import '../settings_page.dart';
+import '../pages/feesback_page.dart';
 import '../pages/hub_pages.dart';
 import '../Sign_in_page.dart';
 
@@ -194,6 +195,17 @@ class _MainDrawerState extends State<MainDrawer> {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const SettingsPage()),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.help_outline),
+            title: const Text('幫助與回饋'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const FeedbackPage()),
               );
             },
           ),
