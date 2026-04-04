@@ -48,10 +48,8 @@ class _SignInPageState extends State<SignInPage> {
         return;
       }
 
-      setState(() {
-        _loading = false;
-        _loadingProvider = null;
-      });
+      // Keep the loading state controlled by each sign-in flow's try/catch/finally.
+      // Resetting it here on null can allow accidental re-entry and duplicate attempts.
     });
   }
 
@@ -259,7 +257,10 @@ class _SignInPageState extends State<SignInPage> {
     String message;
     switch (e.code) {
       case 'invalid-credential':
-        message = 'Apple 登入資料無效，通常是 Firebase 與 Apple 後台設定未完全一致。';
+        message = 'Apple 憑證無效：請確認 Apple Sign In 能力、Firebase Apple 供應商設定，並重裝 App 後再試。';
+        break;
+      case 'missing-or-invalid-nonce':
+        message = 'Apple nonce 驗證失敗，請重試；若持續發生請重新安裝 App 並更新到最新版本。';
         break;
       case 'account-exists-with-different-credential':
         message = '此 Email 已綁定其他登入方式，請改用原本方式登入。';
