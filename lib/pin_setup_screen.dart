@@ -121,8 +121,9 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('保險箱解鎖成功！')),
         );
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const LockWrapper()),
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const AuthGate()),
+          (route) => false,
         );
       }
 
