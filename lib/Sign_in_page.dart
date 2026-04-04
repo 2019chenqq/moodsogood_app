@@ -103,7 +103,8 @@ class _SignInPageState extends State<SignInPage> {
       await FirebaseAuth.instance.signInWithCredential(credential);
 
       if (!mounted) return;
-      Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
+      Navigator.of(context, rootNavigator: true)
+          .popUntil((route) => route.isFirst);
 
       // 登入成功後不需手動跳頁，讓 AuthGate 依 authStateChanges 自動切換
     } catch (e) {
@@ -119,9 +120,11 @@ class _SignInPageState extends State<SignInPage> {
   }
 
   String _generateNonce([int length = 32]) {
-    const charset = '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
+    const charset =
+        '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
     final random = Random.secure();
-    return List.generate(length, (_) => charset[random.nextInt(charset.length)]).join();
+    return List.generate(length, (_) => charset[random.nextInt(charset.length)])
+        .join();
   }
 
   String _sha256ofString(String input) {
@@ -130,180 +133,182 @@ class _SignInPageState extends State<SignInPage> {
   }
 
   Future<void> _handleAppleSignIn() async {
-  if (_loading) return;
+    if (_loading) return;
 
-  if (!_appleAvailable) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('此裝置目前無法使用 Apple ID 登入，請確認 iOS Apple ID 與 App 能力設定。'),
-      ),
-    );
-    return;
-  }
-
-  setState(() {
-    _loading = true;
-    _loadingProvider = 'apple';
-  });
-
-  var authSucceeded = false;
-
-  try {
-    debugPrint('🍎 Apple login start');
-
-    final rawNonce = _generateNonce();
-    final nonce = _sha256ofString(rawNonce);
-
-    debugPrint('🍎 rawNonce generated: $rawNonce');
-    debugPrint('🍎 hashed nonce generated: $nonce');
-
-    final appleCredential = await SignInWithApple.getAppleIDCredential(
-      scopes: const [
-        AppleIDAuthorizationScopes.email,
-        AppleIDAuthorizationScopes.fullName,
-      ],
-      nonce: nonce,
-    ).timeout(const Duration(seconds: 20));
-
-    debugPrint('🍎 Apple credential received');
-    debugPrint('🍎 userIdentifier: ${appleCredential.userIdentifier}');
-    debugPrint('🍎 email: ${appleCredential.email}');
-    debugPrint('🍎 givenName: ${appleCredential.givenName}');
-    debugPrint('🍎 familyName: ${appleCredential.familyName}');
-    debugPrint(
-      '🍎 identityToken exists: ${appleCredential.identityToken != null && appleCredential.identityToken!.isNotEmpty}',
-    );
-    debugPrint(
-      '🍎 authorizationCode exists: ${appleCredential.authorizationCode.isNotEmpty}',
-    );
-
-    final identityToken = appleCredential.identityToken;
-    if (identityToken == null || identityToken.isEmpty) {
-      throw FirebaseAuthException(
-        code: 'apple-signin-failed',
-        message: 'Apple identity token is empty.',
+    if (!_appleAvailable) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('此裝置目前無法使用 Apple ID 登入，請確認 iOS Apple ID 與 App 能力設定。'),
+        ),
       );
+      return;
     }
 
-    final oauthCredential = OAuthProvider('apple.com').credential(
-      idToken: identityToken,
-      rawNonce: rawNonce,
-    );
+    setState(() {
+      _loading = true;
+      _loadingProvider = 'apple';
+    });
 
-    debugPrint('🍎 Firebase OAuth credential created');
+    var authSucceeded = false;
 
-    final userCredential = await FirebaseAuth.instance
-        .signInWithCredential(oauthCredential)
-        .timeout(const Duration(seconds: 20));
+    try {
+      debugPrint('🍎 Apple login start');
 
-    debugPrint(
-      '🍎 Firebase credential sign-in success: ${userCredential.user?.uid}',
-    );
+      final rawNonce = _generateNonce();
+      final nonce = _sha256ofString(rawNonce);
 
-    authSucceeded = true;
+      debugPrint('🍎 rawNonce generated: $rawNonce');
+      debugPrint('🍎 hashed nonce generated: $nonce');
 
-    final givenName = appleCredential.givenName?.trim() ?? '';
-    final familyName = appleCredential.familyName?.trim() ?? '';
-    final fullName = '$givenName $familyName'.trim();
+      final appleCredential = await SignInWithApple.getAppleIDCredential(
+        scopes: const [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+        nonce: nonce,
+      ).timeout(const Duration(seconds: 20));
 
-    if (fullName.isNotEmpty &&
-        (userCredential.user?.displayName == null ||
-            userCredential.user!.displayName!.trim().isEmpty)) {
-      await userCredential.user?.updateDisplayName(fullName);
-      debugPrint('🍎 Display name updated: $fullName');
-    }
+      debugPrint('🍎 Apple credential received');
+      debugPrint('🍎 userIdentifier: ${appleCredential.userIdentifier}');
+      debugPrint('🍎 email: ${appleCredential.email}');
+      debugPrint('🍎 givenName: ${appleCredential.givenName}');
+      debugPrint('🍎 familyName: ${appleCredential.familyName}');
+      debugPrint(
+        '🍎 identityToken exists: ${appleCredential.identityToken != null && appleCredential.identityToken!.isNotEmpty}',
+      );
+      debugPrint(
+        '🍎 authorizationCode exists: ${appleCredential.authorizationCode.isNotEmpty}',
+      );
 
-    if (!mounted) return;
-    Navigator.of(context, rootNavigator: true)
-        .popUntil((route) => route.isFirst);
-  } on SignInWithAppleAuthorizationException catch (e) {
-    debugPrint('🍎 Apple authorization exception: ${e.code} / ${e.message}');
+      final identityToken = appleCredential.identityToken;
+      if (identityToken == null || identityToken.isEmpty) {
+        throw FirebaseAuthException(
+          code: 'apple-signin-failed',
+          message: 'Apple identity token is empty.',
+        );
+      }
 
-    if (!mounted) return;
+      final oauthCredential = OAuthProvider('apple.com').credential(
+        idToken: identityToken,
+        accessToken: appleCredential.authorizationCode,
+        rawNonce: rawNonce,
+      );
 
-    String message;
-    switch (e.code) {
-      case AuthorizationErrorCode.canceled:
-        message = '你已取消 Apple 登入';
-        break;
-      case AuthorizationErrorCode.failed:
-        message = 'Apple 登入失敗：${e.message ?? '授權失敗'}';
-        break;
-      case AuthorizationErrorCode.invalidResponse:
-        message = 'Apple 回傳資料無效，請稍後再試';
-        break;
-      case AuthorizationErrorCode.notHandled:
-        message = 'Apple 登入要求未被處理';
-        break;
-      case AuthorizationErrorCode.notInteractive:
-        message = '目前無法互動式登入 Apple ID';
-        break;
-      case AuthorizationErrorCode.unknown:
-      default:
-        message = 'Apple 登入失敗：${e.message ?? '未知錯誤'}';
-        break;
-    }
+      debugPrint('🍎 Firebase OAuth credential created');
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
-  } on FirebaseAuthException catch (e) {
-    debugPrint('🍎 FirebaseAuthException code: ${e.code}');
-    debugPrint('🍎 FirebaseAuthException message: ${e.message}');
+      final userCredential = await FirebaseAuth.instance
+          .signInWithCredential(oauthCredential)
+          .timeout(const Duration(seconds: 20));
 
-    if (!mounted) return;
+      debugPrint(
+        '🍎 Firebase credential sign-in success: ${userCredential.user?.uid}',
+      );
 
-    String message;
-    switch (e.code) {
-      case 'invalid-credential':
-        message = 'Apple 憑證無效：請確認 Apple Sign In 能力、Firebase Apple 供應商設定，並重裝 App 後再試。';
-        break;
-      case 'missing-or-invalid-nonce':
-        message = 'Apple nonce 驗證失敗，請重試；若持續發生請重新安裝 App 並更新到最新版本。';
-        break;
-      case 'account-exists-with-different-credential':
-        message = '此 Email 已綁定其他登入方式，請改用原本方式登入。';
-        break;
-      case 'network-request-failed':
-        message = '網路連線異常，請稍後再試。';
-        break;
-      case 'apple-signin-failed':
-        message = e.message ?? 'Apple identity token 為空';
-        break;
-      default:
-        message = 'Apple 登入失敗：${e.message ?? e.code}';
-        break;
-    }
+      authSucceeded = true;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
-  } on TimeoutException {
-    debugPrint('🍎 Apple sign-in timeout');
+      final givenName = appleCredential.givenName?.trim() ?? '';
+      final familyName = appleCredential.familyName?.trim() ?? '';
+      final fullName = '$givenName $familyName'.trim();
 
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Apple 登入逾時，請稍後再試')),
-    );
-  } catch (e, st) {
-    debugPrint('🍎 Unknown Apple sign-in error: $e');
-    debugPrint('$st');
+      if (fullName.isNotEmpty &&
+          (userCredential.user?.displayName == null ||
+              userCredential.user!.displayName!.trim().isEmpty)) {
+        await userCredential.user?.updateDisplayName(fullName);
+        debugPrint('🍎 Display name updated: $fullName');
+      }
 
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Apple 登入失敗：$e')),
-    );
-  } finally {
-    if (!mounted) return;
-    if (!authSucceeded) {
-      setState(() {
-        _loading = false;
-        _loadingProvider = null;
-      });
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true)
+          .popUntil((route) => route.isFirst);
+    } on SignInWithAppleAuthorizationException catch (e) {
+      debugPrint('🍎 Apple authorization exception: ${e.code} / ${e.message}');
+
+      if (!mounted) return;
+
+      String message;
+      switch (e.code) {
+        case AuthorizationErrorCode.canceled:
+          message = '你已取消 Apple 登入';
+          break;
+        case AuthorizationErrorCode.failed:
+          message = 'Apple 登入失敗：${e.message ?? '授權失敗'}';
+          break;
+        case AuthorizationErrorCode.invalidResponse:
+          message = 'Apple 回傳資料無效，請稍後再試';
+          break;
+        case AuthorizationErrorCode.notHandled:
+          message = 'Apple 登入要求未被處理';
+          break;
+        case AuthorizationErrorCode.notInteractive:
+          message = '目前無法互動式登入 Apple ID';
+          break;
+        case AuthorizationErrorCode.unknown:
+        default:
+          message = 'Apple 登入失敗：${e.message ?? '未知錯誤'}';
+          break;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } on FirebaseAuthException catch (e) {
+      debugPrint('🍎 FirebaseAuthException code: ${e.code}');
+      debugPrint('🍎 FirebaseAuthException message: ${e.message}');
+
+      if (!mounted) return;
+
+      String message;
+      switch (e.code) {
+        case 'invalid-credential':
+          message =
+              'Apple 憑證無效：請確認 Apple Sign In 能力、Firebase Apple 供應商設定，並重裝 App 後再試。';
+          break;
+        case 'missing-or-invalid-nonce':
+          message = 'Apple nonce 驗證失敗，請重試；若持續發生請重新安裝 App 並更新到最新版本。';
+          break;
+        case 'account-exists-with-different-credential':
+          message = '此 Email 已綁定其他登入方式，請改用原本方式登入。';
+          break;
+        case 'network-request-failed':
+          message = '網路連線異常，請稍後再試。';
+          break;
+        case 'apple-signin-failed':
+          message = e.message ?? 'Apple identity token 為空';
+          break;
+        default:
+          message = 'Apple 登入失敗：${e.message ?? e.code}';
+          break;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } on TimeoutException {
+      debugPrint('🍎 Apple sign-in timeout');
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Apple 登入逾時，請稍後再試')),
+      );
+    } catch (e, st) {
+      debugPrint('🍎 Unknown Apple sign-in error: $e');
+      debugPrint('$st');
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Apple 登入失敗：$e')),
+      );
+    } finally {
+      if (!mounted) return;
+      if (!authSucceeded) {
+        setState(() {
+          _loading = false;
+          _loadingProvider = null;
+        });
+      }
     }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -420,11 +425,13 @@ class _SignInPageState extends State<SignInPage> {
                                   ),
                                 ),
                                 Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10),
                                   child: Text(
                                     '或',
                                     style: theme.textTheme.bodySmall?.copyWith(
-                                      color: Colors.white.withValues(alpha: 0.92),
+                                      color:
+                                          Colors.white.withValues(alpha: 0.92),
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
