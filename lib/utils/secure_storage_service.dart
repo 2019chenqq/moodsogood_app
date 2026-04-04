@@ -74,8 +74,9 @@ class SecureStorageService {
       }
 
       final prefs = await SharedPreferences.getInstance();
-      final pin = (prefs.getString('e2ePin') ?? prefs.getString('appLockPin') ?? '').trim();
-      if (pin.isEmpty) {
+      final e2ePin = (prefs.getString('e2ePin') ?? '').trim();
+      final appLockPin = (prefs.getString('appLockPin') ?? '').trim();
+      if (e2ePin.isEmpty && appLockPin.isEmpty) {
         print('🚨 [保險箱] 無法重建金鑰：找不到本地 PIN');
         return null;
       }
@@ -119,12 +120,35 @@ class SecureStorageService {
         return null;
       }
 
-      final recoveredKey = KeyManager.deriveKey(pin, salt);
+      final candidatePins = <String>[];
+      if (e2ePin.isNotEmpty) candidatePins.add(e2ePin);
+      if (appLockPin.isNotEmpty && appLockPin != e2ePin) {
+        candidatePins.add(appLockPin);
+      }
 
-      if (verifier.isNotEmpty &&
-          !verifyKeyWithVerifier(key: recoveredKey, verifier: verifier)) {
-        print('🚨 [保險箱] 金鑰驗證失敗：PIN 與歷史加密資料不匹配');
-        return null;
+      encrypt_lib.Key? recoveredKey;
+
+      // 有 verifier 時，逐一驗證候選 PIN；比對成功才可用。
+      if (verifier.isNotEmpty) {
+        for (final candidate in candidatePins) {
+          final key = KeyManager.deriveKey(candidate, salt);
+          if (verifyKeyWithVerifier(key: key, verifier: verifier)) {
+            recoveredKey = key;
+            break;
+          }
+        }
+
+        if (recoveredKey == null) {
+          print('🚨 [保險箱] 金鑰驗證失敗：PIN 與歷史加密資料不匹配');
+          return null;
+        }
+      } else {
+        // 無 verifier 的舊資料只允許 e2ePin，避免誤用 appLockPin 產生錯誤金鑰。
+        if (e2ePin.isEmpty) {
+          print('🚨 [保險箱] 缺少 e2ePin 且無 verifier，為避免錯誤解密已停止自動重建');
+          return null;
+        }
+        recoveredKey = KeyManager.deriveKey(e2ePin, salt);
       }
 
       await saveKey(recoveredKey);

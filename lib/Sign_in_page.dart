@@ -146,23 +146,29 @@ class _SignInPageState extends State<SignInPage> {
       _loadingProvider = 'apple';
     });
 
+    var authSucceeded = false;
     try {
+      debugPrint('🍎 Apple login start');
       final rawNonce = _generateNonce();
       final nonce = _sha256ofString(rawNonce);
 
       final appleCredential = await SignInWithApple.getAppleIDCredential(
         scopes: [AppleIDAuthorizationScopes.email, AppleIDAuthorizationScopes.fullName],
         nonce: nonce,
-      );
+      ).timeout(const Duration(seconds: 20));
+      debugPrint('🍎 Apple credential received');
 
       final oauthCredential = OAuthProvider('apple.com').credential(
         idToken: appleCredential.identityToken,
         rawNonce: rawNonce,
-        accessToken: appleCredential.authorizationCode,
       );
 
       final userCredential =
-          await FirebaseAuth.instance.signInWithCredential(oauthCredential);
+          await FirebaseAuth.instance.signInWithCredential(oauthCredential)
+              .timeout(const Duration(seconds: 20));
+      debugPrint('🍎 Firebase credential sign-in success: ${userCredential.user?.uid}');
+
+      authSucceeded = true;
 
       final givenName = appleCredential.givenName?.trim() ?? '';
       final familyName = appleCredential.familyName?.trim() ?? '';
@@ -180,10 +186,14 @@ class _SignInPageState extends State<SignInPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Apple 登入失敗：$e')),
       );
-      setState(() {
-        _loading = false;
-        _loadingProvider = null;
-      });
+    } finally {
+      if (!mounted) return;
+      if (!authSucceeded) {
+        setState(() {
+          _loading = false;
+          _loadingProvider = null;
+        });
+      }
     }
   }
 
