@@ -5,12 +5,30 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'key_manager.dart';
+import 'encryption_service.dart';
 
 class SecureStorageService {
   // 拿掉容易在模擬器出錯的專屬設定，回歸最穩定的預設值
   static const _storage = FlutterSecureStorage();
   
   static const _keyAlias = 'user_aes_encryption_key';
+  static const _verifierField = 'encryptionVerifier';
+  static const _verifierPlaintext = 'moodsogood-e2e-key-check-v1';
+  static const _localVerifierKey = 'e2eVerifier';
+
+  /// 產生「金鑰驗證字串」並存到雲端，用來驗證 PIN 是否推導出同一把金鑰。
+  static String buildKeyVerifier(encrypt_lib.Key key) {
+    return EncryptionService(key).encryptData(_verifierPlaintext);
+  }
+
+  /// 驗證密文 verifier 是否可用目前金鑰正確解開。
+  static bool verifyKeyWithVerifier({
+    required encrypt_lib.Key key,
+    required String verifier,
+  }) {
+    final plain = EncryptionService(key).tryDecryptData(verifier);
+    return plain == _verifierPlaintext;
+  }
 
   /// 📥 存入金鑰 (加入防崩潰與自動修復機制)
   static Future<void> saveKey(encrypt_lib.Key key) async {
@@ -56,7 +74,7 @@ class SecureStorageService {
       }
 
       final prefs = await SharedPreferences.getInstance();
-      final pin = (prefs.getString('appLockPin') ?? prefs.getString('e2ePin') ?? '').trim();
+      final pin = (prefs.getString('e2ePin') ?? prefs.getString('appLockPin') ?? '').trim();
       if (pin.isEmpty) {
         print('🚨 [保險箱] 無法重建金鑰：找不到本地 PIN');
         return null;
@@ -64,18 +82,35 @@ class SecureStorageService {
 
       // 先用本地快取的 salt（避免每次啟動都依賴網路）
       String salt = (prefs.getString('e2eSalt') ?? '').trim();
+      String verifier = (prefs.getString(_localVerifierKey) ?? '').trim();
 
-      // 本地沒有再去雲端抓
-      if (salt.isEmpty) {
-        final userDoc = await FirebaseFirestore.instance
+      DocumentSnapshot<Map<String, dynamic>>? userDoc;
+
+      Future<void> loadUserDocIfNeeded() async {
+        if (userDoc != null) return;
+        userDoc = await FirebaseFirestore.instance
             .collection('users')
             .doc(user.uid)
             .get();
-        salt = (userDoc.data()?['encryptionSalt'] as String?)?.trim() ?? '';
+      }
+
+      // 本地沒有 salt 才去雲端抓
+      if (salt.isEmpty) {
+        await loadUserDocIfNeeded();
+        salt = (userDoc?.data()?['encryptionSalt'] as String?)?.trim() ?? '';
 
         // 抓到後回寫本地快取
         if (salt.isNotEmpty) {
           await prefs.setString('e2eSalt', salt);
+        }
+      }
+
+      // verifier 本地沒有時才去雲端抓，避免每次登入都被網路卡住。
+      if (verifier.isEmpty) {
+        await loadUserDocIfNeeded();
+        verifier = (userDoc?.data()?[_verifierField] as String?)?.trim() ?? '';
+        if (verifier.isNotEmpty) {
+          await prefs.setString(_localVerifierKey, verifier);
         }
       }
 
@@ -85,7 +120,23 @@ class SecureStorageService {
       }
 
       final recoveredKey = KeyManager.deriveKey(pin, salt);
+
+      if (verifier.isNotEmpty &&
+          !verifyKeyWithVerifier(key: recoveredKey, verifier: verifier)) {
+        print('🚨 [保險箱] 金鑰驗證失敗：PIN 與歷史加密資料不匹配');
+        return null;
+      }
+
       await saveKey(recoveredKey);
+
+      // 舊帳號可能還沒有 verifier，補寫一次供後續重建安全校驗。
+      if (verifier.isEmpty) {
+        final newVerifier = buildKeyVerifier(recoveredKey);
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+          _verifierField: newVerifier,
+        }, SetOptions(merge: true));
+        await prefs.setString(_localVerifierKey, newVerifier);
+      }
 
       final verified = await getKey();
       if (verified != null) {

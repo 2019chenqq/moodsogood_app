@@ -11,6 +11,7 @@ import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 // Firebase + Google Sign-In
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'firebase_options.dart';
 
@@ -548,11 +549,39 @@ class _EncryptionGateState extends State<EncryptionGate> {
 
   Future<void> _checkEncryptionKey() async {
     final prefs = await SharedPreferences.getInstance();
-    final configured = (prefs.getBool('e2eConfigured') ?? false) ||
+    final localConfigured = (prefs.getBool('e2eConfigured') ?? false) ||
         (prefs.getString('e2ePin')?.isNotEmpty ?? false);
 
+    bool? cloudConfigured;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      try {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get(const GetOptions(source: Source.serverAndCache));
+        final data = userDoc.data();
+        final salt = (data?['encryptionSalt'] as String?)?.trim() ?? '';
+        final verifier = (data?['encryptionVerifier'] as String?)?.trim() ?? '';
+        cloudConfigured = salt.isNotEmpty || verifier.isNotEmpty;
+
+        // 雲端明確顯示尚未設定保險箱：清掉舊本機狀態，避免上一個帳號的資料誤放行。
+        if (cloudConfigured == false) {
+          await SecureStorageService.deleteKey();
+          await prefs.remove('e2eConfigured');
+          await prefs.remove('e2ePin');
+          await prefs.remove('e2eSalt');
+          await prefs.remove('e2eVerifier');
+        }
+      } catch (e) {
+        debugPrint('⚠️ 無法取得雲端 E2E 設定，改用本地狀態：$e');
+      }
+    }
+
+    final configured = cloudConfigured ?? localConfigured;
+
     // 去手機的硬體保險箱找鑰匙
-    final key = await SecureStorageService.getOrRecoverKey();
+    final key = configured ? await SecureStorageService.getOrRecoverKey() : null;
     if (mounted) {
       setState(() {
         _hasKey = (key != null);
@@ -570,7 +599,7 @@ class _EncryptionGateState extends State<EncryptionGate> {
       );
     }
 
-    if (!_hasKey && !_e2eConfigured) {
+    if (!_e2eConfigured || !_hasKey) {
       // 找不到保險箱金鑰，代表是剛下載的新用戶，或是剛更新的舊用戶
       // 強制進入設定 6 位數安全碼的畫面！
       return const PinSetupScreen();

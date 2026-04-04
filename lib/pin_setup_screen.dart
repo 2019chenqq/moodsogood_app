@@ -61,12 +61,14 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
       final userDoc = await userDocRef.get();
 
       String salt;
+      String verifier = '';
 
       // 🔍 判斷情境：是新用戶還是舊用戶換手機？
       if (userDoc.exists && userDoc.data()!.containsKey('encryptionSalt')) {
         // 【情境 A：舊用戶換新手機】
         // 從 Firebase 抓取他專屬的 Salt (但不抓密碼，因為雲端沒有密碼)
         salt = userDoc.data()!['encryptionSalt'];
+        verifier = (userDoc.data()!['encryptionVerifier'] as String?)?.trim() ?? '';
         print('從雲端取得既有的 Salt');
       } else {
         // 【情境 B：新用戶第一次設定】
@@ -81,11 +83,27 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
       // 這邊可能會稍微消耗一點手機效能 (因為算了 1萬次)，所以畫面上要有 Loading
       final aesKey = KeyManager.deriveKey(pin, salt);
 
+      // 若舊帳號已存在 verifier，先驗證這次 PIN 是否能推導出同一把金鑰。
+      if (verifier.isNotEmpty &&
+          !SecureStorageService.verifyKeyWithVerifier(
+            key: aesKey,
+            verifier: verifier,
+          )) {
+        throw Exception('PIN 驗證失敗：與既有加密資料不匹配');
+      }
+
       // 🧷 留一份本地 PIN（僅用於遺失金鑰時重建）
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('e2ePin', pin);
       await prefs.setString('e2eSalt', salt);
       await prefs.setBool('e2eConfigured', true);
+
+      // 確保雲端存在 verifier，供未來重裝/換機時做金鑰正確性檢查。
+      final verifierToSave = SecureStorageService.buildKeyVerifier(aesKey);
+      await userDocRef.set({
+        'encryptionVerifier': verifierToSave,
+      }, SetOptions(merge: true));
+      await prefs.setString('e2eVerifier', verifierToSave);
 
       // 📥 把算出來的 AES 金鑰鎖進手機的硬體保險箱
       await SecureStorageService.saveKey(aesKey);
@@ -112,7 +130,7 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
       print('設定密碼發生錯誤: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('發生錯誤，請稍後再試。')),
+          const SnackBar(content: Text('密碼驗證失敗或資料異常，請確認密碼是否正確。')),
         );
       }
     } finally {

@@ -24,6 +24,15 @@ class EncryptionService {
 
   /// 🔓 將 Firebase 下載的密文還原成明文 (顯示在 App 畫面上)
   String decryptData(String combinedText) {
+    final result = tryDecryptData(combinedText);
+    if (result != null) return result;
+
+    print('解密失敗: 無法使用目前金鑰解密');
+    return '無法解密的資料'; // 舊流程相容：保留既有回傳
+  }
+
+  /// 安全解密：成功回傳明文，失敗回傳 null。
+  String? tryDecryptData(String combinedText) {
     try {
       // 將字串用冒號拆開，找回 IV 和密文
       final parts = combinedText.split(':');
@@ -38,7 +47,7 @@ class EncryptionService {
       return encrypter.decrypt(encryptedText, iv: iv);
     } catch (e) {
       print('解密失敗: $e');
-      return '無法解密的資料'; // 遇到錯誤時的防呆機制
+      return null;
     }
   }
 }

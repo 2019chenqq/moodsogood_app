@@ -38,6 +38,8 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   Timer? _debouncer;
   bool _saving = false;
   DateTime? _savedAt;
+  bool _isHydrating = false;
+  bool _blockCloudSaveDueToDecryptFailure = false;
 
   // ---------------- 上一筆 / 下一筆 ----------------
   DateTime? _prevDate;
@@ -86,6 +88,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   // 從控制器值更新 UI 的輔助函數
   void _updateUIFromData(Map<String, dynamic> data) {
     if (!mounted) return;
+    _isHydrating = true;
     _titleCtrl.text = (data['title'] ?? '') as String;
     _contentCtrl.text = (data['content'] ?? '') as String;
     _songCtrl.text = (data['themeSong'] ?? '') as String;
@@ -97,6 +100,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
     _overallMoodScore = (data['overallMood'] as num?)?.toInt() ?? 5;
     _overallHealthScore = (data['overallHealth'] as num?)?.toInt() ?? 5;
     _overallSleepScore = (data['overallSleepQuality'] as num?)?.toInt() ?? 5;
+    _isHydrating = false;
     setState(() {}); // 更新字數
   }
 
@@ -122,12 +126,18 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
           final key = await SecureStorageService.getOrRecoverKey();
           EncryptionService? encService;
           if (key != null) encService = EncryptionService(key);
+          var decryptFailed = false;
 
           // 🔓 建立一個輔助函數來解密文字
           String decrypt(dynamic value) {
             final str = (value ?? '') as String;
             if (encService != null && str.contains(':')) {
-              return encService.decryptData(str);
+              final plain = encService.tryDecryptData(str);
+              if (plain == null) {
+                decryptFailed = true;
+                return '';
+              }
+              return plain;
             }
             return str; // 如果沒有冒號，代表它是舊的明文，直接回傳
           }
@@ -146,6 +156,15 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
           };
 
           _updateUIFromData(decryptedData);
+
+          if (decryptFailed && mounted) {
+            _blockCloudSaveDueToDecryptFailure = true;
+            m.ScaffoldMessenger.of(context).showSnackBar(
+              const m.SnackBar(
+                content: m.Text('偵測到解密失敗，已暫停雲端覆寫以保護原始資料。'),
+              ),
+            );
+          }
         }
       } catch (e) {
         m.debugPrint('📔 Firebase load skipped or failed: $e');
@@ -172,6 +191,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   }
 
   void _onAnyFieldChanged() {
+    if (_isHydrating) return;
     setState(() => _saving = true);
     _debouncer?.cancel();
     _debouncer = Timer(const Duration(milliseconds: 700), _saveDraft);
@@ -239,7 +259,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
       // ==========================================
       // 步驟 2：☁️ 嘗試加密並上傳到 Firebase (獨立區塊，失敗不影響本地)
       // ==========================================
-      if (FirebaseSyncConfig.shouldSync()) {
+      if (FirebaseSyncConfig.shouldSync() && !_blockCloudSaveDueToDecryptFailure) {
         try {
           // 🔑 從保險箱拿出金鑰
           final key = await SecureStorageService.getOrRecoverKey();
@@ -274,6 +294,8 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
           m.debugPrint('⚠️ 雲端加密上傳失敗 (已暫存於本地): $e');
           // 這裡故意拿掉 Snackbar，避免用戶在打字時一直被跳出的紅字打擾
         }
+      } else if (_blockCloudSaveDueToDecryptFailure) {
+        m.debugPrint('🛡️ 已暫停雲端寫入：避免覆蓋仍可恢復的加密資料');
       }
 
       // ==========================================
