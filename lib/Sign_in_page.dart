@@ -210,10 +210,10 @@ class _SignInPageState extends State<SignInPage> {
       final givenName = appleCredential.givenName?.trim() ?? '';
       final familyName = appleCredential.familyName?.trim() ?? '';
       final fullName = '$givenName $familyName'.trim();
+        final currentDisplayName = userCredential.user?.displayName?.trim() ?? '';
 
       if (fullName.isNotEmpty &&
-          (userCredential.user?.displayName == null ||
-              userCredential.user!.displayName!.trim().isEmpty)) {
+          currentDisplayName.isEmpty) {
         await userCredential.user?.updateDisplayName(fullName);
         debugPrint('🍎 Display name updated: $fullName');
       }

@@ -29,7 +29,10 @@ class DiaryRepo {
 
   // ✅ 監聽我的日記（直接拿 d.data() 就是 DiaryDoc）
   Stream<List<DiaryDoc>> watchMyDiaries({int limit = 200}) {
-    final uid = FirebaseAuth.instance.currentUser!.uid;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      return Stream.value(const <DiaryDoc>[]);
+    }
     return _col
         .where('uid', isEqualTo: uid)
         .orderBy('date', descending: true)

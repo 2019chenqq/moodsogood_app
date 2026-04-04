@@ -70,16 +70,14 @@ class DiaryHomePage extends m.StatefulWidget {
 class _DiaryHomePageState extends m.State<DiaryHomePage>
     with m.SingleTickerProviderStateMixin {
   late final m.TabController _tab;
-  late final String _uid;
+  String? _uid;
 
   @override
   void initState() {
     super.initState();
-    _uid = FirebaseAuth.instance.currentUser!.uid;   // 取得登入者 uid（要已登入）
+    _uid = FirebaseAuth.instance.currentUser?.uid;
     _tab = m.TabController(length: 2, vsync: this);
   }
-
-  String get uid => FirebaseAuth.instance.currentUser!.uid;
 
   @override
   void dispose() {
@@ -117,6 +115,18 @@ class _DiaryHomePageState extends m.State<DiaryHomePage>
 
   @override
   m.Widget build(m.BuildContext context) {
+    final uid = _uid;
+    if (uid == null) {
+      return m.Scaffold(
+        appBar: m.AppBar(
+          toolbarHeight: 60,
+          elevation: 0,
+          title: const m.Text('日記'),
+        ),
+        body: const m.Center(child: m.Text('請先登入後再查看日記。')),
+      );
+    }
+
     return m.Scaffold(
       // drawer: const MainDrawer(),
       appBar: m.AppBar(
@@ -145,8 +155,8 @@ class _DiaryHomePageState extends m.State<DiaryHomePage>
       body: m.TabBarView(
         controller: _tab,
         children: [
-          _DiaryList(uid: _uid, showOnlyRecent: true),
-          _DiaryList(uid: _uid, showOnlyRecent: false),
+          _DiaryList(uid: uid, showOnlyRecent: true),
+          _DiaryList(uid: uid, showOnlyRecent: false),
         ],
       ),
       floatingActionButton: m.FloatingActionButton.extended(

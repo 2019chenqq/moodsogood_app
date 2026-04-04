@@ -45,6 +45,7 @@ class _HomeShellState extends m.State<HomeShell> {
     if (user != null) {
       await user.reload();
       user = _auth.currentUser;
+      if (user == null) return;
 
       setState(() {
         _photoUrl = user?.photoURL;
@@ -54,7 +55,7 @@ class _HomeShellState extends m.State<HomeShell> {
 
       try {
         DocumentSnapshot userDoc =
-            await _firestore.collection('users').doc(user!.uid).get();
+            await _firestore.collection('users').doc(user.uid).get();
         if (userDoc.exists && userDoc.data() != null) {
           Map<String, dynamic> data = userDoc.data() as Map<String, dynamic>;
           setState(() {

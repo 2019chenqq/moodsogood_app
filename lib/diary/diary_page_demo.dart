@@ -46,7 +46,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   DateTime? _nextDate;
 
   // ---------------- Firestore 便捷存取 ----------------
-  // String get _uid => FirebaseAuth.instance.currentUser!.uid;
+  String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
   // 正規化到當天 00:00:00
   DateTime get _day =>
@@ -55,12 +55,15 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   String get _docId => DateHelper.toId(_day);
 
   // 日記文件：users/{uid}/diary/{yyyy-MM-dd}
-  DocumentReference<Map<String, dynamic>> get _docRef =>
-      FirebaseFirestore.instance
-          .collection('users')
-          .doc(FirebaseAuth.instance.currentUser!.uid)
-          .collection('diary') // TODO: 若你的日記集合名不同（例如 diaries），改這裡
-          .doc(_docId);
+  DocumentReference<Map<String, dynamic>>? get _docRef {
+    final uid = _uid;
+    if (uid == null) return null;
+    return FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('diary')
+        .doc(_docId);
+  }
 
   // ---------------- 生命週期 ----------------
   @override
@@ -117,7 +120,9 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
 
       // 2. 再嘗試從 Firebase 加載（抓下來的可能是密文）
       try {
-        final snap = await _docRef.get(const GetOptions(source: Source.serverAndCache));
+        final docRef = _docRef;
+        if (docRef == null) return;
+        final snap = await docRef.get(const GetOptions(source: Source.serverAndCache));
         final data = snap.data();
         if (data != null && mounted) {
           m.debugPrint('📔 Loaded diary from Firebase, decrypting...');
@@ -261,6 +266,11 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
       // ==========================================
       if (FirebaseSyncConfig.shouldSync() && !_blockCloudSaveDueToDecryptFailure) {
         try {
+          final docRef = _docRef;
+          if (docRef == null) {
+            throw Exception('目前未登入，無法同步雲端日記');
+          }
+
           // 🔑 從保險箱拿出金鑰
           final key = await SecureStorageService.getOrRecoverKey();
           if (key == null) {
@@ -271,7 +281,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
           final encService = EncryptionService(key);
 
           // 🔒 將所有文字欄位進行加密
-          await _docRef.set({
+          await docRef.set({
             'date': Timestamp.fromDate(_day),
             'title': encService.encryptData(_titleCtrl.text.trim()),
             'content': encService.encryptData(_contentCtrl.text.trim()),
@@ -318,9 +328,12 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   // 查上一筆 / 下一筆（以日記集合的 date 欄位為準）
   Future<void> _loadNeighbors() async {
     try {
+      final uid = _uid;
+      if (uid == null) return;
+
       final col = FirebaseFirestore.instance
           .collection('users')
-          .doc(FirebaseAuth.instance.currentUser!.uid)
+          .doc(uid)
           .collection('diary'); // ⚠️ 確認這裡的集合名稱跟你的日記一樣 (diary 或 dailyRecords)
 
       // 確保用當日 00:00:00 的 Timestamp 進行比較
@@ -402,7 +415,10 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
 
       // 先刪除雲端資料（若有）
       if (FirebaseSyncConfig.shouldSync()) {
-        await _docRef.delete();
+        final docRef = _docRef;
+        if (docRef != null) {
+          await docRef.delete();
+        }
       }
 
       // 再刪除本地資料

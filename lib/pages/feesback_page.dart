@@ -30,8 +30,9 @@ class _FeedbackPageState extends State<FeedbackPage> {
   void initState() {
     super.initState();
     final user = FirebaseAuth.instance.currentUser;
-    if (user?.email != null) {
-      _contactController.text = user!.email!;
+    final email = user?.email;
+    if (email != null) {
+      _contactController.text = email;
     }
   }
 
