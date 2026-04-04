@@ -538,7 +538,7 @@ class EncryptionGate extends StatefulWidget {
 
 class _EncryptionGateState extends State<EncryptionGate> {
   bool _loading = true;
-  bool _hasKey = false;
+  bool _hasKey = true;
   bool _e2eConfigured = false;
   static const _e2eOwnerUidKey = 'e2eOwnerUid';
 
@@ -567,11 +567,14 @@ class _EncryptionGateState extends State<EncryptionGate> {
     final configured = (prefs.getBool('e2eConfigured') ?? false) ||
         (prefs.getString('e2ePin')?.isNotEmpty ?? false);
 
-    // 去手機的硬體保險箱找鑰匙
-    final key = configured ? await SecureStorageService.getOrRecoverKey() : null;
+    // 這裡不要阻塞登入流程：金鑰改為背景預熱，避免使用者卡在登入轉圈。
+    if (configured) {
+      unawaited(SecureStorageService.getOrRecoverKey());
+    }
+
     if (mounted) {
       setState(() {
-        _hasKey = (key != null);
+        _hasKey = true;
         _e2eConfigured = configured;
         _loading = false;
       });
@@ -586,7 +589,7 @@ class _EncryptionGateState extends State<EncryptionGate> {
       );
     }
 
-    if (!_e2eConfigured || !_hasKey) {
+    if (!_e2eConfigured) {
       // 找不到保險箱金鑰，代表是剛下載的新用戶，或是剛更新的舊用戶
       // 強制進入設定 6 位數安全碼的畫面！
       return const PinSetupScreen();
