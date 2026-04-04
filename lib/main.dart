@@ -540,6 +540,7 @@ class _EncryptionGateState extends State<EncryptionGate> {
   bool _loading = true;
   bool _hasKey = false;
   bool _e2eConfigured = false;
+  static const _e2eOwnerUidKey = 'e2eOwnerUid';
 
   @override
   void initState() {
@@ -549,36 +550,22 @@ class _EncryptionGateState extends State<EncryptionGate> {
 
   Future<void> _checkEncryptionKey() async {
     final prefs = await SharedPreferences.getInstance();
-    final localConfigured = (prefs.getBool('e2eConfigured') ?? false) ||
-        (prefs.getString('e2ePin')?.isNotEmpty ?? false);
-
-    bool? cloudConfigured;
     final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      try {
-        final userDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .get(const GetOptions(source: Source.serverAndCache));
-        final data = userDoc.data();
-        final salt = (data?['encryptionSalt'] as String?)?.trim() ?? '';
-        final verifier = (data?['encryptionVerifier'] as String?)?.trim() ?? '';
-        cloudConfigured = salt.isNotEmpty || verifier.isNotEmpty;
 
-        // 雲端明確顯示尚未設定保險箱：清掉舊本機狀態，避免上一個帳號的資料誤放行。
-        if (cloudConfigured == false) {
-          await SecureStorageService.deleteKey();
-          await prefs.remove('e2eConfigured');
-          await prefs.remove('e2ePin');
-          await prefs.remove('e2eSalt');
-          await prefs.remove('e2eVerifier');
-        }
-      } catch (e) {
-        debugPrint('⚠️ 無法取得雲端 E2E 設定，改用本地狀態：$e');
-      }
+    // 使用 uid 綁定本機 E2E 快取：只有「切換帳號」才清理，避免每次登入都被網路卡住。
+    final currentUid = user?.uid;
+    final ownerUid = prefs.getString(_e2eOwnerUidKey);
+    if (currentUid != null && ownerUid != currentUid) {
+      await SecureStorageService.deleteKey();
+      await prefs.remove('e2eConfigured');
+      await prefs.remove('e2ePin');
+      await prefs.remove('e2eSalt');
+      await prefs.remove('e2eVerifier');
+      await prefs.setString(_e2eOwnerUidKey, currentUid);
     }
 
-    final configured = cloudConfigured ?? localConfigured;
+    final configured = (prefs.getBool('e2eConfigured') ?? false) ||
+        (prefs.getString('e2ePin')?.isNotEmpty ?? false);
 
     // 去手機的硬體保險箱找鑰匙
     final key = configured ? await SecureStorageService.getOrRecoverKey() : null;

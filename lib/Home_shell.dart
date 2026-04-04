@@ -122,12 +122,15 @@ class _HomeShellState extends m.State<HomeShell> {
 
   Future<void> _signOut() async {
     try {
-      final googleSignIn = GoogleSignIn();
+      final user = _auth.currentUser;
+      final hasGoogleProvider =
+          user?.providerData.any((p) => p.providerId == 'google.com') ?? false;
+
       await _auth.signOut();
-      await googleSignIn.signOut();
-      try {
-        await googleSignIn.disconnect();
-      } catch (_) {}
+      if (hasGoogleProvider) {
+        final googleSignIn = GoogleSignIn();
+        await googleSignIn.signOut();
+      }
 
       if (mounted) {
         m.Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(

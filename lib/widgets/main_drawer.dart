@@ -76,14 +76,15 @@ class _MainDrawerState extends State<MainDrawer> {
 
   Future<void> _signOut() async {
     try {
-      final googleSignIn = GoogleSignIn();
-      await FirebaseAuth.instance.signOut();
-      await googleSignIn.signOut();
+      final user = FirebaseAuth.instance.currentUser;
+      final hasGoogleProvider =
+          user?.providerData.any((p) => p.providerId == 'google.com') ?? false;
 
-      // 盡可能斷開 Google 連線，下一次會重新選帳號
-      try {
-        await googleSignIn.disconnect();
-      } catch (_) {}
+      await FirebaseAuth.instance.signOut();
+      if (hasGoogleProvider) {
+        final googleSignIn = GoogleSignIn();
+        await googleSignIn.signOut();
+      }
 
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
