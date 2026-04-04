@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'dart:ui';
@@ -22,12 +23,42 @@ class _SignInPageState extends State<SignInPage> {
   bool _appleAvailable = false;
   bool _supportsAppleSignIn = false;
   String? _loadingProvider;
+  StreamSubscription<User?>? _authSubscription;
 
   @override
   void initState() {
     super.initState();
     debugPrint('📝 SignInPage loaded - User needs to sign in');
     _prepareAppleSignIn();
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (!mounted) return;
+
+      if (user != null) {
+        debugPrint('✅ SignInPage observed auth success: ${user.uid}');
+        setState(() {
+          _loading = false;
+          _loadingProvider = null;
+        });
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          Navigator.of(context, rootNavigator: true)
+              .popUntil((route) => route.isFirst);
+        });
+        return;
+      }
+
+      setState(() {
+        _loading = false;
+        _loadingProvider = null;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _prepareAppleSignIn() async {
@@ -72,6 +103,9 @@ class _SignInPageState extends State<SignInPage> {
       );
 
       await FirebaseAuth.instance.signInWithCredential(credential);
+
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
 
       // 登入成功後不需手動跳頁，讓 AuthGate 依 authStateChanges 自動切換
     } catch (e) {
@@ -138,6 +172,9 @@ class _SignInPageState extends State<SignInPage> {
               userCredential.user!.displayName!.trim().isEmpty)) {
         await userCredential.user?.updateDisplayName(fullName);
       }
+
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

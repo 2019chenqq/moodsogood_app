@@ -87,10 +87,7 @@ class _MainDrawerState extends State<MainDrawer> {
       }
 
       if (!mounted) return;
-      Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const SignInPage()),
-        (route) => false,
-      );
+      Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
     } catch (e) {
       debugPrint('登出失敗: $e');
       if (!mounted) return;

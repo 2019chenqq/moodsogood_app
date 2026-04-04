@@ -133,10 +133,8 @@ class _HomeShellState extends m.State<HomeShell> {
       }
 
       if (mounted) {
-        m.Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-          m.MaterialPageRoute(builder: (_) => const SignInPage()),
-          (route) => false,
-        );
+        m.Navigator.of(context, rootNavigator: true)
+            .popUntil((route) => route.isFirst);
       }
     } catch (e) {
       m.debugPrint('Error signing out: $e');
