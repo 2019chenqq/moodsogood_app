@@ -9,6 +9,7 @@ import 'dart:io';
 import '../settings_page.dart';
 import '../pages/feesback_page.dart';
 import '../pages/hub_pages.dart';
+import '../pro/pro_page.dart';
 import '../Sign_in_page.dart';
 
 class MainDrawer extends StatefulWidget {
@@ -179,6 +180,18 @@ class _MainDrawerState extends State<MainDrawer> {
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(builder: (_) => const RecordHubPage()),
+              );
+            },
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.workspace_premium),
+            title: const Text('Pro'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ProPage()),
               );
             },
           ),
