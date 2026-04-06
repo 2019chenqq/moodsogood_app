@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../service/iap_service.dart';
 import 'dart:async';
 
@@ -7,6 +8,9 @@ import 'dart:async';
 const bool kDebugUnlockAllProFeatures = false;
 const bool kAppStoreReviewScreenshotMode =
   bool.fromEnvironment('APP_STORE_REVIEW_SCREENSHOT_MODE', defaultValue: false);
+
+bool get isReviewScreenshotModeEnabled =>
+    kAppStoreReviewScreenshotMode || kDebugMode;
 
 typedef OnProUpgradeCallback = Future<void> Function();
 
@@ -23,7 +27,7 @@ class ProProvider extends ChangeNotifier {
   /// 如果 kDebugUnlockAllProFeatures = true，則所有人都是 Pro
   bool get isPro => kDebugUnlockAllProFeatures
       ? true
-      : (kAppStoreReviewScreenshotMode
+      : (isReviewScreenshotModeEnabled
         ? (_reviewOverrideIsPro ?? _debugOverrideIsPro ?? _remoteIsPro)
         : (_debugOverrideIsPro ?? _remoteIsPro));
   
@@ -96,13 +100,13 @@ class ProProvider extends ChangeNotifier {
 
   // App Store 截圖流程：可用 dart-define 暫時切換 Pro/免費畫面。
   void setReviewPreviewProStatus(bool isPro) {
-    if (!kAppStoreReviewScreenshotMode) return;
+    if (!isReviewScreenshotModeEnabled) return;
     _reviewOverrideIsPro = isPro;
     notifyListeners();
   }
 
   void clearReviewPreviewStatus() {
-    if (!kAppStoreReviewScreenshotMode) return;
+    if (!isReviewScreenshotModeEnabled) return;
     _reviewOverrideIsPro = null;
     notifyListeners();
   }

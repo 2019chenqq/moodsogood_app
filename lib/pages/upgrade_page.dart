@@ -189,7 +189,7 @@ class _UpgradePageState extends State<UpgradePage> {
       );
     }
 
-    if (kAppStoreReviewScreenshotMode) {
+    if (isReviewScreenshotModeEnabled) {
       content = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
