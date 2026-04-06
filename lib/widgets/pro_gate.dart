@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/pro_provider.dart';
-import '../pages/upgrade_page.dart';
+import '../pro/pro_page.dart';
 
 /// 🔐 ProGate：包住任何「付費功能」
 /// - Pro：顯示 child
@@ -35,7 +35,7 @@ class ProGate extends StatelessWidget {
     // 非 Pro → 顯示鎖定畫面
     if (replacePage) {
       // 直接整頁導向升級頁
-      return const UpgradePage();
+      return const ProPage();
     }
 
     // 預設：半透明遮罩 + 解鎖按鈕
@@ -89,7 +89,7 @@ class _UpgradeCard extends StatelessWidget {
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => const UpgradePage(),
+                    builder: (_) => const ProPage(),
                   ),
                 );
               },

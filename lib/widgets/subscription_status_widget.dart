@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/pro_provider.dart';
 import '../utils/firebase_sync_config.dart';
-import '../pages/upgrade_page.dart';
+import '../pro/pro_page.dart';
 
 /// 訂閱狀態卡片 - 可在多個頁面中使用
 class SubscriptionStatusCard extends StatelessWidget {
@@ -167,7 +167,7 @@ class SubscriptionStatusCard extends StatelessWidget {
                 onPressed: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (context) => const UpgradePage(),
+                      builder: (context) => const ProPage(),
                     ),
                   );
                 },

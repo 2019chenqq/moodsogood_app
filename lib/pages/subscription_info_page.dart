@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/pro_provider.dart';
-import 'upgrade_page.dart';
+import '../pro/pro_page.dart';
 
 /// 訂閱狀態和存儲管理頁面
 class SubscriptionInfoPage extends StatelessWidget {
@@ -185,7 +185,7 @@ class SubscriptionInfoPage extends StatelessWidget {
                         onPressed: () {
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (context) => const UpgradePage(),
+                              builder: (context) => const ProPage(),
                             ),
                           );
                         },
