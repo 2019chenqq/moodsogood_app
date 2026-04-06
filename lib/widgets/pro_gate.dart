@@ -20,16 +20,16 @@ class ProGate extends StatelessWidget {
   Widget build(BuildContext context) {
     final proProvider = context.watch<ProProvider>();
 
+    // 已是 Pro（包含全域解鎖）→ 優先直接顯示
+    if (proProvider.isPro) {
+      return child;
+    }
+
     // 還在載入訂閱狀態（App 剛啟動）
     if (proProvider.loading) {
       return const Center(
         child: CircularProgressIndicator(strokeWidth: 2),
       );
-    }
-
-    // 已是 Pro → 正常顯示
-    if (proProvider.isPro) {
-      return child;
     }
 
     // 非 Pro → 顯示鎖定畫面

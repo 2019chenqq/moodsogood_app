@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/daily_record.dart';
-import '../service/iap_service.dart'; // 用於檢查付費功能
 import 'pdf_export_service.dart';
 import 'export_config.dart';
 
@@ -29,12 +28,6 @@ class PDFExportProvider extends ChangeNotifier {
       notifyListeners();
 
       debugPrint('🚀 PDF 導出開始');
-
-      // 檢查付費狀態（如果有需要）
-      // final iapService = context.read<IAPService>();
-      // if (!iapService.isPro) {
-      //   throw Exception('此功能需要升級到專業版');
-      // }
 
       // 執行導出
       final result = await PDFExportService.exportToPDF(

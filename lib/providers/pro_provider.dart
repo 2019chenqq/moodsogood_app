@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import '../service/iap_service.dart';
-import 'dart:async';
+import 'package:purchases_flutter/purchases_flutter.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// 🚧 開發/測試用開關：設為 true 時，所有使用者都能使用 Pro features
 /// 📌 正式上線前請改為 false
-const bool kDebugUnlockAllProFeatures = false;
+const bool kDebugUnlockAllProFeatures = true;
 const bool kAppStoreReviewScreenshotMode =
   bool.fromEnvironment('APP_STORE_REVIEW_SCREENSHOT_MODE', defaultValue: false);
 
@@ -13,6 +14,7 @@ bool get isReviewScreenshotModeEnabled =>
     kAppStoreReviewScreenshotMode || kDebugMode;
 
 typedef OnProUpgradeCallback = Future<void> Function();
+const String kRevenueCatEntitlementId = 'premium';
 
 class ProProvider extends ChangeNotifier {
   bool _loading = true;
@@ -21,15 +23,14 @@ class ProProvider extends ChangeNotifier {
   bool _remoteIsPro = false; // Firestore / 訂閱同步來的
   bool? _debugOverrideIsPro; // null = 不覆蓋
   bool? _reviewOverrideIsPro; // App Store 審核截圖模式專用
-  StreamSubscription<bool>? _proStatusSubscription;
 
   /// 檢查使用者是否為 Pro
   /// 如果 kDebugUnlockAllProFeatures = true，則所有人都是 Pro
   bool get isPro => kDebugUnlockAllProFeatures
       ? true
       : (isReviewScreenshotModeEnabled
-        ? (_reviewOverrideIsPro ?? _debugOverrideIsPro ?? _remoteIsPro)
-        : (_debugOverrideIsPro ?? _remoteIsPro));
+          ? (_reviewOverrideIsPro ?? _debugOverrideIsPro ?? _remoteIsPro)
+          : (_debugOverrideIsPro ?? _remoteIsPro));
   
   bool get loading => _loading;
   bool get isMigrating => _isMigrating;
@@ -43,28 +44,52 @@ class ProProvider extends ChangeNotifier {
     _loading = true;
     notifyListeners();
 
-    await IAPService.instance.init();
-    _remoteIsPro = await IAPService.instance.refreshProStatusFromCloud();
+    await refreshFromRevenueCat();
 
-    _proStatusSubscription?.cancel();
-    _proStatusSubscription = IAPService.instance.proStatusStream.listen(
-      (isPro) async {
-        final wasPro = _remoteIsPro;
-        _remoteIsPro = isPro;
-        notifyListeners();
+    Purchases.addCustomerInfoUpdateListener((customerInfo) async {
+      final wasPro = _remoteIsPro;
+      _remoteIsPro = _isEntitlementActive(customerInfo);
+      await _syncProStatusToFirestore(_remoteIsPro);
+      notifyListeners();
 
-        if (!wasPro && isPro && _onUpgradeCallback != null) {
-          await _onUpgradeCallback!();
-        }
-      },
-    );
+      if (!wasPro && _remoteIsPro && _onUpgradeCallback != null) {
+        await _onUpgradeCallback!();
+      }
+    });
 
     _loading = false;
     notifyListeners();
   }
 
+  bool _isEntitlementActive(CustomerInfo info) {
+    return info.entitlements.all[kRevenueCatEntitlementId]?.isActive ?? false;
+  }
+
+  Future<void> _syncProStatusToFirestore(bool isProNow) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    await FirebaseFirestore.instance.collection('users').doc(uid).set({
+      'pro': isProNow,
+      'isPro': isProNow,
+      'proStore': 'revenuecat',
+      'proUpdatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  Future<void> refreshFromRevenueCat() async {
+    try {
+      final info = await Purchases.getCustomerInfo();
+      _remoteIsPro = _isEntitlementActive(info);
+      await _syncProStatusToFirestore(_remoteIsPro);
+    } catch (_) {
+      // Keep previous state on transient SDK/network failures.
+    }
+    notifyListeners();
+  }
+
   Future<void> refreshFromServer() async {
-    _remoteIsPro = await IAPService.instance.refreshProStatusFromCloud();
+    await refreshFromRevenueCat();
     notifyListeners();
   }
 
@@ -113,7 +138,6 @@ class ProProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    _proStatusSubscription?.cancel();
     super.dispose();
   }
 }
