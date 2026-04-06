@@ -5,6 +5,8 @@ import 'dart:async';
 /// 🚧 開發/測試用開關：設為 true 時，所有使用者都能使用 Pro features
 /// 📌 正式上線前請改為 false
 const bool kDebugUnlockAllProFeatures = false;
+const bool kAppStoreReviewScreenshotMode =
+  bool.fromEnvironment('APP_STORE_REVIEW_SCREENSHOT_MODE', defaultValue: false);
 
 typedef OnProUpgradeCallback = Future<void> Function();
 
@@ -14,13 +16,16 @@ class ProProvider extends ChangeNotifier {
   bool _isMigrating = false;
   bool _remoteIsPro = false; // Firestore / 訂閱同步來的
   bool? _debugOverrideIsPro; // null = 不覆蓋
+  bool? _reviewOverrideIsPro; // App Store 審核截圖模式專用
   StreamSubscription<bool>? _proStatusSubscription;
 
   /// 檢查使用者是否為 Pro
   /// 如果 kDebugUnlockAllProFeatures = true，則所有人都是 Pro
   bool get isPro => kDebugUnlockAllProFeatures
       ? true
-      : (_debugOverrideIsPro ?? _remoteIsPro);
+      : (kAppStoreReviewScreenshotMode
+        ? (_reviewOverrideIsPro ?? _debugOverrideIsPro ?? _remoteIsPro)
+        : (_debugOverrideIsPro ?? _remoteIsPro));
   
   bool get loading => _loading;
   bool get isMigrating => _isMigrating;
@@ -86,6 +91,19 @@ class ProProvider extends ChangeNotifier {
 
   void lock() {
     _debugOverrideIsPro = false;
+    notifyListeners();
+  }
+
+  // App Store 截圖流程：可用 dart-define 暫時切換 Pro/免費畫面。
+  void setReviewPreviewProStatus(bool isPro) {
+    if (!kAppStoreReviewScreenshotMode) return;
+    _reviewOverrideIsPro = isPro;
+    notifyListeners();
+  }
+
+  void clearReviewPreviewStatus() {
+    if (!kAppStoreReviewScreenshotMode) return;
+    _reviewOverrideIsPro = null;
     notifyListeners();
   }
 
