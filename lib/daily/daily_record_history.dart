@@ -9,7 +9,7 @@ import '../utils/date_helper.dart';   // 確保引用正確
 import 'record_detail_screen.dart';   // 確保引用正確
 import '../models/period_cycle.dart';
 import '../widgets/main_drawer.dart';
-import '../pro/pro_page.dart';
+import '../pages/upgrade_page.dart';
 import '../providers/pro_provider.dart';
 import 'daily_record_repository.dart';
 import 'emotion_page_checkbox.dart';
@@ -1309,7 +1309,7 @@ Widget _buildProLockedView({
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const ProPage()),
+                MaterialPageRoute(builder: (_) => const UpgradePage()),
               );
             },
             child: const Text('升級 Pro'),

@@ -97,12 +97,8 @@ Future<void> main() async {
   await NotificationHelper().init();
   debugPrint('🔔 Notifications initialized');
 
-  // Only init IAP on release builds (skip on emulator/debug)
-  //  Ted add this for testing inapp purchase on emulator
-  if (!kDebugMode) {
-    await IAPService.instance.init();
-    debugPrint('🛍️ IAP Service initialized');
-  }
+  await IAPService.instance.init();
+  debugPrint('🛍️ IAP Service initialized');
   debugPrint('📱 Running app...');
 
   runApp(

@@ -1,18 +1,20 @@
 import 'package:flutter/material.dart';
+import '../service/iap_service.dart';
+import 'dart:async';
 
 /// 🚧 開發/測試用開關：設為 true 時，所有使用者都能使用 Pro features
 /// 📌 正式上線前請改為 false
-const bool kDebugUnlockAllProFeatures = true;
+const bool kDebugUnlockAllProFeatures = false;
 
 typedef OnProUpgradeCallback = Future<void> Function();
 
 class ProProvider extends ChangeNotifier {
-  bool _isPro = true;
   bool _loading = true;
   OnProUpgradeCallback? _onUpgradeCallback;
   bool _isMigrating = false;
-bool _remoteIsPro = true;   // Firestore / 登入同步來的
-bool? _debugOverrideIsPro;  // null = 不覆蓋
+  bool _remoteIsPro = false; // Firestore / 訂閱同步來的
+  bool? _debugOverrideIsPro; // null = 不覆蓋
+  StreamSubscription<bool>? _proStatusSubscription;
 
   /// 檢查使用者是否為 Pro
   /// 如果 kDebugUnlockAllProFeatures = true，則所有人都是 Pro
@@ -32,13 +34,28 @@ bool? _debugOverrideIsPro;  // null = 不覆蓋
     _loading = true;
     notifyListeners();
 
-    // TODO：之後接 Google Play 訂閱檢查
-    // 全域開啟 Pro 權限
-    await Future.delayed(const Duration(milliseconds: 200));
+    await IAPService.instance.init();
+    _remoteIsPro = await IAPService.instance.refreshProStatusFromCloud();
 
-    _remoteIsPro = true;
-    _isPro = true;
+    _proStatusSubscription?.cancel();
+    _proStatusSubscription = IAPService.instance.proStatusStream.listen(
+      (isPro) async {
+        final wasPro = _remoteIsPro;
+        _remoteIsPro = isPro;
+        notifyListeners();
+
+        if (!wasPro && isPro && _onUpgradeCallback != null) {
+          await _onUpgradeCallback!();
+        }
+      },
+    );
+
     _loading = false;
+    notifyListeners();
+  }
+
+  Future<void> refreshFromServer() async {
+    _remoteIsPro = await IAPService.instance.refreshProStatusFromCloud();
     notifyListeners();
   }
 
@@ -54,7 +71,7 @@ bool? _debugOverrideIsPro;  // null = 不覆蓋
         await _onUpgradeCallback!();
       }
 
-      _isPro = true;
+      _debugOverrideIsPro = true;
       notifyListeners();
     } catch (e) {
       print('升級失敗：$e');
@@ -68,8 +85,14 @@ bool? _debugOverrideIsPro;  // null = 不覆蓋
   }
 
   void lock() {
-  _debugOverrideIsPro = false;
-  notifyListeners();
-}
+    _debugOverrideIsPro = false;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _proStatusSubscription?.cancel();
+    super.dispose();
+  }
 }
 
