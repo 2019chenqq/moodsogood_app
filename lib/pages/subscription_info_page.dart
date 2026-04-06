@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/pro_provider.dart';
-import '../pro/pro_page.dart';
 
 /// 訂閱狀態和存儲管理頁面
 class SubscriptionInfoPage extends StatelessWidget {
@@ -177,18 +176,17 @@ class SubscriptionInfoPage extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    SizedBox(
+                    Container(
                       width: double.infinity,
-                      child: ElevatedButton.icon(
-                        icon: const Icon(Icons.shopping_cart),
-                        label: const Text('查看訂閱選項'),
-                        onPressed: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const ProPage(),
-                            ),
-                          );
-                        },
+                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '目前已暫時移除 Pro 訂閱頁面入口。',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium,
                       ),
                     ),
                   ],

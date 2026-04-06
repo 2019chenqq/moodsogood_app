@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/pro_provider.dart';
-import '../pro/pro_page.dart';
 
 /// 🔐 ProGate：包住任何「付費功能」
 /// - Pro：顯示 child
@@ -34,8 +33,8 @@ class ProGate extends StatelessWidget {
 
     // 非 Pro → 顯示鎖定畫面
     if (replacePage) {
-      // 直接整頁導向升級頁
-      return const ProPage();
+      // Pro 頁面已下架，先顯示鎖定提示卡
+      return const Center(child: _UpgradeCard());
     }
 
     // 預設：半透明遮罩 + 解鎖按鈕
@@ -86,14 +85,8 @@ class _UpgradeCard extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             FilledButton(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const ProPage(),
-                  ),
-                );
-              },
-              child: const Text('前往升級'),
+              onPressed: null,
+              child: const Text('暫停開放升級入口'),
             ),
           ],
         ),
