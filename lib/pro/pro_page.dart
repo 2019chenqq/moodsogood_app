@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart'; // 用於 kDebugMode
+import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../providers/pro_provider.dart';
+import '../service/iap_service.dart';
 
 class ProPage extends StatefulWidget {
   const ProPage({super.key});
@@ -20,8 +21,14 @@ class _ProPageState extends State<ProPage> {
   bool _debugForceLocked = false;
   String? _errorMessage;
 
-  // Google Play 產品 ID
-  static const String _productId = 'com.example.moodsogood.pro_monthly';
+  // 與 IAPService 保持一致，iOS/Android 都使用同一個商品 ID 字串。
+  static const String _productId = IAPService.proMonthlyProductId;
+
+  String get _storeName {
+    return defaultTargetPlatform == TargetPlatform.iOS
+        ? 'App Store'
+        : 'Google Play';
+  }
 
   @override
   void initState() {
@@ -259,7 +266,11 @@ class _ProPageState extends State<ProPage> {
                     width: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : Text(proProvider.isPro ? '已解鎖 Pro（無需再次購買）' : '透過 Google Play 購買'),
+                : Text(
+                    proProvider.isPro
+                        ? '已解鎖 Pro（無需再次購買）'
+                        : '透過 $_storeName 購買',
+                  ),
           ),
           const SizedBox(height: 12),
           OutlinedButton(
@@ -268,9 +279,9 @@ class _ProPageState extends State<ProPage> {
           ),
 
           const SizedBox(height: 20),
-          const Text(
-            '提示\n• 首次購買後可立即使用所有 Pro 功能\n• 可在 Google Play 帳戶設定中管理訂閱\n• 取消訂閱後，您仍可使用已同步到雲端的數據',
-            style: TextStyle(color: Colors.grey, fontSize: 12, height: 1.6),
+          Text(
+            '提示\n• 首次購買後可立即使用所有 Pro 功能\n• 可在 $_storeName 帳戶設定中管理訂閱\n• 取消訂閱後，您仍可使用已同步到雲端的數據',
+            style: const TextStyle(color: Colors.grey, fontSize: 12, height: 1.6),
           ),
         ],
       ),
