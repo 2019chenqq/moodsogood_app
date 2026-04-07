@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // 需要安裝這個來存設定
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/foundation.dart';
@@ -180,6 +181,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       enabled: _appLockEnabled, // 只有開啟密碼鎖定時才能按
                       onTap: _appLockEnabled ? _showChangePinDialog : null,
                     ),
+                  _buildDeleteAccountButton(context),
                 ],
               );
             },
@@ -881,5 +883,113 @@ class _SettingsPageState extends State<SettingsPage> {
         );
       },
     );
+  }
+
+  // 放在設定頁面 BuildContext 中
+  Widget _buildDeleteAccountButton(BuildContext context) {
+    return ListTile(
+      leading: const Icon(Icons.delete_forever, color: Colors.redAccent),
+      title: const Text('刪除帳號與所有資料', style: TextStyle(color: Colors.redAccent)),
+      onTap: () {
+        // 點擊後跳出雙重確認視窗
+        showDialog(
+          context: context,
+          builder: (BuildContext ctx) {
+            return AlertDialog(
+              title: const Text('確定要刪除帳號嗎？'),
+              content: const Text('此動作將會永久刪除您的帳號、情緒紀錄與所有相關資料，且無法復原。'),
+              actions: [
+                TextButton(
+                  child: const Text('取消'),
+                  onPressed: () => Navigator.of(ctx).pop(),
+                ),
+                TextButton(
+                  child:
+                      const Text('確認永久刪除', style: TextStyle(color: Colors.red)),
+                  onPressed: () {
+                    Navigator.of(ctx).pop(); // 關閉對話框
+                    _executeDeleteAccount(context); // 執行刪除邏輯
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _executeDeleteAccount(BuildContext context) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    // 顯示載入中的圈圈 (可選，建議加上以免使用者連按)
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      // 💡 第一步：刪除你在資料庫裡的紀錄 (極度重要！)
+      // Apple 規定必須連同資料一起刪除。如果你是用 Firestore，請取消下方註解並替換成你的路徑：
+      // await FirebaseFirestore.instance.collection('users').doc(user.uid).delete();
+      // await FirebaseFirestore.instance.collection('daily_records').where('userId', isEqualTo: user.uid).get().then((snapshot) {
+      //   for (DocumentSnapshot doc in snapshot.docs) { doc.reference.delete(); }
+      // });
+
+      // 💡 第二步：刪除 Firebase Auth 帳號本身
+      await user.delete();
+
+      // 關閉載入圈圈
+      if (context.mounted) Navigator.of(context).pop();
+
+      // 💡 第三步：刪除成功，登出並導向回你的登入頁 (SignInPage)
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('帳號與資料已成功刪除')));
+        Navigator.of(context)
+            .pushNamedAndRemoveUntil('/login', (route) => false); // 換成你的登入頁路由
+      }
+    } on FirebaseAuthException catch (e) {
+      // 關閉載入圈圈
+      if (context.mounted) Navigator.of(context).pop();
+
+      // 🚨 踩到地雷：Firebase 覺得你登入太久了，要求重新驗證
+      if (e.code == 'requires-recent-login') {
+        if (context.mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('需要重新驗證'),
+              content: const Text('為了保護您的資料安全，刪除帳號前請先「登出並重新登入」一次，再來執行刪除動作。'),
+              actions: [
+                TextButton(
+                  child: const Text('我知道了'),
+                  onPressed: () async {
+                    Navigator.of(ctx).pop();
+                    // 強制使用者登出
+                    await FirebaseAuth.instance.signOut();
+                    if (context.mounted) {
+                      Navigator.of(context)
+                          .pushNamedAndRemoveUntil('/login', (route) => false);
+                    }
+                  },
+                )
+              ],
+            ),
+          );
+        }
+      } else {
+        // 其他未知錯誤
+        if (context.mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('刪除失敗：${e.message}')));
+        }
+      }
+    } catch (e) {
+      if (context.mounted) Navigator.of(context).pop();
+      debugPrint('刪除帳號發生錯誤: $e');
+    }
   }
 }
