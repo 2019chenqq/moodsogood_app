@@ -63,6 +63,8 @@ class ProGate extends StatelessWidget {
 }
 
 class _UpgradeCard extends StatelessWidget {
+  const _UpgradeCard();
+
   @override
   Widget build(BuildContext context) {
     return Card(
