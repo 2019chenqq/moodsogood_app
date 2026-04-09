@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../models/daily_record.dart'; // 確保引用正確
 import '../utils/date_helper.dart';   // 確保引用正確
@@ -38,6 +39,7 @@ class DailyRecordHistory extends StatefulWidget {
 
 class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTickerProviderStateMixin {
   DateFilter _dateFilter = DateFilter.last7;
+  int _historyWeekStartDay = DateTime.monday;
   // MoodFilter 先暫時拿掉，因為圖表頁通常看全部比較準，或者你可以保留邏輯但只應用在列表
   
   // 分頁控制器
@@ -61,12 +63,70 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
     super.initState();
     final safeIndex = widget.initialTab.clamp(0, 1);
     _tabController = TabController(length: 2, vsync: this, initialIndex: safeIndex);
+    _loadHistoryWeekStartDay();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadHistoryWeekStartDay() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getInt('historyWeekStartDay');
+    if (!mounted) return;
+    setState(() {
+      _historyWeekStartDay = _normalizeWeekday(saved);
+    });
+  }
+
+  Future<void> _updateHistoryWeekStartDay(int weekday) async {
+    final normalized = _normalizeWeekday(weekday);
+    if (_historyWeekStartDay == normalized) return;
+    setState(() => _historyWeekStartDay = normalized);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('historyWeekStartDay', normalized);
+  }
+
+  int _normalizeWeekday(int? weekday) {
+    if (weekday == null || weekday < DateTime.monday || weekday > DateTime.sunday) {
+      return DateTime.monday;
+    }
+    return weekday;
+  }
+
+  DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  DateTimeRange _currentWeekWindow() {
+    final today = _dateOnly(DateTime.now());
+    final delta = (today.weekday - _historyWeekStartDay + 7) % 7;
+    final start = today.subtract(Duration(days: delta));
+    final end = start.add(const Duration(days: 6));
+    return DateTimeRange(start: start, end: end);
+  }
+
+  String _weekdayText(int weekday) {
+    const labels = {
+      DateTime.monday: '星期一',
+      DateTime.tuesday: '星期二',
+      DateTime.wednesday: '星期三',
+      DateTime.thursday: '星期四',
+      DateTime.friday: '星期五',
+      DateTime.saturday: '星期六',
+      DateTime.sunday: '星期日',
+    };
+    return labels[weekday] ?? '星期一';
+  }
+
+  String _dateText(DateTime d) {
+    final date = _dateOnly(d);
+    return '${date.month}/${date.day}';
+  }
+
+  String _last7WindowHintText() {
+    final range = _currentWeekWindow();
+    return '目前區間：${_dateText(range.start)} - ${_dateText(range.end)}（第一天：${_weekdayText(_historyWeekStartDay)}）';
   }
 
   @override
@@ -381,7 +441,10 @@ bool _isHistoryLocked(bool isPro) {
       // ─────────────────────
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-        child: WeeklySummaryCard(allRecords: allRecordsForSummary),
+        child: WeeklySummaryCard(
+          allRecords: allRecordsForSummary,
+          weekStartDay: _historyWeekStartDay,
+        ),
       ),
 
       // ─────────────────────
@@ -391,6 +454,24 @@ bool _isHistoryLocked(bool isPro) {
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
         child: _buildDateFilterChips(),
       ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        child: _buildWeekStartSelector(),
+      ),
+      if (_dateFilter == DateFilter.last7)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              _last7WindowHintText(),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: Colors.grey.shade600),
+            ),
+          ),
+        ),
 
       const Divider(height: 1),
 
@@ -509,6 +590,24 @@ bool _isHistoryLocked(bool isPro) {
           Expanded(child: _buildDateFilterChips(compact: true)),
         ],
       ),
+      Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: _buildWeekStartSelector(),
+      ),
+      if (_dateFilter == DateFilter.last7)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              _last7WindowHintText(),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: Colors.grey.shade600),
+            ),
+          ),
+        ),
       const SizedBox(height: 12),
 
       // ===== 情緒下拉選單（永遠可點）=====
@@ -628,7 +727,7 @@ bool _isHistoryLocked(bool isPro) {
       spacing: 8,
       children: [
         ChoiceChip(
-          label: const Text('最近 7 天'),
+          label: const Text('本週 7 天'),
           selected: _dateFilter == DateFilter.last7,
           onSelected: (_) => setState(() => _dateFilter = DateFilter.last7),
           visualDensity: compact ? VisualDensity.compact : null,
@@ -646,6 +745,43 @@ bool _isHistoryLocked(bool isPro) {
           visualDensity: compact ? VisualDensity.compact : null,
         ),
       ],
+    );
+  }
+
+  Widget _buildWeekStartSelector() {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.calendar_view_week, size: 18, color: Colors.grey.shade700),
+          const SizedBox(width: 8),
+          Text(
+            '第一天',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(width: 8),
+          DropdownButtonHideUnderline(
+            child: DropdownButton<int>(
+              value: _historyWeekStartDay,
+              onChanged: (value) {
+                if (value != null) {
+                  _updateHistoryWeekStartDay(value);
+                }
+              },
+              items: [
+                for (int weekday = DateTime.monday;
+                    weekday <= DateTime.sunday;
+                    weekday++)
+                  DropdownMenuItem<int>(
+                    value: weekday,
+                    child: Text(_weekdayText(weekday)),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
   
@@ -691,11 +827,22 @@ bool _isHistoryLocked(bool isPro) {
   // 篩選邏輯
   List<DailyRecord> _applyDateFilter(List<DailyRecord> input, DateFilter filter) {
     if (filter == DateFilter.all) return input;
-    final now = DateTime.now();
-    final days = filter == DateFilter.last7 ? 6 : 29;
-    final start = DateTime(now.year, now.month, now.day).subtract(Duration(days: days));
-    // _isBeforeDay(a, b) 表示 a < b
-    return input.where((r) => !r.date.isBefore(start)).toList();
+    if (filter == DateFilter.last7) {
+      final range = _currentWeekWindow();
+      final start = _dateOnly(range.start);
+      final end = _dateOnly(range.end);
+      return input.where((r) {
+        final date = _dateOnly(r.date);
+        return !date.isBefore(start) && !date.isAfter(end);
+      }).toList();
+    }
+
+    final today = _dateOnly(DateTime.now());
+    final start = today.subtract(const Duration(days: 29));
+    return input.where((r) {
+      final date = _dateOnly(r.date);
+      return !date.isBefore(start);
+    }).toList();
   }
   
   Widget _buildRecordSubtitle(BuildContext context, DailyRecord r) {
@@ -1188,20 +1335,38 @@ enum DateFilter { last7, last30, all }
 /// —— 簡易週報卡片：計算最近 7 天的概況 —— //
 class WeeklySummaryCard extends StatelessWidget {
   final List<DailyRecord> allRecords;
+  final int weekStartDay;
 
-  const WeeklySummaryCard({super.key, required this.allRecords});
+  const WeeklySummaryCard({
+    super.key,
+    required this.allRecords,
+    required this.weekStartDay,
+  });
+
+  DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  DateTimeRange _weekWindow() {
+    final today = _dateOnly(DateTime.now());
+    final normalizedWeekStart =
+        (weekStartDay >= DateTime.monday && weekStartDay <= DateTime.sunday)
+            ? weekStartDay
+            : DateTime.monday;
+    final delta = (today.weekday - normalizedWeekStart + 7) % 7;
+    final start = today.subtract(Duration(days: delta));
+    final end = start.add(const Duration(days: 6));
+    return DateTimeRange(start: start, end: end);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final start = DateTime(now.year, now.month, now.day)
-        .subtract(const Duration(days: 6)); // 最近 7 天（含今天）
+    final range = _weekWindow();
+    final start = _dateOnly(range.start);
+    final end = _dateOnly(range.end);
 
-    // 篩選出最近 7 天的紀錄
+    // 篩選出本週 7 天區間的紀錄
     final weekRecords = allRecords.where((r) {
-      // 只比對日期部分，忽略時間
-      final date = DateTime(r.date.year, r.date.month, r.date.day);
-      return !date.isBefore(start);
+      final date = _dateOnly(r.date);
+      return !date.isBefore(start) && !date.isAfter(end);
     }).toList();
 
     final totalDays = 7;
@@ -1248,13 +1413,21 @@ class WeeklySummaryCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '這週小結（最近 7 天）',
+              '這週小結（本週 7 天）',
               style: Theme.of(context)
                   .textTheme
                   .titleMedium
                   ?.copyWith(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
+            Text(
+              '區間：${start.month}/${start.day} - ${end.month}/${end.day}',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: Colors.grey.shade600),
+            ),
+            const SizedBox(height: 4),
             Text(
               '有紀錄的天數：$recordedDays / $totalDays 天',
               style: Theme.of(context).textTheme.bodyMedium,
