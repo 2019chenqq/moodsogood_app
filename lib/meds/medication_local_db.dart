@@ -214,6 +214,12 @@ class MedicationLocalDB {
     if (value is List) {
       return value.join(',');
     }
+    if (value is Iterable) {
+      return value.join(',');
+    }
+    if (value is String) {
+      return value;
+    }
     return '';
   }
 

@@ -179,7 +179,7 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
   }
 
   /// 讀你目前的 items schema：
-  /// { name, type(added/injected/doseChanged/stopped), oldDose, newDose, unit, stopReason }
+  /// { name, type(added/injected/doseChanged/scheduleChanged/stopped), oldDose, newDose, oldTimes, newTimes, unit, stopReason }
   static String _buildSummary(List items) {
     if (items.isEmpty) return '（本次沒有任何變更）';
 
@@ -190,6 +190,8 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
       final unit = (it['unit'] ?? '').toString();
       final oldDose = it['oldDose'];
       final newDose = it['newDose'];
+      final oldTimes = _timesToText(it['oldTimes']);
+      final newTimes = _timesToText(it['newTimes']);
 
       switch (type) {
         case 'added':
@@ -199,7 +201,13 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
         case 'injection':
           return '$name：已施打';
         case 'doseChanged':
-          return '$name：${oldDose ?? ''}→${newDose ?? ''} $unit';
+          final doseText = '$name：${oldDose ?? ''}→${newDose ?? ''} $unit';
+          if (oldTimes != newTimes && newTimes.isNotEmpty) {
+            return '$doseText；時間 $oldTimes→$newTimes';
+          }
+          return doseText;
+        case 'scheduleChanged':
+          return '$name：時間 $oldTimes→$newTimes';
         case 'stopped':
           return '$name：停藥';
         default:
@@ -239,6 +247,8 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
                   final unit = (it['unit'] ?? '').toString();
                   final oldDose = it['oldDose'];
                   final newDose = it['newDose'];
+                  final oldTimes = _timesToText(it['oldTimes']);
+                  final newTimes = _timesToText(it['newTimes']);
                   final stopReason = (it['stopReason'] ?? '').toString().trim();
 
                   String line;
@@ -248,6 +258,11 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
                     line = '已施打';
                   } else if (type == 'doseChanged') {
                     line = '調整：${oldDose ?? ''} → ${newDose ?? ''} $unit';
+                    if (oldTimes != newTimes && newTimes.isNotEmpty) {
+                      line = '$line；時間：$oldTimes → $newTimes';
+                    }
+                  } else if (type == 'scheduleChanged') {
+                    line = '時間調整：$oldTimes → $newTimes';
                   } else if (type == 'stopped') {
                     line = stopReason.isEmpty ? '停藥' : '停藥（原因：$stopReason）';
                   } else {
@@ -281,5 +296,18 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
         );
       },
     );
+  }
+
+  static String _timesToText(dynamic value) {
+    if (value is List) {
+      final parts = value.whereType<String>().where((s) => s.trim().isNotEmpty).toList();
+      if (parts.isEmpty) return '未設定';
+      return parts.join('、');
+    }
+    if (value is String) {
+      final t = value.trim();
+      return t.isEmpty ? '未設定' : t;
+    }
+    return '未設定';
   }
 }

@@ -8,7 +8,9 @@ import 'medication_local_db.dart';
 import 'add_medication_page.dart';
 import 'record_adjustment_history_page.dart';
 
-enum MedChangeType { unchanged, added, injected, doseChanged, stopped }
+enum MedChangeType { unchanged, added, injected, doseChanged, scheduleChanged, stopped }
+
+const List<String> kAdjustmentTimeSlots = ['早上', '中午', '下午', '晚上', '睡前', '需要時'];
 
 class RecordAdjustmentPage extends StatefulWidget {
   const RecordAdjustmentPage({super.key});
@@ -96,13 +98,16 @@ _MedDraft _ensureUiDraft(
 
     final unit = (baseData['unit'] as String?) ?? 'mg';
     final name = (baseData['name'] as String?) ?? '未命名藥物';
+    final oldTimes = _readTimes(baseData['times']);
 
     return _MedDraft(
       name: name,
       unit: unit,
       oldDose: oldDose,
+      oldTimes: oldTimes,
       type: MedChangeType.unchanged,
       newDose: oldDose, // 預設 = 原劑量
+      newTimes: List<String>.from(oldTimes),
     );
   });
 }
@@ -117,6 +122,29 @@ String _toStr(dynamic v, [String fallback = '']) {
   final s = (v ?? '').toString().trim();
   return s.isEmpty ? fallback : s;
 }
+
+List<String> _readTimes(dynamic raw) {
+  if (raw is List) {
+    final normalized = raw
+        .whereType<String>()
+        .map((t) => t.trim())
+        .where((t) => t.isNotEmpty)
+        .toSet()
+        .toList();
+    normalized.sort((a, b) => kAdjustmentTimeSlots.indexOf(a).compareTo(kAdjustmentTimeSlots.indexOf(b)));
+    return normalized;
+  }
+  if (raw is String && raw.trim().isNotEmpty) {
+    return _readTimes(raw.split(','));
+  }
+  return <String>[];
+}
+
+String _timesLabel(List<String> times) {
+  if (times.isEmpty) return '未設定';
+  return times.join('、');
+}
+
   @override
   void dispose() {
     _noteCtrl.dispose();
@@ -331,6 +359,7 @@ String _toStr(dynamic v, [String fallback = '']) {
                   onTap: () => setState(() {
                     draft.type = MedChangeType.unchanged;
                     draft.newDose = null;
+                    draft.newTimes = List<String>.from(draft.oldTimes);
                     draft.stopReason = null;
                   }),
                 ),
@@ -342,8 +371,21 @@ String _toStr(dynamic v, [String fallback = '']) {
                     draft.type = MedChangeType.doseChanged;
                     // 預設帶入目前劑量
                     draft.newDose ??= _doseToDouble(dose);
+                    draft.newTimes ??= List<String>.from(draft.oldTimes);
                   }),
                 ),
+                if (!isInjectionMed)
+                  _choiceChip(
+                    context,
+                    label: '時間調整',
+                    selected: draft.type == MedChangeType.scheduleChanged,
+                    onTap: () => setState(() {
+                      draft.type = MedChangeType.scheduleChanged;
+                      draft.newDose = null;
+                      draft.newTimes ??= List<String>.from(draft.oldTimes);
+                      draft.stopReason = null;
+                    }),
+                  ),
                 if (isInjectionMed)
                   _choiceChip(
                     context,
@@ -352,6 +394,7 @@ String _toStr(dynamic v, [String fallback = '']) {
                     onTap: () => setState(() {
                       draft.type = MedChangeType.injected;
                       draft.newDose = null;
+                      draft.newTimes = null;
                       draft.stopReason = null;
                     }),
                   ),
@@ -362,6 +405,7 @@ String _toStr(dynamic v, [String fallback = '']) {
                   onTap: () => setState(() {
                     draft.type = MedChangeType.stopped;
                     draft.newDose = null;
+                    draft.newTimes = null;
                   }),
                 ),
               ],
@@ -375,9 +419,31 @@ String _toStr(dynamic v, [String fallback = '']) {
                 valueText: draft.newDose == null ? '點擊輸入' : _doseToString(draft.newDose, unit),
                 onTap: () => _editDose(docId: med['id'] as String? ?? '', unit: unit),
               ),
+              if (!isInjectionMed) ...[
+                const SizedBox(height: 8),
+                _InlineEditRow(
+                  title: '服藥時間',
+                  valueText: _timesLabel(draft.newTimes ?? draft.oldTimes),
+                  onTap: () => _editTimes(docId: med['id'] as String? ?? ''),
+                ),
+              ],
               const SizedBox(height: 8),
               Text(
                 '建議填「調整後」的劑量（支援 0.5 / 1.25 這類小數）',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+              ),
+            ],
+
+            if (draft.type == MedChangeType.scheduleChanged && !isInjectionMed) ...[
+              const SizedBox(height: 10),
+              _InlineEditRow(
+                title: '服藥時間',
+                valueText: _timesLabel(draft.newTimes ?? draft.oldTimes),
+                onTap: () => _editTimes(docId: med['id'] as String? ?? ''),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '例如把「早上」改成「早上、晚上」。',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
               ),
             ],
@@ -476,6 +542,67 @@ Future<void> _editDose({
 
   setState(() {
     draft.newDose = picked;
+  });
+}
+
+Future<void> _editTimes({
+  required String docId,
+}) async {
+  final draft = _draftByDocId[docId]!;
+  final selected = <String>{...(draft.newTimes ?? draft.oldTimes)};
+  List<String>? picked;
+
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) {
+      return StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('調整服藥時間'),
+            content: SingleChildScrollView(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: kAdjustmentTimeSlots.map((slot) {
+                  return FilterChip(
+                    selected: selected.contains(slot),
+                    label: Text(slot),
+                    onSelected: (on) {
+                      setDialogState(() {
+                        if (on) {
+                          selected.add(slot);
+                        } else {
+                          selected.remove(slot);
+                        }
+                      });
+                    },
+                  );
+                }).toList(),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final ordered = kAdjustmentTimeSlots.where(selected.contains).toList();
+                  picked = ordered;
+                  Navigator.pop(dialogContext);
+                },
+                child: const Text('確定'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+
+  if (picked == null) return;
+  setState(() {
+    draft.newTimes = picked;
   });
 }
 
@@ -593,6 +720,8 @@ Future<void> _editDose({
           'type': itemType, // added/injected/doseChanged/stopped
           'oldDose': isAddedThisSession ? null : d.oldDose,
           'newDose': isAddedThisSession ? (d.newDose ?? d.oldDose) : d.newDose,
+          'oldTimes': isAddedThisSession ? null : d.oldTimes,
+          'newTimes': d.newTimes,
           'unit': d.unit,
           'stopReason': d.stopReason,
         };
@@ -644,10 +773,21 @@ Future<void> _editDose({
 
         if (d.type == MedChangeType.doseChanged) {
           patch['dose'] = d.newDose; // double
+          if (d.newTimes != null) {
+            patch['times'] = d.newTimes;
+          }
+          patch['isActive'] = true;
+        } else if (d.type == MedChangeType.scheduleChanged) {
+          if (d.newTimes != null) {
+            patch['times'] = d.newTimes;
+          }
           patch['isActive'] = true;
         } else if (d.type == MedChangeType.injected) {
           patch['isActive'] = true;
         } else if (d.type == MedChangeType.added) {
+          if (d.newTimes != null) {
+            patch['times'] = d.newTimes;
+          }
           patch['isActive'] = true;
         } else if (d.type == MedChangeType.stopped) {
           patch['isActive'] = false;
@@ -669,10 +809,21 @@ Future<void> _editDose({
 
           if (d.type == MedChangeType.doseChanged) {
             updated['dose'] = d.newDose;
+            if (d.newTimes != null) {
+              updated['times'] = d.newTimes;
+            }
+            updated['isActive'] = true;
+          } else if (d.type == MedChangeType.scheduleChanged) {
+            if (d.newTimes != null) {
+              updated['times'] = d.newTimes;
+            }
             updated['isActive'] = true;
           } else if (d.type == MedChangeType.injected) {
             updated['isActive'] = true;
           } else if (d.type == MedChangeType.added) {
+            if (d.newTimes != null) {
+              updated['times'] = d.newTimes;
+            }
             updated['isActive'] = true;
           } else if (d.type == MedChangeType.stopped) {
             updated['isActive'] = false;
@@ -745,6 +896,8 @@ Future<void> _editDose({
         return '已施打';
       case MedChangeType.doseChanged:
         return '調整';
+      case MedChangeType.scheduleChanged:
+        return '時間調整';
       case MedChangeType.stopped:
         return '停藥';
     }
@@ -767,16 +920,20 @@ class _MedDraft {
   String name;
   String unit;
   double oldDose;
+  List<String> oldTimes;
   MedChangeType type;
   double? newDose;
+  List<String>? newTimes;
   String? stopReason;
 
   _MedDraft({
     required this.name,
     required this.unit,
     required this.oldDose,
+    required this.oldTimes,
     required this.type,
     this.newDose,
+    this.newTimes,
   });
 
   factory _MedDraft.fromMap(Map<String, dynamic> m) {
@@ -784,12 +941,15 @@ class _MedDraft {
     final unit = (m['unit'] as String?) ?? 'mg';
     final dose = m['dose'];
     final oldDose = (dose is int) ? dose.toDouble() : (dose is double ? dose : 0.0);
+    final oldTimes = (m['times'] as List?)?.whereType<String>().toList() ?? <String>[];
 
     return _MedDraft(
       name: name,
       unit: unit,
       oldDose: oldDose,
+      oldTimes: oldTimes,
       type: MedChangeType.unchanged,
+      newTimes: List<String>.from(oldTimes),
     );
   }
 }
