@@ -11,6 +11,9 @@ import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import 'legal_markdown_page.dart';
 
+const bool kEnableReviewQuickLogin =
+    bool.fromEnvironment('ENABLE_REVIEW_QUICK_LOGIN', defaultValue: false);
+
 class SignInPage extends StatefulWidget {
   const SignInPage({super.key});
 
@@ -119,6 +122,40 @@ class _SignInPageState extends State<SignInPage> {
     }
   }
 
+  Future<void> _handleReviewQuickSignIn() async {
+    if (_loading) return;
+
+    setState(() {
+      _loading = true;
+      _loadingProvider = 'review';
+    });
+
+    try {
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: 'test@heartshine.app',
+        password: '12345678',
+      );
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('快速登入失敗：${e.message ?? e.code}')),
+      );
+      setState(() {
+        _loading = false;
+        _loadingProvider = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('快速登入失敗：$e')),
+      );
+      setState(() {
+        _loading = false;
+        _loadingProvider = null;
+      });
+    }
+  }
+
   String _generateNonce([int length = 32]) {
     const charset =
         '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
@@ -210,10 +247,9 @@ class _SignInPageState extends State<SignInPage> {
       final givenName = appleCredential.givenName?.trim() ?? '';
       final familyName = appleCredential.familyName?.trim() ?? '';
       final fullName = '$givenName $familyName'.trim();
-        final currentDisplayName = userCredential.user?.displayName?.trim() ?? '';
+      final currentDisplayName = userCredential.user?.displayName?.trim() ?? '';
 
-      if (fullName.isNotEmpty &&
-          currentDisplayName.isEmpty) {
+      if (fullName.isNotEmpty && currentDisplayName.isEmpty) {
         await userCredential.user?.updateDisplayName(fullName);
         debugPrint('🍎 Display name updated: $fullName');
       }
@@ -232,7 +268,7 @@ class _SignInPageState extends State<SignInPage> {
           message = '你已取消 Apple 登入';
           break;
         case AuthorizationErrorCode.failed:
-          message = 'Apple 登入失敗：${e.message ?? '授權失敗'}';
+          message = 'Apple 登入失敗：${e.message}';
           break;
         case AuthorizationErrorCode.invalidResponse:
           message = 'Apple 回傳資料無效，請稍後再試';
@@ -244,8 +280,7 @@ class _SignInPageState extends State<SignInPage> {
           message = '目前無法互動式登入 Apple ID';
           break;
         case AuthorizationErrorCode.unknown:
-        default:
-          message = 'Apple 登入失敗：${e.message ?? '未知錯誤'}';
+          message = 'Apple 登入失敗：${e.message}';
           break;
       }
 
@@ -455,6 +490,23 @@ class _SignInPageState extends State<SignInPage> {
                               foregroundColor: const Color(0xFF111315),
                               backgroundColor: Colors.white,
                               borderColor: Colors.white.withValues(alpha: 0.85),
+                            ),
+                          ],
+
+                          if (kEnableReviewQuickLogin) ...[
+                            const SizedBox(height: 8),
+                            TextButton(
+                              onPressed:
+                                  _loading ? null : _handleReviewQuickSignIn,
+                              child: Text(
+                                _loading && _loadingProvider == 'review'
+                                    ? '審核用快速登入中…'
+                                    : '審核用快速登入',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
                             ),
                           ],
 
