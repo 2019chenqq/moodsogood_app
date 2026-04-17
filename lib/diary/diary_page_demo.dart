@@ -132,15 +132,25 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
           EncryptionService? encService;
           if (key != null) encService = EncryptionService(key);
           var decryptFailed = false;
+          final fallbackValues = {
+            'title': _titleCtrl.text,
+            'content': _contentCtrl.text,
+            'themeSong': _songCtrl.text,
+            'highlight': _highlightCtrl.text,
+            'metaphor': _metaphorCtrl.text,
+            'conceited': _conceitedCtrl.text,
+            'proudOf': _proudOfCtrl.text,
+            'selfCare': _selfCareCtrl.text,
+          };
 
           // 🔓 建立一個輔助函數來解密文字
-          String decrypt(dynamic value) {
+          String decrypt(dynamic value, String fallback) {
             final str = (value ?? '') as String;
             if (encService != null && str.contains(':')) {
               final plain = encService.tryDecryptData(str);
               if (plain == null) {
                 decryptFailed = true;
-                return '';
+                return fallback.isNotEmpty ? fallback : '（解密失敗）';
               }
               return plain;
             }
@@ -150,14 +160,14 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
           // 將解密後的資料重新組裝，更新到畫面上
           final decryptedData = {
             ...data, // 保留不用加密的欄位 (如 date, overallMood 等分數)
-            'title': decrypt(data['title']),
-            'content': decrypt(data['content']),
-            'themeSong': decrypt(data['themeSong']),
-            'highlight': decrypt(data['highlight']),
-            'metaphor': decrypt(data['metaphor']),
-            'conceited': decrypt(data['conceited']),
-            'proudOf': decrypt(data['proudOf']),
-            'selfCare': decrypt(data['selfCare']),
+            'title': decrypt(data['title'], fallbackValues['title'] ?? ''),
+            'content': decrypt(data['content'], fallbackValues['content'] ?? ''),
+            'themeSong': decrypt(data['themeSong'], fallbackValues['themeSong'] ?? ''),
+            'highlight': decrypt(data['highlight'], fallbackValues['highlight'] ?? ''),
+            'metaphor': decrypt(data['metaphor'], fallbackValues['metaphor'] ?? ''),
+            'conceited': decrypt(data['conceited'], fallbackValues['conceited'] ?? ''),
+            'proudOf': decrypt(data['proudOf'], fallbackValues['proudOf'] ?? ''),
+            'selfCare': decrypt(data['selfCare'], fallbackValues['selfCare'] ?? ''),
           };
 
           _updateUIFromData(decryptedData);

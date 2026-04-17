@@ -63,9 +63,6 @@ class SecureStorageService {
 
   /// 🧩 嘗試取得金鑰；若保險箱是空的，會用 PIN + 雲端 salt 自動重建
   static Future<encrypt_lib.Key?> getOrRecoverKey() async {
-    final existing = await getKey();
-    if (existing != null) return existing;
-
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
@@ -81,8 +78,7 @@ class SecureStorageService {
         return null;
       }
 
-      // 先用本地快取的 salt（避免每次啟動都依賴網路）
-      String salt = (prefs.getString('e2eSalt') ?? '').trim();
+      final existing = await getKey();
       String verifier = (prefs.getString(_localVerifierKey) ?? '').trim();
 
       DocumentSnapshot<Map<String, dynamic>>? userDoc;
@@ -95,6 +91,28 @@ class SecureStorageService {
             .get();
       }
 
+      // verifier 本地沒有時才去雲端抓
+      if (verifier.isEmpty) {
+        await loadUserDocIfNeeded();
+        verifier = (userDoc?.data()?[_verifierField] as String?)?.trim() ?? '';
+        if (verifier.isNotEmpty) {
+          await prefs.setString(_localVerifierKey, verifier);
+        }
+      }
+
+      // 先驗證現有本機金鑰，避免誤用舊/錯金鑰造成整頁解密失敗。
+      if (existing != null) {
+        if (verifier.isEmpty || verifyKeyWithVerifier(key: existing, verifier: verifier)) {
+          return existing;
+        }
+
+        print('🚨 [保險箱] 現有金鑰與 verifier 不匹配，清除後改走重建流程');
+        await deleteKey();
+      }
+
+      // 先用本地快取的 salt（避免每次啟動都依賴網路）
+      String salt = (prefs.getString('e2eSalt') ?? '').trim();
+
       // 本地沒有 salt 才去雲端抓
       if (salt.isEmpty) {
         await loadUserDocIfNeeded();
@@ -103,15 +121,6 @@ class SecureStorageService {
         // 抓到後回寫本地快取
         if (salt.isNotEmpty) {
           await prefs.setString('e2eSalt', salt);
-        }
-      }
-
-      // verifier 本地沒有時才去雲端抓，避免每次登入都被網路卡住。
-      if (verifier.isEmpty) {
-        await loadUserDocIfNeeded();
-        verifier = (userDoc?.data()?[_verifierField] as String?)?.trim() ?? '';
-        if (verifier.isNotEmpty) {
-          await prefs.setString(_localVerifierKey, verifier);
         }
       }
 
@@ -152,15 +161,6 @@ class SecureStorageService {
       }
 
       await saveKey(recoveredKey);
-
-      // 舊帳號可能還沒有 verifier，補寫一次供後續重建安全校驗。
-      if (verifier.isEmpty) {
-        final newVerifier = buildKeyVerifier(recoveredKey);
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          _verifierField: newVerifier,
-        }, SetOptions(merge: true));
-        await prefs.setString(_localVerifierKey, newVerifier);
-      }
 
       final verified = await getKey();
       if (verified != null) {
