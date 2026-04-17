@@ -552,6 +552,28 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
       );
     }
 
+    final symptomDeltas = _buildSymptomDeltas(
+      before: _beforeSymptomRates,
+      after: _afterSymptomRates,
+      worsenThreshold: 20,
+    );
+
+    final emotionDeltas = _buildEmotionDeltas(
+      before: _beforeAvgEmotions,
+      after: _afterAvgEmotions,
+      worsenThreshold: 0.8,
+    );
+
+    final attentionSymptoms = symptomDeltas
+        .where((x) => x.kind == _DeltaKind.newlyAppeared || x.kind == _DeltaKind.worsened)
+        .toList();
+    final attentionEmotions = emotionDeltas
+        .where((x) => x.kind == _DeltaKind.newlyAppeared || x.kind == _DeltaKind.worsened)
+        .toList();
+
+    final improvedSymptoms = symptomDeltas.where((x) => x.kind == _DeltaKind.improved).toList();
+    final improvedEmotions = emotionDeltas.where((x) => x.kind == _DeltaKind.improved).toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -566,27 +588,209 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
                 const SizedBox(height: 8),
                 Text('藥物：${(_selectedMedData!['name'] ?? _selectedMedId).toString()}'),
               ],
+              const SizedBox(height: 8),
+              Text('信心等級：${_confidenceText(_beforeDaysCount, _afterDaysCount)}'),
+              Text('需關注症狀（新出現/惡化）：${attentionSymptoms.length} 項'),
+              Text('需關注情緒（新出現/惡化）：${attentionEmotions.length} 項'),
             ],
           ),
         ),
         const SizedBox(height: 12),
 
-        _CompareTable(
-          title: '症狀（出現率）',
-          before: _beforeSymptomRates,
-          after: _afterSymptomRates,
+        _DeltaTable(
+          title: '需關注：症狀（新出現/惡化）',
+          rows: attentionSymptoms,
           isPercentage: true,
-          highlightThreshold: 50,
         ),
         const SizedBox(height: 12),
 
-        _CompareTable(
-          title: '情緒（平均）',
-          before: _beforeAvgEmotions,
-          after: _afterAvgEmotions,
+        _DeltaTable(
+          title: '需關注：情緒（新出現/惡化）',
+          rows: attentionEmotions,
+        ),
+        const SizedBox(height: 12),
+
+        Card(
+          child: ExpansionTile(
+            title: const Text('展開完整分析（改善 + 全部差異）'),
+            subtitle: const Text('用來輔助回診判讀，預設收合以維持畫面乾淨'),
+            childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            children: [
+              _DeltaTable(
+                title: '改善：症狀',
+                rows: improvedSymptoms,
+                isPercentage: true,
+              ),
+              const SizedBox(height: 10),
+              _DeltaTable(
+                title: '改善：情緒',
+                rows: improvedEmotions,
+              ),
+              const SizedBox(height: 10),
+              _DeltaTable(
+                title: '全部差異：症狀',
+                rows: symptomDeltas,
+                isPercentage: true,
+              ),
+              const SizedBox(height: 10),
+              _DeltaTable(
+                title: '全部差異：情緒',
+                rows: emotionDeltas,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '提醒：本頁顯示的是關聯趨勢，不等於因果。請合併睡眠、壓力與生活事件判讀。',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
         ),
       ],
     );
+  }
+
+  String _confidenceText(int beforeDays, int afterDays) {
+    final minSide = beforeDays < afterDays ? beforeDays : afterDays;
+    if (minSide >= 5) return '高（前後至少 5 天）';
+    if (minSide >= 3) return '中（前後至少 3 天）';
+    return '低（資料天數偏少）';
+  }
+
+  List<_MetricDelta> _buildSymptomDeltas({
+    required Map<String, double> before,
+    required Map<String, double> after,
+    required double worsenThreshold,
+  }) {
+    final keys = {...before.keys, ...after.keys};
+    final out = <_MetricDelta>[];
+
+    for (final k in keys) {
+      final b = before[k];
+      final a = after[k] ?? 0;
+      if (a <= 0) continue;
+
+      if (b == null || b <= 0) {
+        out.add(_MetricDelta(
+          name: k,
+          before: b,
+          after: a,
+          kind: _DeltaKind.newlyAppeared,
+          severityScore: a,
+        ));
+        continue;
+      }
+
+      final diff = a - b;
+      if (diff >= worsenThreshold) {
+        out.add(_MetricDelta(
+          name: k,
+          before: b,
+          after: a,
+          kind: _DeltaKind.worsened,
+          severityScore: diff,
+        ));
+      } else if (diff <= -worsenThreshold) {
+        out.add(_MetricDelta(
+          name: k,
+          before: b,
+          after: a,
+          kind: _DeltaKind.improved,
+          severityScore: -diff,
+        ));
+      } else {
+        out.add(_MetricDelta(
+          name: k,
+          before: b,
+          after: a,
+          kind: _DeltaKind.minor,
+          severityScore: diff.abs(),
+        ));
+      }
+    }
+
+    out.sort((x, y) => y.severityScore.compareTo(x.severityScore));
+    return out;
+  }
+
+  List<_MetricDelta> _buildEmotionDeltas({
+    required Map<String, double> before,
+    required Map<String, double> after,
+    required double worsenThreshold,
+  }) {
+    final keys = {...before.keys, ...after.keys};
+    final out = <_MetricDelta>[];
+
+    for (final k in keys) {
+      final b = before[k];
+      final a = after[k];
+      if (a == null) continue;
+
+      final positive = _isPositiveEmotion(k);
+
+      if (b == null) {
+        out.add(_MetricDelta(
+          name: k,
+          before: null,
+          after: a,
+          kind: _DeltaKind.newlyAppeared,
+          severityScore: a,
+          positiveEmotion: positive,
+        ));
+        continue;
+      }
+
+      final rawDiff = a - b;
+      final worsenDelta = positive ? -rawDiff : rawDiff;
+
+      if (worsenDelta >= worsenThreshold) {
+        out.add(_MetricDelta(
+          name: k,
+          before: b,
+          after: a,
+          kind: _DeltaKind.worsened,
+          severityScore: worsenDelta,
+          positiveEmotion: positive,
+        ));
+      } else if (worsenDelta <= -worsenThreshold) {
+        out.add(_MetricDelta(
+          name: k,
+          before: b,
+          after: a,
+          kind: _DeltaKind.improved,
+          severityScore: -worsenDelta,
+          positiveEmotion: positive,
+        ));
+      } else {
+        out.add(_MetricDelta(
+          name: k,
+          before: b,
+          after: a,
+          kind: _DeltaKind.minor,
+          severityScore: worsenDelta.abs(),
+          positiveEmotion: positive,
+        ));
+      }
+    }
+
+    out.sort((x, y) => y.severityScore.compareTo(x.severityScore));
+    return out;
+  }
+
+  bool _isPositiveEmotion(String name) {
+    const positiveKeywords = [
+      '開心',
+      '快樂',
+      '愉悅',
+      '平靜',
+      '安定',
+      '動力',
+      '能量',
+      '希望',
+      '專注',
+      '食慾',
+      '活動量',
+    ];
+    return positiveKeywords.any((k) => name.contains(k));
   }
 }
 
@@ -740,6 +944,197 @@ class _CompareTable extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               '欄位：前段 / 後段 / 差值（後-前）${isPercentage ? '，單位 %' : ''}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AfterOnlyTable extends StatelessWidget {
+  final String title;
+  final Map<String, double> data;
+  final bool isPercentage;
+
+  const _AfterOnlyTable({
+    required this.title,
+    required this.data,
+    this.isPercentage = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final keys = data.keys.toList()..sort();
+    if (keys.isEmpty) {
+      return _Hint(text: '$title：沒有新項目');
+    }
+
+    String fmt(double x) {
+      final base = x.toStringAsFixed(isPercentage ? 1 : 2);
+      return isPercentage ? '$base%' : base;
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 10),
+            ...keys.map((k) {
+              final v = data[k]!;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  children: [
+                    Expanded(child: Text(k)),
+                    SizedBox(
+                      width: 90,
+                      child: Text(
+                        fmt(v),
+                        textAlign: TextAlign.right,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            const SizedBox(height: 4),
+            Text(
+              '只顯示前段未出現、後段才出現的項目。',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+enum _DeltaKind { newlyAppeared, worsened, improved, minor }
+
+class _MetricDelta {
+  final String name;
+  final double? before;
+  final double after;
+  final _DeltaKind kind;
+  final double severityScore;
+  final bool positiveEmotion;
+
+  const _MetricDelta({
+    required this.name,
+    required this.before,
+    required this.after,
+    required this.kind,
+    required this.severityScore,
+    this.positiveEmotion = false,
+  });
+}
+
+class _DeltaTable extends StatelessWidget {
+  final String title;
+  final List<_MetricDelta> rows;
+  final bool isPercentage;
+
+  const _DeltaTable({
+    required this.title,
+    required this.rows,
+    this.isPercentage = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (rows.isEmpty) {
+      return _Hint(text: '$title：沒有項目');
+    }
+
+    String fmt(double? v) {
+      if (v == null) return '—';
+      final base = v.toStringAsFixed(isPercentage ? 1 : 2);
+      return isPercentage ? '$base%' : base;
+    }
+
+    String diffText(_MetricDelta d) {
+      if (d.before == null) return '新出現';
+      final diff = d.after - d.before!;
+      final sign = diff >= 0 ? '+' : '';
+      final val = diff.toStringAsFixed(isPercentage ? 1 : 2);
+      return isPercentage ? '$sign$val%' : '$sign$val';
+    }
+
+    String kindText(_DeltaKind k) {
+      switch (k) {
+        case _DeltaKind.newlyAppeared:
+          return '新出現';
+        case _DeltaKind.worsened:
+          return '惡化';
+        case _DeltaKind.improved:
+          return '改善';
+        case _DeltaKind.minor:
+          return '輕微';
+      }
+    }
+
+    Color? kindColor(BuildContext context, _DeltaKind k) {
+      switch (k) {
+        case _DeltaKind.newlyAppeared:
+        case _DeltaKind.worsened:
+          return Theme.of(context).colorScheme.error;
+        case _DeltaKind.improved:
+          return Colors.green;
+        case _DeltaKind.minor:
+          return Theme.of(context).colorScheme.onSurfaceVariant;
+      }
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 10),
+            ...rows.map((row) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: Text(row.name)),
+                    SizedBox(
+                      width: 60,
+                      child: Text(fmt(row.before), textAlign: TextAlign.right),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 60,
+                      child: Text(fmt(row.after), textAlign: TextAlign.right),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 70,
+                      child: Text(diffText(row), textAlign: TextAlign.right),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 50,
+                      child: Text(
+                        kindText(row.kind),
+                        textAlign: TextAlign.right,
+                        style: TextStyle(color: kindColor(context, row.kind)),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            const SizedBox(height: 4),
+            Text(
+              '欄位：前段 / 後段 / 差值 / 分類${isPercentage ? '（單位 %）' : ''}',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
