@@ -9,6 +9,7 @@ import 'dart:io';
 import '../settings_page.dart';
 import '../pages/feesback_page.dart';
 import '../pages/hub_pages.dart';
+import '../pages/profile_page.dart';
 import '../Sign_in_page.dart';
 
 class MainDrawer extends StatefulWidget {
@@ -184,6 +185,18 @@ class _MainDrawerState extends State<MainDrawer> {
           ),
 
           const Divider(),
+
+          ListTile(
+            leading: const Icon(Icons.person_outline),
+            title: const Text('個人資料'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ProfilePage()),
+              );
+            },
+          ),
 
           ListTile(
             leading: const Icon(Icons.tune_rounded),

@@ -17,6 +17,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'firebase_options.dart';
 
 import 'Sign_in_page.dart';
+import 'Home_shell.dart';
 import 'app_globals.dart';
 import 'utils/notification_helper.dart';
 import 'utils/firebase_sync_config.dart';
@@ -543,8 +544,8 @@ class _LockWrapperState extends State<LockWrapper> {
       return AppLockScreen(onUnlocked: _onUnlocked);
     }
 
-    // ✅ 解鎖後，或沒開啟鎖定，就進入紀錄首頁
-    return const RecordHubPage();
+    // ✅ 解鎖後，或沒開啟鎖定，就進入含 Drawer 的主殼層
+    return const HomeShell();
   }
 }
 

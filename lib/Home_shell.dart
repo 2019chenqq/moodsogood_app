@@ -12,6 +12,7 @@ import 'pages/feesback_page.dart';
 
 import 'Sign_in_page.dart';
 import 'settings_page.dart';
+import 'pages/profile_page.dart';
 
 class HomeShell extends m.StatefulWidget {
   const HomeShell({super.key});
@@ -232,6 +233,18 @@ class _HomeShellState extends m.State<HomeShell> {
             m.Divider(),
 
             // 設定 (獨立頁面，使用跳轉)
+            m.ListTile(
+              leading: const m.Icon(m.Icons.person_outline),
+              title: const m.Text('個人資料'),
+              onTap: () {
+                m.Navigator.pop(context);
+                m.Navigator.push(
+                  context,
+                  m.MaterialPageRoute(builder: (_) => const ProfilePage()),
+                );
+              },
+            ),
+
             m.ListTile(
               leading: const m.Icon(m.Icons.settings),
               title: const m.Text('設定'),
