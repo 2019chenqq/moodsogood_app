@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../utils/date_helper.dart';
 import '../utils/firebase_sync_config.dart';
 import '../widgets/emotion_slider.dart';
+import 'ai_journal_reflection_page.dart';
 import 'diary_repository.dart';
 import '../utils/secure_storage_service.dart';
 import '../utils/encryption_service.dart';
@@ -245,6 +246,17 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
     }
   }
 
+  Future<void> _openAiReflection() async {
+    await _saveDraft();
+    if (!mounted) return;
+
+    await m.Navigator.of(context).push(
+      m.MaterialPageRoute(
+        builder: (_) => AiJournalReflectionPage(date: _day),
+      ),
+    );
+  }
+
  Future<void> _saveDraft() async {
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -475,6 +487,11 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
       appBar: m.AppBar(
         title: m.Text('編輯日記 - ${_day.month}/${_day.day}'),
         actions: [
+          m.IconButton(
+            tooltip: 'AI 正念回饋',
+            icon: const m.Icon(m.Icons.auto_awesome_rounded),
+            onPressed: _openAiReflection,
+          ),
           m.IconButton(
             tooltip: '刪除當日日記',
             icon: const m.Icon(m.Icons.delete_outline),

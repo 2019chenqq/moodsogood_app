@@ -20,6 +20,41 @@ const CRISIS_KEYWORDS = [
   "了結",
 ];
 
+const DIARY_FIELD_KEYS = [
+  "title",
+  "content",
+  "themeSong",
+  "highlight",
+  "metaphor",
+  "conceited",
+  "proudOf",
+  "selfCare",
+];
+
+const NEGATIVE_WORDS = [
+  "痛苦",
+  "崩潰",
+  "焦慮",
+  "害怕",
+  "低落",
+  "沮喪",
+  "疲憊",
+  "絕望",
+  "無助",
+];
+
+const POSITIVE_WORDS = [
+  "感謝",
+  "開心",
+  "平靜",
+  "放鬆",
+  "完成",
+  "進步",
+  "溫暖",
+  "期待",
+  "希望",
+];
+
 function detectCrisis(text) {
   const source = String(text || "");
   return CRISIS_KEYWORDS.some((keyword) => source.includes(keyword));
@@ -35,6 +70,171 @@ function stripMarkdownFence(text) {
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```$/, "")
     .trim();
+}
+
+function toNumber(value, fallback = null) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return fallback;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function normalizeDiaryFields(rawDiaryFields) {
+  const raw =
+    rawDiaryFields && typeof rawDiaryFields === "object" && !Array.isArray(rawDiaryFields)
+      ? rawDiaryFields
+      : {};
+
+  const result = {};
+  for (const key of DIARY_FIELD_KEYS) {
+    result[key] = String(raw[key] || "").trim().slice(0, 1200);
+  }
+
+  // 也帶上三個分數欄位，方便模型補充判讀
+  result.overallMood = toNumber(raw.overallMood, null);
+  result.overallHealth = toNumber(raw.overallHealth, null);
+  result.overallSleepQuality = toNumber(raw.overallSleepQuality, null);
+
+  return result;
+}
+
+function buildDiaryTextFromFields(fields) {
+  const sections = [
+    ["標題", fields.title],
+    ["內容", fields.content],
+    ["今日主題曲", fields.themeSong],
+    ["最想記錄的瞬間", fields.highlight],
+    ["今天情緒像", fields.metaphor],
+    ["為自己感到驕傲", fields.conceited],
+    ["做得不錯的地方", fields.proudOf],
+    ["可多照顧自己的地方", fields.selfCare],
+  ]
+    .filter(([, value]) => Boolean(value))
+    .map(([label, value]) => `${label}: ${value}`);
+
+  return sections.join("\n");
+}
+
+function countHits(source, words) {
+  return words.reduce((acc, w) => acc + (source.includes(w) ? 1 : 0), 0);
+}
+
+function extractEmotionEntries(dailyRecord) {
+  const raw = dailyRecord?.emotions;
+  const entries = [];
+
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      if (!item || typeof item !== "object") continue;
+      const name = String(item.name || "").trim();
+      const value = toNumber(item.value, null);
+      if (!name || value == null) continue;
+      entries.push({ name, score: clamp(Number(value), 0, 10) });
+    }
+  } else if (raw && typeof raw === "object") {
+    for (const [name, value] of Object.entries(raw)) {
+      const score = toNumber(value, null);
+      if (!name || score == null) continue;
+      entries.push({ name: String(name).trim(), score: clamp(Number(score), 0, 10) });
+    }
+  }
+
+  return entries;
+}
+
+function pickEmotionScore(entries, keywords) {
+  const found = entries.find((e) => keywords.some((k) => e.name.includes(k)));
+  return found ? found.score : null;
+}
+
+function buildEmotionModel(dailyRecord, diaryFields, diaryText) {
+  const emotionEntries = extractEmotionEntries(dailyRecord);
+  const mood = toNumber(dailyRecord.overallMood ?? diaryFields.overallMood ?? dailyRecord.mood, 5);
+  const health = toNumber(
+    dailyRecord.overallHealth ?? diaryFields.overallHealth ?? dailyRecord.health,
+    5,
+  );
+  const anxiety =
+    toNumber(dailyRecord.anxiety, null) ?? pickEmotionScore(emotionEntries, ["焦慮", "緊張", "擔心"]);
+  const energy =
+    toNumber(dailyRecord.energy, null) ?? pickEmotionScore(emotionEntries, ["能量", "活力", "精力"]);
+
+  const text = String(diaryText || "");
+  const negativeHits = countHits(text, NEGATIVE_WORDS);
+  const positiveHits = countHits(text, POSITIVE_WORDS);
+  const symptomsCount = Array.isArray(dailyRecord.symptoms) ? dailyRecord.symptoms.length : 0;
+
+  let compositeScore = mood * 0.55 + health * 0.25;
+  if (energy != null) {
+    compositeScore += energy * 0.2;
+  }
+  if (anxiety != null) {
+    // 焦慮越高，綜合情緒分數略微下修
+    compositeScore -= (anxiety - 5) * 0.22;
+  }
+
+  const emotionAvg =
+    emotionEntries.length > 0
+      ? emotionEntries.reduce((acc, e) => acc + e.score, 0) / emotionEntries.length
+      : null;
+
+  if (emotionAvg != null) {
+    compositeScore = compositeScore * 0.75 + emotionAvg * 0.25;
+  }
+
+  compositeScore += (positiveHits - negativeHits) * 0.2;
+  compositeScore -= symptomsCount * 0.08;
+  compositeScore = clamp(Number(compositeScore.toFixed(2)), 1, 10);
+
+  let moodBand = "平穩";
+  if (compositeScore >= 7.5) moodBand = "積極穩定";
+  else if (compositeScore < 4.5) moodBand = "低潮偏高";
+
+  let anxietyRisk = "未知";
+  if (anxiety != null) {
+    if (anxiety >= 7) anxietyRisk = "高";
+    else if (anxiety >= 5) anxietyRisk = "中";
+    else anxietyRisk = "低";
+  }
+
+  const topHighEmotions = [...emotionEntries]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+  const topLowEmotions = [...emotionEntries]
+    .sort((a, b) => a.score - b.score)
+    .slice(0, 2);
+
+  return {
+    compositeScore,
+    moodBand,
+    emotionEntries,
+    topHighEmotions,
+    topLowEmotions,
+    drivers: {
+      mood,
+      health,
+      anxiety,
+      energy,
+      emotionAvg,
+      symptomsCount,
+      positiveHits,
+      negativeHits,
+    },
+    risks: {
+      anxietyRisk,
+      symptomBurden: symptomsCount >= 5 ? "高" : symptomsCount >= 3 ? "中" : "低",
+    },
+  };
 }
 
 function normalizeReflection(payload, fallbackCrisis) {
@@ -58,6 +258,10 @@ function normalizeReflection(payload, fallbackCrisis) {
     crisisDetected: Boolean(payload.crisisDetected) || fallbackCrisis,
     isMock: false,
     model: String(payload.model || "gpt-4.1-mini"),
+    emotionModel:
+      payload.emotionModel && typeof payload.emotionModel === "object"
+        ? payload.emotionModel
+        : null,
   };
 }
 
@@ -117,21 +321,28 @@ exports.generateAiJournalReflection = onCall(
       throw new HttpsError("unauthenticated", "請先登入後再使用此功能");
     }
 
-    const { diaryContent, dailyRecord, date } = request.data || {};
-    if (!diaryContent || typeof diaryContent !== "string") {
-      throw new HttpsError("invalid-argument", "缺少 diaryContent");
+    const { diaryContent, diaryFields, dailyRecord, date } = request.data || {};
+
+    const safeDiaryFields = normalizeDiaryFields(diaryFields);
+    const composedDiaryText = [
+      String(diaryContent || "").trim(),
+      buildDiaryTextFromFields(safeDiaryFields),
+    ]
+      .filter(Boolean)
+      .join("\n\n")
+      .trim();
+    const trimmedDiary = composedDiaryText.slice(0, 8000);
+
+    if (!trimmedDiary) {
+      throw new HttpsError("invalid-argument", "缺少可分析的日記內容");
     }
 
-    const trimmedDiary = diaryContent.trim().slice(0, 6000);
     const safeDailyRecord =
       dailyRecord && typeof dailyRecord === "object" && !Array.isArray(dailyRecord)
         ? dailyRecord
         : {};
     const crisisDetected = detectCrisis(trimmedDiary);
-
-    if (!trimmedDiary) {
-      throw new HttpsError("invalid-argument", "日記內容不能為空");
-    }
+    const emotionModel = buildEmotionModel(safeDailyRecord, safeDiaryFields, trimmedDiary);
 
     try {
       const client = new OpenAI({ apiKey: openAiApiKey.value() });
@@ -143,23 +354,25 @@ exports.generateAiJournalReflection = onCall(
           {
             role: "system",
             content:
-              "你是一位使用繁體中文的心理支持助理。請基於使用者日記提供溫柔、具體、簡潔的正念反思。不要做醫療診斷、不要下病名、不要保證療效。若內容包含明確自傷或自殺意圖，要將 crisisDetected 設為 true。你只能輸出 JSON。",
+              "你是一位使用繁體中文的心理支持助理。請基於完整日記欄位做文本分析，並結合提供的 emotionModel（每日紀錄情緒分析模型）產生回饋。不要做醫療診斷、不要下病名、不要保證療效。情緒觀察段落禁止提及睡眠、就寢、醒來、失眠等睡眠資訊。若內容包含明確自傷或自殺意圖，要將 crisisDetected 設為 true。你只能輸出 JSON。",
           },
           {
             role: "user",
             content: JSON.stringify({
               task: "請輸出日記反思 JSON",
               rules: {
-                summary: "1 段 60-120 字",
-                emotionObservation: "1 段 60-120 字",
+                summary: "1 段 70-140 字，須反映多個日記欄位內容",
+                emotionObservation: "1 段 70-140 字，必須解讀 emotionModel.emotionEntries 的情緒名稱與分數，至少提到 2 個情緒名稱與其分數，並結合綜合分數與風險觀察，且不得出現任何睡眠相關字詞",
                 topics: "3 到 5 個短詞",
-                positiveFeedback: "1 段 60-120 字",
+                positiveFeedback: "1 段 70-140 字，聚焦使用者已做到的具體行為",
                 gratitudeQuestions: "剛好 3 題，每題一句",
                 tomorrowAction: "1 句可執行的小行動",
                 crisisDetected: "boolean",
               },
               date: date || "",
+              diaryFields: safeDiaryFields,
               dailyRecord: safeDailyRecord,
+              emotionModel,
               diaryContent: trimmedDiary,
             }),
           },
@@ -169,6 +382,12 @@ exports.generateAiJournalReflection = onCall(
       const rawText = completion.choices?.[0]?.message?.content || "";
       const parsed = JSON.parse(stripMarkdownFence(rawText));
       const normalized = normalizeReflection(parsed, crisisDetected);
+      normalized.emotionModel = emotionModel;
+
+      const emotionNames = (emotionModel.emotionEntries || []).map((e) => e.name);
+      const usedEmotionNameCount = emotionNames.filter(
+        (name) => name && normalized.emotionObservation.includes(name),
+      ).length;
 
       if (
         !normalized.summary ||
@@ -176,9 +395,10 @@ exports.generateAiJournalReflection = onCall(
         !normalized.positiveFeedback ||
         !normalized.tomorrowAction ||
         normalized.topics.length < 3 ||
-        normalized.gratitudeQuestions.length < 3
+        normalized.gratitudeQuestions.length < 3 ||
+        (emotionNames.length >= 2 && usedEmotionNameCount < 2)
       ) {
-        throw new Error("AI 回傳內容不完整");
+        throw new Error("AI 回傳內容不完整或未解讀情緒名稱分數");
       }
 
       return normalized;

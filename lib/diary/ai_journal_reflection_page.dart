@@ -9,8 +9,8 @@
 // Firestore 寫入：
 //   users/{uid}/aiJournalReflections/{yyyy-MM-dd}
 //
-// ⚠️  OpenAI 串接尚未實作，目前使用 generateMockAIReflection()
-//     之後只需替換該函數內容即可，其餘程式碼無需更動。
+// ✅  OpenAI 串接已實作：優先呼叫 Firebase Functions
+//     若雲端 AI 暫時失敗，會自動 fallback 到 generateMockAIReflection()。
 
 import 'dart:math';
 
@@ -208,8 +208,6 @@ class _AiJournalReflectionPageState
     await Future.delayed(const Duration(milliseconds: 1200));
 
     final mood = dailyRecord['overallMood'] ?? dailyRecord['mood'] ?? 5;
-    final sleep =
-        dailyRecord['overallSleepQuality'] ?? dailyRecord['sleep'] ?? 5;
 
     // ── Mock 資料庫（隨機挑選增加真實感）──
     final rng = Random();
@@ -221,7 +219,7 @@ class _AiJournalReflectionPageState
     ];
 
     final emotionObservations = [
-      '從文字的節奏與用詞來看，今天你可能帶著${mood >= 6 ? "輕盈愉快" : mood >= 4 ? "平靜沉著" : "些許疲憊"}的心情度過這一天。睡眠狀態（${sleep}/10）也在情緒的底色中留下了痕跡。',
+      '從文字的節奏與用詞來看，今天你可能帶著${mood >= 6 ? "輕盈愉快" : mood >= 4 ? "平靜沉著" : "些許疲憊"}的心情度過這一天。你對自己感受的描述很細膩，也展現了不逃避情緒的勇氣。',
       '你的情緒分數（${mood}/10）反映了今天的內在狀態。文字中可以感受到你正在認真整理自己的感受，這種自我覺察本身就很有意義。',
       '今天你的整體情緒${mood >= 7 ? "相當穩定，字裡行間流露著溫暖" : mood >= 5 ? "有些起伏，但你依然選擇好好記錄" : "可能有些低落，但你仍願意提筆，這份堅持值得被看見"}。',
     ];
@@ -293,11 +291,14 @@ class _AiJournalReflectionPageState
       'crisisDetected': raw['crisisDetected'] == true,
       'isMock': raw['isMock'] == true,
       if (raw['model'] != null) 'model': raw['model'].toString(),
+      if (raw['emotionModel'] is Map)
+        'emotionModel': Map<String, dynamic>.from(raw['emotionModel'] as Map),
     };
   }
 
   Future<Map<String, dynamic>> generateAIReflection({
     required String diaryContent,
+    required Map<String, dynamic> diaryFields,
     required Map<String, dynamic> dailyRecord,
   }) async {
     try {
@@ -306,6 +307,7 @@ class _AiJournalReflectionPageState
       final response = await callable.call({
         'date': _docId,
         'diaryContent': diaryContent,
+        'diaryFields': diaryFields,
         'dailyRecord': dailyRecord,
       });
 
@@ -341,15 +343,31 @@ class _AiJournalReflectionPageState
     });
 
     try {
+      final diaryFieldsForAi = {
+        'title': _diaryData?['title'] ?? '',
+        'content': _diaryData?['content'] ?? '',
+        'themeSong': _diaryData?['themeSong'] ?? '',
+        'highlight': _diaryData?['highlight'] ?? '',
+        'metaphor': _diaryData?['metaphor'] ?? '',
+        'conceited': _diaryData?['conceited'] ?? '',
+        'proudOf': _diaryData?['proudOf'] ?? '',
+        'selfCare': _diaryData?['selfCare'] ?? '',
+        'overallMood': _diaryData?['overallMood'],
+        'overallHealth': _diaryData?['overallHealth'],
+        'overallSleepQuality': _diaryData?['overallSleepQuality'],
+      };
+
       // 組裝日記文字（合併所有文字欄位）
       final diaryContent = [
-        _diaryData?['title'] ?? '',
-        _diaryData?['content'] ?? '',
-        _diaryData?['highlight'] ?? '',
-        _diaryData?['metaphor'] ?? '',
-        _diaryData?['proudOf'] ?? '',
-        _diaryData?['selfCare'] ?? '',
-      ].where((s) => s.toString().isNotEmpty).join('\n');
+        '標題: ${diaryFieldsForAi['title']}',
+        '內容: ${diaryFieldsForAi['content']}',
+        '今日主題曲: ${diaryFieldsForAi['themeSong']}',
+        '最想記錄的瞬間: ${diaryFieldsForAi['highlight']}',
+        '今天情緒像: ${diaryFieldsForAi['metaphor']}',
+        '為自己感到驕傲: ${diaryFieldsForAi['conceited']}',
+        '做得不錯的地方: ${diaryFieldsForAi['proudOf']}',
+        '可多照顧自己的地方: ${diaryFieldsForAi['selfCare']}',
+      ].where((s) => s.toString().trim().isNotEmpty).join('\n');
 
       // 危機關鍵字偵測（在呼叫 AI 之前先做，保護使用者）
       final crisis = _detectCrisis(diaryContent);
@@ -363,6 +381,7 @@ class _AiJournalReflectionPageState
       };
       final result = await generateAIReflection(
         diaryContent: diaryContent,
+        diaryFields: diaryFieldsForAi,
         dailyRecord: dailyRecordForAi,
       );
 
@@ -806,6 +825,97 @@ class _RecordGrid extends m.StatelessWidget {
     for (final entry in fields.entries) {
       final val = data[entry.key];
       if (val == null) continue;
+
+      // 睡眠欄位：只顯示總時數 + 夜間睡眠狀況
+      if (entry.key == 'sleep') {
+        final sleepMap = val is Map<String, dynamic> ? val : null;
+        if (sleepMap == null) continue;
+
+        // 計算夜間總時數
+        final sleepTimeStr = sleepMap['sleepTime'] as String?;
+        final wakeTimeStr = (sleepMap['finalWakeTime'] as String?)?.isNotEmpty == true
+            ? sleepMap['finalWakeTime'] as String
+            : sleepMap['wakeTime'] as String?;
+
+        String? hoursLabel;
+        if (sleepTimeStr != null && wakeTimeStr != null) {
+          try {
+            final sParts = sleepTimeStr.split(':');
+            final wParts = wakeTimeStr.split(':');
+            int sMin = int.parse(sParts[0]) * 60 + int.parse(sParts[1]);
+            int wMin = int.parse(wParts[0]) * 60 + int.parse(wParts[1]);
+            if (wMin <= sMin) wMin += 24 * 60; // overnight
+            final hours = (wMin - sMin) / 60.0;
+            hoursLabel = '${hours.toStringAsFixed(1)} 小時';
+          } catch (_) {}
+        }
+
+        if (hoursLabel != null) {
+          items.add(_ScoreChip(
+            label: '夜間睡眠',
+            icon: m.Icons.bedtime_outlined,
+            value: hoursLabel,
+            teal: teal,
+          ));
+        }
+
+        // 夜間睡眠狀況 flags
+        const sleepFlagLabels = <String, String>{
+          'good': '優',
+          'ok': '良好',
+          'earlyWake': '早醒',
+          'dreams': '多夢',
+          'lightSleep': '淺眠',
+          'nocturia': '夜尿',
+          'fragmented': '睡睡醒醒',
+          'insufficient': '睡眠不足',
+          'initInsomnia': '入睡困難 (躺超過 30 分鐘才入睡)',
+          'interrupted': '睡眠中斷 (醒來後超過 30 分鐘才又入睡)',
+        };
+        final flags = sleepMap['flags'];
+        if (flags is List && flags.isNotEmpty) {
+          items.add(
+            m.Padding(
+              padding: const m.EdgeInsets.only(top: 8),
+              child: m.Column(
+                crossAxisAlignment: m.CrossAxisAlignment.start,
+                children: [
+                  m.Row(
+                    children: [
+                      m.Icon(m.Icons.nightlight_round,
+                          size: 16, color: teal),
+                      const m.SizedBox(width: 5),
+                      const m.Text('夜間睡眠狀況',
+                          style: m.TextStyle(
+                              fontSize: 12, fontWeight: m.FontWeight.w600)),
+                    ],
+                  ),
+                  const m.SizedBox(height: 4),
+                  m.Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: flags
+                        .map(
+                          (s) => m.Chip(
+                            label: m.Text(
+                                sleepFlagLabels[s.toString()] ?? s.toString(),
+                                style: const m.TextStyle(fontSize: 11)),
+                            materialTapTargetSize:
+                                m.MaterialTapTargetSize.shrinkWrap,
+                            padding: m.EdgeInsets.zero,
+                            visualDensity: m.VisualDensity.compact,
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        continue;
+      }
+
       items.add(_ScoreChip(
         label: entry.value.label,
         icon: entry.value.icon,
@@ -816,44 +926,50 @@ class _RecordGrid extends m.StatelessWidget {
 
     // 症狀列表
     final symptoms = data['symptoms'];
-    if (symptoms is List && symptoms.isNotEmpty) {
-      items.add(
-        m.Padding(
-          padding: const m.EdgeInsets.only(top: 8),
-          child: m.Column(
-            crossAxisAlignment: m.CrossAxisAlignment.start,
-            children: [
-              m.Row(
-                children: [
-                  m.Icon(m.Icons.warning_amber_rounded,
-                      size: 16, color: m.Colors.orange.shade400),
-                  const m.SizedBox(width: 5),
-                  const m.Text('症狀',
-                      style: m.TextStyle(
-                          fontSize: 12, fontWeight: m.FontWeight.w600)),
-                ],
-              ),
-              const m.SizedBox(height: 4),
-              m.Wrap(
-                spacing: 6,
-                runSpacing: 4,
-                children: symptoms
-                    .map(
-                      (s) => m.Chip(
-                        label: m.Text(s.toString(),
-                            style: const m.TextStyle(fontSize: 11)),
-                        materialTapTargetSize:
-                            m.MaterialTapTargetSize.shrinkWrap,
-                        padding: m.EdgeInsets.zero,
-                        visualDensity: m.VisualDensity.compact,
-                      ),
-                    )
-                    .toList(),
-              ),
-            ],
+    if (symptoms is List) {
+      final symptomList = symptoms
+          .map((s) => s.toString().trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+      if (symptomList.isNotEmpty) {
+        items.add(
+          m.Padding(
+            padding: const m.EdgeInsets.only(top: 8),
+            child: m.Column(
+              crossAxisAlignment: m.CrossAxisAlignment.start,
+              children: [
+                m.Row(
+                  children: [
+                    m.Icon(m.Icons.warning_amber_rounded,
+                        size: 16, color: m.Colors.orange.shade400),
+                    const m.SizedBox(width: 5),
+                    const m.Text('症狀',
+                        style: m.TextStyle(
+                            fontSize: 12, fontWeight: m.FontWeight.w600)),
+                  ],
+                ),
+                const m.SizedBox(height: 4),
+                m.Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: symptomList
+                      .map(
+                        (s) => m.Chip(
+                          label: m.Text(s,
+                              style: const m.TextStyle(fontSize: 11)),
+                          materialTapTargetSize:
+                              m.MaterialTapTargetSize.shrinkWrap,
+                          padding: m.EdgeInsets.zero,
+                          visualDensity: m.VisualDensity.compact,
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
+            ),
           ),
-        ),
-      );
+        );
+      }
     }
 
     if (items.isEmpty) return _EmptyHint(text: '尚無可顯示的紀錄欄位。');
