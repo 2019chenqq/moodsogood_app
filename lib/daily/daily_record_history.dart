@@ -13,6 +13,7 @@ import '../widgets/main_drawer.dart';
 import '../providers/pro_provider.dart';
 import 'daily_record_repository.dart';
 import 'emotion_page_checkbox.dart';
+import '../utils/firebase_sync_config.dart';
 
 const Map<String, String> ksleepFlagMap = {
     'good': '優',
@@ -127,6 +128,71 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
   String _last7WindowHintText() {
     final range = _currentWeekWindow();
     return '目前區間：${_dateText(range.start)} - ${_dateText(range.end)}（第一天：${_weekdayText(_historyWeekStartDay)}）';
+  }
+
+  bool _hasSleepContent(SleepData s) {
+    final hasMedication =
+        s.tookHypnotic || (s.hypnoticName?.trim().isNotEmpty ?? false) || (s.hypnoticDose?.trim().isNotEmpty ?? false);
+    final hasTime = s.sleepTime != null || s.wakeTime != null || s.finalWakeTime != null;
+    final hasOther =
+        (s.midWakeList?.trim().isNotEmpty ?? false) || s.quality != null || s.flags.isNotEmpty || s.naps.isNotEmpty || (s.note?.trim().isNotEmpty ?? false);
+    return hasMedication || hasTime || hasOther;
+  }
+
+  bool _isNoDataRecord(DailyRecord r) {
+    final hasEmotions = r.emotions.any((e) => e.value != null && e.value! > 0);
+    final hasSymptoms = r.symptoms.any((s) => s.trim().isNotEmpty);
+    final hasMood = r.overallMood != null;
+    final hasSleep = _hasSleepContent(r.sleep);
+    final hasPeriod = r.isPeriod;
+
+    return !hasEmotions && !hasSymptoms && !hasMood && !hasSleep && !hasPeriod;
+  }
+
+  Future<void> _cleanupNoDataRecords(
+    String uid,
+    Map<String, DailyRecord> recordsMap,
+  ) async {
+    final idsToDelete = recordsMap.values
+        .where(_isNoDataRecord)
+        .map((r) => r.id)
+        .where((id) => id.trim().isNotEmpty)
+        .toSet()
+        .toList();
+
+    if (idsToDelete.isEmpty) return;
+
+    debugPrint('🧹 Cleaning ${idsToDelete.length} no-data records from history');
+
+    final repo = DailyRecordRepository();
+    for (final id in idsToDelete) {
+      try {
+        await repo.deleteDailyRecord(id);
+      } catch (e) {
+        debugPrint('⚠️ Local delete failed for $id: $e');
+      }
+    }
+
+    if (FirebaseSyncConfig.shouldSync()) {
+      try {
+        final batch = FirebaseFirestore.instance.batch();
+        for (final id in idsToDelete) {
+          final ref = FirebaseFirestore.instance
+              .collection('users')
+              .doc(uid)
+              .collection('dailyRecords')
+              .doc(id);
+          batch.delete(ref);
+        }
+        await batch.commit();
+      } catch (e) {
+        debugPrint('⚠️ Cloud delete failed for no-data records: $e');
+      }
+    }
+
+    for (final id in idsToDelete) {
+      recordsMap.remove(id);
+    }
   }
 
   @override
@@ -252,6 +318,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
 
     // 免費用戶：從本地加載即可
     if (!isPro) {
+      await _cleanupNoDataRecords(uid, recordsMap);
       debugPrint('✅ [FREE USER] Data loaded from local storage');
       final allRecords = recordsMap.values.toList();
       debugPrint('📊 Total records loaded: ${allRecords.length}');
@@ -280,6 +347,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
       debugPrint('⚠️  Firebase load failed (using local data): $e\nStacktrace: $st');
     }
 
+    await _cleanupNoDataRecords(uid, recordsMap);
+
     final allRecords = recordsMap.values.toList();
     debugPrint('📊 Total records loaded: ${allRecords.length}');
     return allRecords;
@@ -295,7 +364,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
     double? overallMood;
     if (emotions.isNotEmpty) {
       final sum = emotions.fold<int>(0, (acc, e) => acc + (e.value ?? 0));
-      overallMood = emotions.length > 0 ? (sum / emotions.length).toDouble() : null;
+      overallMood = (sum / emotions.length).toDouble();
     }
     
     return DailyRecord(
@@ -860,10 +929,11 @@ bool _isHistoryLocked(bool isPro) {
     }
 
     debugPrint('  Subtitle parts: $parts');
-    return Text(
-      parts.isEmpty ? '(無資料)' : parts.join(' · '),
-      style: Theme.of(context).textTheme.bodyMedium,
-    );
+    if (parts.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Text(parts.join(' · '), style: Theme.of(context).textTheme.bodyMedium);
   }
 }
 Future<void> clearPeriodForRecord(BuildContext context, DailyRecord r) async {

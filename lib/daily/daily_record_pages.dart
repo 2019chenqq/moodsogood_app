@@ -175,9 +175,19 @@ class SymptomPage extends StatelessWidget {
   final void Function(int index) onDelete;
   final void Function(String name, bool selected) onTogglePreset;
 
-  // 接收外部傳入的狀態
+  // 舊欄位保留：相容既有呼叫
   final bool isPeriod;
   final ValueChanged<bool> onTogglePeriod;
+
+  // 新增：生理期月曆模式
+  final Set<DateTime> periodMarkedDays;
+  final DateTime periodFocusedMonth;
+  final ValueChanged<DateTime> onTapPeriodDate;
+  final ValueChanged<DateTime> onChangePeriodMonth;
+  final int periodCycleLength;
+  final DateTime? nextExpectedStart;
+  final int? arrivalDeltaDays;
+  final bool periodBusy;
 
   const SymptomPage({
     super.key,
@@ -188,6 +198,14 @@ class SymptomPage extends StatelessWidget {
     required this.isPeriod,
     required this.onTogglePeriod,
     required this.onTogglePreset,
+    required this.periodMarkedDays,
+    required this.periodFocusedMonth,
+    required this.onTapPeriodDate,
+    required this.onChangePeriodMonth,
+    required this.periodCycleLength,
+    required this.nextExpectedStart,
+    required this.arrivalDeltaDays,
+    this.periodBusy = false,
   });
 
   @override
@@ -197,18 +215,6 @@ class SymptomPage extends StatelessWidget {
     final onSurface = colorScheme.onSurface;
     final outline = colorScheme.outlineVariant;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final activeColor = Colors.pinkAccent;
-    // 開啟時的背景 (ON)
-    final activeBg = isDark
-        ? Colors.pinkAccent.withOpacity(0.15) // 深色模式：深一點的粉紅透光
-        : Colors.pink.withOpacity(0.1); // 淺色模式：淺粉紅
-
-    // 關閉時的顏色 (OFF)
-    final inactiveColor = isDark ? Colors.pink.shade200 : Colors.pink.shade200;
-    final inactiveBg = isDark
-        ? const Color(0xFF2A1C20) // 深色模式：帶有粉色調的深灰
-        : const Color(0xFFFFF5F7); // 淺色模式：櫻花白
-
     const presetSymptoms = <String>{
       '心悸',
       '胸悶',
@@ -247,53 +253,19 @@ class SymptomPage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // 1. 生理期卡片
-        Card(
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: BorderSide(
-              color: isPeriod ? activeColor : inactiveColor.withOpacity(0.3),
-              width: 1.5,
-            ),
-          ),
-          color: isPeriod ? activeBg : inactiveBg,
-          child: SwitchListTile(
-            secondary: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: isPeriod
-                    ? Colors.pink.withOpacity(0.08)
-                    : Colors.blueGrey.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Image.asset(
-                'assets/icons/粉色水滴.png',
-                width: 28,
-                height: 28,
-                fit: BoxFit.contain,
-              ),
-            ),
-            title: Text(
-              isPeriod ? '生理期中 🩸' : '生理期來了嗎？',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: isPeriod ? Colors.pink : colorScheme.onSurface,
-              ),
-            ),
-            subtitle: Text(
-              isPeriod ? '紀錄中...' : '紀錄週期，預測下次經期',
-              style: TextStyle(
-                color: isPeriod ? Colors.pink.shade300 : Colors.grey,
-              ),
-            ),
-            value: isPeriod,
-            activeColor: activeColor,
-            onChanged: (v) => onTogglePeriod(v),
-          ),
+        _PeriodCalendarCard(
+          markedDays: periodMarkedDays,
+          focusedMonth: periodFocusedMonth,
+          isTodayPeriod: isPeriod,
+          onTapDate: onTapPeriodDate,
+          onChangeMonth: onChangePeriodMonth,
+          cycleLength: periodCycleLength,
+          nextExpectedStart: nextExpectedStart,
+          arrivalDeltaDays: arrivalDeltaDays,
+          busy: periodBusy,
         ),
 
-        const SizedBox(height: 24),
+        const SizedBox(height: 16),
 
         // 2. 症狀列表
         Card(
@@ -545,6 +517,301 @@ class SymptomPage extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _PeriodCalendarCard extends StatefulWidget {
+  final Set<DateTime> markedDays;
+  final DateTime focusedMonth;
+  final bool isTodayPeriod;
+  final ValueChanged<DateTime> onTapDate;
+  final ValueChanged<DateTime> onChangeMonth;
+  final int cycleLength;
+  final DateTime? nextExpectedStart;
+  final int? arrivalDeltaDays;
+  final bool busy;
+
+  const _PeriodCalendarCard({
+    required this.markedDays,
+    required this.focusedMonth,
+    required this.isTodayPeriod,
+    required this.onTapDate,
+    required this.onChangeMonth,
+    required this.cycleLength,
+    required this.nextExpectedStart,
+    required this.arrivalDeltaDays,
+    required this.busy,
+  });
+
+  @override
+  State<_PeriodCalendarCard> createState() => _PeriodCalendarCardState();
+}
+
+class _PeriodCalendarCardState extends State<_PeriodCalendarCard> {
+  bool _collapsed = true;
+
+  DateTime _d(DateTime date) => DateTime(date.year, date.month, date.day);
+
+  String _monthText(DateTime month) => '${month.year}年${month.month}月';
+
+  String _dateText(DateTime date) => '${date.month}/${date.day}';
+
+  List<DateTime> _buildMonthCells(DateTime month) {
+    final first = DateTime(month.year, month.month, 1);
+    final firstWeekdayOffset = (first.weekday - DateTime.monday + 7) % 7;
+    final start = first.subtract(Duration(days: firstWeekdayOffset));
+    return List.generate(42, (i) => _d(start.add(Duration(days: i))));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colorScheme = Theme.of(context).colorScheme;
+    final month = DateTime(widget.focusedMonth.year, widget.focusedMonth.month, 1);
+    final days = _buildMonthCells(month);
+    final today = _d(DateTime.now());
+
+    String etaText = '請點日期輸入月經第一天，系統會自動點亮後 6 天（共 7 天）';
+    if (widget.nextExpectedStart != null) {
+      etaText = '預估下次經期：${_dateText(widget.nextExpectedStart!)}';
+    }
+
+    String deltaText = '目前尚無提早/延遲資料';
+    if (widget.arrivalDeltaDays != null) {
+      if (widget.arrivalDeltaDays! > 0) {
+        deltaText = '最近一次：延遲 ${widget.arrivalDeltaDays!} 天';
+      } else if (widget.arrivalDeltaDays! < 0) {
+        deltaText = '最近一次：提早 ${widget.arrivalDeltaDays!.abs()} 天';
+      } else {
+        deltaText = '最近一次：準時來';
+      }
+    }
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(
+          color: widget.isTodayPeriod
+              ? Colors.pinkAccent
+              : (isDark ? Colors.pink.shade200 : Colors.pink.shade100),
+          width: 1.3,
+        ),
+      ),
+      color: isDark ? const Color(0xFF2A1C20) : const Color(0xFFFFF5F7),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.pink.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Image.asset(
+                    'assets/icons/粉色水滴.png',
+                    width: 24,
+                    height: 24,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    widget.isTodayPeriod ? '今天在生理期中 🩸' : '生理期月曆',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color:
+                          widget.isTodayPeriod ? Colors.pink : colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+                if (widget.busy)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                IconButton(
+                  tooltip: _collapsed ? '展開月曆' : '縮合月曆',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => setState(() => _collapsed = !_collapsed),
+                  icon: Icon(
+                    _collapsed ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
+                  ),
+                ),
+              ],
+            ),
+            AnimatedCrossFade(
+              duration: const Duration(milliseconds: 220),
+              firstCurve: Curves.easeOut,
+              secondCurve: Curves.easeIn,
+              crossFadeState:
+                  _collapsed ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+              firstChild: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        onPressed: widget.busy
+                            ? null
+                            : () => widget.onChangeMonth(
+                                DateTime(month.year, month.month - 1, 1),
+                              ),
+                        icon: const Icon(Icons.chevron_left),
+                      ),
+                      Expanded(
+                        child: Center(
+                          child: Text(
+                            _monthText(month),
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        onPressed: widget.busy
+                            ? null
+                            : () => widget.onChangeMonth(
+                                DateTime(month.year, month.month + 1, 1),
+                              ),
+                        icon: const Icon(Icons.chevron_right),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  const Row(
+                    children: [
+                      Expanded(child: Center(child: Text('一'))),
+                      Expanded(child: Center(child: Text('二'))),
+                      Expanded(child: Center(child: Text('三'))),
+                      Expanded(child: Center(child: Text('四'))),
+                      Expanded(child: Center(child: Text('五'))),
+                      Expanded(child: Center(child: Text('六'))),
+                      Expanded(child: Center(child: Text('日'))),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: days.length,
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 7,
+                      mainAxisSpacing: 6,
+                      crossAxisSpacing: 6,
+                    ),
+                    itemBuilder: (_, i) {
+                      final day = days[i];
+                      final inMonth = day.month == month.month;
+                      final selected = widget.markedDays.contains(day);
+                      final isToday = _d(day) == today;
+
+                      Color fg = inMonth
+                          ? colorScheme.onSurface
+                          : colorScheme.onSurface.withValues(alpha: 0.35);
+                      Color bg = Colors.transparent;
+                      BorderSide border = BorderSide.none;
+
+                      if (selected) {
+                        fg = Colors.white;
+                        bg = Colors.pink;
+                      } else if (isToday) {
+                        border = BorderSide(
+                          color: Colors.pink.withValues(alpha: 0.75),
+                          width: 1.2,
+                        );
+                      }
+
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: widget.busy ? null : () => widget.onTapDate(day),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: bg,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.fromBorderSide(border),
+                          ),
+                          child: Center(
+                            child: Text(
+                              '${day.day}',
+                              style: TextStyle(
+                                color: fg,
+                                fontWeight:
+                                    selected ? FontWeight.w700 : FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+              secondChild: Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '月曆已縮合，點右上角可展開。',
+                    style: TextStyle(
+                      color: colorScheme.onSurface.withValues(alpha: 0.66),
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '系統自動計算平均週期：約 ${widget.cycleLength} 天',
+              style: TextStyle(
+                color: colorScheme.onSurface.withValues(alpha: 0.78),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              etaText,
+              style: TextStyle(
+                color: colorScheme.onSurface.withValues(alpha: 0.78),
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              deltaText,
+              style: TextStyle(
+              color: widget.arrivalDeltaDays == null
+                    ? colorScheme.onSurface.withValues(alpha: 0.72)
+                : (widget.arrivalDeltaDays == 0
+                        ? Colors.green.shade600
+                  : (widget.arrivalDeltaDays! > 0
+                            ? Colors.orange.shade700
+                            : Colors.blue.shade700)),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '點已亮的日期可取消。',
+              style: TextStyle(
+                color: colorScheme.onSurface.withValues(alpha: 0.66),
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
 import '../utils/date_helper.dart';
@@ -28,6 +29,11 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   int _index = 0;
   bool _isSaving = false;
   bool _isPeriod = false;
+  final Set<DateTime> _periodSelectedDates = <DateTime>{};
+  DateTime _periodFocusedMonth =
+      DateTime(DateTime.now().year, DateTime.now().month, 1);
+  int _periodCycleLength = 28;
+  bool _isUpdatingPeriodCalendar = false;
   bool _useNewEmotionPage = true; // 可切換新舊情緒頁
   int? _lastSuicidalValue;
 
@@ -38,7 +44,303 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   @override
   void initState() {
     super.initState();
+    _loadPeriodCalendarState();
     _loadExistingData(_recordDate); // 一進來就載入今天的紀錄（含生理期狀態）
+  }
+
+  DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  List<DateTime> _periodStarts() {
+    final sorted = _periodSelectedDates.toList()..sort();
+    if (sorted.isEmpty) return const [];
+
+    final starts = <DateTime>[];
+    for (final day in sorted) {
+      final prev = day.subtract(const Duration(days: 1));
+      if (!_periodSelectedDates.contains(prev)) {
+        starts.add(day);
+      }
+    }
+    return starts;
+  }
+
+  int _inferCycleLengthFromDays(Set<DateTime> markedDays, {int fallback = 28}) {
+    if (markedDays.isEmpty) return fallback;
+    final sorted = markedDays.toList()..sort();
+    final starts = <DateTime>[];
+    for (final day in sorted) {
+      final prev = day.subtract(const Duration(days: 1));
+      if (!markedDays.contains(prev)) {
+        starts.add(day);
+      }
+    }
+    if (starts.length < 2) return fallback;
+
+    final intervals = <int>[];
+    for (int i = 1; i < starts.length; i++) {
+      final diff = _dateOnly(starts[i]).difference(_dateOnly(starts[i - 1])).inDays;
+      if (diff >= 15 && diff <= 60) {
+        intervals.add(diff);
+      }
+    }
+    if (intervals.isEmpty) return fallback;
+
+    final sum = intervals.fold<int>(0, (acc, v) => acc + v);
+    final avg = (sum / intervals.length).round();
+    return avg.clamp(21, 45);
+  }
+
+  DateTime? _predictedNextPeriodStart() {
+    final starts = _periodStarts();
+    if (starts.isEmpty) return null;
+    return starts.last.add(Duration(days: _periodCycleLength));
+  }
+
+  int? _arrivalDeltaDays() {
+    final starts = _periodStarts();
+    if (starts.length < 2) return null;
+    final previous = starts[starts.length - 2];
+    final latest = starts.last;
+    final expected = previous.add(Duration(days: _periodCycleLength));
+    return _dateOnly(latest).difference(_dateOnly(expected)).inDays;
+  }
+
+  Future<void> _loadPeriodCalendarState() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    final now = DateTime.now();
+    final startDate = _dateOnly(now.subtract(const Duration(days: 540)));
+    final endDate = _dateOnly(now.add(const Duration(days: 365)));
+    final selected = <DateTime>{};
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedCycle = prefs.getInt('period_cycle_length');
+      if (savedCycle != null && savedCycle >= 21 && savedCycle <= 45) {
+        _periodCycleLength = savedCycle;
+      }
+
+      final savedDays = prefs.getStringList('period_selected_dates') ?? const [];
+      for (final id in savedDays) {
+        final d = DateTime.tryParse(id);
+        if (d != null) selected.add(_dateOnly(d));
+      }
+    } catch (_) {}
+
+    try {
+      final repo = DailyRecordRepository();
+      final localRecords = await repo.getDailyRecordsByDateRange(
+        userId: uid,
+        startDate: startDate,
+        endDate: endDate,
+      );
+      for (final row in localRecords) {
+        final periodData = row['periodData'];
+        final isPeriod = periodData is Map && periodData['isPeriod'] == true;
+        if (!isPeriod) continue;
+        final date = DateTime.tryParse(row['date']?.toString() ?? '');
+        if (date != null) {
+          selected.add(_dateOnly(date));
+        }
+      }
+    } catch (_) {}
+
+    if (FirebaseSyncConfig.shouldSync()) {
+      try {
+        final configRef = FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('settings')
+            .doc('periodTracker');
+        final configSnap = await configRef.get();
+        final config = configSnap.data();
+        final cloudCycle = (config?['cycleLength'] as num?)?.toInt();
+        if (cloudCycle != null && cloudCycle >= 21 && cloudCycle <= 45) {
+          _periodCycleLength = cloudCycle;
+        }
+
+        final periodSnap = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('dailyRecords')
+            .where('date',
+                isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
+            .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
+            .get();
+
+        for (final doc in periodSnap.docs) {
+          if (doc.data()['isPeriod'] != true) continue;
+          final ts = doc.data()['date'] as Timestamp?;
+          if (ts != null) {
+            selected.add(_dateOnly(ts.toDate()));
+          }
+        }
+      } catch (e) {
+        debugPrint('讀取生理期月曆資料失敗: $e');
+      }
+    }
+
+    if (!mounted) return;
+    _periodCycleLength = _inferCycleLengthFromDays(
+      selected,
+      fallback: _periodCycleLength,
+    );
+    setState(() {
+      _periodSelectedDates
+        ..clear()
+        ..addAll(selected);
+      _isPeriod = _periodSelectedDates.contains(_dateOnly(_recordDate));
+    });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('period_cycle_length', _periodCycleLength);
+    } catch (_) {}
+  }
+
+  Future<void> _persistPeriodDatesToPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final ids = _periodSelectedDates.toList()
+        ..sort();
+      await prefs.setStringList(
+        'period_selected_dates',
+        ids.map(DateHelper.toId).toList(),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _upsertPeriodDayLocal({
+    required String uid,
+    required DateTime day,
+    required bool isPeriod,
+    String? startId,
+  }) async {
+    final repo = DailyRecordRepository();
+    final existing = await repo.getDailyRecord(userId: uid, date: day);
+
+    await repo.saveDailyRecord(
+      id: DateHelper.toId(day),
+      userId: uid,
+      date: day,
+      emotions: (existing?['emotions'] as Map?)?.cast<String, dynamic>(),
+      sleep: (existing?['sleep'] as Map?)?.cast<String, dynamic>(),
+      bodySymptoms: (existing?['bodySymptoms'] as List?)
+          ?.map((e) => e.toString())
+          .toList(),
+      dailyActivities:
+          (existing?['dailyActivities'] as Map?)?.cast<String, dynamic>(),
+      medicines: (existing?['medicines'] as List?)
+          ?.map((e) => (e as Map).cast<String, dynamic>())
+          .toList(),
+      periodData: {
+        'isPeriod': isPeriod,
+        'periodStartId': isPeriod ? startId : null,
+        'periodEndId': null,
+        'cycleLength': _periodCycleLength,
+      },
+    );
+  }
+
+  Future<void> _applyPeriodDaysUpdate({
+    required Set<DateTime> days,
+    required bool isPeriod,
+    String? startId,
+  }) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || days.isEmpty || _isUpdatingPeriodCalendar) return;
+
+    setState(() => _isUpdatingPeriodCalendar = true);
+    try {
+      if (isPeriod) {
+        _periodSelectedDates.addAll(days);
+      } else {
+        _periodSelectedDates.removeAll(days);
+      }
+      _isPeriod = _periodSelectedDates.contains(_dateOnly(_recordDate));
+      _periodCycleLength = _inferCycleLengthFromDays(
+        _periodSelectedDates,
+        fallback: _periodCycleLength,
+      );
+      await _persistPeriodDatesToPrefs();
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('period_cycle_length', _periodCycleLength);
+      } catch (_) {}
+
+      for (final day in days) {
+        await _upsertPeriodDayLocal(
+          uid: uid,
+          day: day,
+          isPeriod: isPeriod,
+          startId: startId,
+        );
+      }
+
+      if (FirebaseSyncConfig.shouldSync()) {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('settings')
+            .doc('periodTracker')
+            .set({
+          'cycleLength': _periodCycleLength,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
+        final batch = FirebaseFirestore.instance.batch();
+        for (final day in days) {
+          final docId = DateHelper.toId(day);
+          final ref = FirebaseFirestore.instance
+              .collection('users')
+              .doc(uid)
+              .collection('dailyRecords')
+              .doc(docId);
+          batch.set(
+            ref,
+            {
+              'date': Timestamp.fromDate(day),
+              'isPeriod': isPeriod,
+              'periodStartId': isPeriod ? startId : null,
+              'periodEndId': null,
+              'periodCycleLength': _periodCycleLength,
+              'updatedAt': FieldValue.serverTimestamp(),
+            },
+            SetOptions(merge: true),
+          );
+        }
+        await batch.commit();
+      }
+    } catch (e) {
+      debugPrint('更新生理期月曆失敗: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('更新生理期資料失敗：$e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isUpdatingPeriodCalendar = false);
+      }
+    }
+  }
+
+  Future<void> _onTapPeriodDate(DateTime date) async {
+    final day = _dateOnly(date);
+    if (_periodSelectedDates.contains(day)) {
+      await _applyPeriodDaysUpdate(days: {day}, isPeriod: false);
+      return;
+    }
+
+    final startId = DateHelper.toId(day);
+    final autoDays = Set<DateTime>.from(
+      List.generate(7, (i) => day.add(Duration(days: i))),
+    );
+    await _applyPeriodDaysUpdate(
+      days: autoDays,
+      isPeriod: true,
+      startId: startId,
+    );
   }
 
   void _resetForm({bool keepPeriodStatus = false}) {
@@ -304,8 +606,9 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         ..clear()
         ..addAll(sleepData.naps);
 
-      // 生理期狀態
-      _isPeriod = periodData?['isPeriod'] ?? false;
+      // 生理期狀態（月曆資料優先）
+      final localPeriod = periodData?['isPeriod'] == true;
+      _isPeriod = _periodSelectedDates.contains(_dateOnly(date)) || localPeriod;
 
       debugPrint('✅ All data applied to UI successfully');
     });
@@ -374,8 +677,9 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
           ),
         );
 
-      // 生理期狀態
-      _isPeriod = record.isPeriod == true;
+        // 生理期狀態（月曆資料優先）
+        _isPeriod =
+          _periodSelectedDates.contains(_dateOnly(date)) || record.isPeriod;
     });
   }
 
@@ -411,39 +715,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   }
 
   Future<void> _loadPeriodState(DateTime currentDate) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-
-    try {
-      final yesterdayDate = currentDate.subtract(const Duration(days: 1));
-      final yesterdayId = DateHelper.toId(yesterdayDate);
-
-      final yesterdaySnap = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('dailyRecords')
-          .doc(yesterdayId)
-          .get();
-
-      if (!yesterdaySnap.exists || yesterdaySnap.data() == null) {
-        _isPeriod = false;
-        return;
-      }
-
-      final yesterdayRecord = DailyRecord.fromFirestore(yesterdaySnap);
-
-      if (yesterdayRecord.isPeriod == true &&
-          yesterdayRecord.periodEndId == null) {
-        _isPeriod = true;
-        debugPrint('🔄 自動延續生理期到今天（昨天是經期中）');
-      } else {
-        _isPeriod = false;
-        debugPrint('⏹ 昨天不是經期中或已經結束，不延續');
-      }
-    } catch (e) {
-      debugPrint('讀取昨天的生理期狀態失敗: $e');
-      _isPeriod = false;
-    }
+    _isPeriod = _periodSelectedDates.contains(_dateOnly(currentDate));
   }
 
   Future<void> _pickRecordDate() async {
@@ -454,7 +726,10 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       lastDate: DateTime(2100, 12, 31),
     );
     if (picked != null) {
-      setState(() => _recordDate = picked);
+      setState(() {
+        _recordDate = picked;
+        _periodFocusedMonth = DateTime(picked.year, picked.month, 1);
+      });
       await _loadExistingData(_recordDate);
     }
   }
@@ -514,6 +789,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
               .toList(),
         },
         'savedAt': FieldValue.serverTimestamp(),
+        'periodCycleLength': _periodCycleLength,
       };
 
       // 計算整體情緒：所有已選情緒的平均值
@@ -534,6 +810,10 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         }
         payload['periodStartId'] = oldStartId;
       }
+
+        payload['periodNextExpectedStart'] =
+          _predictedNextPeriodStart()?.toIso8601String();
+        payload['periodArrivalDeltaDays'] = _arrivalDeltaDays();
 
       // Only sync to Firebase if enabled
       if (FirebaseSyncConfig.shouldSync()) {
@@ -597,6 +877,10 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
             'isPeriod': _isPeriod,
             'periodStartId': _isPeriod ? (oldStartId ?? docId) : oldStartId,
             'periodEndId': !_isPeriod && oldIsPeriod ? docId : null,
+            'cycleLength': _periodCycleLength,
+            'nextExpectedStart':
+                _predictedNextPeriodStart()?.toIso8601String(),
+            'arrivalDeltaDays': _arrivalDeltaDays(),
           },
         );
         debugPrint('✅ Local save completed successfully');
@@ -763,6 +1047,18 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         },
         isPeriod: _isPeriod,
         onTogglePeriod: (v) => setState(() => _isPeriod = v),
+        periodMarkedDays: _periodSelectedDates,
+        periodFocusedMonth: _periodFocusedMonth,
+        onTapPeriodDate: _onTapPeriodDate,
+        onChangePeriodMonth: (month) {
+          setState(() {
+            _periodFocusedMonth = DateTime(month.year, month.month, 1);
+          });
+        },
+        periodCycleLength: _periodCycleLength,
+        nextExpectedStart: _predictedNextPeriodStart(),
+        arrivalDeltaDays: _arrivalDeltaDays(),
+        periodBusy: _isUpdatingPeriodCalendar,
       )),
       _pageWrapper(SleepPage(
         sleepTime: sleepTime,
