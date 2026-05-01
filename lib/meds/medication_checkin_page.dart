@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 
 import 'medication_local_db.dart';
 import 'medication_reminder_service.dart';
-import '../utils/notification_helper.dart';
 
 class MedicationCheckinPage extends StatefulWidget {
   const MedicationCheckinPage({super.key});
@@ -41,6 +40,7 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
   List<_CheckinItem> _items = [];
   Map<String, _CheckinStatus> _statusByKey = {};
   Map<String, DateTime> _statusAt = {};
+  Map<String, double> _actualAmountByKey = {};
   Map<String, List<DateTime>> _prnEventsByKey = {};
 
   @override
@@ -138,26 +138,24 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
     }
   }
 
-  Future<void> _sendTestReminder() async {
-    setState(() => _saving = true);
-    try {
-      await NotificationHelper().scheduleTestNotificationIn5Seconds(
-        payload: NotificationHelper.medicationCheckinPayload,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已排程 5 秒後測試通知，請先不要關閉通知權限')),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('測試通知排程失敗')),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _saving = false);
-      }
+  void _ensureFixedSlotKeys({
+    required Map<String, dynamic> checksMap,
+    required Map<String, dynamic> statusesMap,
+  }) {
+    for (final item in _items.where((e) => e.slot != '需要時')) {
+      final key = _itemKey(item);
+      checksMap.putIfAbsent(key, () => false);
+      statusesMap.putIfAbsent(key, () => _CheckinStatus.pending.value);
     }
+  }
+
+  String _fmtDateTime(DateTime dt) {
+    final y = dt.year.toString().padLeft(4, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    final hh = dt.hour.toString().padLeft(2, '0');
+    final mm = dt.minute.toString().padLeft(2, '0');
+    return '$y/$m/$d $hh:$mm';
   }
 
   Future<void> _loadStats(String uid) async {
@@ -307,6 +305,7 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
         _items = [];
         _statusByKey = {};
         _statusAt = {};
+        _actualAmountByKey = {};
         _prnEventsByKey = {};
       });
       return;
@@ -331,6 +330,11 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
             .trim();
         final dose = med['dose'];
         final unit = (med['unit'] ?? 'mg').toString();
+        final type = (med['type'] ?? 'tablet').toString();
+        final plannedAmount = (type == 'drops')
+          ? ((med['intakeMl'] is num) ? (med['intakeMl'] as num).toDouble() : 1.0)
+          : ((med['pillCount'] is num) ? (med['pillCount'] as num).toDouble() : 1.0);
+        final plannedUnit = type == 'drops' ? 'mL' : '顆';
         final times = (med['times'] as List?)?.whereType<String>().toList() ?? const <String>[];
 
         final slots = times.isEmpty ? <String>['未設定'] : times;
@@ -341,6 +345,8 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
               medName: name.isEmpty ? '未命名藥物' : name,
               doseText: dose == null ? '劑量未填' : '$dose $unit',
               slot: slot,
+              plannedAmount: plannedAmount,
+              plannedUnit: plannedUnit,
             ),
           );
         }
@@ -358,10 +364,12 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
       final checksMap = Map<String, dynamic>.from(data['checks'] ?? <String, dynamic>{});
       final statusesMap = Map<String, dynamic>.from(data['statuses'] ?? <String, dynamic>{});
       final takenAtMap = Map<String, dynamic>.from(data['takenAt'] ?? <String, dynamic>{});
+      final actualAmountMap = Map<String, dynamic>.from(data['actualAmount'] ?? <String, dynamic>{});
       final prnEventsMap = Map<String, dynamic>.from(data['prnEvents'] ?? <String, dynamic>{});
 
       final statusByKey = <String, _CheckinStatus>{};
       final statusAt = <String, DateTime>{};
+      final actualAmountByKey = <String, double>{};
       final prnEventsByKey = <String, List<DateTime>>{};
 
       for (final item in items) {
@@ -384,9 +392,32 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
           if (parsed != null) statusAt[key] = parsed;
         }
 
+        final rawActual = actualAmountMap[key];
+        if (rawActual is num) {
+          actualAmountByKey[key] = rawActual.toDouble();
+        } else if (rawActual is String) {
+          final parsed = double.tryParse(rawActual);
+          if (parsed != null) actualAmountByKey[key] = parsed;
+        }
+
         if (item.slot == '需要時') {
           prnEventsByKey[key] = _parseDateList(prnEventsMap[key]);
         }
+      }
+
+      final beforeCount = statusesMap.length + checksMap.length;
+      _ensureFixedSlotKeys(checksMap: checksMap, statusesMap: statusesMap);
+      final afterCount = statusesMap.length + checksMap.length;
+      if (afterCount != beforeCount) {
+        await ref.set(
+          {
+            'date': Timestamp.fromDate(_dateOnly(_selectedDate)),
+            'statuses': statusesMap,
+            'checks': checksMap,
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
       }
 
       if (!mounted) return;
@@ -394,6 +425,7 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
         _items = items;
         _statusByKey = statusByKey;
         _statusAt = statusAt;
+        _actualAmountByKey = actualAmountByKey;
         _prnEventsByKey = prnEventsByKey;
         _loading = false;
       });
@@ -421,7 +453,118 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
     }
   }
 
-  Future<void> _setStatus(_CheckinItem item, _CheckinStatus nextStatus) async {
+  Future<_TakenEditResult?> _showTakenEditDialog({
+    required _CheckinItem item,
+    required _CheckinStatus status,
+  }) async {
+    final key = _itemKey(item);
+    DateTime selectedAt = _statusAt[key] ??
+        DateTime(
+          _selectedDate.year,
+          _selectedDate.month,
+          _selectedDate.day,
+          TimeOfDay.now().hour,
+          TimeOfDay.now().minute,
+        );
+
+    final amountCtrl = TextEditingController(
+      text: (_actualAmountByKey[key] ?? item.safePlannedAmount).toStringAsFixed(1),
+    );
+
+    _TakenEditResult? result;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(status == _CheckinStatus.taken ? '設定已服用紀錄' : '設定延後服用紀錄'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('預計：${item.safePlannedAmount.toStringAsFixed(1)} ${item.safePlannedUnit}'),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: amountCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      labelText: '實際服用',
+                      suffixText: item.plannedUnit,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('服用時間'),
+                    subtitle: Text(_fmtDateTime(selectedAt)),
+                    trailing: const Icon(Icons.edit_outlined),
+                    onTap: () async {
+                      final pickedDate = await showDatePicker(
+                        context: dialogContext,
+                        initialDate: selectedAt,
+                        firstDate: _selectedDate.subtract(const Duration(days: 7)),
+                        lastDate: _selectedDate.add(const Duration(days: 7)),
+                      );
+                      if (pickedDate == null) return;
+                      final pickedTime = await showTimePicker(
+                        context: dialogContext,
+                        initialTime: TimeOfDay.fromDateTime(selectedAt),
+                      );
+                      if (pickedTime == null) return;
+
+                      setDialogState(() {
+                        selectedAt = DateTime(
+                          pickedDate.year,
+                          pickedDate.month,
+                          pickedDate.day,
+                          pickedTime.hour,
+                          pickedTime.minute,
+                        );
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '可補打跨日時間，例如 4/30 的睡前藥可記成 5/1 00:05。',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final amount = double.tryParse(amountCtrl.text.trim().replaceAll(',', '.'));
+                    if (amount == null || amount <= 0) return;
+                    result = _TakenEditResult(
+                      takenAt: selectedAt,
+                      actualAmount: amount,
+                    );
+                    Navigator.pop(dialogContext);
+                  },
+                  child: const Text('確定'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    return result;
+  }
+
+  Future<void> _setStatus(
+    _CheckinItem item,
+    _CheckinStatus nextStatus, {
+    DateTime? takenAt,
+    double? actualAmount,
+  }) async {
     if (item.slot == '需要時') return;
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -430,14 +573,17 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
     final key = _itemKey(item);
     final prev = _statusByKey[key] ?? _CheckinStatus.pending;
     final prevStatusAt = _statusAt[key];
+    final prevAmount = _actualAmountByKey[key];
 
     setState(() {
       _saving = true;
       _statusByKey[key] = nextStatus;
       if (nextStatus == _CheckinStatus.taken || nextStatus == _CheckinStatus.delayed) {
-        _statusAt[key] = DateTime.now();
+        _statusAt[key] = takenAt ?? DateTime.now();
+        _actualAmountByKey[key] = actualAmount ?? item.safePlannedAmount;
       } else {
         _statusAt.remove(key);
+        _actualAmountByKey.remove(key);
       }
     });
 
@@ -454,6 +600,9 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
       final checksMap = Map<String, dynamic>.from(data['checks'] ?? <String, dynamic>{});
       final statusesMap = Map<String, dynamic>.from(data['statuses'] ?? <String, dynamic>{});
       final takenAtMap = Map<String, dynamic>.from(data['takenAt'] ?? <String, dynamic>{});
+      final actualAmountMap = Map<String, dynamic>.from(data['actualAmount'] ?? <String, dynamic>{});
+
+      _ensureFixedSlotKeys(checksMap: checksMap, statusesMap: statusesMap);
 
       statusesMap[key] = nextStatus.value;
       checksMap[key] =
@@ -461,8 +610,10 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
 
       if (nextStatus == _CheckinStatus.taken || nextStatus == _CheckinStatus.delayed) {
         takenAtMap[key] = Timestamp.fromDate(_statusAt[key]!);
+        actualAmountMap[key] = _actualAmountByKey[key] ?? item.safePlannedAmount;
       } else {
         takenAtMap.remove(key);
+        actualAmountMap.remove(key);
       }
 
       await ref.set(
@@ -471,6 +622,7 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
           'statuses': statusesMap,
           'checks': checksMap,
           'takenAt': takenAtMap,
+          'actualAmount': actualAmountMap,
           'updatedAt': FieldValue.serverTimestamp(),
         },
         SetOptions(merge: true),
@@ -485,6 +637,11 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
           _statusAt[key] = prevStatusAt;
         } else {
           _statusAt.remove(key);
+        }
+        if (prevAmount != null) {
+          _actualAmountByKey[key] = prevAmount;
+        } else {
+          _actualAmountByKey.remove(key);
         }
       });
       ScaffoldMessenger.of(context).showSnackBar(
@@ -768,15 +925,6 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
                                   ),
                                 );
                               }),
-                              const SizedBox(height: 8),
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: OutlinedButton.icon(
-                                  onPressed: _saving ? null : _sendTestReminder,
-                                  icon: const Icon(Icons.notification_important_outlined),
-                                  label: const Text('測試 5 秒通知'),
-                                ),
-                              ),
                             ],
                           ),
                         ),
@@ -860,9 +1008,10 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
                             final key = _itemKey(item);
                             final currentStatus = _statusByKey[key] ?? _CheckinStatus.pending;
                             final statusAt = _statusAt[key];
+                            final actualAmount = _actualAmountByKey[key];
                             final timeText = statusAt == null
                                 ? '尚未打卡'
-                                : '時間 ${statusAt.hour.toString().padLeft(2, '0')}:${statusAt.minute.toString().padLeft(2, '0')}';
+                                : '時間 ${_fmtDateTime(statusAt)}';
                             return Padding(
                               padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
                               child: Column(
@@ -871,7 +1020,11 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
                                   Text(item.medName,
                                       style: Theme.of(context).textTheme.titleSmall),
                                   const SizedBox(height: 4),
-                                  Text('${item.doseText} · ${currentStatus.label} · $timeText'),
+                                  Text(
+                                    '${item.doseText} · 預計 ${item.safePlannedAmount.toStringAsFixed(1)} ${item.safePlannedUnit}'
+                                    '${actualAmount == null ? '' : ' · 實際 ${actualAmount.toStringAsFixed(1)} ${item.safePlannedUnit}'}'
+                                    ' · ${currentStatus.label} · $timeText',
+                                  ),
                                   const SizedBox(height: 8),
                                   SegmentedButton<_CheckinStatus>(
                                     multiSelectionEnabled: false,
@@ -899,14 +1052,56 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
                                     },
                                     onSelectionChanged: _saving
                                         ? null
-                                        : (v) {
+                                        : (v) async {
                                             if (v.isEmpty) {
-                                              _setStatus(item, _CheckinStatus.pending);
+                                              await _setStatus(item, _CheckinStatus.pending);
                                               return;
                                             }
-                                            _setStatus(item, v.first);
+
+                                            final pickedStatus = v.first;
+                                            if (pickedStatus == _CheckinStatus.taken ||
+                                                pickedStatus == _CheckinStatus.delayed) {
+                                              final edit = await _showTakenEditDialog(
+                                                item: item,
+                                                status: pickedStatus,
+                                              );
+                                              if (edit == null) return;
+                                              await _setStatus(
+                                                item,
+                                                pickedStatus,
+                                                takenAt: edit.takenAt,
+                                                actualAmount: edit.actualAmount,
+                                              );
+                                              return;
+                                            }
+
+                                            await _setStatus(item, pickedStatus);
                                           },
                                   ),
+                                  if (currentStatus == _CheckinStatus.taken ||
+                                      currentStatus == _CheckinStatus.delayed)
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: TextButton.icon(
+                                        onPressed: _saving
+                                            ? null
+                                            : () async {
+                                                final edit = await _showTakenEditDialog(
+                                                  item: item,
+                                                  status: currentStatus,
+                                                );
+                                                if (edit == null) return;
+                                                await _setStatus(
+                                                  item,
+                                                  currentStatus,
+                                                  takenAt: edit.takenAt,
+                                                  actualAmount: edit.actualAmount,
+                                                );
+                                              },
+                                        icon: const Icon(Icons.edit_outlined, size: 16),
+                                        label: const Text('修改劑量 / 時間'),
+                                      ),
+                                    ),
                                   const Divider(height: 18),
                                 ],
                               ),
@@ -1132,12 +1327,32 @@ class _CheckinItem {
   final String medName;
   final String doseText;
   final String slot;
+  final double? plannedAmount;
+  final String? plannedUnit;
+
+  double get safePlannedAmount => plannedAmount ?? 1.0;
+  String get safePlannedUnit {
+    final v = (plannedUnit ?? '').trim();
+    return v.isEmpty ? '顆' : v;
+  }
 
   const _CheckinItem({
     required this.medId,
     required this.medName,
     required this.doseText,
     required this.slot,
+    this.plannedAmount,
+    this.plannedUnit,
+  });
+}
+
+class _TakenEditResult {
+  final DateTime takenAt;
+  final double actualAmount;
+
+  const _TakenEditResult({
+    required this.takenAt,
+    required this.actualAmount,
   });
 }
 
