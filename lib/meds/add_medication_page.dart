@@ -25,10 +25,14 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
   final _purposeOtherCtrl = TextEditingController();
   final _bodySymptomCtrl = TextEditingController();
 
-  double _dose = 25; // 先用 slider，後續你想改成輸入框也可
+  double _dose = 25; // 每顆劑量
+  double _pillCount = 1.0; // 每次幾顆
   String _unit = 'mg';
-  String _medType = 'tablet'; // tablet / injection
+  String _medType = 'tablet'; // tablet / injection / drops
   int _intervalDays = 28;     // 只給 injection 用
+  double _dropMg = 10.0;
+  double _dropMlBase = 1.0;
+  double _intakeMl = 1.0;
   Timer? _drugDebounce;
 bool _isSearchingDrug = false;
 
@@ -78,7 +82,7 @@ List<Map<String, String>> _drugSuggestions = [];
       }
 
       return AlertDialog(
-        title: const Text('輸入劑量'),
+        title: const Text('輸入每顆劑量'),
         content: TextField(
           controller: ctrl,
           autofocus: true,
@@ -108,6 +112,55 @@ List<Map<String, String>> _drugSuggestions = [];
     setState(() => _dose = picked!);
   }
 }
+
+  Future<void> _editPillCountManually() async {
+    final ctrl = TextEditingController(text: _pillCount.toStringAsFixed(1));
+    double? picked;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        void submit() {
+          final raw = ctrl.text.trim().replaceAll(',', '.');
+          final value = double.tryParse(raw);
+          if (value == null || value <= 0) return;
+
+          picked = value.clamp(0.1, 20);
+          FocusScope.of(dialogContext).unfocus();
+          Navigator.of(dialogContext).pop();
+        }
+
+        return AlertDialog(
+          title: const Text('輸入每次顆數'),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => submit(),
+            decoration: const InputDecoration(
+              suffixText: '顆',
+              hintText: '例如 0.5、1.0、2.0',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: submit,
+              child: const Text('確定'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() => _pillCount = picked!);
+    }
+  }
 
   final Map<String, bool> _timeSlots = {
     '早上': false,
@@ -249,6 +302,36 @@ validator: (v) {
 
 const SizedBox(height: 12),
 
+_SectionCard(
+  title: '藥物形式',
+  icon: Icons.medical_services_outlined,
+  child: Wrap(
+    spacing: 8,
+    children: [
+      ChoiceChip(
+        label: const Text('口服藥'),
+        selected: _medType == 'tablet',
+        onSelected: (_) => setState(() => _medType = 'tablet'),
+      ),
+      ChoiceChip(
+        label: const Text('長效針'),
+        selected: _medType == 'injection',
+        onSelected: (_) => setState(() => _medType = 'injection'),
+      ),
+      ChoiceChip(
+        label: const Text('滴劑'),
+        selected: _medType == 'drops',
+        onSelected: (_) => setState(() {
+          _medType = 'drops';
+          _unit = 'mg';
+        }),
+      ),
+    ],
+  ),
+),
+
+const SizedBox(height: 12),
+
               // 2) 劑量
               _SectionCard(
                 title: '劑量',
@@ -256,7 +339,7 @@ const SizedBox(height: 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    if (_medType != 'drops') Row(
                       children: [
                         Expanded(
                           child: InkWell(
@@ -268,7 +351,7 @@ const SizedBox(height: 12),
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          _doseLabel(_dose),
+          '${_fmt1(_dose)} $_unit',
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
@@ -291,25 +374,25 @@ const SizedBox(height: 12),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 6),
-                    Slider(
+                    if (_medType != 'drops') const SizedBox(height: 6),
+                    if (_medType != 'drops') Slider(
                       value: _dose,
                       min: 0,
                       max: 1000,
-                      divisions: 2000, // 300 / 0.5 = 600,
+                      divisions: 10000,
                       label: _doseLabel(_dose),
                       onChanged: (v) => setState(() => _dose = v),
                     ),
-                    Row(
+                    if (_medType != 'drops') Row(
                       children: [
                         _SmallGhostButton(
                           text: '−',
-                          onTap: () => setState(() => _dose = (_dose - 0.5).clamp(0, 1000)),
+                          onTap: () => setState(() => _dose = (_dose - 0.1).clamp(0, 1000)),
                         ),
                         const SizedBox(width: 8),
                         _SmallGhostButton(
                           text: '+',
-                          onTap: () => setState(() => _dose = (_dose + 0.5).clamp(0, 1000)),
+                          onTap: () => setState(() => _dose = (_dose + 0.1).clamp(0, 1000)),
                         ),
                         const Spacer(),
                         Text(
@@ -320,30 +403,103 @@ const SizedBox(height: 12),
                         ),
                       ],
                     ),
+                    if (_medType == 'tablet') const SizedBox(height: 10),
+                    if (_medType == 'tablet') Row(
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: _editPillCountManually,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    '${_fmt1(_pillCount)} 顆',
+                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Icon(Icons.edit, size: 16, color: cs.onSurfaceVariant),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_medType == 'tablet') Slider(
+                      value: _pillCount,
+                      min: 0.1,
+                      max: 10,
+                      divisions: 99,
+                      label: '${_fmt1(_pillCount)} 顆',
+                      onChanged: (v) => setState(() => _pillCount = v),
+                    ),
+                    if (_medType == 'tablet') Text(
+                      '每次總量：${_fmt1(_dose)} $_unit × ${_fmt1(_pillCount)} 顆 = ${_fmt1(_dose * _pillCount)} $_unit',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                    ),
+                    if (_medType == 'drops') ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '濃度：${_fmt1(_dropMg)} mg / ${_fmt1(_dropMlBase)} mL',
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Slider(
+                        value: _dropMg,
+                        min: 0.1,
+                        max: 200,
+                        divisions: 1999,
+                        label: '${_fmt1(_dropMg)} mg',
+                        onChanged: (v) => setState(() => _dropMg = v),
+                      ),
+                      Slider(
+                        value: _dropMlBase,
+                        min: 0.1,
+                        max: 1000,
+                        divisions: 9999,
+                        label: '${_fmt1(_dropMlBase)} mL',
+                        onChanged: (v) => setState(() => _dropMlBase = v),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '每次服用：${_fmt1(_intakeMl)} mL',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                      Slider(
+                        value: _intakeMl,
+                        min: 0.1,
+                        max: 1000,
+                        divisions: 9999,
+                        label: '${_fmt1(_intakeMl)} mL',
+                        onChanged: (v) => setState(() => _intakeMl = v),
+                      ),
+                      Text(
+                        '每次總量：(${_fmt1(_dropMg)}mg/${_fmt1(_dropMlBase)}mL) × ${_fmt1(_intakeMl)}mL = ${_fmt1((_dropMg / _dropMlBase) * _intakeMl)} mg',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: cs.onSurfaceVariant,
+                            ),
+                      ),
+                    ],
                   ],
                 ),
               ),
 
-              const SizedBox(height: 12),
-_SectionCard(
-  title: '藥物形式',
-  icon: Icons.medical_services_outlined,
-  child: Wrap(
-    spacing: 8,
-    children: [
-      ChoiceChip(
-        label: const Text('口服藥'),
-        selected: _medType == 'tablet',
-        onSelected: (_) => setState(() => _medType = 'tablet'),
-      ),
-      ChoiceChip(
-        label: const Text('長效針'),
-        selected: _medType == 'injection',
-        onSelected: (_) => setState(() => _medType = 'injection'),
-      ),
-    ],
-  ),
-),
               // 3) 服用時間（像第二張那種分區感）
               if (_medType == 'injection') ...[
   _SectionCard(
@@ -533,14 +689,13 @@ _SectionCard(
     );
   }
 
+  double _round1(double v) => (v * 10).round() / 10;
+
+  String _fmt1(double v) => _round1(v).toStringAsFixed(1);
+
   String _doseLabel(double v) {
-  // 如果是整數，就不要顯示 .0
-  if (v % 1 == 0) {
-    return '${v.toInt()} $_unit';
+    return '${_fmt1(v)} $_unit';
   }
-  // 小數最多顯示 2 位（夠用）
-  return '${v.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '')} $_unit';
-}
 
   InputDecoration _inputDeco(String hint) {
     return InputDecoration(
@@ -587,7 +742,16 @@ _SectionCard(
     final purposes = _purposes.entries.where((e) => e.value).map((e) => e.key).toList();
     final purposeOther = _purposeOtherCtrl.text.trim();
     final bodySymptomText = _bodySymptomCtrl.text.trim();
-    final doseValue = _dose;
+    final dosePerUnit = _medType == 'drops'
+      ? _round1(_dropMg / _dropMlBase)
+      : _round1(_dose);
+    final pillCount = _medType == 'injection' || _medType == 'drops' ? 1.0 : _round1(_pillCount);
+    final concentrationMg = _medType == 'drops' ? _round1(_dropMg) : null;
+    final concentrationMl = _medType == 'drops' ? _round1(_dropMlBase) : null;
+    final intakeMl = _medType == 'drops' ? _round1(_intakeMl) : null;
+    final doseValue = _medType == 'drops'
+      ? _round1((concentrationMg! / concentrationMl!) * intakeMl!)
+      : _round1(dosePerUnit * pillCount);
     
     final bodySymptoms = bodySymptomText.isEmpty
         ? <String>[]
@@ -614,7 +778,12 @@ _SectionCard(
         'id': docId,
         'name': name,
         'dose': doseValue,
-        'unit': _unit,
+        'dosePerUnit': dosePerUnit,
+        'pillCount': pillCount,
+        'concentrationMg': concentrationMg,
+        'concentrationMl': concentrationMl,
+        'intakeMl': intakeMl,
+        'unit': _medType == 'drops' ? 'mg' : _unit,
         'type': _medType,
         'intervalDays': _medType == 'injection' ? _intervalDays : null,
         'times': times,
@@ -643,7 +812,12 @@ _SectionCard(
             .set({
               'name': name,
               'dose': doseValue,
-              'unit': _unit,
+              'dosePerUnit': dosePerUnit,
+              'pillCount': pillCount,
+              'concentrationMg': concentrationMg,
+              'concentrationMl': concentrationMl,
+              'intakeMl': intakeMl,
+              'unit': _medType == 'drops' ? 'mg' : _unit,
               'type': _medType,
               'intervalDays': _medType == 'injection' ? _intervalDays : null,
               'times': times,
@@ -974,10 +1148,6 @@ class _UnitPicker extends StatelessWidget {
       items: const [
         DropdownMenuItem(value: 'mg', child: Text('mg')),
         DropdownMenuItem(value: 'g', child: Text('g')),
-        DropdownMenuItem(value: 'mL', child: Text('mL')),
-        DropdownMenuItem(value: '顆', child: Text('顆')),
-        DropdownMenuItem(value: '包', child: Text('包')),
-        DropdownMenuItem(value: '針劑', child: Text('針劑')),
       ],
       onChanged: (v) {
         if (v != null) onChanged(v);
