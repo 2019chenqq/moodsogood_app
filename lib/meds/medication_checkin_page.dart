@@ -1061,16 +1061,12 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
                                             final pickedStatus = v.first;
                                             if (pickedStatus == _CheckinStatus.taken ||
                                                 pickedStatus == _CheckinStatus.delayed) {
-                                              final edit = await _showTakenEditDialog(
-                                                item: item,
-                                                status: pickedStatus,
-                                              );
-                                              if (edit == null) return;
                                               await _setStatus(
                                                 item,
                                                 pickedStatus,
-                                                takenAt: edit.takenAt,
-                                                actualAmount: edit.actualAmount,
+                                                takenAt: _statusAt[key] ?? DateTime.now(),
+                                                actualAmount: _actualAmountByKey[key] ??
+                                                    item.safePlannedAmount,
                                               );
                                               return;
                                             }
