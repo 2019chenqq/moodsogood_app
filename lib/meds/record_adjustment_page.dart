@@ -460,14 +460,6 @@ String _timesLabel(List<String> times) {
                 valueText: draft.newDose == null ? '點擊輸入' : _doseToString(draft.newDose, unit),
                 onTap: () => _editDose(docId: med['id'] as String? ?? '', unit: unit),
               ),
-              if (!isInjectionMed) ...[
-                const SizedBox(height: 8),
-                _InlineEditRow(
-                  title: '服藥時間',
-                  valueText: _timesLabel(draft.newTimes ?? draft.oldTimes),
-                  onTap: () => _editTimes(docId: med['id'] as String? ?? ''),
-                ),
-              ],
               const SizedBox(height: 8),
               Text(
                 '建議填「調整後」的劑量（支援 0.5 / 1.25 這類小數）',
