@@ -251,6 +251,11 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
           'id': doc.id,
           'name': data['name'],
           'dose': data['dose'],
+          'dosePerUnit': data['dosePerUnit'],
+          'pillCount': data['pillCount'],
+          'concentrationMg': data['concentrationMg'],
+          'concentrationMl': data['concentrationMl'],
+          'intakeMl': data['intakeMl'],
           'unit': data['unit'],
           'type': data['type'],
           'intervalDays': data['intervalDays'],
@@ -714,18 +719,41 @@ class _MedicationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    String fmt1(dynamic v) {
+      double? d;
+      if (v is num) d = v.toDouble();
+      if (v is String) d = double.tryParse(v);
+      if (d == null) return '';
+      return d.toStringAsFixed(1);
+    }
+
     final rawName = data['name'] ?? data['nameZh'] ?? data['nameEn'];
 final name = (rawName as String?)?.trim().isNotEmpty == true
     ? rawName.toString().trim()
     : '未命名藥物';
     final dose = data['dose'];
+    final dosePerUnit = data['dosePerUnit'];
+    final pillCount = data['pillCount'];
+    final concentrationMg = data['concentrationMg'];
+    final concentrationMl = data['concentrationMl'];
+    final intakeMl = data['intakeMl'];
     final unit = (data['unit'] as String?) ?? 'mg';
+    final type = (data['type'] as String?) ?? 'tablet';
 
     final times = (data['times'] as List?)?.whereType<String>().toList() ?? const <String>[];
     final purposes = (data['purposes'] as List?)?.whereType<String>().toList() ?? const <String>[];
 
     final subtitleOverride = data['_subtitleOverride'] as String?;
-final subtitle = subtitleOverride ?? ((dose == null) ? '劑量未填' : '$dose $unit');
+final subtitle = subtitleOverride ?? (() {
+  if (type == 'drops' && concentrationMg != null && concentrationMl != null && intakeMl != null) {
+    return '${fmt1(concentrationMg)}mg/${fmt1(concentrationMl)}mL x ${fmt1(intakeMl)}mL';
+  }
+  if (dosePerUnit != null && pillCount != null) {
+    return '${fmt1(dosePerUnit)} $unit x ${fmt1(pillCount)} 顆';
+  }
+  if (dose == null) return '劑量未填';
+  return '$dose $unit';
+})();
 
 final badge = data['_badgeOverride'] as String?;
 

@@ -24,7 +24,7 @@ class MedicationLocalDB {
 
     return openDatabase(
       path,
-      version: 2,
+      version: 4,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE medications (
@@ -32,6 +32,11 @@ class MedicationLocalDB {
             uid TEXT NOT NULL,
             name TEXT NOT NULL,
             dose REAL,
+            dosePerUnit REAL,
+            pillCount REAL,
+            concentrationMg REAL,
+            concentrationMl REAL,
+            intakeMl REAL,
             unit TEXT,
             type TEXT,
             intervalDays INTEGER,
@@ -82,6 +87,19 @@ class MedicationLocalDB {
             rethrow;
           }
         }
+
+        if (oldVersion < 3) {
+          debugPrint('🔨 新增 dosePerUnit/pillCount 欄位...');
+          await db.execute('ALTER TABLE medications ADD COLUMN dosePerUnit REAL');
+          await db.execute('ALTER TABLE medications ADD COLUMN pillCount REAL');
+        }
+
+        if (oldVersion < 4) {
+          debugPrint('🔨 新增 concentration/intake 欄位...');
+          await db.execute('ALTER TABLE medications ADD COLUMN concentrationMg REAL');
+          await db.execute('ALTER TABLE medications ADD COLUMN concentrationMl REAL');
+          await db.execute('ALTER TABLE medications ADD COLUMN intakeMl REAL');
+        }
       },
     );
   }
@@ -96,6 +114,11 @@ class MedicationLocalDB {
         'uid': uid,
         'name': data['name'],
         'dose': data['dose'],
+        'dosePerUnit': data['dosePerUnit'],
+        'pillCount': data['pillCount'],
+        'concentrationMg': data['concentrationMg'],
+        'concentrationMl': data['concentrationMl'],
+        'intakeMl': data['intakeMl'],
         'unit': data['unit'],
         'type': data['type'],
         'intervalDays': data['intervalDays'],
@@ -125,6 +148,11 @@ class MedicationLocalDB {
         {
           'name': data['name'],
           'dose': data['dose'],
+          'dosePerUnit': data['dosePerUnit'],
+          'pillCount': data['pillCount'],
+          'concentrationMg': data['concentrationMg'],
+          'concentrationMl': data['concentrationMl'],
+          'intakeMl': data['intakeMl'],
           'unit': data['unit'],
           'type': data['type'],
           'intervalDays': data['intervalDays'],
@@ -242,6 +270,11 @@ class MedicationLocalDB {
         'uid': m['uid'],
         'name': m['name'],
         'dose': m['dose'],
+        'dosePerUnit': m['dosePerUnit'],
+        'pillCount': m['pillCount'],
+        'concentrationMg': m['concentrationMg'],
+        'concentrationMl': m['concentrationMl'],
+        'intakeMl': m['intakeMl'],
         'unit': m['unit'],
         'type': m['type'],
         'intervalDays': m['intervalDays'],
