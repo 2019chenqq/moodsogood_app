@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../utils/firebase_sync_config.dart';
 import 'medication_local_db.dart';
+import 'medication_reminder_service.dart';
 
 // 你已經有的新增藥物頁（路徑依你的專案調整）
 import 'add_medication_page.dart';
@@ -22,6 +23,7 @@ class RecordAdjustmentPage extends StatefulWidget {
 class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
   DateTime _date = DateTime.now();
   final _noteCtrl = TextEditingController();
+  Future<List<Map<String, dynamic>>> _medsFuture = Future.value(<Map<String, dynamic>>[]);
 
   // 每顆藥的暫存變動
   final Map<String, _MedDraft> _draftByDocId = {};
@@ -35,8 +37,40 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
     // 初始化時從 Firebase 同步最新藥物到本地
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
-      _syncFromFirebase(uid);
+      _medsFuture = _loadMeds(uid);
+      _syncFromFirebase(uid).then((_) {
+        if (!mounted) return;
+        setState(() {
+          _medsFuture = _loadMeds(uid);
+        });
+      });
     }
+  }
+
+  Future<List<Map<String, dynamic>>> _loadMeds(String uid) async {
+    final meds = await _getMedsForAdjustment(uid);
+    meds.sort((a, b) {
+      DateTime? parseDt(dynamic v) {
+        if (v is String) return DateTime.tryParse(v);
+        if (v is Timestamp) return v.toDate();
+        return null;
+      }
+
+      final aCreated = parseDt(a['createdAt']);
+      final bCreated = parseDt(b['createdAt']);
+      if (aCreated != null && bCreated != null) {
+        final byCreated = aCreated.compareTo(bCreated);
+        if (byCreated != 0) return byCreated;
+      }
+
+      final aName = (a['name'] ?? '').toString();
+      final bName = (b['name'] ?? '').toString();
+      final byName = aName.compareTo(bName);
+      if (byName != 0) return byName;
+
+      return (a['id'] ?? '').toString().compareTo((b['id'] ?? '').toString());
+    });
+    return meds;
   }
 
   Future<void> _syncFromFirebase(String uid) async {
@@ -58,6 +92,11 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
           'id': doc.id,
           'name': data['name'],
           'dose': data['dose'],
+          'dosePerUnit': data['dosePerUnit'],
+          'pillCount': data['pillCount'],
+          'concentrationMg': data['concentrationMg'],
+          'concentrationMl': data['concentrationMl'],
+          'intakeMl': data['intakeMl'],
           'unit': data['unit'],
           'type': data['type'],
           'intervalDays': data['intervalDays'],
@@ -186,7 +225,7 @@ String _timesLabel(List<String> times) {
       ),
       body: SafeArea(
         child: FutureBuilder<List<Map<String, dynamic>>>(
-          future: _getMedsForAdjustment(uid),
+          future: _medsFuture,
           builder: (context, snap) {
             if (snap.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
@@ -287,6 +326,7 @@ String _timesLabel(List<String> times) {
     _MedDraft draft,
   ) {
     final cs = Theme.of(context).colorScheme;
+    final docId = (med['id'] as String?) ?? '';
 
     final name = (med['name'] as String?) ?? '未命名藥物';
     final unit = (med['unit'] as String?) ?? 'mg';
@@ -301,6 +341,7 @@ String _timesLabel(List<String> times) {
     final changed = draft.type != MedChangeType.unchanged;
 
     return Card(
+      key: ValueKey('adj-med-$docId'),
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 10),
       child: Padding(
@@ -648,6 +689,8 @@ Future<void> _editTimes({
         draft.type = MedChangeType.added;
         draft.newDose = draft.oldDose;
       }
+
+      _medsFuture = _loadMeds(uid);
     });
   }
 
@@ -837,6 +880,13 @@ Future<void> _editTimes({
         }
       }
       debugPrint('✅ 本地藥物已更新');
+
+      // 調藥完成後立即重建每日提醒，避免停藥/時段調整後提醒內容延遲。
+      try {
+        await MedicationReminderService.syncDailyRemindersForActiveMeds();
+      } catch (e) {
+        debugPrint('⚠️ 重建服藥提醒失敗：$e');
+      }
 
       // 5️⃣ 再上傳 Firebase（如果啟用同步）
       if (FirebaseSyncConfig.shouldSync()) {
