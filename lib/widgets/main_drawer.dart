@@ -9,6 +9,7 @@ import 'dart:io';
 import '../settings_page.dart';
 import '../pages/feesback_page.dart';
 import '../pages/hub_pages.dart';
+import '../pages/life_overview_page.dart';
 import '../pages/profile_page.dart';
 import '../Sign_in_page.dart';
 
@@ -180,6 +181,18 @@ class _MainDrawerState extends State<MainDrawer> {
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(builder: (_) => const RecordHubPage()),
+              );
+            },
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.calendar_month),
+            title: const Text('生活總覽'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const LifeOverviewPage()),
               );
             },
           ),

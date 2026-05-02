@@ -74,6 +74,27 @@ class _AiJournalReflectionPageState
 
   FirebaseFirestore get _db => FirebaseFirestore.instance;
 
+  static const List<String> _diaryTextKeys = [
+    'title',
+    'content',
+    'themeSong',
+    'highlight',
+    'metaphor',
+    'conceited',
+    'proudOf',
+    'selfCare',
+  ];
+
+  bool get _hasMeaningfulDiaryInput {
+    final data = _diaryData;
+    if (data == null) return false;
+    for (final key in _diaryTextKeys) {
+      final text = (data[key] ?? '').toString().trim();
+      if (text.isNotEmpty) return true;
+    }
+    return false;
+  }
+
   // ── 生命週期 ──
   @override
   void initState() {
@@ -357,17 +378,31 @@ class _AiJournalReflectionPageState
         'overallSleepQuality': _diaryData?['overallSleepQuality'],
       };
 
+      final diarySections = <MapEntry<String, String>>[
+        MapEntry('標題', (diaryFieldsForAi['title'] ?? '').toString().trim()),
+        MapEntry('內容', (diaryFieldsForAi['content'] ?? '').toString().trim()),
+        MapEntry('今日主題曲', (diaryFieldsForAi['themeSong'] ?? '').toString().trim()),
+        MapEntry('最想記錄的瞬間', (diaryFieldsForAi['highlight'] ?? '').toString().trim()),
+        MapEntry('今天情緒像', (diaryFieldsForAi['metaphor'] ?? '').toString().trim()),
+        MapEntry('為自己感到驕傲', (diaryFieldsForAi['conceited'] ?? '').toString().trim()),
+        MapEntry('做得不錯的地方', (diaryFieldsForAi['proudOf'] ?? '').toString().trim()),
+        MapEntry('可多照顧自己的地方', (diaryFieldsForAi['selfCare'] ?? '').toString().trim()),
+      ];
+
+      final filledDiarySections =
+          diarySections.where((entry) => entry.value.isNotEmpty).toList();
+
+      if (filledDiarySections.isEmpty) {
+        if (mounted) {
+          setState(() => _error = '請先寫一些日記內容，再生成 AI 回饋。');
+        }
+        return;
+      }
+
       // 組裝日記文字（合併所有文字欄位）
-      final diaryContent = [
-        '標題: ${diaryFieldsForAi['title']}',
-        '內容: ${diaryFieldsForAi['content']}',
-        '今日主題曲: ${diaryFieldsForAi['themeSong']}',
-        '最想記錄的瞬間: ${diaryFieldsForAi['highlight']}',
-        '今天情緒像: ${diaryFieldsForAi['metaphor']}',
-        '為自己感到驕傲: ${diaryFieldsForAi['conceited']}',
-        '做得不錯的地方: ${diaryFieldsForAi['proudOf']}',
-        '可多照顧自己的地方: ${diaryFieldsForAi['selfCare']}',
-      ].where((s) => s.toString().trim().isNotEmpty).join('\n');
+      final diaryContent = filledDiarySections
+          .map((entry) => '${entry.key}: ${entry.value}')
+          .join('\n');
 
       // 危機關鍵字偵測（在呼叫 AI 之前先做，保護使用者）
       final crisis = _detectCrisis(diaryContent);
@@ -625,10 +660,12 @@ class _AiJournalReflectionPageState
           shape: m.RoundedRectangleBorder(
               borderRadius: m.BorderRadius.circular(16)),
         ),
-        onPressed: _generateAndSave,
+        onPressed: _hasMeaningfulDiaryInput ? _generateAndSave : null,
         icon: const m.Icon(m.Icons.auto_awesome_rounded, size: 20),
         label: m.Text(
-          _hasSavedResult ? '重新生成 AI 回饋' : '生成今日 AI 回饋',
+          _hasMeaningfulDiaryInput
+              ? (_hasSavedResult ? '重新生成 AI 回饋' : '生成今日 AI 回饋')
+              : '請先填寫日記內容',
           style: const m.TextStyle(fontSize: 15, fontWeight: m.FontWeight.w600),
         ),
       ),

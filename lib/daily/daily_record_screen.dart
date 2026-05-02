@@ -19,7 +19,9 @@ import 'emotion_page_checkbox.dart';
 
 /// Main Screen
 class DailyRecordScreen extends StatefulWidget {
-  const DailyRecordScreen({super.key});
+  const DailyRecordScreen({super.key, this.initialTab = 0});
+
+  final int initialTab;
 
   @override
   State<DailyRecordScreen> createState() => _DailyRecordScreenState();
@@ -44,6 +46,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   @override
   void initState() {
     super.initState();
+    _index = widget.initialTab.clamp(0, 2);
     _loadPeriodCalendarState();
     _loadExistingData(_recordDate); // 一進來就載入今天的紀錄（含生理期狀態）
   }
