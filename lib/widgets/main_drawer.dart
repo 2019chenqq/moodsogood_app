@@ -187,7 +187,7 @@ class _MainDrawerState extends State<MainDrawer> {
 
           ListTile(
             leading: const Icon(Icons.calendar_month),
-            title: const Text('生活總覽'),
+            title: const Text('生活軌跡'),
             onTap: () {
               Navigator.pop(context);
               Navigator.push(
