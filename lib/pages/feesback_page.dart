@@ -119,7 +119,6 @@ class _FeedbackPageState extends State<FeedbackPage> {
               ),
               const SizedBox(height: 16),
               Wrap(
-                alignment: WrapAlignment.spaceBetween,
                 spacing: 8,
                 runSpacing: 8,
                 children: _categories.map((category) {
