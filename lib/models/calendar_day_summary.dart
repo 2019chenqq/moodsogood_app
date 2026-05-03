@@ -5,6 +5,7 @@ class CalendarDaySummary {
   final bool hasEmotionData;
   final bool hasSymptomData;
   final bool hasSleepData;
+  final bool hasMedicationData;
   final bool isPeriodDay;
   final bool isPredictedPeriodDay;
   final double? averageMood;
@@ -12,6 +13,7 @@ class CalendarDaySummary {
   // Daily record details
   final List<String> emotionNames;
   final List<String> symptomNames;
+  final List<String> medicationNames;
   final double? sleepHours;
   final String? sleepQuality;
   final String? dailyRecordDocId;
@@ -36,11 +38,13 @@ class CalendarDaySummary {
     this.hasEmotionData = false,
     this.hasSymptomData = false,
     this.hasSleepData = false,
+    this.hasMedicationData = false,
     this.isPeriodDay = false,
     this.isPredictedPeriodDay = false,
     this.averageMood,
     this.emotionNames = const <String>[],
     this.symptomNames = const <String>[],
+    this.medicationNames = const <String>[],
     this.sleepHours,
     this.sleepQuality,
     this.dailyRecordDocId,
@@ -65,11 +69,13 @@ class CalendarDaySummary {
     bool? hasEmotionData,
     bool? hasSymptomData,
     bool? hasSleepData,
+    bool? hasMedicationData,
     bool? isPeriodDay,
     bool? isPredictedPeriodDay,
     double? averageMood,
     List<String>? emotionNames,
     List<String>? symptomNames,
+    List<String>? medicationNames,
     double? sleepHours,
     String? sleepQuality,
     String? dailyRecordDocId,
@@ -98,11 +104,13 @@ class CalendarDaySummary {
       hasEmotionData: hasEmotionData ?? this.hasEmotionData,
       hasSymptomData: hasSymptomData ?? this.hasSymptomData,
       hasSleepData: hasSleepData ?? this.hasSleepData,
+      hasMedicationData: hasMedicationData ?? this.hasMedicationData,
       isPeriodDay: isPeriodDay ?? this.isPeriodDay,
       isPredictedPeriodDay: isPredictedPeriodDay ?? this.isPredictedPeriodDay,
       averageMood: clearAverageMood ? null : (averageMood ?? this.averageMood),
       emotionNames: emotionNames ?? this.emotionNames,
       symptomNames: symptomNames ?? this.symptomNames,
+      medicationNames: medicationNames ?? this.medicationNames,
       sleepHours: clearSleepHours ? null : (sleepHours ?? this.sleepHours),
       sleepQuality: clearSleepQuality ? null : (sleepQuality ?? this.sleepQuality),
       dailyRecordDocId:

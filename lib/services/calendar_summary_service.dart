@@ -167,9 +167,31 @@ class CalendarSummaryService {
         data['symptoms'],
         preferredKeys: const ['name', 'label', 'symptom', 'title'],
       );
+      final medicationNames = _mergeStringLists(
+        _extractNames(
+          data['medications'] ?? data['medicines'],
+          preferredKeys: const ['name', 'label', 'title', 'drugName', 'medicationName'],
+        ),
+        _extractNames(
+          data['medication'],
+          preferredKeys: const ['name', 'label', 'title', 'drugName', 'medicationName'],
+        ),
+      );
+      final medicationText = _toCleanString(data['medication']);
+      if (medicationText != null && !medicationNames.contains(medicationText)) {
+        medicationNames.add(medicationText);
+      }
 
       final sleepMap = _asMap(data['sleep']);
       final sleepDataMap = _asMap(data['sleepData']);
+      final hypnoticName = _toCleanString(sleepMap?['hypnoticName']) ??
+          _toCleanString(data['hypnoticName']);
+      final hypnoticDose = _toCleanString(sleepMap?['hypnoticDose']) ??
+          _toCleanString(data['hypnoticDose']);
+      final tookHypnotic = sleepMap?['tookHypnotic'] == true || data['tookHypnotic'] == true;
+      if (hypnoticName != null) {
+        medicationNames.add('安眠藥：$hypnoticName${hypnoticDose != null ? '（$hypnoticDose）' : ''}');
+      }
 
       final sleepHours = _toDouble(data['sleepHours']) ??
           _toDouble(sleepMap?['hours']) ??
@@ -188,13 +210,18 @@ class CalendarSummaryService {
       final hasSymptomData = symptomNames.isNotEmpty || _hasCollectionData(data['symptoms']);
       final hasSleepData =
           sleepHours != null || sleepQuality != null || _hasCollectionData(data['sleep']);
+      final hasMedicationData = medicationNames.isNotEmpty ||
+          tookHypnotic ||
+          _hasCollectionData(data['medications']) ||
+          _hasCollectionData(data['medicines']) ||
+          _hasCollectionData(data['medication']);
 
       final periodData = _asMap(data['periodData']);
       final isPeriod =
           data['isPeriod'] == true || periodData?['isPeriod'] == true;
 
       final hasDailyRecordData =
-          hasEmotionData || hasSymptomData || hasSleepData || isPeriod;
+          hasEmotionData || hasSymptomData || hasSleepData || hasMedicationData || isPeriod;
 
       _mergeDay(summaries, date, (current) {
         return current.copyWith(
@@ -202,10 +229,12 @@ class CalendarSummaryService {
           hasEmotionData: current.hasEmotionData || hasEmotionData,
           hasSymptomData: current.hasSymptomData || hasSymptomData,
           hasSleepData: current.hasSleepData || hasSleepData,
+          hasMedicationData: current.hasMedicationData || hasMedicationData,
           isPeriodDay: current.isPeriodDay || isPeriod,
           averageMood: current.averageMood ?? dayMood,
           emotionNames: _mergeStringLists(current.emotionNames, emotionNames),
           symptomNames: _mergeStringLists(current.symptomNames, symptomNames),
+          medicationNames: _mergeStringLists(current.medicationNames, medicationNames),
           sleepHours: current.sleepHours ?? sleepHours,
           sleepQuality: current.sleepQuality ?? sleepQuality,
           dailyRecordDocId: current.dailyRecordDocId ?? doc.id,
