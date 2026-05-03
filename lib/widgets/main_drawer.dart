@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart'; // 🔥 存照片用
 import 'package:image_picker/image_picker.dart'; // 🔥 選照片用
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'dart:io';
 import '../settings_page.dart';
@@ -22,6 +23,9 @@ class MainDrawer extends StatefulWidget {
 
 class _MainDrawerState extends State<MainDrawer> {
   bool _isUploading = false; // 用來控制轉圈圈
+
+  static const _userGuideUrl =
+      'https://www.notion.so/App-3557a479d31f800f842dd1ffb9ef5409?source=copy_link';
 
   /// 從 Firestore 加載日記記錄用於導出
   Future<void> _pickAndUploadImage() async {
@@ -95,6 +99,16 @@ class _MainDrawerState extends State<MainDrawer> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('登出失敗：$e')),
+      );
+    }
+  }
+
+  Future<void> _openUserGuide() async {
+    final uri = Uri.parse(_userGuideUrl);
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('無法開啟使用指南，請稍後再試。')),
       );
     }
   }
@@ -231,6 +245,14 @@ class _MainDrawerState extends State<MainDrawer> {
                 context,
                 MaterialPageRoute(builder: (_) => const FeedbackPage()),
               );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.menu_book_outlined),
+            title: const Text('使用指南'),
+            onTap: () {
+              Navigator.pop(context);
+              _openUserGuide();
             },
           ),
           ListTile(
