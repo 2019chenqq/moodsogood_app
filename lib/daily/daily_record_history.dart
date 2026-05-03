@@ -446,6 +446,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
     return SleepData(
       sleepTime: _parseTime(map['sleepTime']),
       wakeTime: _parseTime(map['wakeTime']),
+      finalWakeTime: _parseTime(map['finalWakeTime']),
       quality: (map['quality'] as num?)?.toInt(),
       tookHypnotic: map['tookHypnotic'] ?? false,
       hypnoticName: map['hypnoticName'],
@@ -913,14 +914,22 @@ bool _isHistoryLocked(bool isPro) {
       return !date.isBefore(start);
     }).toList();
   }
+
+  int? _nightSleepMinutes(SleepData sleep) {
+    final end = sleep.finalWakeTime ?? sleep.wakeTime;
+    if (sleep.sleepTime == null || end == null) return null;
+    final minutes = DateHelper.calcDurationMinutes(sleep.sleepTime!, end);
+    return minutes > 0 ? minutes : null;
+  }
   
   Widget _buildRecordSubtitle(BuildContext context, DailyRecord r) {
     final List<String> parts = [];
 
     debugPrint('📝 Building subtitle for record ${r.id}: overallMood=${r.overallMood}, emotions count=${r.emotions.length}');
 
-    if (r.sleep.durationHours != null) {
-      parts.add('睡眠：${r.sleep.durationHours}hr');
+    final nightMinutes = _nightSleepMinutes(r.sleep);
+    if (nightMinutes != null) {
+      parts.add('睡眠：${DateHelper.formatDurationText(nightMinutes)}');
     }
     if (r.sleep.flags.isNotEmpty) {
       parts.add(
@@ -1415,6 +1424,13 @@ class WeeklySummaryCard extends StatelessWidget {
 
   DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
+  int? _nightSleepMinutes(DailyRecord record) {
+    final end = record.sleep.finalWakeTime ?? record.sleep.wakeTime;
+    if (record.sleep.sleepTime == null || end == null) return null;
+    final minutes = DateHelper.calcDurationMinutes(record.sleep.sleepTime!, end);
+    return minutes > 0 ? minutes : null;
+  }
+
   DateTimeRange _weekWindow() {
     final today = _dateOnly(DateTime.now());
     final normalizedWeekStart =
@@ -1443,24 +1459,40 @@ class WeeklySummaryCard extends StatelessWidget {
     final recordedDays = weekRecords.length;
 
 
-    // 計算睡眠平均 (改用 sleep.durationHours)
-    final sleepValues = weekRecords.map((r) {
-      // 1. 夜間睡眠 (可能為 null，轉為 0)
-      final night = r.sleep.durationHours ?? 0;
+    final nightSleepMinutesList = <int>[];
+    final dailyTotalMinutesList = <int>[];
 
-      // 2. 小睡總和 (累加分鐘數)
-      final napMinutes = r.sleep.naps.fold(0, (sum, nap) => sum + nap.durationMinutes);
+    // 平均睡眠改為使用全部歷史資料，不只本週。
+    for (final record in allRecords) {
+      final nightMinutes = _nightSleepMinutes(record);
+      if (nightMinutes != null) {
+        nightSleepMinutesList.add(nightMinutes);
+      }
 
-      // 3. 總時數 (夜間 + 小睡轉小時)
-      final total = night + (napMinutes / 60.0);
+      final napMinutes = record.sleep.naps
+          .fold<int>(0, (sum, nap) => sum + nap.durationMinutes);
+      final totalMinutes = (nightMinutes ?? 0) + napMinutes;
+      if (totalMinutes > 0) {
+        dailyTotalMinutesList.add(totalMinutes);
+      }
+    }
 
-      // 如果 total 為 0，代表那天完全沒睡或沒紀錄，回傳 null 以便過濾
-      return total > 0 ? total : null;
-    }).where((v) => v != null).cast<double>().toList();
-
-    final avgSleep = sleepValues.isEmpty
+    final avgNightSleepMinutes = nightSleepMinutesList.isEmpty
         ? null
-        : sleepValues.reduce((a, b) => a + b) / sleepValues.length;
+        : nightSleepMinutesList.reduce((a, b) => a + b) /
+            nightSleepMinutesList.length;
+
+    final avgDailySleepMinutes = dailyTotalMinutesList.isEmpty
+        ? null
+        : dailyTotalMinutesList.reduce((a, b) => a + b) /
+            dailyTotalMinutesList.length;
+
+    final nightAvgText = avgNightSleepMinutes == null
+      ? '-'
+      : DateHelper.formatDurationText(avgNightSleepMinutes.round());
+    final dailyAvgText = avgDailySleepMinutes == null
+      ? '-'
+      : DateHelper.formatDurationText(avgDailySleepMinutes.round());
 
     // 鼓勵語句
     final String message;
@@ -1502,13 +1534,16 @@ class WeeklySummaryCard extends StatelessWidget {
               '有紀錄的天數：$recordedDays / $totalDays 天',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
-            if (avgSleep != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                '平均夜間睡眠：約 ${avgSleep.toStringAsFixed(1)} 小時',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ],
+            const SizedBox(height: 4),
+            Text(
+              '夜間平均睡眠（累積）：$nightAvgText',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '全日平均睡眠（夜間＋小睡，累積）：$dailyAvgText',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
             const SizedBox(height: 8),
             Text(
               message,
