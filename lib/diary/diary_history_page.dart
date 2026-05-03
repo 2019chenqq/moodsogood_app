@@ -340,6 +340,7 @@ class _HeaderCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Wrap(
+                  alignment: WrapAlignment.spaceBetween,
                   spacing: 8,
                   runSpacing: 6,
                   children: [

@@ -1238,6 +1238,7 @@ class _RecordGrid extends m.StatelessWidget {
                   ),
                   const m.SizedBox(height: 4),
                   m.Wrap(
+                    alignment: m.WrapAlignment.spaceBetween,
                     spacing: 6,
                     runSpacing: 4,
                     children: flags
@@ -1296,6 +1297,7 @@ class _RecordGrid extends m.StatelessWidget {
                 ),
                 const m.SizedBox(height: 4),
                 m.Wrap(
+                  alignment: m.WrapAlignment.spaceBetween,
                   spacing: 6,
                   runSpacing: 4,
                   children: symptomList
@@ -1320,7 +1322,7 @@ class _RecordGrid extends m.StatelessWidget {
 
     if (items.isEmpty) return _EmptyHint(text: '尚無可顯示的紀錄欄位。');
 
-    return m.Wrap(spacing: 8, runSpacing: 8, children: items);
+    return m.Wrap(alignment: m.WrapAlignment.spaceBetween, spacing: 8, runSpacing: 8, children: items);
   }
 }
 
@@ -1436,6 +1438,7 @@ class _TopicChips extends m.StatelessWidget {
   m.Widget build(m.BuildContext context) {
     if (topics.isEmpty) return _EmptyHint(text: '未偵測到明確主題。');
     return m.Wrap(
+      alignment: m.WrapAlignment.spaceBetween,
       spacing: 8,
       runSpacing: 6,
       children: topics.map((t) {

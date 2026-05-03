@@ -483,6 +483,7 @@ class _HeroCard extends m.StatelessWidget {
                   (constraints.maxWidth - (columns - 1) * spacing) / columns;
 
               return m.Wrap(
+                alignment: m.WrapAlignment.spaceBetween,
                 spacing: spacing,
                 runSpacing: spacing,
                 children: [

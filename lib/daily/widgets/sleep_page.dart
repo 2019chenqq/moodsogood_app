@@ -134,6 +134,7 @@ class SleepPage extends StatelessWidget {
         const Text('夜間睡眠狀況（可多選）',
             style: TextStyle(fontWeight: FontWeight.w600)),
         Wrap(
+          alignment: WrapAlignment.spaceBetween,
           spacing: 8,
           runSpacing: 8,
           children: (() {

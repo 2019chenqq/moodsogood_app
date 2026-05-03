@@ -34,6 +34,7 @@ class _EmpathyBarState extends State<EmpathyBar> {
   Widget build(BuildContext context) {
     final post = widget.post;
     return Wrap(
+      alignment: WrapAlignment.spaceBetween,
       spacing: 10,
       runSpacing: 8,
       children: [

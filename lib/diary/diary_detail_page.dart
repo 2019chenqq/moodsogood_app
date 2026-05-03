@@ -222,6 +222,7 @@ class _HeaderCard extends m.StatelessWidget {
                 ),
                 const m.SizedBox(height: 6),
                 m.Wrap(
+                  alignment: m.WrapAlignment.spaceBetween,
                   spacing: 8,
                   runSpacing: 6,
                   children: [

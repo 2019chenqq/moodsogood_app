@@ -348,8 +348,7 @@ ListTile(
           // 夜間睡眠狀況 flags
           const SizedBox(height: 8),
 const Text('夜間睡眠狀況', style: TextStyle(fontWeight: FontWeight.w600)),
-          Wrap(
-            spacing: 8,
+          Wrap(            alignment: WrapAlignment.spaceBetween,            spacing: 8,
             runSpacing: 8,
             children: kSleepFlags.map((f) {
               final key = f['key']!;

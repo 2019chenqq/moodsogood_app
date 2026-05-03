@@ -774,6 +774,7 @@ final badge = data['_badgeOverride'] as String?;
                       if (times.isNotEmpty) ...[
                         const SizedBox(height: 8),
                         Wrap(
+                          alignment: WrapAlignment.spaceBetween,
                           spacing: 6,
                           runSpacing: 6,
                           children: times.map((t) => _Chip(text: t)).toList(),
@@ -782,6 +783,7 @@ final badge = data['_badgeOverride'] as String?;
                       if (purposes.isNotEmpty) ...[
                         const SizedBox(height: 8),
                         Wrap(
+                          alignment: WrapAlignment.spaceBetween,
                           spacing: 6,
                           runSpacing: 6,
                           children: purposes.map((p) => _Chip(text: p, isSecondary: true)).toList(),

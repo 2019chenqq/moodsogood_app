@@ -135,7 +135,7 @@ class _LifeOverviewPageState extends State<LifeOverviewPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('生活總覽'),
+        title: const Text('生活軌跡'),
       ),
       backgroundColor: const Color(0xFFF6FBFC),
       body: SafeArea(
@@ -424,7 +424,7 @@ class _LifeOverviewLegend extends StatelessWidget {
     }
 
     return Wrap(
-      alignment: WrapAlignment.center,
+      alignment: WrapAlignment.spaceBetween,
       spacing: 12,
       runSpacing: 8,
       children: [
@@ -541,6 +541,7 @@ class _DailyMindBodySummaryCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Wrap(
+            alignment: WrapAlignment.spaceBetween,
             spacing: 8,
             runSpacing: 8,
             children: [
@@ -714,6 +715,7 @@ class _DailyMindBodySummaryCard extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           Wrap(
+            alignment: WrapAlignment.spaceBetween,
             spacing: 8,
             runSpacing: 8,
             children: [

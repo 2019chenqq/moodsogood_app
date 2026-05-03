@@ -267,6 +267,7 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
           ),
         ),
         Wrap(
+          alignment: WrapAlignment.spaceBetween,
           spacing: 8,
           runSpacing: 8,
           children: emotions.map((emotionName) {

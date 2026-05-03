@@ -390,6 +390,7 @@ String _timesLabel(List<String> times) {
 
             // 三段切換
             Wrap(
+              alignment: WrapAlignment.spaceBetween,
               spacing: 8,
               runSpacing: 8,
               children: [

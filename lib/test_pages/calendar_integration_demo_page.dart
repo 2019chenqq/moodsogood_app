@@ -248,6 +248,7 @@ class _SummaryCard extends StatelessWidget {
             )
           else
             Wrap(
+              alignment: WrapAlignment.spaceBetween,
               spacing: 8,
               runSpacing: 8,
               children: chips,

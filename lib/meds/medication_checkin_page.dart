@@ -872,6 +872,7 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
                         ),
                         const SizedBox(height: 10),
                         Wrap(
+                          alignment: WrapAlignment.spaceBetween,
                           spacing: 8,
                           runSpacing: 8,
                           children: [
@@ -985,6 +986,7 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
                                       const Text('今天尚未記錄服用')
                                     else
                                       Wrap(
+                                        alignment: WrapAlignment.spaceBetween,
                                         spacing: 6,
                                         runSpacing: 6,
                                         children: List.generate(events.length, (idx) {

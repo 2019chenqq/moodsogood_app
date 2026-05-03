@@ -1,5 +1,8 @@
 import 'dart:async';
 
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/material.dart';
+
 import '../models/calendar_day_summary.dart';
 
 enum AIFeedbackMode {
@@ -8,19 +11,12 @@ enum AIFeedbackMode {
 }
 
 class AIFeedbackService {
-  /// TODO: Wire this service to existing cloud AI function after API contracts are finalized.
-  ///
-  /// Current implementation is a safe mock version:
-  /// - waits 1 second
-  /// - returns gentle text based on available inputs
   Future<String> generateDiaryFeedback({
     required AIFeedbackMode mode,
     String? diaryTitle,
     String? diaryContent,
     CalendarDaySummary? daySummary,
   }) async {
-    await Future<void>.delayed(const Duration(seconds: 1));
-
     switch (mode) {
       case AIFeedbackMode.diaryOnly:
         final hasTitle = (diaryTitle ?? '').trim().isNotEmpty;
@@ -37,63 +33,125 @@ class AIFeedbackService {
           return '今天的資料還不完整，先保留這份紀錄就很好。等你補上更多內容後，我可以再幫你整理觀察重點。';
         }
 
-        final hasOverlap = daySummary.hasEmotionData ||
-            daySummary.hasSymptomData ||
-            daySummary.hasSleepData ||
-          daySummary.hasMedicationData ||
-            daySummary.isPeriodDay ||
-            daySummary.isPredictedPeriodDay;
-
-        if (!hasOverlap && !daySummary.hasDiary && !daySummary.hasDailyRecord) {
-          return '今天目前還沒有太多可交叉參考的資料。這也沒關係，你可以把它當作一個安靜的留白日。';
-        }
-
-        final lines = <String>[];
-        final mood = daySummary.averageMood;
-
-        if (mood != null) {
-          if (mood <= 4) {
-            lines.add('今天的情緒分數偏低，先把目標放在穩定自己，並回顧是否有特別耗能或壓力事件。');
-          } else if (mood < 7) {
-            lines.add('今天的情緒在中間區間，適合持續觀察睡眠、症狀與情緒是否有連動。');
-          } else {
-            lines.add('今天的情緒表現不錯，這是你有好好照顧自己的證據。');
-          }
-        }
-
-        if (daySummary.hasSleepData) {
-          lines.add('你有留下睡眠資料，接下來可以觀察睡眠品質是否影響白天的感受。');
-        }
-
-        if (daySummary.hasSymptomData) {
-          lines.add('你也記錄了身體症狀，這會幫助你更快看見身心之間的關聯。');
-        }
-
-        if (daySummary.hasMedicationData) {
-          if (daySummary.medicationNames.isNotEmpty) {
-            final top = daySummary.medicationNames.take(2).join('、');
-            lines.add('今天有用藥紀錄（$top），建議和情緒與症狀一起觀察，評估近期是否有連動。');
-          } else {
-            lines.add('今天有用藥紀錄，建議和情緒與症狀一起觀察，評估近期是否有連動。');
-          }
-        }
-
-        if (daySummary.isPeriodDay) {
-          lines.add('今天位在生理期，身體負荷可能較高，請把節奏放慢一些。');
-        } else if (daySummary.isPredictedPeriodDay) {
-          lines.add('目前接近預測生理期，這幾天的身心波動值得溫柔觀察。');
-        }
-
-        if (daySummary.hasDiary) {
-          lines.add('你今天有寫日記，回頭看文字通常能更清楚理解情緒脈絡。');
-        }
-
-        if (lines.isEmpty) {
-          lines.add('你已經開始留下紀錄，這會慢慢累積成理解自己的線索。');
-        }
-
-        final selected = lines.take(3).toList();
-        return selected.join(' ');
+        return _callGenerateAiJournalReflection(daySummary);
     }
+  }
+
+  Future<String> _callGenerateAiJournalReflection(CalendarDaySummary daySummary) async {
+    try {
+      final dateKey = _formatDateKey(daySummary.date);
+
+      final diaryTitle = (daySummary.diaryTitle ?? '').trim();
+      final diaryContent = (daySummary.diaryContent ?? '').trim();
+      final diarySummary = (daySummary.diarySummary ?? '').trim();
+
+      final diaryText = [diaryTitle, diaryContent, diarySummary]
+          .where((s) => s.isNotEmpty)
+          .join('\n');
+
+      final emotions = <Map<String, dynamic>>[
+        if (daySummary.averageMood != null)
+          {'name': '整體情緒', 'score': daySummary.averageMood}
+      ];
+      for (final emotionName in daySummary.emotionNames) {
+        if (emotionName.isNotEmpty) {
+          emotions.add({
+            'name': emotionName,
+            'score': daySummary.averageMood,
+          });
+        }
+      }
+
+      final symptoms = <Map<String, dynamic>>[];
+      for (final symptomName in daySummary.symptomNames) {
+        if (symptomName.isNotEmpty) {
+          symptoms.add({'name': symptomName});
+        }
+      }
+
+      final aiInput = <String, dynamic>{
+        'date': dateKey,
+        'diaryText': diaryText,
+        'emotions': emotions,
+        'sleep': {
+          'hours': daySummary.sleepHours,
+          'quality': daySummary.sleepQuality ?? '',
+        },
+        'symptoms': symptoms,
+        'period': {
+          'isPeriodDay': daySummary.isPeriodDay,
+          'isPredictedPeriodDay': daySummary.isPredictedPeriodDay,
+        },
+      };
+
+      final diaryFields = <String, dynamic>{
+        'title': diaryTitle,
+        'content': diaryContent.isNotEmpty ? diaryContent : diarySummary ?? '',
+        'overallMood': daySummary.averageMood,
+        'overallSleepQuality': daySummary.sleepQuality,
+      };
+
+      final dailyRecord = <String, dynamic>{
+        'overallMood': daySummary.averageMood,
+        'emotions': daySummary.emotionNames
+            .map((name) => {
+              'name': name,
+              'value': daySummary.averageMood,
+            })
+            .toList(),
+        'symptoms': daySummary.symptomNames,
+        'sleep': {
+          'hours': daySummary.sleepHours,
+          'quality': daySummary.sleepQuality,
+        },
+        'isPeriodDay': daySummary.isPeriodDay,
+        'isPredictedPeriodDay': daySummary.isPredictedPeriodDay,
+      };
+
+      final payload = <String, dynamic>{
+        'date': dateKey,
+        'aiInput': aiInput,
+        'diaryContent': diaryText,
+        'diaryFields': diaryFields,
+        'dailyRecord': dailyRecord,
+      };
+
+      debugPrint('🧪 AI Feedback Service: Calling generateAiJournalReflection with payload: $payload');
+
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('generateAiJournalReflection');
+      final response = await callable.call(payload);
+
+      debugPrint('🧪 AI Feedback Service: Response received: ${response.data}');
+
+      if (response.data is! Map) {
+        throw Exception('AI 回應格式錯誤');
+      }
+
+      final data = Map<String, dynamic>.from(response.data as Map);
+
+      final summary = (data['summary'] ?? '').toString().trim();
+      final emotionObservation = (data['emotionObservation'] ?? '').toString().trim();
+      final positiveFeedback = (data['positiveFeedback'] ?? '').toString().trim();
+      final tomorrowAction = (data['tomorrowAction'] ?? '').toString().trim();
+
+      final combined = [summary, emotionObservation, positiveFeedback, tomorrowAction]
+          .where((s) => s.isNotEmpty)
+          .join('\n\n');
+
+      return combined.isNotEmpty
+          ? combined
+          : '暫時無法生成回饋，請稍後重試。';
+    } catch (e) {
+      debugPrint('❌ AI Feedback Service error: $e');
+      rethrow;
+    }
+  }
+
+  String _formatDateKey(DateTime date) {
+    final year = date.year.toString();
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
   }
 }

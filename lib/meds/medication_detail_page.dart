@@ -169,6 +169,7 @@ class MedicationDetailPage extends StatelessWidget {
                       _MiniLabel('服用時間'),
                       const SizedBox(height: 6),
                       Wrap(
+                        alignment: WrapAlignment.spaceBetween,
                         spacing: 8,
                         runSpacing: 8,
                         children: times.map((t) => _Chip(text: t)).toList(),
@@ -180,6 +181,7 @@ class MedicationDetailPage extends StatelessWidget {
                       _MiniLabel('用途'),
                       const SizedBox(height: 6),
                       Wrap(
+                        alignment: WrapAlignment.spaceBetween,
                         spacing: 8,
                         runSpacing: 8,
                         children: allPurposes.map((p) => _Chip(text: p)).toList(),
@@ -191,6 +193,7 @@ class MedicationDetailPage extends StatelessWidget {
                       _MiniLabel('身體症狀'),
                       const SizedBox(height: 6),
                       Wrap(
+                        alignment: WrapAlignment.spaceBetween,
                         spacing: 8,
                         runSpacing: 8,
                         children: bodySymptoms.map((s) => _Chip(text: s)).toList(),

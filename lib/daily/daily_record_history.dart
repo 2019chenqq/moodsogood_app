@@ -794,6 +794,7 @@ bool _isHistoryLocked(bool isPro) {
 
   Widget _buildDateFilterChips({bool compact = false}) {
     return Wrap(
+      alignment: WrapAlignment.spaceBetween,
       spacing: 8,
       children: [
         ChoiceChip(

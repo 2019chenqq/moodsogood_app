@@ -441,6 +441,7 @@ _SectionCard(
   title: '藥物形式',
   icon: Icons.medical_services_outlined,
   child: Wrap(
+    alignment: WrapAlignment.spaceBetween,
     spacing: 8,
     runSpacing: 8,
     children: [

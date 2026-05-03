@@ -194,6 +194,7 @@ class CalendarSummaryService {
       }
 
       final sleepHours = _toDouble(data['sleepHours']) ??
+          _toDouble(sleepMap?['durationHours']) ??
           _toDouble(sleepMap?['hours']) ??
           _toDouble(data['sleepDuration']) ??
           _toDouble(sleepMap?['duration']) ??

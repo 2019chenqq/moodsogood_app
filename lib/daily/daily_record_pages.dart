@@ -331,6 +331,7 @@ class SymptomPage extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Wrap(
+          alignment: WrapAlignment.spaceBetween,
           spacing: 8,
           runSpacing: 8,
           children: ['心悸', '胸悶', '胸痛', '呼吸不順', '過度換氣'].map((name) {
@@ -354,6 +355,7 @@ class SymptomPage extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Wrap(
+          alignment: WrapAlignment.spaceBetween,
           spacing: 8,
           runSpacing: 8,
           children: [
@@ -387,6 +389,7 @@ class SymptomPage extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Wrap(
+          alignment: WrapAlignment.spaceBetween,
           spacing: 8,
           runSpacing: 8,
           children: ['頭暈', '頭痛', '頭脹'].map((name) {
@@ -410,6 +413,7 @@ class SymptomPage extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Wrap(
+          alignment: WrapAlignment.spaceBetween,
           spacing: 8,
           runSpacing: 8,
           children: ['眼睛乾澀', '眼睛疲勞', '視力模糊', '不斷流淚', '耳鳴'].map((name) {
@@ -433,6 +437,7 @@ class SymptomPage extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Wrap(
+          alignment: WrapAlignment.spaceBetween,
           spacing: 8,
           runSpacing: 8,
           children: ['口乾舌燥', '失去味覺', '口腔苦澀', '咽喉異物感'].map((name) {
@@ -456,6 +461,7 @@ class SymptomPage extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Wrap(
+          alignment: WrapAlignment.spaceBetween,
           spacing: 8,
           runSpacing: 8,
           children: ['顫抖', '發麻', '手汗變多', '肌肉緊繃', '肌肉抽蓄', '四肢無力'].map((name) {
