@@ -755,14 +755,24 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     setState(() => _isSaving = true);
 
     try {
-      final oldSnap = await ref.get();
       String? oldStartId;
       bool oldIsPeriod = false;
+      var cloudSyncFailed = false;
 
-      if (oldSnap.exists && oldSnap.data() != null) {
-        final old = DailyRecord.fromFirestore(oldSnap);
-        oldStartId = old.periodStartId;
-        oldIsPeriod = old.isPeriod;
+      // 離線時這一步可能失敗，不能影響本地儲存。
+      if (FirebaseSyncConfig.shouldSync()) {
+        try {
+          final oldSnap = await ref.get(
+            const GetOptions(source: Source.serverAndCache),
+          );
+          if (oldSnap.exists && oldSnap.data() != null) {
+            final old = DailyRecord.fromFirestore(oldSnap);
+            oldStartId = old.periodStartId;
+            oldIsPeriod = old.isPeriod;
+          }
+        } catch (e) {
+          debugPrint('⚠️ 讀取雲端舊資料失敗，改用離線流程：$e');
+        }
       }
 
       final payload = <String, dynamic>{
@@ -820,7 +830,12 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
 
       // Only sync to Firebase if enabled
       if (FirebaseSyncConfig.shouldSync()) {
-        await ref.set(payload, SetOptions(merge: true));
+        try {
+          await ref.set(payload, SetOptions(merge: true));
+        } catch (e) {
+          cloudSyncFailed = true;
+          debugPrint('⚠️ 雲端同步失敗（已改為僅本地儲存）：$e');
+        }
       }
 
       // Always save to local database
@@ -899,7 +914,9 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已儲存成功！')),
+        SnackBar(
+          content: Text(cloudSyncFailed ? '已離線儲存，恢復網路後會再同步。' : '已儲存成功！'),
+        ),
       );
     } finally {
       if (mounted) setState(() => _isSaving = false);
