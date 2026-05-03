@@ -199,18 +199,24 @@ class CalendarSummaryService {
           _toDouble(data['sleepDuration']) ??
           _toDouble(sleepMap?['duration']) ??
           _toDouble(sleepDataMap?['hours']) ??
-          _toDouble(sleepDataMap?['duration']);
+          _toDouble(sleepDataMap?['duration']) ??
+          _sleepHoursFromTimes(sleepMap) ??
+          _sleepHoursFromTimes(sleepDataMap);
 
-      final sleepQuality = _toCleanString(data['sleepQuality']) ??
-          _toCleanString(sleepMap?['quality']) ??
-          _toCleanString(sleepDataMap?['quality']);
+        final sleepQuality = _toDisplayString(data['sleepQuality']) ??
+          _toDisplayString(sleepMap?['quality']) ??
+          _toDisplayString(sleepDataMap?['quality']) ??
+          _toDisplayString(data['overallSleepQuality']);
 
       final hasEmotionData = dayMood != null ||
           emotionNames.isNotEmpty ||
           _hasCollectionData(data['emotions']);
       final hasSymptomData = symptomNames.isNotEmpty || _hasCollectionData(data['symptoms']);
       final hasSleepData =
-          sleepHours != null || sleepQuality != null || _hasCollectionData(data['sleep']);
+          sleepHours != null ||
+          sleepQuality != null ||
+          _hasCollectionData(data['sleep']) ||
+          _hasCollectionData(sleepDataMap);
       final hasMedicationData = medicationNames.isNotEmpty ||
           tookHypnotic ||
           _hasCollectionData(data['medications']) ||
@@ -601,6 +607,52 @@ class CalendarSummaryService {
     if (value is! String) return null;
     final s = value.trim();
     return s.isEmpty ? null : s;
+  }
+
+  String? _toDisplayString(dynamic value) {
+    if (value == null) return null;
+    if (value is String) {
+      final s = value.trim();
+      return s.isEmpty ? null : s;
+    }
+    if (value is num) {
+      if (value.isNaN || value.isInfinite) return null;
+      return value % 1 == 0 ? value.toInt().toString() : value.toString();
+    }
+    return null;
+  }
+
+  double? _sleepHoursFromTimes(Map<String, dynamic>? sleepMap) {
+    if (sleepMap == null || sleepMap.isEmpty) return null;
+
+    final sleepTime = _toCleanString(sleepMap['sleepTime']);
+    final wakeTime = _toCleanString(sleepMap['finalWakeTime']) ??
+        _toCleanString(sleepMap['wakeTime']);
+    if (sleepTime == null || wakeTime == null) return null;
+
+    final start = _parseHmMinutes(sleepTime);
+    final end = _parseHmMinutes(wakeTime);
+    if (start == null || end == null) return null;
+
+    var diff = end - start;
+    if (diff <= 0) {
+      diff += 24 * 60;
+    }
+    if (diff <= 0) return null;
+
+    return diff / 60.0;
+  }
+
+  int? _parseHmMinutes(String text) {
+    final m = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(text.trim());
+    if (m == null) return null;
+
+    final h = int.tryParse(m.group(1)!);
+    final min = int.tryParse(m.group(2)!);
+    if (h == null || min == null) return null;
+    if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+
+    return h * 60 + min;
   }
 
   double? _normalizeScore(double? value) {

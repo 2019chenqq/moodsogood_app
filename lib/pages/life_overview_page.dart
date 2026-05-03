@@ -31,8 +31,6 @@ class _LifeOverviewPageState extends State<LifeOverviewPage> {
   bool _isGeneratingFeedback = false;
   String? _aiErrorMessage;
 
-  UnifiedCalendarMode _mode = UnifiedCalendarMode.overview;
-
   @override
   void initState() {
     super.initState();
@@ -142,8 +140,6 @@ class _LifeOverviewPageState extends State<LifeOverviewPage> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
           children: [
-            _buildModeTabs(),
-            const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
@@ -174,7 +170,7 @@ class _LifeOverviewPageState extends State<LifeOverviewPage> {
               UnifiedCalendarWidget(
                 selectedDate: _selectedDate,
                 focusedMonth: _focusedMonth,
-                mode: _mode,
+                mode: UnifiedCalendarMode.overview,
                 summariesByDate: _summaries,
                 showInternalPeriodLegend: false,
                 onMonthChanged: (month) {
@@ -201,7 +197,6 @@ class _LifeOverviewPageState extends State<LifeOverviewPage> {
             const SizedBox(height: 16),
             _DailyMindBodySummaryCard(
               summary: summary,
-              mode: _mode,
               canGenerateFeedback: canGenerateAiFeedback,
               isGeneratingFeedback: _isGeneratingFeedback,
               aiErrorMessage: _aiErrorMessage,
@@ -212,57 +207,6 @@ class _LifeOverviewPageState extends State<LifeOverviewPage> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildModeTabs() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFD9EAEE)),
-      ),
-      padding: const EdgeInsets.all(6),
-      child: SegmentedButton<UnifiedCalendarMode>(
-        showSelectedIcon: false,
-        emptySelectionAllowed: false,
-        multiSelectionEnabled: false,
-        style: ButtonStyle(
-          side: const WidgetStatePropertyAll(BorderSide.none),
-          shape: WidgetStatePropertyAll(
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-          backgroundColor: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.selected)) {
-              return const Color(0xFF7AB7C2).withValues(alpha: 0.2);
-            }
-            return Colors.transparent;
-          }),
-          foregroundColor: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.selected)) {
-              return const Color(0xFF2A6774);
-            }
-            return const Color(0xFF7F9AA0);
-          }),
-          textStyle: const WidgetStatePropertyAll(
-            TextStyle(fontWeight: FontWeight.w700),
-          ),
-          visualDensity: const VisualDensity(horizontal: -1, vertical: -1),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
-        segments: const [
-          ButtonSegment(value: UnifiedCalendarMode.overview, label: Text('總覽')),
-          ButtonSegment(value: UnifiedCalendarMode.record, label: Text('紀錄')),
-        ],
-        selected: {_mode},
-        onSelectionChanged: (selection) {
-          final next = selection.first;
-          if (next == UnifiedCalendarMode.diary || next == UnifiedCalendarMode.period) return;
-          if (next != _mode) {
-            _safeSetState(() => _mode = next);
-          }
-        },
       ),
     );
   }
@@ -458,7 +402,6 @@ class _LegendDot extends StatelessWidget {
 
 class _DailyMindBodySummaryCard extends StatelessWidget {
   final CalendarDaySummary summary;
-  final UnifiedCalendarMode mode;
   final bool canGenerateFeedback;
   final bool isGeneratingFeedback;
   final String? aiErrorMessage;
@@ -469,7 +412,6 @@ class _DailyMindBodySummaryCard extends StatelessWidget {
 
   const _DailyMindBodySummaryCard({
     required this.summary,
-    required this.mode,
     required this.canGenerateFeedback,
     required this.isGeneratingFeedback,
     required this.aiErrorMessage,
@@ -493,7 +435,7 @@ class _DailyMindBodySummaryCard extends StatelessWidget {
     } else {
       final parts = <String>[];
       if (summary.sleepHours != null) {
-        parts.add('${summary.sleepHours!.toStringAsFixed(1)} 小時');
+        parts.add(_formatSleepDuration(summary.sleepHours!));
       }
       if (summary.sleepQuality != null && summary.sleepQuality!.isNotEmpty) {
         parts.add('品質：${summary.sleepQuality}');
@@ -533,7 +475,7 @@ class _DailyMindBodySummaryCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            mode == UnifiedCalendarMode.record ? '當日紀錄回顧' : '當日身心狀態回顧',
+            '當日身心狀態回顧',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: const Color(0xFF2C6774),
                   fontWeight: FontWeight.w700,
@@ -777,6 +719,18 @@ class _DailyMindBodySummaryCard extends StatelessWidget {
     }
 
     return observations.take(3).toList();
+  }
+
+  String _formatSleepDuration(double hours) {
+    if (hours.isNaN || hours.isInfinite || hours <= 0) {
+      return '尚無資料';
+    }
+
+    final totalMinutes = (hours * 60).round();
+    final h = totalMinutes ~/ 60;
+    final m = totalMinutes % 60;
+
+    return '${h}小時${m}分';
   }
 }
 
