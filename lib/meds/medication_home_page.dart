@@ -7,7 +7,6 @@ import '../widgets/main_drawer.dart';
 import 'record_adjustment_page.dart';
 import 'med_symptom_compare_page.dart';
 import 'medication_local_db.dart';
-import 'medication_checkin_page.dart';
 
 const List<String> kTimeOrder = [
   '早上',
@@ -143,16 +142,6 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
             ],
           ),
           actions: [
-            IconButton(
-              tooltip: '服藥打卡',
-              icon: const Icon(Icons.task_alt),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const MedicationCheckinPage()),
-                );
-              },
-            ),
             IconButton(
               tooltip: '症狀交叉比對',
               icon: const Icon(Icons.compare_arrows),
