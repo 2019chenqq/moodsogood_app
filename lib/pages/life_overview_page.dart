@@ -640,6 +640,7 @@ class _DailyMindBodySummaryCard extends StatelessWidget {
               ),
               child: Text(
                 summary.aiFeedback!,
+                textAlign: TextAlign.justify,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: const Color(0xFF567C83),
                       height: 1.45,
