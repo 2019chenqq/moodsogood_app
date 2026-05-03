@@ -40,6 +40,7 @@ class AIFeedbackService {
         final hasOverlap = daySummary.hasEmotionData ||
             daySummary.hasSymptomData ||
             daySummary.hasSleepData ||
+          daySummary.hasMedicationData ||
             daySummary.isPeriodDay ||
             daySummary.isPredictedPeriodDay;
 
@@ -66,6 +67,15 @@ class AIFeedbackService {
 
         if (daySummary.hasSymptomData) {
           lines.add('你也記錄了身體症狀，這會幫助你更快看見身心之間的關聯。');
+        }
+
+        if (daySummary.hasMedicationData) {
+          if (daySummary.medicationNames.isNotEmpty) {
+            final top = daySummary.medicationNames.take(2).join('、');
+            lines.add('今天有用藥紀錄（$top），建議和情緒與症狀一起觀察，評估近期是否有連動。');
+          } else {
+            lines.add('今天有用藥紀錄，建議和情緒與症狀一起觀察，評估近期是否有連動。');
+          }
         }
 
         if (daySummary.isPeriodDay) {

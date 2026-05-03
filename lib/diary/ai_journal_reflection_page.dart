@@ -198,6 +198,83 @@ class _AiJournalReflectionPageState
     }
   }
 
+  Future<Map<String, dynamic>> _buildMedicationContextForAi(String uid) async {
+    try {
+      final userRef = _db.collection('users').doc(uid);
+      final checkinSnap = await userRef
+          .collection('medicationCheckins')
+          .doc(_docId)
+          .get();
+      final medsSnap = await userRef
+          .collection('medications')
+          .where('isActive', isEqualTo: true)
+          .get();
+
+      final medNameById = <String, String>{};
+      final activeMedicationNames = <String>[];
+      for (final doc in medsSnap.docs) {
+        final data = doc.data();
+        final name = (data['name'] ?? '').toString().trim();
+        if (name.isEmpty) continue;
+        medNameById[doc.id] = name;
+        if (!activeMedicationNames.contains(name)) {
+          activeMedicationNames.add(name);
+        }
+      }
+
+      if (!checkinSnap.exists) {
+        if (activeMedicationNames.isEmpty) return const <String, dynamic>{};
+        return <String, dynamic>{
+          'activeMedicationNames': activeMedicationNames,
+          'takenMedicationNames': const <String>[],
+          'skippedMedicationNames': const <String>[],
+          'note': '今日沒有服藥打卡紀錄，僅提供目前藥物清單。',
+        };
+      }
+
+      final data = checkinSnap.data() ?? const <String, dynamic>{};
+      final statusesRaw = (data['statuses'] is Map)
+          ? Map<String, dynamic>.from(data['statuses'] as Map)
+          : <String, dynamic>{};
+      final checksRaw = (data['checks'] is Map)
+          ? Map<String, dynamic>.from(data['checks'] as Map)
+          : <String, dynamic>{};
+
+      final takenNames = <String>{};
+      final skippedNames = <String>{};
+      final pendingNames = <String>{};
+
+      final keys = <String>{...statusesRaw.keys, ...checksRaw.keys};
+      for (final key in keys) {
+        final parts = key.split('::');
+        if (parts.length < 2) continue;
+        final medId = parts.first.trim();
+        final medName = medNameById[medId] ?? medId;
+
+        final status = (statusesRaw[key] ?? '').toString().trim().toLowerCase();
+        final checked = checksRaw[key] == true;
+
+        if (status == 'taken' || checked) {
+          takenNames.add(medName);
+        } else if (status == 'skipped') {
+          skippedNames.add(medName);
+        } else {
+          pendingNames.add(medName);
+        }
+      }
+
+      return <String, dynamic>{
+        'activeMedicationNames': activeMedicationNames,
+        'takenMedicationNames': takenNames.toList(),
+        'skippedMedicationNames': skippedNames.toList(),
+        'pendingMedicationNames': pendingNames.toList(),
+      };
+    } catch (e) {
+      m.debugPrint('⚠️ buildMedicationContextForAi failed: $e');
+      return const <String, dynamic>{};
+    }
+  }
+
   // ──────────────────────────────────────────────
   // 危機關鍵字偵測
   // ──────────────────────────────────────────────
@@ -229,6 +306,53 @@ class _AiJournalReflectionPageState
     await Future.delayed(const Duration(milliseconds: 1200));
 
     final mood = dailyRecord['overallMood'] ?? dailyRecord['mood'] ?? 5;
+    final medNames = <String>{};
+    void collectMed(dynamic value) {
+      if (value == null) return;
+      if (value is String) {
+        final v = value.trim();
+        if (v.isNotEmpty) medNames.add(v);
+        return;
+      }
+      if (value is List) {
+        for (final item in value) {
+          collectMed(item);
+        }
+        return;
+      }
+      if (value is Map) {
+        final name = (value['name'] ??
+                value['title'] ??
+                value['label'] ??
+                value['medicationName'] ??
+                value['drugName'])
+            ?.toString()
+            .trim();
+        if (name != null && name.isNotEmpty) {
+          medNames.add(name);
+          return;
+        }
+        for (final v in value.values) {
+          collectMed(v);
+        }
+      }
+    }
+
+    collectMed(dailyRecord['medication']);
+    collectMed(dailyRecord['medications']);
+    collectMed(dailyRecord['medicines']);
+
+    final sleep = dailyRecord['sleep'];
+    if (sleep is Map) {
+      final hypnoticName = (sleep['hypnoticName'] ?? '').toString().trim();
+      if (hypnoticName.isNotEmpty) {
+        medNames.add('安眠藥：$hypnoticName');
+      } else if (sleep['tookHypnotic'] == true) {
+        medNames.add('安眠藥');
+      }
+    }
+
+    final hasMedicationData = medNames.isNotEmpty;
 
     // ── Mock 資料庫（隨機挑選增加真實感）──
     final rng = Random();
@@ -287,11 +411,26 @@ class _AiJournalReflectionPageState
     final topics = (topicSets..shuffle(rng)).first;
     final gratitudeQs = (gratitudeSets..shuffle(rng)).first;
 
+    final summaryText = summaries[rng.nextInt(summaries.length)] +
+      (hasMedicationData
+        ? ' 另外你也留下了用藥資訊，這讓回顧時更容易對照身心變化。'
+        : '');
+    final observationText =
+      emotionObservations[rng.nextInt(emotionObservations.length)] +
+        (hasMedicationData
+          ? ' 今天也有用藥紀錄，建議和情緒分數、症狀一起觀察是否有連動。'
+          : '');
+    final feedbackText =
+      positiveFeedbacks[rng.nextInt(positiveFeedbacks.length)] +
+        (hasMedicationData
+          ? ' 你願意把用藥也一起記下來，這是很實際且有力量的自我照顧。'
+          : '');
+
     return {
-      'summary': summaries[rng.nextInt(summaries.length)],
-      'emotionObservation': emotionObservations[rng.nextInt(emotionObservations.length)],
+      'summary': summaryText,
+      'emotionObservation': observationText,
       'topics': topics,
-      'positiveFeedback': positiveFeedbacks[rng.nextInt(positiveFeedbacks.length)],
+      'positiveFeedback': feedbackText,
       'gratitudeQuestions': gratitudeQs,
       'tomorrowAction': tomorrowActions[rng.nextInt(tomorrowActions.length)],
       'crisisDetected': false, // mock 不觸發，由前端關鍵字偵測處理
@@ -317,7 +456,174 @@ class _AiJournalReflectionPageState
     };
   }
 
+  Future<Map<String, dynamic>> buildAIInputData() async {
+    final uid = _uid;
+    if (uid == null) {
+      final empty = <String, dynamic>{
+        'date': _docId,
+        'diaryText': '',
+        'emotions': <Map<String, dynamic>>[],
+        'sleep': <String, dynamic>{
+          'hours': null,
+          'quality': '',
+          'note': '',
+        },
+        'symptoms': <Map<String, dynamic>>[],
+        'recentRecords': <Map<String, dynamic>>[],
+      };
+      m.debugPrint('🧪 buildAIInputData: $empty');
+      return empty;
+    }
+
+    Map<String, dynamic> diary = _diaryData ?? const <String, dynamic>{};
+    Map<String, dynamic> dailyRecord =
+        _dailyRecordData ?? const <String, dynamic>{};
+
+    try {
+      if (_diaryData == null || _dailyRecordData == null) {
+        final diarySnap = await _db
+            .collection('users')
+            .doc(uid)
+            .collection('diary')
+            .doc(_docId)
+            .get();
+        final recordSnap = await _db
+            .collection('users')
+            .doc(uid)
+            .collection('dailyRecords')
+            .doc(_docId)
+            .get();
+
+        diary = diarySnap.data() ?? const <String, dynamic>{};
+        dailyRecord = recordSnap.data() ?? const <String, dynamic>{};
+      }
+    } catch (e) {
+      m.debugPrint('⚠️ buildAIInputData read error: $e');
+    }
+
+    String _safeText(dynamic v) => (v ?? '').toString().trim();
+
+    num? _toNum(dynamic v) {
+      if (v is num) return v;
+      return num.tryParse((v ?? '').toString().trim());
+    }
+
+    num? _calcSleepHours(Map<String, dynamic>? sleepMap) {
+      if (sleepMap == null) return null;
+      final sleepTimeStr = _safeText(sleepMap['sleepTime']);
+      final finalWakeTimeStr = _safeText(sleepMap['finalWakeTime']);
+      final wakeTimeStr = _safeText(sleepMap['wakeTime']);
+      final end = finalWakeTimeStr.isNotEmpty ? finalWakeTimeStr : wakeTimeStr;
+      if (sleepTimeStr.isEmpty || end.isEmpty) return null;
+      try {
+        final sParts = sleepTimeStr.split(':');
+        final eParts = end.split(':');
+        int sMin = int.parse(sParts[0]) * 60 + int.parse(sParts[1]);
+        int eMin = int.parse(eParts[0]) * 60 + int.parse(eParts[1]);
+        if (eMin <= sMin) eMin += 24 * 60;
+        return ((eMin - sMin) / 60).round();
+      } catch (_) {
+        return null;
+      }
+    }
+
+    String _sleepQualityLabel(dynamic quality) {
+      final score = _toNum(quality);
+      if (score == null) return '';
+      if (score >= 8) return '良好';
+      if (score >= 5) return '普通';
+      return '較差';
+    }
+
+    final diarySections = <MapEntry<String, String>>[
+      MapEntry('標題', _safeText(diary['title'])),
+      MapEntry('內容', _safeText(diary['content'])),
+      MapEntry('今日主題曲', _safeText(diary['themeSong'])),
+      MapEntry('最想記錄的瞬間', _safeText(diary['highlight'])),
+      MapEntry('今天情緒像', _safeText(diary['metaphor'])),
+      MapEntry('為自己感到驕傲', _safeText(diary['conceited'])),
+      MapEntry('做得不錯的地方', _safeText(diary['proudOf'])),
+      MapEntry('可多照顧自己的地方', _safeText(diary['selfCare'])),
+    ];
+    final diaryText = diarySections
+        .where((entry) => entry.value.isNotEmpty)
+        .map((entry) => '${entry.key}: ${entry.value}')
+        .join('\n');
+
+    final emotions = <Map<String, dynamic>>[];
+    final overallMood = _toNum(diary['overallMood'] ?? dailyRecord['overallMood']);
+    if (overallMood != null) {
+      emotions.add({'name': '整體情緒', 'score': overallMood});
+    }
+    final rawEmotions = dailyRecord['emotions'];
+    if (rawEmotions is List) {
+      for (final item in rawEmotions) {
+        if (item is! Map) continue;
+        final name = _safeText(item['name']);
+        final score = _toNum(item['value'] ?? item['score']);
+        if (name.isEmpty) continue;
+        emotions.add({'name': name, 'score': score});
+      }
+    } else if (rawEmotions is Map) {
+      for (final entry in rawEmotions.entries) {
+        final name = _safeText(entry.key);
+        if (name.isEmpty) continue;
+        emotions.add({'name': name, 'score': _toNum(entry.value)});
+      }
+    }
+    final anxiety = _toNum(dailyRecord['anxiety']);
+    if (anxiety != null) {
+      emotions.add({'name': '焦慮', 'score': anxiety});
+    }
+
+    final sleepMap = dailyRecord['sleep'] is Map
+        ? Map<String, dynamic>.from(dailyRecord['sleep'] as Map)
+        : null;
+    final sleep = <String, dynamic>{
+      'hours': _calcSleepHours(sleepMap),
+      'quality': _sleepQualityLabel(
+        sleepMap?['quality'] ?? diary['overallSleepQuality'] ?? dailyRecord['overallSleepQuality'],
+      ),
+      'note': _safeText(sleepMap?['note']),
+    };
+
+    final symptoms = <Map<String, dynamic>>[];
+    final rawSymptoms = dailyRecord['symptoms'];
+    if (rawSymptoms is List) {
+      for (final item in rawSymptoms) {
+        if (item is Map) {
+          final name = _safeText(item['name'] ?? item['label'] ?? item['title']);
+          if (name.isEmpty) continue;
+          symptoms.add({'name': name, 'score': _toNum(item['score'] ?? item['value'])});
+        } else {
+          final name = _safeText(item);
+          if (name.isEmpty) continue;
+          symptoms.add({'name': name, 'score': null});
+        }
+      }
+    } else if (rawSymptoms is Map) {
+      for (final entry in rawSymptoms.entries) {
+        final name = _safeText(entry.key);
+        if (name.isEmpty) continue;
+        symptoms.add({'name': name, 'score': _toNum(entry.value)});
+      }
+    }
+
+    final result = <String, dynamic>{
+      'date': _docId,
+      'diaryText': diaryText,
+      'emotions': emotions,
+      'sleep': sleep,
+      'symptoms': symptoms,
+      'recentRecords': <Map<String, dynamic>>[],
+    };
+
+    m.debugPrint('🧪 buildAIInputData: $result');
+    return result;
+  }
+
   Future<Map<String, dynamic>> generateAIReflection({
+    required Map<String, dynamic> aiInput,
     required String diaryContent,
     required Map<String, dynamic> diaryFields,
     required Map<String, dynamic> dailyRecord,
@@ -327,9 +633,7 @@ class _AiJournalReflectionPageState
           .httpsCallable('generateAiJournalReflection');
       final response = await callable.call({
         'date': _docId,
-        'diaryContent': diaryContent,
-        'diaryFields': diaryFields,
-        'dailyRecord': dailyRecord,
+        'aiInput': aiInput,
       });
 
       final data = response.data;
@@ -338,13 +642,11 @@ class _AiJournalReflectionPageState
       }
 
       return _normalizeAiResult(Map<String, dynamic>.from(data));
-    } catch (e) {
-      m.debugPrint('⚠️ generateAIReflection fallback to mock: $e');
-      return generateMockAIReflection(
-        diaryContent: diaryContent,
-        dailyRecord: dailyRecord,
-      );
-    }
+    } catch (e, stack) {
+  m.debugPrint('❌ generateAIReflection error: $e');
+  m.debugPrint('❌ stack: $stack');
+  rethrow;
+}
   }
 
   // ──────────────────────────────────────────────
@@ -364,6 +666,8 @@ class _AiJournalReflectionPageState
     });
 
     try {
+      final aiInput = await buildAIInputData();
+
       final diaryFieldsForAi = {
         'title': _diaryData?['title'] ?? '',
         'content': _diaryData?['content'] ?? '',
@@ -409,12 +713,17 @@ class _AiJournalReflectionPageState
 
       // 優先呼叫 Firebase Functions 上的 AI；失敗時回退到 mock
       // dailyRecord 優先用日記頁整體情緒滑桿值覆蓋平均值
+      final medicationContext = await _buildMedicationContextForAi(uid);
       final dailyRecordForAi = {
         if (_dailyRecordData != null) ..._dailyRecordData!,
         if (_diaryData?['overallMood'] != null)
           'overallMood': _diaryData!['overallMood'],
+        if (medicationContext.isNotEmpty) 'medication': medicationContext,
+        if (medicationContext['activeMedicationNames'] is List)
+          'medications': medicationContext['activeMedicationNames'],
       };
       final result = await generateAIReflection(
+        aiInput: aiInput,
         diaryContent: diaryContent,
         diaryFields: diaryFieldsForAi,
         dailyRecord: dailyRecordForAi,

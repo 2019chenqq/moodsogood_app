@@ -85,6 +85,13 @@ function toNumber(value, fallback = null) {
   return fallback;
 }
 
+function toCleanString(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+  return value.trim();
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -157,8 +164,74 @@ function pickEmotionScore(entries, keywords) {
   return found ? found.score : null;
 }
 
+function collectMedicationNames(source, bucket) {
+  if (!source) return;
+
+  if (typeof source === "string") {
+    const s = toCleanString(source);
+    if (s) bucket.add(s);
+    return;
+  }
+
+  if (Array.isArray(source)) {
+    source.forEach((item) => collectMedicationNames(item, bucket));
+    return;
+  }
+
+  if (typeof source === "object") {
+    const name =
+      toCleanString(source.name) ||
+      toCleanString(source.label) ||
+      toCleanString(source.title) ||
+      toCleanString(source.medicationName) ||
+      toCleanString(source.drugName);
+
+    if (name) {
+      bucket.add(name);
+      return;
+    }
+
+    Object.values(source).forEach((value) => collectMedicationNames(value, bucket));
+  }
+}
+
+function extractMedicationInfo(dailyRecord) {
+  const names = new Set();
+
+  collectMedicationNames(dailyRecord.medication, names);
+  collectMedicationNames(dailyRecord.medications, names);
+  collectMedicationNames(dailyRecord.medicines, names);
+
+  const sleep =
+    dailyRecord.sleep && typeof dailyRecord.sleep === "object" ? dailyRecord.sleep : {};
+  const hypnoticName = toCleanString(sleep.hypnoticName || dailyRecord.hypnoticName);
+  const hypnoticDose = toCleanString(sleep.hypnoticDose || dailyRecord.hypnoticDose);
+  const tookHypnotic = sleep.tookHypnotic === true || dailyRecord.tookHypnotic === true;
+
+  if (hypnoticName) {
+    names.add(hypnoticDose ? `安眠藥:${hypnoticName}(${hypnoticDose})` : `安眠藥:${hypnoticName}`);
+  } else if (tookHypnotic) {
+    names.add("安眠藥");
+  }
+
+  const medicationNames = Array.from(names);
+  const hasMedicationData =
+    medicationNames.length > 0 ||
+    Boolean(dailyRecord.medication) ||
+    Boolean(dailyRecord.medications) ||
+    Boolean(dailyRecord.medicines);
+
+  return {
+    hasMedicationData,
+    medicationNames,
+    medicationCount: medicationNames.length,
+    tookHypnotic,
+  };
+}
+
 function buildEmotionModel(dailyRecord, diaryFields, diaryText) {
   const emotionEntries = extractEmotionEntries(dailyRecord);
+  const medication = extractMedicationInfo(dailyRecord);
   const mood = toNumber(dailyRecord.overallMood ?? diaryFields.overallMood ?? dailyRecord.mood, 5);
   const health = toNumber(
     dailyRecord.overallHealth ?? diaryFields.overallHealth ?? dailyRecord.health,
@@ -229,11 +302,14 @@ function buildEmotionModel(dailyRecord, diaryFields, diaryText) {
       symptomsCount,
       positiveHits,
       negativeHits,
+      medicationCount: medication.medicationCount,
+      tookHypnotic: medication.tookHypnotic,
     },
     risks: {
       anxietyRisk,
       symptomBurden: symptomsCount >= 5 ? "高" : symptomsCount >= 3 ? "中" : "低",
     },
+    medication,
   };
 }
 
@@ -321,31 +397,89 @@ exports.generateAiJournalReflection = onCall(
       throw new HttpsError("unauthenticated", "請先登入後再使用此功能");
     }
 
-    const { diaryContent, diaryFields, dailyRecord, date } = request.data || {};
+    const { aiInput, diaryContent, diaryFields, dailyRecord, date } = request.data || {};
 
-    const safeDiaryFields = normalizeDiaryFields(diaryFields);
-    const composedDiaryText = [
-      String(diaryContent || "").trim(),
-      buildDiaryTextFromFields(safeDiaryFields),
-    ]
-      .filter(Boolean)
-      .join("\n\n")
-      .trim();
-    const trimmedDiary = composedDiaryText.slice(0, 8000);
+    let safeDiaryFields;
+    let safeDailyRecord;
+    let effectiveDate = String(date || "").trim();
+    let trimmedDiary = "";
+
+    const safeAiInput =
+      aiInput && typeof aiInput === "object" && !Array.isArray(aiInput) ? aiInput : null;
+
+    if (safeAiInput) {
+      const aiDiaryText = String(safeAiInput.diaryText || "").trim();
+      const aiEmotions = Array.isArray(safeAiInput.emotions) ? safeAiInput.emotions : [];
+      const aiSymptoms = Array.isArray(safeAiInput.symptoms) ? safeAiInput.symptoms : [];
+      const aiSleep =
+        safeAiInput.sleep && typeof safeAiInput.sleep === "object" && !Array.isArray(safeAiInput.sleep)
+          ? safeAiInput.sleep
+          : {};
+
+      const overallMoodFromAi = aiEmotions.find((e) =>
+        String(e?.name || "").includes("整體情緒"),
+      );
+      const anxietyFromAi = aiEmotions.find((e) => String(e?.name || "").includes("焦慮"));
+
+      safeDiaryFields = normalizeDiaryFields({
+        content: aiDiaryText,
+        overallMood: overallMoodFromAi?.score,
+        overallSleepQuality: aiSleep.quality,
+      });
+
+      safeDailyRecord = {
+        overallMood: toNumber(overallMoodFromAi?.score, null),
+        anxiety: toNumber(anxietyFromAi?.score, null),
+        emotions: aiEmotions
+          .map((item) => {
+            const name = String(item?.name || "").trim();
+            const score = toNumber(item?.score, null);
+            if (!name || score == null) return null;
+            return { name, value: score };
+          })
+          .filter(Boolean),
+        symptoms: aiSymptoms
+          .map((item) => String(item?.name || item || "").trim())
+          .filter(Boolean),
+        sleep: {
+          note: String(aiSleep.note || "").trim(),
+          quality: toNumber(aiSleep.quality, null),
+          hours: toNumber(aiSleep.hours, null),
+        },
+      };
+
+      trimmedDiary = aiDiaryText.slice(0, 8000);
+      effectiveDate = String(safeAiInput.date || effectiveDate || "").trim();
+    } else {
+      safeDiaryFields = normalizeDiaryFields(diaryFields);
+      const composedDiaryText = [
+        String(diaryContent || "").trim(),
+        buildDiaryTextFromFields(safeDiaryFields),
+      ]
+        .filter(Boolean)
+        .join("\n\n")
+        .trim();
+      trimmedDiary = composedDiaryText.slice(0, 8000);
+
+      safeDailyRecord =
+        dailyRecord && typeof dailyRecord === "object" && !Array.isArray(dailyRecord)
+          ? dailyRecord
+          : {};
+    }
 
     if (!trimmedDiary) {
       throw new HttpsError("invalid-argument", "缺少可分析的日記內容");
     }
 
-    const safeDailyRecord =
-      dailyRecord && typeof dailyRecord === "object" && !Array.isArray(dailyRecord)
-        ? dailyRecord
-        : {};
     const crisisDetected = detectCrisis(trimmedDiary);
     const emotionModel = buildEmotionModel(safeDailyRecord, safeDiaryFields, trimmedDiary);
 
     try {
-      const client = new OpenAI({ apiKey: openAiApiKey.value() });
+      const apiKey = openAiApiKey.value();
+      if (!apiKey) {
+        throw new HttpsError("internal", "缺少 OPENAI_API_KEY 設定");
+      }
+      const client = new OpenAI({ apiKey });
       const completion = await client.chat.completions.create({
         model: "gpt-4.1-mini",
         temperature: 0.7,
@@ -353,8 +487,15 @@ exports.generateAiJournalReflection = onCall(
         messages: [
           {
             role: "system",
-            content:
-              "你是一位使用繁體中文的心理支持助理。請基於完整日記欄位做文本分析，並結合提供的 emotionModel（每日紀錄情緒分析模型）產生回饋。不要做醫療診斷、不要下病名、不要保證療效。情緒觀察段落禁止提及睡眠、就寢、醒來、失眠等睡眠資訊。若內容包含明確自傷或自殺意圖，要將 crisisDetected 設為 true。你只能輸出 JSON。",
+            content: [
+              "你是一位使用繁體中文的心理支持助理。請基於完整日記欄位做文本分析，並結合提供的 emotionModel（每日紀錄情緒分析模型）產生回饋。若 emotionModel.medication.hasMedicationData 為 true，請把用藥作為觀察脈絡之一，但禁止推論藥效與醫療結果。不要做醫療診斷、不要下病名、不要保證療效。情緒觀察段落禁止提及睡眠、就寢、醒來、失眠等睡眠資訊。若內容包含明確自傷或自殺意圖，要將 crisisDetected 設為 true。你只能輸出 JSON。",
+              "請用溫柔、支持、不批判的語氣回應，像一位專業心理師，避免說教、避免過度正向或空泛鼓勵。",
+              "",
+              "請做到：",
+              "- 具體提到使用者的情緒與內容",
+              "- 適度共感（讓人覺得被理解）",
+              "- 不要使用制式句型",
+            ].join("\n"),
           },
           {
             role: "user",
@@ -362,14 +503,15 @@ exports.generateAiJournalReflection = onCall(
               task: "請輸出日記反思 JSON",
               rules: {
                 summary: "1 段 70-140 字，須反映多個日記欄位內容",
-                emotionObservation: "1 段 70-140 字，必須解讀 emotionModel.emotionEntries 的情緒名稱與分數，至少提到 2 個情緒名稱與其分數，並結合綜合分數與風險觀察，且不得出現任何睡眠相關字詞",
+                emotionObservation: "1 段 70-140 字，必須解讀 emotionModel.emotionEntries 的情緒名稱與分數，至少提到 2 個情緒名稱與其分數，並結合綜合分數與風險觀察。若有 medication 資料可輕量提及，但不得推論療效。且不得出現任何睡眠相關字詞",
                 topics: "3 到 5 個短詞",
                 positiveFeedback: "1 段 70-140 字，聚焦使用者已做到的具體行為",
                 gratitudeQuestions: "剛好 3 題，每題一句",
                 tomorrowAction: "1 句可執行的小行動",
                 crisisDetected: "boolean",
               },
-              date: date || "",
+              date: effectiveDate,
+              aiInput: safeAiInput,
               diaryFields: safeDiaryFields,
               dailyRecord: safeDailyRecord,
               emotionModel,
