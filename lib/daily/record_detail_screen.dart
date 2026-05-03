@@ -424,6 +424,14 @@ Future<void> _clearRecord(BuildContext context) async {
               ),
 
               ListTile(
+                title: Text('甦醒時間', style: titleStyle),
+                trailing: Text(
+                  DateHelper.formatTime(sleep.finalWakeTime ?? sleep.wakeTime),
+                  style: valueStyle,
+                ),
+              ),
+
+              ListTile(
                 title: Text('起床開始活動時間', style: titleStyle),
                 trailing: Text(
                   DateHelper.formatTime(sleep.wakeTime),
