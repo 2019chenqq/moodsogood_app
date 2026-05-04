@@ -887,27 +887,30 @@ class _AiJournalReflectionPageState
 
   // ── AppBar ──
   m.AppBar _buildAppBar(m.BuildContext context) {
+    const appBarBg = _teal;
+    const appBarFg = m.Colors.white;
+
     return m.AppBar(
-      backgroundColor: _teal,
-      foregroundColor: m.Colors.white,
+      backgroundColor: appBarBg,
+      foregroundColor: appBarFg,
       elevation: 0,
       centerTitle: false,
       title: m.Column(
         crossAxisAlignment: m.CrossAxisAlignment.start,
         children: [
-          const m.Text(
+          m.Text(
             'AI 正念回饋',
             style: m.TextStyle(
               fontSize: 17,
               fontWeight: m.FontWeight.w700,
-              color: m.Colors.white,
+              color: appBarFg,
             ),
           ),
           m.Text(
             '${ _day.year }年${ _day.month }月${ _day.day }日',
-            style: const m.TextStyle(
+            style: m.TextStyle(
               fontSize: 12,
-              color: m.Colors.white70,
+              color: appBarFg.withValues(alpha: 0.78),
             ),
           ),
         ],
@@ -917,9 +920,9 @@ class _AiJournalReflectionPageState
           m.Padding(
             padding: const m.EdgeInsets.only(right: 12),
             child: m.Chip(
-              label: const m.Text('已儲存',
-                  style: m.TextStyle(fontSize: 11, color: m.Colors.white)),
-              backgroundColor: m.Colors.white24,
+              label: m.Text('已儲存',
+                  style: m.TextStyle(fontSize: 11, color: appBarFg)),
+              backgroundColor: m.Colors.black.withValues(alpha: 0.22),
               side: m.BorderSide.none,
               padding: m.EdgeInsets.zero,
               visualDensity: m.VisualDensity.compact,
