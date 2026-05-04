@@ -265,9 +265,14 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
 
       if (!mounted) return;
 
+      final todayPoint = byDate[_docId(today)];
+      final anchor = (todayPoint != null && todayPoint.isTarget)
+          ? today
+          : today.subtract(const Duration(days: 1));
+
       var streak = 0;
       for (var i = 0; i < 180; i++) {
-        final d = today.subtract(Duration(days: i));
+        final d = anchor.subtract(Duration(days: i));
         final p = byDate[_docId(d)];
         if (p != null && p.isTarget) {
           streak += 1;
