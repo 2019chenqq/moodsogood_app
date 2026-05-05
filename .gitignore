@@ -44,3 +44,50 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 pubspec.lock
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+
+# Android / Gradle
+android/.gradle/
+android/app/build/
+android/build/
+
+# iOS / Xcode / CocoaPods
+ios/Pods/
+ios/Podfile.lock
+ios/Flutter/ephemeral/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/Generated*.xcconfig
+ios/.symlinks/
+ios/build/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+DerivedData/
+
+# macOS
+macos/Pods/
+macos/Flutter/ephemeral/
+macos/.symlinks/
+macos/build/
+
+# Node / Web / backend
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.env
+.env.local
+.env.*.local
+
+# VS Code / OS
+.DS_Store
+.vscode/
