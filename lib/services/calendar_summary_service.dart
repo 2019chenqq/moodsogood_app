@@ -203,20 +203,34 @@ class CalendarSummaryService {
           _sleepHoursFromTimes(sleepMap) ??
           _sleepHoursFromTimes(sleepDataMap);
 
-        final sleepQuality = _toDisplayString(data['sleepQuality']) ??
+      final normalizedSleepHours =
+          (sleepHours != null && sleepHours > 0 && sleepHours <= 24)
+              ? sleepHours
+              : null;
+
+      final sleepQuality = _toDisplayString(data['sleepQuality']) ??
           _toDisplayString(sleepMap?['quality']) ??
           _toDisplayString(sleepDataMap?['quality']) ??
           _toDisplayString(data['overallSleepQuality']);
+
+      final normalizedSleepQuality = (() {
+        if (sleepQuality == null) return null;
+        final score = double.tryParse(sleepQuality);
+        if (score != null && (score <= 0 || score > 10)) {
+          return null;
+        }
+        return sleepQuality;
+      })();
 
       final hasEmotionData = dayMood != null ||
           emotionNames.isNotEmpty ||
           _hasCollectionData(data['emotions']);
       final hasSymptomData = symptomNames.isNotEmpty || _hasCollectionData(data['symptoms']);
       final hasSleepData =
-          sleepHours != null ||
-          sleepQuality != null ||
-          _hasCollectionData(data['sleep']) ||
-          _hasCollectionData(sleepDataMap);
+          normalizedSleepHours != null ||
+          normalizedSleepQuality != null ||
+          _hasSleepContent(sleepMap) ||
+          _hasSleepContent(sleepDataMap);
       final hasMedicationData = medicationNames.isNotEmpty ||
           tookHypnotic ||
           _hasCollectionData(data['medications']) ||
@@ -228,7 +242,7 @@ class CalendarSummaryService {
           data['isPeriod'] == true || periodData?['isPeriod'] == true;
 
       final hasDailyRecordData =
-          hasEmotionData || hasSymptomData || hasSleepData || hasMedicationData || isPeriod;
+          hasEmotionData || hasSymptomData || hasSleepData || hasMedicationData;
 
       _mergeDay(summaries, date, (current) {
         return current.copyWith(
@@ -242,8 +256,8 @@ class CalendarSummaryService {
           emotionNames: _mergeStringLists(current.emotionNames, emotionNames),
           symptomNames: _mergeStringLists(current.symptomNames, symptomNames),
           medicationNames: _mergeStringLists(current.medicationNames, medicationNames),
-          sleepHours: current.sleepHours ?? sleepHours,
-          sleepQuality: current.sleepQuality ?? sleepQuality,
+          sleepHours: current.sleepHours ?? normalizedSleepHours,
+          sleepQuality: current.sleepQuality ?? normalizedSleepQuality,
           dailyRecordDocId: current.dailyRecordDocId ?? doc.id,
         );
       });
@@ -591,9 +605,41 @@ class CalendarSummaryService {
   }
 
   bool _hasCollectionData(dynamic value) {
-    if (value is Iterable) return value.isNotEmpty;
-    if (value is Map) return value.isNotEmpty;
-    return false;
+    if (value is Iterable) {
+      for (final item in value) {
+        if (_hasMeaningfulValue(item)) return true;
+      }
+      return false;
+    }
+    if (value is Map) {
+      for (final entry in value.entries) {
+        if (_hasMeaningfulValue(entry.value)) return true;
+      }
+      return false;
+    }
+    return _hasMeaningfulValue(value);
+  }
+
+  bool _hasMeaningfulValue(dynamic value) {
+    if (value == null) return false;
+    if (value is bool) return value;
+    if (value is String) return value.trim().isNotEmpty;
+    if (value is num) return value != 0;
+    if (value is Timestamp) return true;
+    if (value is DateTime) return true;
+    if (value is Iterable) {
+      for (final item in value) {
+        if (_hasMeaningfulValue(item)) return true;
+      }
+      return false;
+    }
+    if (value is Map) {
+      for (final nested in value.values) {
+        if (_hasMeaningfulValue(nested)) return true;
+      }
+      return false;
+    }
+    return true;
   }
 
   double? _toDouble(dynamic value) {
@@ -643,6 +689,40 @@ class CalendarSummaryService {
     return diff / 60.0;
   }
 
+  bool _hasSleepContent(Map<String, dynamic>? sleepMap) {
+    if (sleepMap == null || sleepMap.isEmpty) return false;
+
+    final hasTime = _hasMeaningfulTimeString(sleepMap['sleepTime']) ||
+        _hasMeaningfulTimeString(sleepMap['wakeTime']) ||
+        _hasMeaningfulTimeString(sleepMap['finalWakeTime']);
+
+    final hasNote = _toCleanString(sleepMap['note']) != null;
+    final hasMidWake = _toCleanString(sleepMap['midWakeList']) != null;
+
+    final qualityText = _toDisplayString(sleepMap['quality']);
+    final qualityNumber = qualityText != null ? double.tryParse(qualityText) : null;
+    final hasQuality = qualityNumber != null
+        ? (qualityNumber > 0 && qualityNumber <= 10)
+        : qualityText != null;
+
+    final hasFlags = (sleepMap['flags'] is Iterable) &&
+        (sleepMap['flags'] as Iterable).any((item) => _toCleanString(item) != null);
+
+    final hasNaps = (sleepMap['naps'] is Iterable) &&
+        (sleepMap['naps'] as Iterable).isNotEmpty;
+
+    return hasTime || hasNote || hasMidWake || hasQuality || hasFlags || hasNaps;
+  }
+
+  bool _hasMeaningfulTimeString(dynamic value) {
+    if (value is! String) return false;
+    final t = value.trim();
+    if (t.isEmpty || t == '-' || t == '--' || t == '—' || t.toLowerCase() == 'null') {
+      return false;
+    }
+    return _parseHmMinutes(t) != null;
+  }
+
   int? _parseHmMinutes(String text) {
     final m = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(text.trim());
     if (m == null) return null;
@@ -658,7 +738,7 @@ class CalendarSummaryService {
   double? _normalizeScore(double? value) {
     if (value == null) return null;
     if (value.isNaN || value.isInfinite) return null;
-    if (value < 0 || value > 10) return null;
+    if (value <= 0 || value > 10) return null;
     return value;
   }
 
@@ -699,8 +779,8 @@ class CalendarSummaryService {
           addName(value);
         }
 
-        // For map-style records like {"anxious": true}, keep key as fallback.
-        if (key is String && key.trim().isNotEmpty) {
+        // For map-style records like {"anxious": true}, only keep key when value is meaningful.
+        if (_hasMeaningfulValue(value) && key is String && key.trim().isNotEmpty) {
           final lowered = key.trim().toLowerCase();
           final ignored = {'intensity', 'score', 'value', 'level'};
           if (!ignored.contains(lowered)) {
