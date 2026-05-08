@@ -578,15 +578,16 @@ class _EncryptionGateState extends State<EncryptionGate> {
     final ownerUid = prefs.getString(_e2eOwnerUidKey);
     if (currentUid != null && ownerUid != currentUid) {
       await SecureStorageService.deleteKey();
+      await SecureStorageService.deletePin();
       await prefs.remove('e2eConfigured');
-      await prefs.remove('e2ePin');
       await prefs.remove('e2eSalt');
       await prefs.remove('e2eVerifier');
       await prefs.setString(_e2eOwnerUidKey, currentUid);
     }
 
-    final configured = (prefs.getBool('e2eConfigured') ?? false) ||
-        (prefs.getString('e2ePin')?.isNotEmpty ?? false);
+    // 檢查 E2E 是否已配置（從安全儲存檢查 PIN 而非明文 SharedPreferences）
+    final e2ePinExists = (await SecureStorageService.getPin())?.isNotEmpty ?? false;
+    final configured = (prefs.getBool('e2eConfigured') ?? false) || e2ePinExists;
 
     // 這裡不要阻塞登入流程：金鑰改為背景預熱，避免使用者卡在登入轉圈。
     if (configured) {

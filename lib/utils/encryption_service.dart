@@ -1,5 +1,6 @@
 import 'package:encrypt/encrypt.dart' as encrypt_lib;
 import 'dart:convert';
+import 'dart:typed_data';
 
 class EncryptionService {
   // 假設我們已經有一把 32 bytes (256-bit) 的金鑰
@@ -11,8 +12,8 @@ class EncryptionService {
   /// 🔒 將明文加密成密文 (準備上傳 Firebase)
   /// 回傳格式： "IV的Base64字串:加密內容的Base64字串"
   String encryptData(String plainText) {
-    // 每次加密都產生一個隨機的 16 bytes IV (非常重要，確保相同的文字加密後長得不一樣)
-    final iv = encrypt_lib.IV.fromSecureRandom(16);
+    // AES-GCM 標準 IV 長度為 12 bytes（96 bits）
+    final iv = encrypt_lib.IV.fromSecureRandom(12);
     final encrypter = encrypt_lib.Encrypter(encrypt_lib.AES(key, mode: encrypt_lib.AESMode.gcm));
 
     // 進行加密
@@ -38,12 +39,28 @@ class EncryptionService {
       final parts = combinedText.split(':');
       if (parts.length != 2) return combinedText; // 格式不對可能不是加密資料
 
-      final iv = encrypt_lib.IV.fromBase64(parts[0]);
+      final ivBytes = base64Decode(parts[0]);
       final encryptedText = encrypt_lib.Encrypted.fromBase64(parts[1]);
-
       final encrypter = encrypt_lib.Encrypter(encrypt_lib.AES(key, mode: encrypt_lib.AESMode.gcm));
 
-      // 進行解密
+      // 新格式：優先使用 12 bytes IV 解密
+      if (ivBytes.length >= 12) {
+        try {
+          final iv12 = encrypt_lib.IV(Uint8List.fromList(ivBytes.take(12).toList()));
+          return encrypter.decrypt(encryptedText, iv: iv12);
+        } catch (_) {
+          // fallback to legacy 16-byte IV below
+        }
+      }
+
+      // 舊格式回退：嘗試以 16 bytes IV 解密，確保舊資料仍可讀
+      if (ivBytes.length >= 16) {
+        final iv16 = encrypt_lib.IV(Uint8List.fromList(ivBytes.take(16).toList()));
+        return encrypter.decrypt(encryptedText, iv: iv16);
+      }
+
+      // 最後保底：若 IV 長度非 12/16，仍嘗試使用完整 IV
+      final iv = encrypt_lib.IV(Uint8List.fromList(ivBytes));
       return encrypter.decrypt(encryptedText, iv: iv);
     } catch (e) {
       print('解密失敗: $e');

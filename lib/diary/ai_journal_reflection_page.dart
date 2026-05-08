@@ -12,12 +12,14 @@
 // ✅  OpenAI 串接已實作：優先呼叫 Firebase Functions
 //     若雲端 AI 暫時失敗，會自動 fallback 到 generateMockAIReflection()。
 
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart' as m;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../utils/secure_storage_service.dart';
@@ -620,6 +622,103 @@ class _AiJournalReflectionPageState
 
     m.debugPrint('🧪 buildAIInputData: $result');
     return result;
+  }
+
+  dynamic sanitizeForJson(dynamic value) {
+    if (value == null) return null;
+
+    if (value is Timestamp) {
+      return value.toDate().toIso8601String();
+    }
+
+    if (value is DateTime) {
+      return value.toIso8601String();
+    }
+
+    if (value is List) {
+      return value.map((item) => sanitizeForJson(item)).toList();
+    }
+
+    if (value is Map) {
+      return value.map((key, val) {
+        return MapEntry(key.toString(), sanitizeForJson(val));
+      });
+    }
+
+    return value;
+  }
+
+  Future<Map<String, dynamic>> generateGeminiReflectionByMake({
+    required String uid,
+    required String docId,
+    required Map<String, dynamic> aiInput,
+    required String diaryContent,
+    required Map<String, dynamic> diaryFields,
+    required Map<String, dynamic> dailyRecord,
+  }) async {
+    const webhookUrl = 'https://hook.us2.make.com/1o186sfmo838wb7tto62i6neb67zob8r';
+
+    final payload = sanitizeForJson({
+      'uid': uid,
+      'docId': docId,
+      'date': docId,
+      'aiInput': aiInput,
+      'diaryContent': diaryContent,
+      'diaryFields': diaryFields,
+      'dailyRecord': dailyRecord,
+      'requestedAt': DateTime.now().toIso8601String(),
+      'source': 'make_gemini',
+    });
+
+    final response = await http.post(
+      Uri.parse(webhookUrl),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(payload),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Make Webhook 呼叫失敗：${response.statusCode} ${response.body}');
+    }
+
+    m.debugPrint('Make response: ${response.body}');
+
+    try {
+      final decoded = jsonDecode(response.body);
+
+      if (decoded is Map<String, dynamic>) {
+        return {
+          'summary': decoded['summary'] ?? '',
+          'emotionObservation': decoded['emotionObservation'] ?? '',
+          'topics': decoded['topics'] ?? [],
+          'positiveFeedback': decoded['positiveFeedback'] ?? '',
+          'gratitudeQuestions': decoded['gratitudeQuestions'] ?? [],
+          'tomorrowAction': decoded['tomorrowAction'] ?? '',
+          'crisisDetected': decoded['crisisDetected'] ?? false,
+          'isMock': false,
+          'model': 'gemini-1.5-flash',
+          'source': 'make_gemini',
+          'generatedAt': FieldValue.serverTimestamp(),
+        };
+      }
+    } catch (_) {
+      // Fallback to plain text when Make returns a non-JSON body.
+    }
+
+    return {
+      'summary': response.body,
+      'emotionObservation': '',
+      'topics': [],
+      'positiveFeedback': '',
+      'gratitudeQuestions': [],
+      'tomorrowAction': '',
+      'crisisDetected': false,
+      'isMock': false,
+      'model': 'gemini-1.5-flash',
+      'source': 'make_gemini',
+      'generatedAt': FieldValue.serverTimestamp(),
+    };
   }
 
   Future<Map<String, dynamic>> generateAIReflection({
