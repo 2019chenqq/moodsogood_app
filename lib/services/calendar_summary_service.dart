@@ -114,12 +114,14 @@ class CalendarSummaryService {
     required _DateRange range,
     required Map<String, CalendarDaySummary> summaries,
   }) async {
-    final dailyRef = _firestore.collection('users').doc(uid).collection('dailyRecords');
+    final dailyRef =
+        _firestore.collection('users').doc(uid).collection('dailyRecords');
 
     final docs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
     final seen = <String>{};
 
-    Future<void> collect(Query<Map<String, dynamic>> query, String label) async {
+    Future<void> collect(
+        Query<Map<String, dynamic>> query, String label) async {
       try {
         final snap = await query.get();
         for (final doc in snap.docs) {
@@ -128,21 +130,25 @@ class CalendarSummaryService {
           }
         }
       } catch (e) {
-        debugPrint('[CalendarSummaryService] dailyRecords $label query skipped: $e');
+        debugPrint(
+            '[CalendarSummaryService] dailyRecords $label query skipped: $e');
       }
     }
 
     await collect(
       dailyRef
           .orderBy(FieldPath.documentId)
-          .where(FieldPath.documentId, isGreaterThanOrEqualTo: _dateKey(range.start))
-          .where(FieldPath.documentId, isLessThanOrEqualTo: _dateKey(range.end)),
+          .where(FieldPath.documentId,
+              isGreaterThanOrEqualTo: _dateKey(range.start))
+          .where(FieldPath.documentId,
+              isLessThanOrEqualTo: _dateKey(range.end)),
       'docId',
     );
 
     await collect(
       dailyRef
-          .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(range.start))
+          .where('date',
+              isGreaterThanOrEqualTo: Timestamp.fromDate(range.start))
           .where('date', isLessThanOrEqualTo: Timestamp.fromDate(range.end)),
       'date',
     );
@@ -156,7 +162,8 @@ class CalendarSummaryService {
       count++;
 
       final overallMood = _normalizeScore(_toDouble(data['overallMood']));
-      final moodFromEmotions = _normalizeScore(_average(_extractNumericValues(data['emotions'])));
+      final moodFromEmotions =
+          _normalizeScore(_average(_extractNumericValues(data['emotions'])));
       final dayMood = overallMood ?? moodFromEmotions;
 
       final emotionNames = _extractNames(
@@ -170,11 +177,23 @@ class CalendarSummaryService {
       final medicationNames = _mergeStringLists(
         _extractNames(
           data['medications'] ?? data['medicines'],
-          preferredKeys: const ['name', 'label', 'title', 'drugName', 'medicationName'],
+          preferredKeys: const [
+            'name',
+            'label',
+            'title',
+            'drugName',
+            'medicationName'
+          ],
         ),
         _extractNames(
           data['medication'],
-          preferredKeys: const ['name', 'label', 'title', 'drugName', 'medicationName'],
+          preferredKeys: const [
+            'name',
+            'label',
+            'title',
+            'drugName',
+            'medicationName'
+          ],
         ),
       );
       final medicationText = _toCleanString(data['medication']);
@@ -188,9 +207,11 @@ class CalendarSummaryService {
           _toCleanString(data['hypnoticName']);
       final hypnoticDose = _toCleanString(sleepMap?['hypnoticDose']) ??
           _toCleanString(data['hypnoticDose']);
-      final tookHypnotic = sleepMap?['tookHypnotic'] == true || data['tookHypnotic'] == true;
+      final tookHypnotic =
+          sleepMap?['tookHypnotic'] == true || data['tookHypnotic'] == true;
       if (hypnoticName != null) {
-        medicationNames.add('安眠藥：$hypnoticName${hypnoticDose != null ? '（$hypnoticDose）' : ''}');
+        medicationNames.add(
+            '安眠藥：$hypnoticName${hypnoticDose != null ? '（$hypnoticDose）' : ''}');
       }
 
       final sleepHours = _toDouble(data['sleepHours']) ??
@@ -203,7 +224,7 @@ class CalendarSummaryService {
           _sleepHoursFromTimes(sleepMap) ??
           _sleepHoursFromTimes(sleepDataMap);
 
-        final sleepQuality = _toDisplayString(data['sleepQuality']) ??
+      final sleepQuality = _toDisplayString(data['sleepQuality']) ??
           _toDisplayString(sleepMap?['quality']) ??
           _toDisplayString(sleepDataMap?['quality']) ??
           _toDisplayString(data['overallSleepQuality']);
@@ -211,9 +232,9 @@ class CalendarSummaryService {
       final hasEmotionData = dayMood != null ||
           emotionNames.isNotEmpty ||
           _hasCollectionData(data['emotions']);
-      final hasSymptomData = symptomNames.isNotEmpty || _hasCollectionData(data['symptoms']);
-      final hasSleepData =
-          sleepHours != null ||
+      final hasSymptomData =
+          symptomNames.isNotEmpty || _hasCollectionData(data['symptoms']);
+      final hasSleepData = sleepHours != null ||
           sleepQuality != null ||
           _hasCollectionData(data['sleep']) ||
           _hasCollectionData(sleepDataMap);
@@ -228,7 +249,7 @@ class CalendarSummaryService {
           data['isPeriod'] == true || periodData?['isPeriod'] == true;
 
       final hasDailyRecordData =
-          hasEmotionData || hasSymptomData || hasSleepData || hasMedicationData || isPeriod;
+          hasEmotionData || hasSymptomData || hasSleepData || hasMedicationData;
 
       _mergeDay(summaries, date, (current) {
         return current.copyWith(
@@ -241,10 +262,13 @@ class CalendarSummaryService {
           averageMood: current.averageMood ?? dayMood,
           emotionNames: _mergeStringLists(current.emotionNames, emotionNames),
           symptomNames: _mergeStringLists(current.symptomNames, symptomNames),
-          medicationNames: _mergeStringLists(current.medicationNames, medicationNames),
+          medicationNames:
+              _mergeStringLists(current.medicationNames, medicationNames),
           sleepHours: current.sleepHours ?? sleepHours,
           sleepQuality: current.sleepQuality ?? sleepQuality,
-          dailyRecordDocId: current.dailyRecordDocId ?? doc.id,
+          dailyRecordDocId: hasDailyRecordData
+              ? (current.dailyRecordDocId ?? doc.id)
+              : current.dailyRecordDocId,
         );
       });
     }
@@ -257,12 +281,14 @@ class CalendarSummaryService {
     required _DateRange range,
     required Map<String, CalendarDaySummary> summaries,
   }) async {
-    final diaryRef = _firestore.collection('users').doc(uid).collection('diary');
+    final diaryRef =
+        _firestore.collection('users').doc(uid).collection('diary');
 
     final docs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
     final seen = <String>{};
 
-    Future<void> collect(Query<Map<String, dynamic>> query, String label) async {
+    Future<void> collect(
+        Query<Map<String, dynamic>> query, String label) async {
       try {
         final snap = await query.get();
         for (final doc in snap.docs) {
@@ -278,22 +304,27 @@ class CalendarSummaryService {
     await collect(
       diaryRef
           .orderBy(FieldPath.documentId)
-          .where(FieldPath.documentId, isGreaterThanOrEqualTo: _dateKey(range.start))
-          .where(FieldPath.documentId, isLessThanOrEqualTo: _dateKey(range.end)),
+          .where(FieldPath.documentId,
+              isGreaterThanOrEqualTo: _dateKey(range.start))
+          .where(FieldPath.documentId,
+              isLessThanOrEqualTo: _dateKey(range.end)),
       'docId',
     );
 
     await collect(
       diaryRef
-          .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(range.start))
+          .where('date',
+              isGreaterThanOrEqualTo: Timestamp.fromDate(range.start))
           .where('date', isLessThanOrEqualTo: Timestamp.fromDate(range.end)),
       'date',
     );
 
     await collect(
       diaryRef
-          .where('updatedAt', isGreaterThanOrEqualTo: Timestamp.fromDate(range.start))
-          .where('updatedAt', isLessThanOrEqualTo: Timestamp.fromDate(range.end)),
+          .where('updatedAt',
+              isGreaterThanOrEqualTo: Timestamp.fromDate(range.start))
+          .where('updatedAt',
+              isLessThanOrEqualTo: Timestamp.fromDate(range.end)),
       'updatedAt',
     );
 
@@ -316,7 +347,8 @@ class CalendarSummaryService {
       );
 
       final mood = hasDiaryContent
-          ? _normalizeScore(_toDouble(data['overallMood']) ?? _toDouble(data['moodScore']))
+          ? _normalizeScore(
+              _toDouble(data['overallMood']) ?? _toDouble(data['moodScore']))
           : null;
 
       _mergeDay(summaries, date, (current) {
@@ -364,9 +396,12 @@ class CalendarSummaryService {
         final startDay = s.isBefore(range.start) ? range.start : s;
         final endDay = e.isAfter(range.end) ? range.end : e;
 
-        if (endDay.isBefore(range.start) || startDay.isAfter(range.end)) continue;
+        if (endDay.isBefore(range.start) || startDay.isAfter(range.end))
+          continue;
 
-        for (DateTime d = startDay; !d.isAfter(endDay); d = d.add(const Duration(days: 1))) {
+        for (DateTime d = startDay;
+            !d.isAfter(endDay);
+            d = d.add(const Duration(days: 1))) {
           _mergeDay(summaries, d, (current) {
             return current.copyWith(
               isPeriodDay: true,
@@ -377,7 +412,8 @@ class CalendarSummaryService {
         }
       }
     } catch (e) {
-      debugPrint('[CalendarSummaryService] periodCycles structure not available: $e');
+      debugPrint(
+          '[CalendarSummaryService] periodCycles structure not available: $e');
     }
 
     final dailyStarts = _inferPeriodStartsFromSummaries(summaries, range);
@@ -433,7 +469,8 @@ class CalendarSummaryService {
     }
 
     if (periodDocs == 0 && cycleLength == null) {
-      debugPrint('[CalendarSummaryService] period data not found, default to false');
+      debugPrint(
+          '[CalendarSummaryService] period data not found, default to false');
     }
 
     return periodDocs;
@@ -509,7 +546,8 @@ class CalendarSummaryService {
   _DateRange _calendarVisibleRange(DateTime month) {
     final firstDay = DateTime(month.year, month.month, 1);
     final firstWeekdayIndex = firstDay.weekday % 7;
-    final start = _dateOnly(firstDay.subtract(Duration(days: firstWeekdayIndex)));
+    final start =
+        _dateOnly(firstDay.subtract(Duration(days: firstWeekdayIndex)));
 
     final lastDay = DateTime(month.year, month.month + 1, 0);
     final trailing = 6 - (lastDay.weekday % 7);
