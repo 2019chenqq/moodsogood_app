@@ -5,7 +5,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:encrypt/encrypt.dart' as encrypt_lib;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math';
-import 'dart:convert';
 import 'dart:ui';
 
 // 記得匯入我們前面寫好的兩個小幫手
@@ -33,13 +32,6 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
   void dispose() {
     _pinController.dispose();
     super.dispose();
-  }
-
-  // 產生隨機 Salt 的函數
-  String _generateSecureSalt() {
-    final random = Random.secure();
-    final values = List<int>.generate(16, (i) => random.nextInt(256));
-    return base64UrlEncode(values);
   }
 
   Future<void> _submitPin() async {
@@ -73,14 +65,14 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
       } else {
         // 【情境 B：新用戶第一次設定】
         // 1. 在手機端隨機產生一組全新的 Salt
-        salt = _generateSecureSalt();
+        salt = KeyManager.generateSecureSalt();
         // 2. 將這個 Salt 存上 Firebase (注意：這裡絕對沒有上傳 PIN 碼！)
         await userDocRef.set({'encryptionSalt': salt}, SetOptions(merge: true));
         print('產生全新 Salt 並上傳至雲端');
       }
 
       // 🔐 核心加密轉換 (利用我們寫好的 KeyManager)
-      // 這邊可能會稍微消耗一點手機效能 (因為算了 1萬次)，所以畫面上要有 Loading
+      // 使用 PBKDF2-HMAC-SHA256（200,000 次迭代），Loading 屬正常現象
       final aesKey = KeyManager.deriveKey(pin, salt);
 
       // 若舊帳號已存在 verifier，先驗證這次 PIN 是否能推導出同一把金鑰。
@@ -92,9 +84,10 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
         throw Exception('PIN 驗證失敗：與既有加密資料不匹配');
       }
 
-      // 🧷 留一份本地 PIN（僅用於遺失金鑰時重建）
+      // 🧷 使用安全儲存保存 PIN（而非明文 SharedPreferences）
+      await SecureStorageService.savePin(pin);
+      
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('e2ePin', pin);
       await prefs.setString('e2eSalt', salt);
       await prefs.setBool('e2eConfigured', true);
 
@@ -139,6 +132,17 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
     }
   }
 
+  bool _isAlreadyEncrypted(String text) {
+    // 加密格式為兩段 base64 字串以冒號分隔：iv:ciphertext
+    final parts = text.split(':');
+    if (parts.length != 2) return false;
+
+    final base64Pattern = RegExp(r'^[A-Za-z0-9+/=_-]+$');
+    return base64Pattern.hasMatch(parts[0]) &&
+        base64Pattern.hasMatch(parts[1]) &&
+        parts[0].length >= 16; // IV 至少 12 bytes，base64 至少約 16 字元
+  }
+
 // 🧹 背景大掃除：把 Firebase 上原本是明文的舊日記「所有欄位」全部加密
   Future<void> _encryptOldData(String uid, encrypt_lib.Key key) async { 
     try {
@@ -177,8 +181,8 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
           if (data.containsKey(field)) {
             final oldText = (data[field] ?? '') as String;
             
-            // 如果裡面有文字，而且還沒有被加密過 (沒有包含冒號 ':')
-            if (oldText.isNotEmpty && !oldText.contains(':')) {
+            // 如果裡面有文字，而且還沒有被加密格式識別
+            if (oldText.isNotEmpty && !_isAlreadyEncrypted(oldText)) {
               // 把明文加密成亂碼，並放進更新包裡
               updates[field] = encryptionService.encryptData(oldText);
               needsUpdate = true;

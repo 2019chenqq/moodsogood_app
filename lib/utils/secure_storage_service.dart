@@ -36,11 +36,10 @@ class SecureStorageService {
       await _storage.write(key: _keyAlias, value: key.base64);
       print("🔑 [保險箱] 金鑰已成功寫入！");
     } catch (e) {
-      print("🚨 [保險箱] 寫入失敗，嘗試強制修復: $e");
-      // 如果遇到模擬器舊資料殘留導致的 Bug，強制把保險箱炸掉重蓋
-      await _storage.deleteAll();
+      print("🚨 [保險箱] 寫入失敗，嘗試刪除後重寫: $e");
+      await _storage.delete(key: _keyAlias);
       await _storage.write(key: _keyAlias, value: key.base64);
-      print("🛠️ [保險箱] 強制修復並寫入成功！");
+      print("🛠️ [保險箱] 重寫成功！");
     }
   }
 
@@ -71,7 +70,8 @@ class SecureStorageService {
       }
 
       final prefs = await SharedPreferences.getInstance();
-      final e2ePin = (prefs.getString('e2ePin') ?? '').trim();
+      // 從安全儲存讀取 E2E PIN（而非明文 SharedPreferences）
+      final e2ePin = (await getPin() ?? '').trim();
       final appLockPin = (prefs.getString('appLockPin') ?? '').trim();
       if (e2ePin.isEmpty && appLockPin.isEmpty) {
         print('🚨 [保險箱] 無法重建金鑰：找不到本地 PIN');
@@ -157,6 +157,7 @@ class SecureStorageService {
           print('🚨 [保險箱] 缺少 e2ePin 且無 verifier，為避免錯誤解密已停止自動重建');
           return null;
         }
+        // e2ePin 已從安全儲存讀取，可直接使用
         recoveredKey = KeyManager.deriveKey(e2ePin, salt);
       }
 
@@ -177,5 +178,39 @@ class SecureStorageService {
   static Future<void> deleteKey() async {
     await _storage.delete(key: _keyAlias);
     print("🗑️ [保險箱] 金鑰已銷毀");
+  }
+
+  // ============ PIN 安全儲存方法 ============
+  static const _pinAlias = 'user_e2e_pin';
+
+  /// 🔒 使用加密安全儲存 PIN
+  static Future<void> savePin(String pin) async {
+    try {
+      await _storage.write(key: _pinAlias, value: pin);
+      print("🔑 [保險箱] PIN 已安全儲存");
+    } catch (e) {
+      print("🚨 [保險箱] PIN 儲存失敗: $e");
+      rethrow;
+    }
+  }
+
+  /// 🔓 讀取已保護的 PIN
+  static Future<String?> getPin() async {
+    try {
+      return await _storage.read(key: _pinAlias);
+    } catch (e) {
+      print("🚨 [保險箱] 讀取 PIN 失敗: $e");
+      return null;
+    }
+  }
+
+  /// 🗑️ 刪除保存的 PIN
+  static Future<void> deletePin() async {
+    try {
+      await _storage.delete(key: _pinAlias);
+      print("🗑️ [保險箱] PIN 已刪除");
+    } catch (e) {
+      print("🚨 [保險箱] 刪除 PIN 失敗: $e");
+    }
   }
 }
