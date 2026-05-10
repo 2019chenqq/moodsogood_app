@@ -73,7 +73,7 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
 
       // 🔐 核心加密轉換 (利用我們寫好的 KeyManager)
       // 使用 PBKDF2-HMAC-SHA256（200,000 次迭代），Loading 屬正常現象
-      final aesKey = KeyManager.deriveKey(pin, salt);
+      final aesKey = await KeyManager.deriveKey(pin, salt);
 
       // 若舊帳號已存在 verifier，先驗證這次 PIN 是否能推導出同一把金鑰。
       if (verifier.isNotEmpty &&
@@ -123,12 +123,20 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
     } catch (e) {
       print('設定密碼發生錯誤: $e');
       if (mounted) {
+        final message = switch (e.toString()) {
+          String s when s.contains('PIN 驗證失敗') => '密碼與原本設定的不同，請重新確認。',
+          String s when s.contains('未登入')       => '登入狀態異常，請重新登入。',
+          String s when s.contains('金鑰寫入失敗') => '裝置安全儲存異常，請重新嘗試。',
+          _                                        => '發生未知錯誤，請稍後再試。',
+        };
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('密碼驗證失敗或資料異常，請確認密碼是否正確。')),
+          SnackBar(content: Text(message)),
         );
       }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -354,9 +362,15 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
                         Row(
                           children: [
                             IconButton(
-                              onPressed: () => Navigator.of(context).maybePop(),
-                              icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-                            ),
+  onPressed: () {
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    } else {
+      FirebaseAuth.instance.signOut();
+    }
+  },
+  icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+),
                             const SizedBox(width: 8),
                             const Text(
                               '設定保險箱安全碼',

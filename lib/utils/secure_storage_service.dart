@@ -140,8 +140,8 @@ class SecureStorageService {
       // 有 verifier 時，逐一驗證候選 PIN；比對成功才可用。
       if (verifier.isNotEmpty) {
         for (final candidate in candidatePins) {
-          final key = KeyManager.deriveKey(candidate, salt);
-          if (verifyKeyWithVerifier(key: key, verifier: verifier)) {
+          final key = await KeyManager.deriveKey(candidate, salt);
+if (verifyKeyWithVerifier(key: key, verifier: verifier)) {
             recoveredKey = key;
             break;
           }
@@ -158,7 +158,7 @@ class SecureStorageService {
           return null;
         }
         // e2ePin 已從安全儲存讀取，可直接使用
-        recoveredKey = KeyManager.deriveKey(e2ePin, salt);
+        recoveredKey = await KeyManager.deriveKey(e2ePin, salt);
       }
 
       await saveKey(recoveredKey);
