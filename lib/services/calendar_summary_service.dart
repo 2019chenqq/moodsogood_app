@@ -224,14 +224,11 @@ class CalendarSummaryService {
           _sleepHoursFromTimes(sleepMap) ??
           _sleepHoursFromTimes(sleepDataMap);
 
-<<<<<<< HEAD
-=======
       final normalizedSleepHours =
           (sleepHours != null && sleepHours > 0 && sleepHours <= 24)
               ? sleepHours
               : null;
 
->>>>>>> 50ffcfe29e4681b03a4a02c1869522cf40142af7
       final sleepQuality = _toDisplayString(data['sleepQuality']) ??
           _toDisplayString(sleepMap?['quality']) ??
           _toDisplayString(sleepDataMap?['quality']) ??
@@ -249,21 +246,12 @@ class CalendarSummaryService {
       final hasEmotionData = dayMood != null ||
           emotionNames.isNotEmpty ||
           _hasCollectionData(data['emotions']);
-<<<<<<< HEAD
-      final hasSymptomData =
-          symptomNames.isNotEmpty || _hasCollectionData(data['symptoms']);
-      final hasSleepData = sleepHours != null ||
-          sleepQuality != null ||
-          _hasCollectionData(data['sleep']) ||
-          _hasCollectionData(sleepDataMap);
-=======
       final hasSymptomData = symptomNames.isNotEmpty || _hasCollectionData(data['symptoms']);
       final hasSleepData =
           normalizedSleepHours != null ||
           normalizedSleepQuality != null ||
           _hasSleepContent(sleepMap) ||
           _hasSleepContent(sleepDataMap);
->>>>>>> 50ffcfe29e4681b03a4a02c1869522cf40142af7
       final hasMedicationData = medicationNames.isNotEmpty ||
           tookHypnotic ||
           _hasCollectionData(data['medications']) ||
@@ -288,20 +276,10 @@ class CalendarSummaryService {
           averageMood: current.averageMood ?? dayMood,
           emotionNames: _mergeStringLists(current.emotionNames, emotionNames),
           symptomNames: _mergeStringLists(current.symptomNames, symptomNames),
-<<<<<<< HEAD
-          medicationNames:
-              _mergeStringLists(current.medicationNames, medicationNames),
-          sleepHours: current.sleepHours ?? sleepHours,
-          sleepQuality: current.sleepQuality ?? sleepQuality,
-          dailyRecordDocId: hasDailyRecordData
-              ? (current.dailyRecordDocId ?? doc.id)
-              : current.dailyRecordDocId,
-=======
           medicationNames: _mergeStringLists(current.medicationNames, medicationNames),
           sleepHours: current.sleepHours ?? normalizedSleepHours,
           sleepQuality: current.sleepQuality ?? normalizedSleepQuality,
           dailyRecordDocId: current.dailyRecordDocId ?? doc.id,
->>>>>>> 50ffcfe29e4681b03a4a02c1869522cf40142af7
         );
       });
     }
