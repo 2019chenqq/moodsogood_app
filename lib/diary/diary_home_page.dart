@@ -8,18 +8,22 @@ import 'package:http/http.dart' as http;
 
 import 'diary_page_demo.dart';
 import '/diary/diary_repository.dart';
-import '../utils/date_helper.dart';
 
 // weekday label
 const _kWeekLabels = ['日', '一', '二', '三', '四', '五', '六'];
+const double _kCalendarRowSpacing = 4;
+const double _kCalendarColumnSpacing = 3;
+const double _kCalendarWeekHeaderHeight = 20;
+const double _kCalendarWeekHeaderGap = 4;
+const int _kCalendarColumnCount = 7;
 
 // ──────────────────────────────────────────────
 // 天氣資料模型（Open-Meteo，免費、無需 API key）
 // ──────────────────────────────────────────────
 class _WeatherInfo {
   final double tempC;
-  final int code;      // WMO weather code
-  final String label;  // 中文天氣描述
+  final int code; // WMO weather code
+  final String label; // 中文天氣描述
   final String emoji;
 
   const _WeatherInfo({
@@ -126,8 +130,7 @@ String _normDayKey(String raw) {
   return beforeT;
 }
 
-String _dateKey(DateTime d) =>
-    '${d.year.toString().padLeft(4, '0')}-'
+String _dateKey(DateTime d) => '${d.year.toString().padLeft(4, '0')}-'
     '${d.month.toString().padLeft(2, '0')}-'
     '${d.day.toString().padLeft(2, '0')}';
 
@@ -182,8 +185,7 @@ class _DiaryHomePageState extends m.State<DiaryHomePage> {
     // 1. 本地 SQLite
     try {
       final entries = await DiaryRepository().list(limit: 5000);
-      recent = List.from(entries)
-        ..sort((a, b) => b.date.compareTo(a.date));
+      recent = List.from(entries)..sort((a, b) => b.date.compareTo(a.date));
       for (final e in entries) {
         days.add(_normDayKey(e.date.toIso8601String()));
       }
@@ -363,6 +365,7 @@ class _DiaryHomePageState extends m.State<DiaryHomePage> {
     );
   }
 }
+
 // ──────────────────────────────────────────────
 // 小日曆（右側）
 // ──────────────────────────────────────────────
@@ -392,7 +395,6 @@ class _HeroCard extends m.StatelessWidget {
 
   @override
   m.Widget build(m.BuildContext context) {
-    final cs = m.Theme.of(context).colorScheme;
     final isCompact = m.MediaQuery.of(context).size.width < 420;
 
     return m.Container(
@@ -599,14 +601,16 @@ class _MiniCalendarState extends m.State<_MiniCalendar> {
   @override
   void initState() {
     super.initState();
-    _anchorMonth = DateTime(widget.focusedMonth.year, widget.focusedMonth.month, 1);
+    _anchorMonth =
+        DateTime(widget.focusedMonth.year, widget.focusedMonth.month, 1);
     _controller = m.PageController(initialPage: _basePage);
   }
 
   @override
   void didUpdateWidget(covariant _MiniCalendar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _anchorMonth ??= DateTime(widget.focusedMonth.year, widget.focusedMonth.month, 1);
+    _anchorMonth ??=
+        DateTime(widget.focusedMonth.year, widget.focusedMonth.month, 1);
   }
 
   Future<void> _goToPage(int page) async {
@@ -638,6 +642,21 @@ class _MiniCalendarState extends m.State<_MiniCalendar> {
       cells.add(DateTime(month.year, month.month, d));
     }
     return cells;
+  }
+
+  int _weekRowCount(DateTime month) {
+    final cells = _buildMonthCells(month);
+    return (cells.length / _kCalendarColumnCount).ceil().clamp(4, 6);
+  }
+
+  double _calendarHeight(DateTime month, double availableWidth) {
+    final cellExtent = (availableWidth -
+            ((_kCalendarColumnCount - 1) * _kCalendarColumnSpacing)) /
+        _kCalendarColumnCount;
+    final rowCount = _weekRowCount(month);
+    final gridHeight =
+        (rowCount * cellExtent) + ((rowCount - 1) * _kCalendarRowSpacing);
+    return _kCalendarWeekHeaderHeight + _kCalendarWeekHeaderGap + gridHeight;
   }
 
   @override
@@ -690,68 +709,83 @@ class _MiniCalendarState extends m.State<_MiniCalendar> {
             ],
           ),
           const m.SizedBox(height: 6),
-          m.SizedBox(
-            height: 308,
-            child: m.PageView.builder(
-              controller: _controller,
-              onPageChanged: (page) {
-                setState(() => _currentPage = page);
-                widget.onMonthChanged(_monthFromPage(page));
-              },
-              itemBuilder: (context, page) {
-                final month = _monthFromPage(page);
-                final cells = _buildMonthCells(month);
-                return m.Column(
-                  children: [
-                    m.Row(
-                      children: _kWeekLabels
-                          .map(
-                            (l) => m.Expanded(
-                              child: m.Center(
-                                child: m.Text(
-                                  l,
-                                  style: m.TextStyle(
-                                    fontSize: 11,
-                                    color: cs.onSurface.withOpacity(0.4),
-                                    fontWeight: m.FontWeight.w600,
-                                  ),
-                                ),
-                              ),
+          m.LayoutBuilder(
+            builder: (context, constraints) {
+              final calendarHeight =
+                  _calendarHeight(shownMonth, constraints.maxWidth);
+              return m.AnimatedSize(
+                duration: const Duration(milliseconds: 220),
+                curve: m.Curves.easeOut,
+                child: m.SizedBox(
+                  height: calendarHeight,
+                  child: m.PageView.builder(
+                    controller: _controller,
+                    onPageChanged: (page) {
+                      setState(() => _currentPage = page);
+                      widget.onMonthChanged(_monthFromPage(page));
+                    },
+                    itemBuilder: (context, page) {
+                      final month = _monthFromPage(page);
+                      final cells = _buildMonthCells(month);
+                      return m.Column(
+                        children: [
+                          m.SizedBox(
+                            height: _kCalendarWeekHeaderHeight,
+                            child: m.Row(
+                              children: _kWeekLabels
+                                  .map(
+                                    (l) => m.Expanded(
+                                      child: m.Center(
+                                        child: m.Text(
+                                          l,
+                                          style: m.TextStyle(
+                                            fontSize: 11,
+                                            color:
+                                                cs.onSurface.withOpacity(0.4),
+                                            fontWeight: m.FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
                             ),
-                          )
-                          .toList(),
-                    ),
-                    const m.SizedBox(height: 4),
-                    m.GridView.builder(
-                      padding: m.EdgeInsets.zero,
-                      shrinkWrap: true,
-                      physics: const m.NeverScrollableScrollPhysics(),
-                      gridDelegate:
-                          const m.SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 7,
-                        mainAxisSpacing: 4,
-                        crossAxisSpacing: 3,
-                        childAspectRatio: 1,
-                      ),
-                      itemCount: cells.length,
-                      itemBuilder: (ctx, i) {
-                        final date = cells[i];
-                        if (date == null) return const m.SizedBox.shrink();
-                        final key = _dateKey(date);
-                        final hasEntry = widget.entryDays.contains(key);
-                        final isToday = key == todayKey;
-                        return _MiniDayCell(
-                          date: date,
-                          hasEntry: hasEntry,
-                          isToday: isToday,
-                          onTap: () => widget.onDayTap(date),
-                        );
-                      },
-                    ),
-                  ],
-                );
-              },
-            ),
+                          ),
+                          const m.SizedBox(height: _kCalendarWeekHeaderGap),
+                          m.GridView.builder(
+                            padding: m.EdgeInsets.zero,
+                            shrinkWrap: true,
+                            physics: const m.NeverScrollableScrollPhysics(),
+                            gridDelegate: const m
+                                .SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: _kCalendarColumnCount,
+                              mainAxisSpacing: _kCalendarRowSpacing,
+                              crossAxisSpacing: _kCalendarColumnSpacing,
+                              childAspectRatio: 1,
+                            ),
+                            itemCount: cells.length,
+                            itemBuilder: (ctx, i) {
+                              final date = cells[i];
+                              if (date == null)
+                                return const m.SizedBox.shrink();
+                              final key = _dateKey(date);
+                              final hasEntry = widget.entryDays.contains(key);
+                              final isToday = key == todayKey;
+                              return _MiniDayCell(
+                                date: date,
+                                hasEntry: hasEntry,
+                                isToday: isToday,
+                                onTap: () => widget.onDayTap(date),
+                              );
+                            },
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -811,4 +845,3 @@ class _MiniDayCell extends m.StatelessWidget {
     );
   }
 }
-
