@@ -160,11 +160,12 @@ class MedicationLocalDB {
           'purposes': _encodeList(data['purposes']),
           'note': data['note'],
           'startDate': data['startDate'],
-          'isActive': (data['isActive'] ?? true) ? 1 : 0,
+          'isActive': _encodeBool(data['isActive'], defaultTrue: true),
           'bodySymptoms': _encodeList(data['bodySymptoms']),
           'purposeOther': data['purposeOther'],
           'updatedAt': data['updatedAt'],
           'lastChangeAt': data['lastChangeAt'],
+          if (data.containsKey('resumedAt')) 'resumedAt': data['resumedAt'],
         },
         where: 'id = ? AND uid = ?',
         whereArgs: [docId, uid],
@@ -251,6 +252,13 @@ class MedicationLocalDB {
     return '';
   }
 
+  // 辅助方法：編碼 bool → 0/1
+  int _encodeBool(dynamic value, {bool defaultTrue = false}) {
+    if (value is bool) return value ? 1 : 0;
+    if (value is int) return value == 0 ? 0 : 1;
+    return defaultTrue ? 1 : 0;
+  }
+
   // 辅助方法：解码 List
   List<String> _decodeList(String? value) {
     if (value == null || value.isEmpty) return [];
@@ -288,6 +296,7 @@ class MedicationLocalDB {
         'createdAt': m['createdAt'],
         'updatedAt': m['updatedAt'],
         'lastChangeAt': m['lastChangeAt'],
+        'resumedAt': m['resumedAt'],
       };
     }).toList();
   }

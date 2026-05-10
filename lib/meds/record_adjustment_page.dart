@@ -9,7 +9,7 @@ import 'medication_reminder_service.dart';
 import 'add_medication_page.dart';
 import 'record_adjustment_history_page.dart';
 
-enum MedChangeType { unchanged, added, injected, doseChanged, scheduleChanged, stopped }
+enum MedChangeType { unchanged, added, injected, doseChanged, scheduleChanged, stopped, resumed }
 
 const List<String> kAdjustmentTimeSlots = ['早上', '中午', '下午', '晚上', '睡前', '需要時'];
 
@@ -123,7 +123,7 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
 
   Future<List<Map<String, dynamic>>> _getMedsForAdjustment(String uid) async {
     final all = await MedicationLocalDB().getMedicationsForDisplay(uid);
-    return all.where((m) => (m['isActive'] ?? true) == true).toList();
+    return all;
   }
 
 _MedDraft _ensureUiDraft(
@@ -296,7 +296,14 @@ String _timesLabel(List<String> times) {
                 ),
                 const SizedBox(height: 8),
 
-                ...docs.map((med) => _buildMedCard(context, med, _draftByDocId[med['id'] as String? ?? '']!)),
+                // ── 使用中藥物 ──
+                ...docs
+                    .where((m) => (m['isActive'] ?? true) == true)
+                    .map((med) => _buildMedCard(context, med, _draftByDocId[med['id'] as String? ?? '']!)),
+
+                // ── 已停用藥物（可恢復） ──
+                if (docs.any((m) => (m['isActive'] ?? true) == false)) ...
+                  _buildInactiveMedSection(context, docs, cs),
 
                 const SizedBox(height: 14),
 
@@ -318,6 +325,90 @@ String _timesLabel(List<String> times) {
         ),
       ),
     );
+  }
+
+  List<Widget> _buildInactiveMedSection(
+    BuildContext context,
+    List<Map<String, dynamic>> docs,
+    ColorScheme cs,
+  ) {
+    final inactive = docs.where((m) => (m['isActive'] ?? true) == false).toList();
+    return [
+      const SizedBox(height: 8),
+      Row(
+        children: [
+          Text('已停用藥物——可在此次回診中恢復使用',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                  )),
+        ],
+      ),
+      const SizedBox(height: 6),
+      ...inactive.map((med) {
+        final docId = (med['id'] as String?) ?? '';
+        final name = (med['name'] as String?) ?? '未命名藥物';
+        final draft =
+            _draftByDocId.putIfAbsent(docId, () => _MedDraft.fromMap(med));
+        final isResumed = draft.type == MedChangeType.resumed;
+        return Card(
+          key: ValueKey('inactive-med-$docId'),
+          elevation: 0,
+          margin: const EdgeInsets.only(bottom: 8),
+          color: isResumed
+              ? cs.primaryContainer.withOpacity(0.35)
+              : cs.surfaceContainerHighest.withOpacity(0.5),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                Icon(Icons.medication_outlined,
+                    size: 18, color: cs.onSurfaceVariant),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(name,
+                          style: Theme.of(context).textTheme.titleSmall),
+                      Text('已停用',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: cs.onSurfaceVariant)),
+                    ],
+                  ),
+                ),
+                if (isResumed) ...
+                  [
+                    Text('恢復使用 ✓',
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelMedium
+                            ?.copyWith(color: cs.primary)),
+                    const SizedBox(width: 8),
+                  ],
+                OutlinedButton(
+                  onPressed: () {
+                    setState(() {
+                      draft.type = isResumed
+                          ? MedChangeType.unchanged
+                          : MedChangeType.resumed;
+                    });
+                  },
+                  style: isResumed
+                      ? OutlinedButton.styleFrom(
+                          foregroundColor: cs.error,
+                          side: BorderSide(color: cs.error.withOpacity(0.6)),
+                        )
+                      : null,
+                  child: Text(isResumed ? '取消' : '恢復使用'),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    ];
   }
 
   Widget _buildMedCard(
@@ -709,9 +800,9 @@ Future<void> _editTimes({
 
     // 只取有變動的 items（無變化的不寫入）
     final changed = _draftByDocId.entries
-      .where((e) =>
-        e.value.type != MedChangeType.unchanged ||
-        _sessionNewlyAddedDocIds.contains(e.key))
+        .where((e) =>
+            e.value.type != MedChangeType.unchanged ||
+            _sessionNewlyAddedDocIds.contains(e.key))
         .toList();
 
     debugPrint('🔍 檢查變動：${_draftByDocId.length} 顆藥物，${changed.length} 顆有變動');
@@ -753,7 +844,7 @@ Future<void> _editTimes({
         return <String, dynamic>{
           'medDocId': docId,
           'name': d.name,
-          'type': itemType, // added/injected/doseChanged/stopped
+          'type': itemType, // added/injected/doseChanged/stopped/resumed
           'oldDose': isAddedThisSession ? null : d.oldDose,
           'newDose': isAddedThisSession ? (d.newDose ?? d.oldDose) : d.newDose,
           'oldTimes': isAddedThisSession ? null : d.oldTimes,
@@ -827,6 +918,9 @@ Future<void> _editTimes({
           patch['isActive'] = true;
         } else if (d.type == MedChangeType.stopped) {
           patch['isActive'] = false;
+        } else if (d.type == MedChangeType.resumed) {
+          patch['isActive'] = true;
+          patch['resumedAt'] = adjDate;
         }
 
         batch.set(medRef, patch, SetOptions(merge: true));
@@ -863,6 +957,10 @@ Future<void> _editTimes({
             updated['isActive'] = true;
           } else if (d.type == MedChangeType.stopped) {
             updated['isActive'] = false;
+          } else if (d.type == MedChangeType.resumed) {
+            updated['isActive'] = true;
+            updated['resumedAt'] =
+                DateTime(_date.year, _date.month, _date.day).toString();
           }
 
           try {
@@ -943,6 +1041,8 @@ Future<void> _editTimes({
         return '時間調整';
       case MedChangeType.stopped:
         return '停藥';
+      case MedChangeType.resumed:
+        return '恢復使用';
     }
   }
 

@@ -190,7 +190,17 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
             final allMeds = snapshot.data ?? [];
 
             final activeMeds = allMeds.where((m) => (m['isActive'] ?? true) == true).toList();
-            final inactiveMeds = allMeds.where((m) => (m['isActive'] ?? true) == false).toList();
+            final inactiveMeds = allMeds.where((m) => (m['isActive'] ?? true) == false).map((m) {
+              // 若有 resumedAt，顯示於 badge（停用後曾恢復的歷史）
+              final resumedAt = _parseFlexibleDate(m['resumedAt']);
+              if (resumedAt != null) {
+                return {
+                  ...m,
+                  '_badgeOverride': '曾恢復使用：${_fmtMd(resumedAt)}',
+                };
+              }
+              return m;
+            }).toList();
 
             return TabBarView(
               children: [
@@ -476,7 +486,6 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
                 title: const Text('恢復使用'),
                 onTap: () async {
                   Navigator.pop(context);
-                  // 本地更新
                   final nowStr = DateTime.now().toString();
                   await MedicationLocalDB().updateMedicationStatus(
                     uid,
@@ -486,16 +495,27 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
                     lastChangeAt: nowStr,
                   );
 
+                  // 將恢復日期也寫入本地DB
+                  final localMed = await MedicationLocalDB().getMedication(uid, medId);
+                  if (localMed != null) {
+                    final updated = Map<String, dynamic>.from(localMed);
+                    updated['resumedAt'] = nowStr;
+                    await MedicationLocalDB().updateMedication(uid, medId, updated);
+                  }
+
                   // Firebase 更新
                   await FirebaseFirestore.instance
                       .collection('users')
                       .doc(uid)
                       .collection('medications')
                       .doc(medId)
-                      .update({'isActive': true});
+                      .update({
+                    'isActive': true,
+                    'resumedAt': FieldValue.serverTimestamp(),
+                  });
 
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('已恢復使用')),
+                    const SnackBar(content: Text('已恢復使用，恢復日期已標註')),
                   );
                   _refresh();
                 },

@@ -25,7 +25,7 @@ class _MainDrawerState extends State<MainDrawer> {
   bool _isUploading = false; // 用來控制轉圈圈
 
   static const _userGuideUrl =
-      'https://www.notion.so/App-3557a479d31f800f842dd1ffb9ef5409?source=copy_link';
+      'https://2019chenqq.github.io/HTML/index.html';
 
   /// 從 Firestore 加載日記記錄用於導出
   Future<void> _pickAndUploadImage() async {

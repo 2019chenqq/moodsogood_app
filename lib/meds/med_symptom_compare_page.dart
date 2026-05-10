@@ -212,11 +212,48 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
             onChanged: (v) async {
               final med = meds.firstWhere((x) => x['id'] == v);
 
-              // Try to find an adjustment/update date in common fields
+              setState(() {
+                _selectedMedId = v;
+                _selectedMedData = med;
+              });
+
+              // 從 medAdjustments 取該藥最近一筆調整日期
               DateTime? medAdjustedDate;
-              for (final key in ['adjustedAt', 'adjustedDate', 'updatedAt', 'date', 'startDate']) {
-                if (med.containsKey(key) && med[key] != null) {
+              try {
+                final uid2 = FirebaseAuth.instance.currentUser?.uid;
+                if (uid2 != null) {
+                  final adjSnap = await FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(uid2)
+                      .collection('medAdjustments')
+                      .orderBy('date', descending: true)
+                      .get();
+
+                  for (final doc in adjSnap.docs) {
+                    final items = doc.data()['items'];
+                    if (items is! List) continue;
+                    final hasThisMed = items.any((item) =>
+                        item is Map && item['medDocId']?.toString() == v);
+                    if (!hasThisMed) continue;
+
+                    final rawDate = doc.data()['date'];
+                    if (rawDate is Timestamp) {
+                      medAdjustedDate = rawDate.toDate();
+                    } else if (rawDate is String) {
+                      medAdjustedDate = DateTime.tryParse(rawDate);
+                    }
+                    if (medAdjustedDate != null) break;
+                  }
+                }
+              } catch (e) {
+                debugPrint('取調整日期失敗：$e');
+              }
+
+              // fallback：lastChangeAt → startDate（不用 updatedAt，它會是今天）
+              if (medAdjustedDate == null) {
+                for (final key in ['lastChangeAt', 'startDate']) {
                   final val = med[key];
+                  if (val == null) continue;
                   if (val is DateTime) {
                     medAdjustedDate = val;
                   } else if (val is String) {
@@ -226,19 +263,16 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
                 }
               }
 
-              setState(() {
-                _selectedMedId = v;
-                _selectedMedData = med;
-                if (medAdjustedDate != null) {
+              if (medAdjustedDate != null) {
+                setState(() {
                   _anchorDate = DateTime(
-                    medAdjustedDate.year,
+                    medAdjustedDate!.year,
                     medAdjustedDate.month,
                     medAdjustedDate.day,
                   );
-                }
-              });
+                });
+              }
 
-              // Speak the anchor date if we set one (or always speak current anchor)
               await _speakAnchorDate();
             },
           );
