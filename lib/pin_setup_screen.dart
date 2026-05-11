@@ -75,13 +75,30 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
       // 使用 PBKDF2-HMAC-SHA256（200,000 次迭代），Loading 屬正常現象
       final aesKey = await KeyManager.deriveKey(pin, salt);
 
-      // 若舊帳號已存在 verifier，先驗證這次 PIN 是否能推導出同一把金鑰。
       if (verifier.isNotEmpty &&
           !SecureStorageService.verifyKeyWithVerifier(
             key: aesKey,
             verifier: verifier,
           )) {
-        throw Exception('PIN 驗證失敗：與既有加密資料不匹配');
+        // 驗證失敗 → 確認是否有實際加密資料
+        final diarySnapshot = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .collection('diary')
+            .where('isEncrypted', isEqualTo: true)
+            .limit(1)
+            .get();
+
+        if (diarySnapshot.docs.isNotEmpty) {
+          // 有加密資料 → 真的密碼錯了
+          throw Exception('PIN 驗證失敗：與既有加密資料不匹配');
+        } else {
+          // 沒有加密資料 → 舊 verifier 是測試殘留，允許重設
+          print('⚠️ 偵測到舊 KDF 產生的 verifier，無加密資料，重設金鑰設定');
+          await userDocRef.set({
+            'encryptionSalt': salt,  // 用 Situation B 產生的新 salt 覆蓋
+          }, SetOptions(merge: true));
+        }
       }
 
       // 🧷 使用安全儲存保存 PIN（而非明文 SharedPreferences）
