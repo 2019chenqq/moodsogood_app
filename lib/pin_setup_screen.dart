@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:crypto/crypto.dart';
 import 'package:encrypt/encrypt.dart' as encrypt_lib;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'dart:ui';
 
 // 記得匯入我們前面寫好的兩個小幫手
@@ -80,24 +83,21 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
             key: aesKey,
             verifier: verifier,
           )) {
-        // 驗證失敗 → 確認是否有實際加密資料
-        final diarySnapshot = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .collection('diary')
-            .where('isEncrypted', isEqualTo: true)
-            .limit(1)
-            .get();
+        // 新 KDF 對不上 → 試試舊 KDF（SHA-256 × 10,000）
+        final oldKey = _deriveKeyLegacy(pin, salt);
+        final oldKeyMatches = SecureStorageService.verifyKeyWithVerifier(
+          key: oldKey,
+          verifier: verifier,
+        );
 
-        if (diarySnapshot.docs.isNotEmpty) {
-          // 有加密資料 → 真的密碼錯了
-          throw Exception('PIN 驗證失敗：與既有加密資料不匹配');
+        if (oldKeyMatches) {
+          // ✅ 舊 KDF 正確 → 自動把所有舊日記用新金鑰重新加密
+          print('⚠️ 偵測到舊 KDF，開始自動遷移...');
+          await _migrateFromLegacyKey(user.uid, oldKey, aesKey);
+          // aesKey 繼續往下用，流程不中斷
         } else {
-          // 沒有加密資料 → 舊 verifier 是測試殘留，允許重設
-          print('⚠️ 偵測到舊 KDF 產生的 verifier，無加密資料，重設金鑰設定');
-          await userDocRef.set({
-            'encryptionSalt': salt,  // 用 Situation B 產生的新 salt 覆蓋
-          }, SetOptions(merge: true));
+          // 新舊 KDF 都對不上 → 才是真的密碼錯誤
+          throw Exception('PIN 驗證失敗：與既有加密資料不匹配');
         }
       }
 
@@ -166,6 +166,61 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
     return base64Pattern.hasMatch(parts[0]) &&
         base64Pattern.hasMatch(parts[1]) &&
         parts[0].length >= 16; // IV 至少 12 bytes，base64 至少約 16 字元
+  }
+
+  // 舊版 KDF（只用來遷移，不對外開放）
+  encrypt_lib.Key _deriveKeyLegacy(String pin, String salt) {
+    List<int> bytes = utf8.encode(pin + salt);
+    for (int i = 0; i < 10000; i++) {
+      bytes = sha256.convert(bytes).bytes;
+    }
+    return encrypt_lib.Key(Uint8List.fromList(bytes));
+  }
+
+  // 把所有舊日記從舊金鑰重新加密成新金鑰
+  Future<void> _migrateFromLegacyKey(
+    String uid,
+    encrypt_lib.Key oldKey,
+    encrypt_lib.Key newKey,
+  ) async {
+    final oldService = EncryptionService(oldKey);
+    final newService = EncryptionService(newKey);
+
+    final diariesRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('diary');
+
+    final snapshot = await diariesRef.get();
+    final fieldsToMigrate = [
+      'title', 'content', 'themeSong', 'highlight',
+      'metaphor', 'conceited', 'proudOf', 'selfCare'
+    ];
+
+    final batch = FirebaseFirestore.instance.batch();
+
+    for (var doc in snapshot.docs) {
+      final data = doc.data();
+      final updates = <String, dynamic>{};
+
+      for (final field in fieldsToMigrate) {
+        final text = (data[field] ?? '') as String;
+        if (text.isEmpty) continue;
+
+        // 用舊金鑰解密，再用新金鑰加密
+        final plain = oldService.tryDecryptData(text);
+        if (plain != null && plain != text) {
+          updates[field] = newService.encryptData(plain);
+        }
+      }
+
+      if (updates.isNotEmpty) {
+        batch.update(doc.reference, updates);
+      }
+    }
+
+    await batch.commit();
+    print('✅ 遷移完成：${snapshot.docs.length} 篇日記已升級到新 KDF');
   }
 
 // 🧹 背景大掃除：把 Firebase 上原本是明文的舊日記「所有欄位」全部加密
