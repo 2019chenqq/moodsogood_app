@@ -13,8 +13,10 @@ import 'dart:ui';
 // 記得匯入我們前面寫好的兩個小幫手
 import '../utils/key_manager.dart';
 import '../utils/secure_storage_service.dart';
-import 'main.dart';
 import '../utils/encryption_service.dart';
+import 'main.dart';
+import 'recovery_key_display_screen.dart';
+import 'recovery_key_restore_screen.dart';
 
 class PinSetupScreen extends StatefulWidget {
   const PinSetupScreen({super.key});
@@ -126,13 +128,18 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
 
       await _encryptOldData(user.uid, aesKey);
 
-      // 🎉 成功！導航到 App 的首頁或日記列表頁
+      // 🎉 成功！產生備援金鑰後導向備援金鑰顯示頁
+      final recoveryKey = KeyManager.generateRecoveryKey();
+      await SecureStorageService.saveRecoveryKeyHash(
+        uid: user.uid,
+        recoveryKey: recoveryKey,
+      );
+
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('保險箱解鎖成功！')),
-        );
         Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const AuthGate()),
+          MaterialPageRoute(
+            builder: (_) => RecoveryKeyDisplayScreen(recoveryKey: recoveryKey),
+          ),
           (route) => false,
         );
       }
@@ -543,7 +550,7 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
                             value: _understandNoRecovery,
                             onChanged: (value) => setState(() => _understandNoRecovery = value!),
                             title: const Text(
-                              '我了解若遺失此安全碼，系統客服也無法復原任何加密資料。',
+                              '我了解若安全碼與備援金鑰都遺失，資料將永久無法還原。',
                               style: TextStyle(
                                 color: Color(0xFFFFB6B6),
                                 fontSize: 13.5,
@@ -576,6 +583,23 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
                                     '確認並啟用保險箱',
                                     style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
                                   ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Center(
+                          child: TextButton(
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const RecoveryKeyRestoreScreen(),
+                              ),
+                            ),
+                            child: const Text(
+                              '忘記安全碼？使用備援金鑰還原',
+                              style: TextStyle(
+                                color: Color(0xFF9BD7EA),
+                                fontSize: 13,
+                              ),
+                            ),
                           ),
                         ),
                       ],

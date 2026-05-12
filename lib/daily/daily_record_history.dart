@@ -39,6 +39,7 @@ class DailyRecordHistory extends StatefulWidget {
 }
 
 class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTickerProviderStateMixin {
+  int _selectedRangeDays = 7;
   DateFilter _dateFilter = DateFilter.last7;
   int _historyWeekStartDay = DateTime.monday;
   // MoodFilter 先暫時拿掉，因為圖表頁通常看全部比較準，或者你可以保留邏輯但只應用在列表
@@ -245,7 +246,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
 
           // 列表用的資料 (需過濾日期 + 反序)
           var listRecords = List<DailyRecord>.from(dailyRecords);
-          listRecords = _applyDateFilter(listRecords, _dateFilter);
+          listRecords = _applyDateFilter(listRecords);
           listRecords.sort((a, b) => b.date.compareTo(a.date));
 
           return StreamBuilder<QuerySnapshot>(
@@ -492,7 +493,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
 
 bool _isHistoryLocked(bool isPro) {
   // 只開放最近 7 天
-  if (_dateFilter == DateFilter.last7) return false;
+  if (_selectedRangeDays > 0 && _selectedRangeDays <= 7) return false;
 
   // 30 天 / 全部 → 非 Pro 鎖
   return !isPro;
@@ -522,27 +523,12 @@ bool _isHistoryLocked(bool isPro) {
       // ─────────────────────
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-        child: _buildDateFilterChips(),
+        child: _buildDateRangeDropdown(),
       ),
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
         child: _buildWeekStartSelector(),
       ),
-      if (_dateFilter == DateFilter.last7)
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              _last7WindowHintText(),
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: Colors.grey.shade600),
-            ),
-          ),
-        ),
-
       const Divider(height: 1),
 
       // ─────────────────────
@@ -640,14 +626,16 @@ bool _isHistoryLocked(bool isPro) {
   }
   
   // 1. 根據日期篩選資料
-  final filteredRecords = _applyDateFilter(allRecords, _dateFilter);
+  final filteredRecords = _applyDateFilter(allRecords);
 
   // 2. 是否使用移動平均（7 天 = 原始線，其餘 = MA）
-  final bool useMA = _dateFilter != DateFilter.last7;
+  final bool useMA = _selectedRangeDays == 0 || _selectedRangeDays > 7;
 
   // 3. 是否鎖定（非 Pro + 不是 7 天）
   final bool isLocked =
-    !kDemoUnlockAll && !isPro && _dateFilter != DateFilter.last7;
+    !kDemoUnlockAll &&
+        !isPro &&
+        (_selectedRangeDays == 0 || _selectedRangeDays > 7);
 
   return Padding(
   padding: const EdgeInsets.all(16.0),
@@ -657,27 +645,13 @@ bool _isHistoryLocked(bool isPro) {
       // ===== 上方日期切換（永遠可點）=====
       Row(
         children: [
-          Expanded(child: _buildDateFilterChips(compact: true)),
+          Expanded(child: _buildDateRangeDropdown(compact: true)),
         ],
       ),
       Padding(
         padding: const EdgeInsets.only(top: 8),
         child: _buildWeekStartSelector(),
       ),
-      if (_dateFilter == DateFilter.last7)
-        Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              _last7WindowHintText(),
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: Colors.grey.shade600),
-            ),
-          ),
-        ),
       const SizedBox(height: 12),
 
       // ===== 情緒下拉選單（永遠可點）=====
@@ -792,6 +766,42 @@ bool _isHistoryLocked(bool isPro) {
 
   // --- 輔助方法 ---
 
+  Widget _buildDateRangeDropdown({bool compact = false}) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: 12,
+        vertical: compact ? 0 : 2,
+      ),
+      decoration: BoxDecoration(
+        color: Theme.of(context).inputDecorationTheme.fillColor ??
+            Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<int>(
+          value: _selectedRangeDays,
+          isExpanded: true,
+          icon: Icon(
+            Icons.arrow_drop_down,
+            color: Theme.of(context).iconTheme.color,
+          ),
+          style: TextStyle(
+            color: Theme.of(context).textTheme.bodyLarge?.color,
+          ),
+          onChanged: (value) => setState(() => _selectedRangeDays = value),
+          items: _dateRangeOptions
+              .map(
+                (option) => DropdownMenuItem<int>(
+                  value: option.days,
+                  child: Text(option.label),
+                ),
+              )
+              .toList(),
+        ),
+      ),
+    );
+  }
+
   Widget _buildDateFilterChips({bool compact = false}) {
     return Wrap(
       alignment: WrapAlignment.spaceBetween,
@@ -896,23 +906,15 @@ bool _isHistoryLocked(bool isPro) {
   }
 
   // 篩選邏輯
-  List<DailyRecord> _applyDateFilter(List<DailyRecord> input, DateFilter filter) {
-    if (filter == DateFilter.all) return input;
-    if (filter == DateFilter.last7) {
-      final range = _currentWeekWindow();
-      final start = _dateOnly(range.start);
-      final end = _dateOnly(range.end);
-      return input.where((r) {
-        final date = _dateOnly(r.date);
-        return !date.isBefore(start) && !date.isAfter(end);
-      }).toList();
-    }
+  List<DailyRecord> _applyDateFilter(List<DailyRecord> input) {
+    final days = _selectedRangeDays;
+    if (days == 0) return input;
 
     final today = _dateOnly(DateTime.now());
-    final start = today.subtract(const Duration(days: 29));
+    final start = today.subtract(Duration(days: days - 1));
     return input.where((r) {
       final date = _dateOnly(r.date);
-      return !date.isBefore(start);
+      return !date.isBefore(start) && !date.isAfter(today);
     }).toList();
   }
 
@@ -1410,6 +1412,27 @@ class _DashedLegendPainter extends CustomPainter {
 }
 
 // 列舉與 DateFilter 定義保持不變
+class _DateRangeOption {
+  final int days;
+  final String label;
+
+  const _DateRangeOption({
+    required this.days,
+    required this.label,
+  });
+}
+
+const List<_DateRangeOption> _dateRangeOptions = [
+  _DateRangeOption(days: 7, label: '最近 7 天'),
+  _DateRangeOption(days: 14, label: '最近 14 天'),
+  _DateRangeOption(days: 30, label: '最近 30 天'),
+  _DateRangeOption(days: 60, label: '最近 60 天'),
+  _DateRangeOption(days: 90, label: '最近 90 天'),
+  _DateRangeOption(days: 180, label: '最近 180 天'),
+  _DateRangeOption(days: 365, label: '最近 365 天'),
+  _DateRangeOption(days: 0, label: '全部'),
+];
+
 enum DateFilter { last7, last30, all }
 
 /// —— 簡易週報卡片：計算最近 7 天的概況 —— //
