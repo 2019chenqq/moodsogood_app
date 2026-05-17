@@ -201,7 +201,23 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
         case 'injection':
           return '$name：已施打';
         case 'doseChanged':
-          final doseText = '$name：${oldDose ?? ''}→${newDose ?? ''} $unit';
+          final oldDosePerUnit = it['oldDosePerUnit'];
+          final newDosePerUnit = it['newDosePerUnit'];
+          final oldPillCount = it['oldPillCount'];
+          final newPillCount = it['newPillCount'];
+
+          String doseText;
+          if (newDosePerUnit != null && newPillCount != null) {
+            doseText = '$name：${newDosePerUnit ?? ''}$unit × ${newPillCount ?? ''}顆（總量 ${newDose ?? ''} $unit）';
+          } else {
+            doseText = '$name：${oldDose ?? ''}→${newDose ?? ''} $unit';
+          }
+
+          if ((oldDosePerUnit != null && oldPillCount != null) &&
+              (oldDosePerUnit != newDosePerUnit || oldPillCount != newPillCount)) {
+            doseText = '$doseText；原本 ${oldDosePerUnit ?? ''}$unit × ${oldPillCount ?? ''}顆';
+          }
+
           if (oldTimes != newTimes && newTimes.isNotEmpty) {
             return '$doseText；時間 $oldTimes→$newTimes';
           }
@@ -210,6 +226,8 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
           return '$name：時間 $oldTimes→$newTimes';
         case 'stopped':
           return '$name：停藥';
+        case 'resumed':
+          return '$name：恢復使用';
         default:
           return '$name：維持';
       }
@@ -257,7 +275,21 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
                   } else if (type == 'injected' || type == 'injection') {
                     line = '已施打';
                   } else if (type == 'doseChanged') {
-                    line = '調整：${oldDose ?? ''} → ${newDose ?? ''} $unit';
+                    final oldDosePerUnit = it['oldDosePerUnit'];
+                    final newDosePerUnit = it['newDosePerUnit'];
+                    final oldPillCount = it['oldPillCount'];
+                    final newPillCount = it['newPillCount'];
+
+                    if (newDosePerUnit != null && newPillCount != null) {
+                      line = '調整：${newDosePerUnit ?? ''}$unit × ${newPillCount ?? ''}顆（總量 ${newDose ?? ''} $unit）';
+                      if (oldDosePerUnit != null && oldPillCount != null &&
+                          (oldDosePerUnit != newDosePerUnit || oldPillCount != newPillCount)) {
+                        line = '$line；原本 ${oldDosePerUnit ?? ''}$unit × ${oldPillCount ?? ''}顆';
+                      }
+                    } else {
+                      line = '調整：${oldDose ?? ''} → ${newDose ?? ''} $unit';
+                    }
+
                     if (oldTimes != newTimes && newTimes.isNotEmpty) {
                       line = '$line；時間：$oldTimes → $newTimes';
                     }
@@ -265,6 +297,8 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
                     line = '時間調整：$oldTimes → $newTimes';
                   } else if (type == 'stopped') {
                     line = stopReason.isEmpty ? '停藥' : '停藥（原因：$stopReason）';
+                  } else if (type == 'resumed') {
+                    line = '恢復使用';
                   } else {
                     line = '維持原劑量';
                   }

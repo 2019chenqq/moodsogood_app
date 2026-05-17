@@ -773,14 +773,14 @@ if (_medType == 'injection') ...[
     try {
       final now = DateTime.now();
 
-        final dosePerUnit = _medType == 'drops'
+      final dosePerUnit = _medType == 'drops'
           ? _round1(_dropMg / _dropMlBase)
           : _round1(_dose);
-        final pillCount = _medType == 'injection' || _medType == 'drops' ? 1.0 : _round1(_pillCount);
-        final concentrationMg = _medType == 'drops' ? _round1(_dropMg) : null;
-        final concentrationMl = _medType == 'drops' ? _round1(_dropMlBase) : null;
-        final intakeMl = _medType == 'drops' ? _round1(_intakeMl) : null;
-        final totalDose = _medType == 'drops'
+      final pillCount = _medType == 'injection' || _medType == 'drops' ? 1.0 : _round1(_pillCount);
+      final concentrationMg = _medType == 'drops' ? _round1(_dropMg) : null;
+      final concentrationMl = _medType == 'drops' ? _round1(_dropMlBase) : null;
+      final intakeMl = _medType == 'drops' ? _round1(_intakeMl) : null;
+      final totalDose = _medType == 'drops'
           ? _round1((concentrationMg! / concentrationMl!) * intakeMl!)
           : _round1(dosePerUnit * pillCount);
 
@@ -804,20 +804,39 @@ if (_medType == 'injection') ...[
         'bodySymptoms': bodySymptoms,
         'purposeOther': purposeOther.isEmpty ? null : purposeOther,
         'updatedAt': now.toString(),
-        'lastChangeAt': (widget.initialData['lastChangeAt'] as String?) ?? '',
+        'lastChangeAt': now.toString(),
       };
+
+      final timelineItems = _buildEditTimelineItems(
+        oldData: widget.initialData,
+        newData: medicationData,
+      );
+
+      final timelineId = FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('medAdjustments')
+          .doc()
+          .id;
 
       debugPrint('💊 [SAVE] 藥物編輯：type=$_medType, intervalDays=$_intervalDays');
 
       // 1️⃣ 先更新本地端（一定要更新）
       await MedicationLocalDB().updateMedication(uid, widget.docId, medicationData);
+      if (timelineItems.isNotEmpty) {
+        await MedicationLocalDB().addAdjustmentRecord(uid, timelineId, {
+          'date': _fmtYmd(now),
+          'note': '藥物詳細頁調整',
+          'items': timelineItems,
+          'createdAt': now.toString(),
+        });
+      }
       debugPrint('✅ 本地已更新: ${widget.docId}');
 
       // 2️⃣ 再更新 Firebase（如果啟用同步）
       if (FirebaseSyncConfig.shouldSync()) {
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
+        final userRef = FirebaseFirestore.instance.collection('users').doc(uid);
+        await userRef
             .collection('medications')
             .doc(widget.docId)
             .set({
@@ -838,8 +857,19 @@ if (_medType == 'injection') ...[
               'note': _noteCtrl.text.trim(),
               'startDate': Timestamp.fromDate(DateTime(_startDate.year, _startDate.month, _startDate.day)),
               'isActive': _isActive,
+              'lastChangeAt': Timestamp.fromDate(now),
               'updatedAt': FieldValue.serverTimestamp(),
             }, SetOptions(merge: true));
+
+        if (timelineItems.isNotEmpty) {
+          await userRef.collection('medAdjustments').doc(timelineId).set({
+            'date': Timestamp.fromDate(DateTime(now.year, now.month, now.day)),
+            'note': '藥物詳細頁調整',
+            'items': timelineItems,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        }
+
         debugPrint('🔥 Firebase 已同步: ${widget.docId}');
       }
 
@@ -855,6 +885,131 @@ if (_medType == 'injection') ...[
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  double? _toDouble(dynamic v) {
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v);
+    return null;
+  }
+
+  bool _sameDose(dynamic a, dynamic b) {
+    final av = _toDouble(a);
+    final bv = _toDouble(b);
+    if (av == null && bv == null) return true;
+    if (av == null || bv == null) return false;
+    return (av - bv).abs() < 0.0001;
+  }
+
+  List<String> _toStrList(dynamic raw) {
+    if (raw is List) {
+      return raw
+          .whereType<String>()
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+    }
+    if (raw is String && raw.trim().isNotEmpty) {
+      return raw
+          .split(',')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+    }
+    return <String>[];
+  }
+
+  bool _sameSlots(dynamic a, dynamic b) {
+    final as = _toStrList(a).toSet();
+    final bs = _toStrList(b).toSet();
+    if (as.length != bs.length) return false;
+    return as.containsAll(bs);
+  }
+
+  bool _toBool(dynamic v, {bool fallback = true}) {
+    if (v is bool) return v;
+    if (v is int) return v != 0;
+    if (v is String) {
+      final s = v.toLowerCase().trim();
+      if (s == 'true' || s == '1') return true;
+      if (s == 'false' || s == '0') return false;
+    }
+    return fallback;
+  }
+
+  List<Map<String, dynamic>> _buildEditTimelineItems({
+    required Map<String, dynamic> oldData,
+    required Map<String, dynamic> newData,
+  }) {
+    final items = <Map<String, dynamic>>[];
+
+    final name = (newData['name'] ?? oldData['name'] ?? '未命名藥物').toString();
+    final unit = (newData['unit'] ?? oldData['unit'] ?? 'mg').toString();
+
+    final oldDose = oldData['dose'];
+    final newDose = newData['dose'];
+    final oldDosePerUnit = oldData['dosePerUnit'];
+    final newDosePerUnit = newData['dosePerUnit'];
+    final oldPillCount = oldData['pillCount'];
+    final newPillCount = newData['pillCount'];
+    final oldTimes = _toStrList(oldData['times']);
+    final newTimes = _toStrList(newData['times']);
+
+    final doseChanged = !_sameDose(oldDose, newDose) ||
+        !_sameDose(oldDosePerUnit, newDosePerUnit) ||
+        !_sameDose(oldPillCount, newPillCount);
+    final scheduleChanged = !_sameSlots(oldTimes, newTimes);
+
+    final oldActive = _toBool(oldData['isActive'], fallback: true);
+    final newActive = _toBool(newData['isActive'], fallback: true);
+
+    if (doseChanged) {
+      items.add({
+        'medDocId': widget.docId,
+        'name': name,
+        'type': 'doseChanged',
+        'oldDose': oldDose,
+        'newDose': newDose,
+        'oldDosePerUnit': oldDosePerUnit,
+        'newDosePerUnit': newDosePerUnit,
+        'oldPillCount': oldPillCount,
+        'newPillCount': newPillCount,
+        'oldTimes': oldTimes,
+        'newTimes': newTimes,
+        'unit': unit,
+        'from': 'detailEdit',
+      });
+    }
+
+    if (!doseChanged && scheduleChanged) {
+      items.add({
+        'medDocId': widget.docId,
+        'name': name,
+        'type': 'scheduleChanged',
+        'oldDose': oldDose,
+        'newDose': newDose,
+        'oldTimes': oldTimes,
+        'newTimes': newTimes,
+        'unit': unit,
+        'from': 'detailEdit',
+      });
+    }
+
+    if (oldActive != newActive) {
+      items.add({
+        'medDocId': widget.docId,
+        'name': name,
+        'type': newActive ? 'resumed' : 'stopped',
+        'oldDose': oldDose,
+        'newDose': newDose,
+        'oldTimes': oldTimes,
+        'newTimes': newTimes,
+        'unit': unit,
+        'from': 'detailEdit',
+      });
+    }
+
+    return items;
   }
 
   String _fmtYmd(DateTime dt) {

@@ -24,7 +24,7 @@ class MedicationLocalDB {
 
     return openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE medications (
@@ -49,7 +49,9 @@ class MedicationLocalDB {
             purposeOther TEXT,
             createdAt TEXT,
             updatedAt TEXT,
-            lastChangeAt TEXT
+            lastChangeAt TEXT,
+            lastChangedAt TEXT,
+            resumedAt TEXT
           )
         ''');
         
@@ -90,18 +92,51 @@ class MedicationLocalDB {
 
         if (oldVersion < 3) {
           debugPrint('🔨 新增 dosePerUnit/pillCount 欄位...');
-          await db.execute('ALTER TABLE medications ADD COLUMN dosePerUnit REAL');
-          await db.execute('ALTER TABLE medications ADD COLUMN pillCount REAL');
+          await _ensureMedicationColumns(db, {
+            'dosePerUnit': 'REAL',
+            'pillCount': 'REAL',
+          });
         }
 
         if (oldVersion < 4) {
           debugPrint('🔨 新增 concentration/intake 欄位...');
-          await db.execute('ALTER TABLE medications ADD COLUMN concentrationMg REAL');
-          await db.execute('ALTER TABLE medications ADD COLUMN concentrationMl REAL');
-          await db.execute('ALTER TABLE medications ADD COLUMN intakeMl REAL');
+          await _ensureMedicationColumns(db, {
+            'concentrationMg': 'REAL',
+            'concentrationMl': 'REAL',
+            'intakeMl': 'REAL',
+          });
+        }
+
+        if (oldVersion < 5) {
+          debugPrint('🔨 新增 resumedAt/lastChangedAt/isActive 欄位...');
+          await _ensureMedicationColumns(db, {
+            'resumedAt': 'TEXT',
+            'lastChangedAt': 'TEXT',
+            'isActive': 'INTEGER DEFAULT 1',
+          });
         }
       },
     );
+  }
+
+  Future<Set<String>> _getTableColumns(Database db, String table) async {
+    final rows = await db.rawQuery('PRAGMA table_info($table)');
+    return rows
+        .map((r) => (r['name'] ?? '').toString())
+        .where((name) => name.isNotEmpty)
+        .toSet();
+  }
+
+  Future<void> _ensureMedicationColumns(
+    Database db,
+    Map<String, String> columns,
+  ) async {
+    final existing = await _getTableColumns(db, 'medications');
+    for (final entry in columns.entries) {
+      if (existing.contains(entry.key)) continue;
+      debugPrint('🧩 補齊 medications.${entry.key} 欄位...');
+      await db.execute('ALTER TABLE medications ADD COLUMN ${entry.key} ${entry.value}');
+    }
   }
 
   // 新增藥物
