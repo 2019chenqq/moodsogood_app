@@ -14,6 +14,7 @@ import '../providers/pro_provider.dart';
 import 'daily_record_repository.dart';
 import 'emotion_page_checkbox.dart';
 import '../utils/firebase_sync_config.dart';
+import '../widgets/trend_range_selector.dart'; // 加入這行 import
 
 const Map<String, String> ksleepFlagMap = {
     'good': '優',
@@ -39,11 +40,10 @@ class DailyRecordHistory extends StatefulWidget {
 }
 
 class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTickerProviderStateMixin {
-  int _selectedRangeDays = 7;
-  DateFilter _dateFilter = DateFilter.last7;
-  int _historyWeekStartDay = DateTime.monday;
-  // MoodFilter 先暫時拿掉，因為圖表頁通常看全部比較準，或者你可以保留邏輯但只應用在列表
-  
+  int? _selectedRangeDays = 7;
+  DateTimeRange? _selectedDateRange; // 新增：月曆自訂區間
+  int _historyWeekStartDay = DateTime.monday; // ✅ 補上
+
   // 分頁控制器
   late TabController _tabController;
   
@@ -63,7 +63,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
   @override
   void initState() {
     super.initState();
-    final safeIndex = widget.initialTab.clamp(0, 1);
+    final safeIndex = widget.initialTab.clamp(0, 1).toInt(); // ✅ 修正型別
     _tabController = TabController(length: 2, vsync: this, initialIndex: safeIndex);
     _loadHistoryWeekStartDay();
   }
@@ -124,11 +124,6 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
   String _dateText(DateTime d) {
     final date = _dateOnly(d);
     return '${date.month}/${date.day}';
-  }
-
-  String _last7WindowHintText() {
-    final range = _currentWeekWindow();
-    return '目前區間：${_dateText(range.start)} - ${_dateText(range.end)}（第一天：${_weekdayText(_historyWeekStartDay)}）';
   }
 
   bool _hasSleepContent(SleepData s) {
@@ -195,6 +190,42 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
       recordsMap.remove(id);
     }
   }
+
+  Future<void> _pickDateRange() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 5),
+      lastDate: now,
+      initialDateRange: _selectedDateRange ??
+          DateTimeRange(
+            start: now.subtract(const Duration(days: 29)),
+            end: now,
+          ),
+      helpText: '選擇時間範圍',
+      confirmText: '確認',
+      cancelText: '取消',
+    );
+
+    if (picked != null) {
+      setState(() {
+        _selectedDateRange = DateTimeRange(
+          start: DateTime(picked.start.year, picked.start.month, picked.start.day),
+          end: DateTime(picked.end.year, picked.end.month, picked.end.day),
+        );
+      });
+    }
+  }
+
+  int get _selectedSpanDays {
+    if (_selectedDateRange == null) return _selectedRangeDays ?? 7;
+    return _selectedDateRange!.end
+            .difference(_selectedDateRange!.start)
+            .inDays +
+        1;
+  }
+
+  bool get _useMonthlyAverageWhenLongRange => _selectedSpanDays >= 365;
 
   @override
   Widget build(BuildContext context) {
@@ -493,7 +524,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
 
 bool _isHistoryLocked(bool isPro) {
   // 只開放最近 7 天
-  if (_selectedRangeDays > 0 && _selectedRangeDays <= 7) return false;
+  if (_selectedRangeDays != null && _selectedRangeDays! <= 7) return false;
 
   // 30 天 / 全部 → 非 Pro 鎖
   return !isPro;
@@ -629,13 +660,13 @@ bool _isHistoryLocked(bool isPro) {
   final filteredRecords = _applyDateFilter(allRecords);
 
   // 2. 是否使用移動平均（7 天 = 原始線，其餘 = MA）
-  final bool useMA = _selectedRangeDays == 0 || _selectedRangeDays > 7;
+  final bool useMA = _selectedRangeDays == null || _selectedRangeDays! > 7;
 
   // 3. 是否鎖定（非 Pro + 不是 7 天）
   final bool isLocked =
     !kDemoUnlockAll &&
         !isPro &&
-        (_selectedRangeDays == 0 || _selectedRangeDays > 7);
+        (_selectedRangeDays == null || _selectedRangeDays! > 7);
 
   return Padding(
   padding: const EdgeInsets.all(16.0),
@@ -734,6 +765,7 @@ bool _isHistoryLocked(bool isPro) {
                 fullRecords: allRecords,
                 targetEmotion: _selectedEmotion,
                 useMovingAverage: useMA,
+                forceMonthlyAverage: _useMonthlyAverageWhenLongRange, // ✅ 新增
               ),
 
               // 🔒 只有在鎖定時，才覆蓋圖表
@@ -767,63 +799,29 @@ bool _isHistoryLocked(bool isPro) {
   // --- 輔助方法 ---
 
   Widget _buildDateRangeDropdown({bool compact = false}) {
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: 12,
-        vertical: compact ? 0 : 2,
-      ),
-      decoration: BoxDecoration(
-        color: Theme.of(context).inputDecorationTheme.fillColor ??
-            Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<int>(
-          value: _selectedRangeDays,
-          isExpanded: true,
-          icon: Icon(
-            Icons.arrow_drop_down,
-            color: Theme.of(context).iconTheme.color,
-          ),
-          style: TextStyle(
-            color: Theme.of(context).textTheme.bodyLarge?.color,
-          ),
-          onChanged: (value) => setState(() => _selectedRangeDays = value),
-          items: _dateRangeOptions
-              .map(
-                (option) => DropdownMenuItem<int>(
-                  value: option.days,
-                  child: Text(option.label),
-                ),
-              )
-              .toList(),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDateFilterChips({bool compact = false}) {
-    return Wrap(
-      alignment: WrapAlignment.spaceBetween,
-      spacing: 8,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ChoiceChip(
-          label: const Text('本週 7 天'),
-          selected: _dateFilter == DateFilter.last7,
-          onSelected: (_) => setState(() => _dateFilter = DateFilter.last7),
-          visualDensity: compact ? VisualDensity.compact : null,
+        TrendRangeSelector(
+          selectedDays: _selectedRangeDays,
+          onChanged: (value) {
+            setState(() {
+              _selectedRangeDays = value;
+              _selectedDateRange = null; // 選快捷時清掉自訂
+            });
+          },
         ),
-        ChoiceChip(
-          label: const Text('最近 30 天'),
-          selected: _dateFilter == DateFilter.last30,
-          onSelected: (_) => setState(() => _dateFilter = DateFilter.last30),
-          visualDensity: compact ? VisualDensity.compact : null,
-        ),
-        ChoiceChip(
-          label: const Text('全部'),
-          selected: _dateFilter == DateFilter.all,
-          onSelected: (_) => setState(() => _dateFilter = DateFilter.all),
-          visualDensity: compact ? VisualDensity.compact : null,
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: _pickDateRange,
+          icon: const Icon(Icons.calendar_month),
+          label: Text(
+            _selectedDateRange == null
+                ? '月曆選擇區間'
+                : '${_selectedDateRange!.start.year}/${_selectedDateRange!.start.month}/${_selectedDateRange!.start.day}'
+                  ' ~ '
+                  '${_selectedDateRange!.end.year}/${_selectedDateRange!.end.month}/${_selectedDateRange!.end.day}',
+          ),
         ),
       ],
     );
@@ -908,7 +906,7 @@ bool _isHistoryLocked(bool isPro) {
   // 篩選邏輯
   List<DailyRecord> _applyDateFilter(List<DailyRecord> input) {
     final days = _selectedRangeDays;
-    if (days == 0) return input;
+    if (days == null) return input;
 
     final today = _dateOnly(DateTime.now());
     final start = today.subtract(Duration(days: days - 1));
@@ -1001,12 +999,14 @@ class _ChartWidget extends StatelessWidget {
   final List<DailyRecord> fullRecords;
   final String targetEmotion;
   final bool useMovingAverage;
+  final bool forceMonthlyAverage; // 新增
 
   const _ChartWidget({
     required this.records,
     required this.fullRecords,
     required this.targetEmotion,
     required this.useMovingAverage,
+    this.forceMonthlyAverage = false, // 新增
   });
 
   /// 正規化日期（去除時間部分）
@@ -1043,6 +1043,26 @@ class _ChartWidget extends StatelessWidget {
     return list;
   }
 
+  /// 將每日點轉為「每月平均」點（key 為每月 1 日）
+  Map<DateTime, double> _toMonthlyAverage(Map<DateTime, double> source) {
+    final buckets = <DateTime, List<double>>{};
+
+    source.forEach((date, value) {
+      final monthKey = DateTime(date.year, date.month, 1);
+      (buckets[monthKey] ??= <double>[]).add(value);
+    });
+
+    final result = <DateTime, double>{};
+    final keys = buckets.keys.toList()..sort((a, b) => a.compareTo(b));
+
+    for (final k in keys) {
+      final vals = buckets[k]!;
+      result[k] = vals.reduce((a, b) => a + b) / vals.length;
+    }
+
+    return result;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (records.isEmpty) {
@@ -1053,8 +1073,8 @@ class _ChartWidget extends StatelessWidget {
     final sorted = List<DailyRecord>.from(records)
       ..sort((a, b) => a.date.compareTo(b.date));
 
-    final Map<DateTime, double> dateValueMap = {}; // 可用實值（實線/實心點）
-    final Map<DateTime, double> emptyPointValueMap = {}; // MA 視窗不足（空心點/虛線）
+    final Map<DateTime, double> dateValueMap = {};
+    final Map<DateTime, double> emptyPointValueMap = {};
     for (var r in sorted) {
       final d = _norm(r.date);
 
@@ -1083,6 +1103,11 @@ class _ChartWidget extends StatelessWidget {
       return const Center(child: Text('此情緒目前沒有數據'));
     }
 
+    final Map<DateTime, double> effectiveValueMap =
+        forceMonthlyAverage ? _toMonthlyAverage(dateValueMap) : dateValueMap;
+    final Map<DateTime, double> effectiveEmptyMap =
+        forceMonthlyAverage ? <DateTime, double>{} : emptyPointValueMap;
+
     final sortedDates = {
       ...dateValueMap.keys,
       ...emptyPointValueMap.keys,
@@ -1105,7 +1130,7 @@ class _ChartWidget extends StatelessWidget {
     final List<LineChartBarData> barDatas = [];
     bool hasDashedSegments = false;
 
-    double? pointY(DateTime d) => dateValueMap[d] ?? emptyPointValueMap[d];
+    double? pointY(DateTime d) => effectiveValueMap[d] ?? effectiveEmptyMap[d];
 
     if (!showLine) {
       // 📍 圓點模式（< 3 天）：只顯示圓點，無連線
@@ -1412,27 +1437,6 @@ class _DashedLegendPainter extends CustomPainter {
 }
 
 // 列舉與 DateFilter 定義保持不變
-class _DateRangeOption {
-  final int days;
-  final String label;
-
-  const _DateRangeOption({
-    required this.days,
-    required this.label,
-  });
-}
-
-const List<_DateRangeOption> _dateRangeOptions = [
-  _DateRangeOption(days: 7, label: '最近 7 天'),
-  _DateRangeOption(days: 14, label: '最近 14 天'),
-  _DateRangeOption(days: 30, label: '最近 30 天'),
-  _DateRangeOption(days: 60, label: '最近 60 天'),
-  _DateRangeOption(days: 90, label: '最近 90 天'),
-  _DateRangeOption(days: 180, label: '最近 180 天'),
-  _DateRangeOption(days: 365, label: '最近 365 天'),
-  _DateRangeOption(days: 0, label: '全部'),
-];
-
 enum DateFilter { last7, last30, all }
 
 /// —— 簡易週報卡片：計算最近 7 天的概況 —— //
