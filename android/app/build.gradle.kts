@@ -79,3 +79,24 @@ dependencies {
 flutter {
     source = "../.."
 }
+// 強制修正 isar_flutter_libs 缺少 namespace 的問題 (Kotlin DSL 最終相容版)
+subprojects {
+    afterEvaluate {
+        val android = project.extensions.findByName("android")
+        if (android != null) {
+            // 使用 type-safe 的方式設定 namespace
+            when (android) {
+                is com.android.build.gradle.LibraryExtension -> {
+                    if (android.namespace == null) {
+                        android.namespace = project.group.toString()
+                    }
+                }
+                is com.android.build.gradle.AppExtension -> {
+                    if (android.namespace == null) {
+                        android.namespace = project.group.toString()
+                    }
+                }
+            }
+        }
+    }
+}

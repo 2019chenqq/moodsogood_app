@@ -1,4 +1,4 @@
-# Firebase Sync Control Implementation Guide
+﻿# Firebase Sync Control Implementation Guide
 
 ## Overview
 This implementation adds a Firebase sync control flag to allow toggling between cloud-based Firebase storage and local-only storage modes.
@@ -70,7 +70,7 @@ Consumer<FirebaseSyncProvider>(
 
 ### 4. `lib/settings_page.dart`
 - Added import: `firebase_sync_provider.dart`
-- Added UI section "資料同步" (Data Sync) with:
+- Added UI section "鞈??郊" (Data Sync) with:
   - Toggle switch for Firebase sync on/off
   - Status indicator (green when enabled, orange when local-only)
   - Toast notification on toggle
@@ -79,12 +79,12 @@ Consumer<FirebaseSyncProvider>(
 
 ### For Development (Local-Only Mode)
 1. Open Settings page
-2. Find "資料同步" section
-3. Toggle "Firebase 雲端同步" OFF
+2. Find "鞈??郊" section
+3. Toggle "Firebase ?脩垢?郊" OFF
 4. App will now:
    - Store data locally only
    - Skip all Firebase writes
-   - Show "⚠️ 本機儲存模式已啟用" notification
+   - Show "?? ?祆??脣?璅∪?撌脣??? notification
 
 ### For Production (Firebase Sync)
 1. Ensure flag is ON in Settings (default on app startup)
@@ -160,18 +160,18 @@ Future<void> updateUserProfile(String displayName) async {
 
 ## Data Flow
 
-### When Sync is ENABLED ✅
+### When Sync is ENABLED ??
 ```
 User Input 
-  → Local Storage (SQLite/SharedPreferences) 
-  → Firebase Firestore
+  ??Local Storage (SQLite/SharedPreferences) 
+  ??Firebase Firestore
 ```
 
-### When Sync is DISABLED ⚠️
+### When Sync is DISABLED ??
 ```
 User Input 
-  → Local Storage (SQLite/SharedPreferences) 
-  → [Firebase write skipped]
+  ??Local Storage (SQLite/SharedPreferences) 
+  ??[Firebase write skipped]
 ```
 
 ## Storage Notes

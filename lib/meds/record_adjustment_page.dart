@@ -887,6 +887,15 @@ Future<void> _editTimes({
       });
 
       // 3) 同步更新藥物主檔（只更新有變動的）
+      // 先讀取本地舊資料，讓「總劑量」可同步換算為「每顆劑量 x 顆數」。
+      final localMedById = <String, Map<String, dynamic>>{};
+      for (final e in changed) {
+        final local = await MedicationLocalDB().getMedication(uid, e.key);
+        if (local != null) {
+          localMedById[e.key] = local;
+        }
+      }
+
       for (final e in changed) {
         final medDocId = e.key;
         final d = e.value;
@@ -899,7 +908,12 @@ Future<void> _editTimes({
         };
 
         if (d.type == MedChangeType.doseChanged) {
-          patch['dose'] = d.newDose; // double
+          patch.addAll(
+            _buildDoseFieldsForDoseChanged(
+              newDose: d.newDose,
+              baseMed: localMedById[medDocId],
+            ),
+          );
           if (d.newTimes != null) {
             patch['times'] = d.newTimes;
           }
@@ -931,14 +945,20 @@ Future<void> _editTimes({
         final medDocId = e.key;
         final d = e.value;
 
-        final localMed = await MedicationLocalDB().getMedication(uid, medDocId);
+        final localMed = localMedById[medDocId] ??
+            await MedicationLocalDB().getMedication(uid, medDocId);
         if (localMed != null) {
           final updated = Map<String, dynamic>.from(localMed);
           updated['updatedAt'] = DateTime.now().toString();
           updated['lastChangeAt'] = DateTime(_date.year, _date.month, _date.day).toString();
 
           if (d.type == MedChangeType.doseChanged) {
-            updated['dose'] = d.newDose;
+            updated.addAll(
+              _buildDoseFieldsForDoseChanged(
+                newDose: d.newDose,
+                baseMed: localMed,
+              ),
+            );
             if (d.newTimes != null) {
               updated['times'] = d.newTimes;
             }
@@ -1050,6 +1070,35 @@ Future<void> _editTimes({
     if (dose is int) return dose.toDouble();
     if (dose is double) return dose;
     return 0;
+  }
+
+  double _round1(double v) => double.parse(v.toStringAsFixed(1));
+
+  Map<String, dynamic> _buildDoseFieldsForDoseChanged({
+    required double? newDose,
+    required Map<String, dynamic>? baseMed,
+  }) {
+    if (newDose == null) return const <String, dynamic>{};
+
+    final normalizedDose = _round1(newDose);
+    final type = (baseMed?['type'] ?? '').toString();
+
+    final out = <String, dynamic>{
+      'dose': normalizedDose,
+    };
+
+    // 口服藥在回診只改「總劑量」時，同步換算每顆劑量，避免卡片/打卡顯示不一致。
+    if (type != 'drops' && type != 'injection') {
+      final rawPillCount = baseMed?['pillCount'];
+      final pillCount = rawPillCount is num
+          ? rawPillCount.toDouble()
+          : double.tryParse(rawPillCount?.toString() ?? '');
+      final safePillCount = (pillCount != null && pillCount > 0) ? pillCount : 1.0;
+      out['pillCount'] = _round1(safePillCount);
+      out['dosePerUnit'] = _round1(normalizedDose / safePillCount);
+    }
+
+    return out;
   }
 
   String _doseToString(dynamic dose, String unit) {

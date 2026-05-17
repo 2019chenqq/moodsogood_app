@@ -1,46 +1,46 @@
-# 免費版/Pro 版本快速參考指南
+﻿# ?祥??Pro ?敹恍?????
 
-## 🚀 快速開始
+## ?? 敹恍?憪?
 
-### 1. 查看訂閱狀態
+### 1. ?亦?閮???
 ```dart
-// 在任何 Widget 中
+// ?其遙雿?Widget 銝?
 final proProvider = context.watch<ProProvider>();
 if (proProvider.isPro) {
-  // Pro 用戶
+  // Pro ?冽
 } else {
-  // 免費用戶
+  // ?祥?冽
 }
 ```
 
-### 2. 決定是否同步到 Firebase
+### 2. 瘙箏??臬?郊??Firebase
 ```dart
-// 保存數據時
+// 靽??豢???
 if (FirebaseSyncConfig.shouldSync()) {
   await uploadToFirebase(data);
 }
 ```
 
-### 3. 條件性加載數據
+### 3. 璇辣?批?頛??
 ```dart
-// 加載數據時
+// ???豢???
 if (isPro) {
-  // Pro: 從 Firebase 加載（全部）
+  // Pro: 敺?Firebase ??嚗?剁?
   records = await repository.loadFromFirebase(startDate, endDate);
 } else {
-  // 免費: 從 SQLite 加載（90 天）
+  // ?祥: 敺?SQLite ??嚗?0 憭抬?
   records = await repository.loadFromDatabase(startDate, endDate);
 }
 ```
 
 ---
 
-## 📱 UI 組件使用
+## ? UI 蝯辣雿輻
 
-### 顯示訂閱狀態卡片
+### 憿舐內閮????
 ```dart
 SubscriptionStatusCard(
-  compact: false, // 完整版本
+  compact: false, // 摰?
   onTapUpgrade: () {
     Navigator.push(context, MaterialPageRoute(
       builder: (context) => const UpgradePage(),
@@ -49,11 +49,11 @@ SubscriptionStatusCard(
 )
 ```
 
-### 顯示功能限制提示
+### 憿舐內???內
 ```dart
 FreePlanLimitationBanner(
-  title: '免費版限制',
-  description: '您正在使用免費版本，僅限查看最近 90 天的數據。',
+  title: '?祥????,
+  description: '?冽迤?其蝙?典?鞎餌??穿????亦??餈?90 憭拍??豢???,
   onLearnMore: () {
     Navigator.push(context, MaterialPageRoute(
       builder: (context) => const SubscriptionInfoPage(),
@@ -62,18 +62,18 @@ FreePlanLimitationBanner(
 )
 ```
 
-### 顯示數據過期警告
+### 憿舐內?豢???霅血?
 ```dart
 DataRetentionWarning(
-  daysRemaining: 7, // 距離數據過期的天數
+  daysRemaining: 7, // 頝?豢????予??
 )
 ```
 
 ---
 
-## 🔄 升級流程
+## ?? ??瘚?
 
-### 用戶點擊升級按鈕時
+### ?冽暺???????
 ```dart
 onPressed: () async {
   Navigator.of(context).push(
@@ -82,84 +82,84 @@ onPressed: () async {
 }
 ```
 
-### 升級頁面確認購買
+### ???蝣箄?鞈潸眺
 ```dart
-// 在 UpgradePage._handleUpgrade() 中
+// ??UpgradePage._handleUpgrade() 銝?
 final proProvider = context.read<ProProvider>();
-await proProvider.debugUnlock(); // 或實際支付邏輯
+await proProvider.debugUnlock(); // ?祕?隞?頛?
 
-// 這會自動觸發：
-// 1. 設置 _isPro = true
-// 2. 調用升級回調
-// 3. 自動遷移本地數據到 Firebase
+// ???芸?閫貊嚗?
+// 1. 閮剔蔭 _isPro = true
+// 2. 隤輻???矽
+// 3. ?芸??瑞宏?砍?豢???Firebase
 ```
 
 ---
 
-## 📊 數據流總結
+## ?? ?豢?瘚蜇蝯?
 
-| 操作 | 免費版 | Pro 版 |
+| ?? | ?祥??| Pro ??|
 |-----|--------|--------|
-| **保存** | SQLite | SQLite + Firebase |
-| **加載** | SQLite (90 天) | Firebase (全部) |
-| **升級時** | - | 自動遷移本地→Firebase |
+| **靽?** | SQLite | SQLite + Firebase |
+| **??** | SQLite (90 憭? | Firebase (?券) |
+| **????* | - | ?芸??瑞宏?砍?irebase |
 
 ---
 
-## 🔧 調試和測試
+## ? 隤輯岫?葫閰?
 
-### 在 Settings 頁面切換 Pro 狀態（Debug Mode）
+### ??Settings ??? Pro ???Debug Mode嚗?
 ```dart
-// 在調試模式下，會看到兩個按鈕
+// ?刻矽閰行芋撘?嚗???拙???
 ElevatedButton(
   onPressed: () => proProvider.debugUnlock(),
-  child: const Text('解鎖 Pro'),
+  child: const Text('閫?? Pro'),
 )
 
 ElevatedButton(
   onPressed: () => proProvider.lock(),
-  child: const Text('鎖定'),
+  child: const Text('??'),
 )
 ```
 
-### 測試場景清單
-- [ ] 免費用戶創建記錄 → 只存本地
-- [ ] Pro 用戶創建記錄 → 本地+Firebase
-- [ ] 免費用戶升級 → 自動遷移數據
-- [ ] 升級後查看全部歷史 → 顯示所有數據
-- [ ] 數據超過 90 天 → 免費版隱藏
+### 皜祈岫?湔皜
+- [ ] ?祥?冽?萄遣閮? ???芸??砍
+- [ ] Pro ?冽?萄遣閮? ???砍+Firebase
+- [ ] ?祥?冽?? ???芸??瑞宏?豢?
+- [ ] ??敺??冽風????憿舐內????
+- [ ] ?豢?頞? 90 憭????祥???
 
 ---
 
-## 📁 關鍵文件位置
+## ?? ??辣雿蔭
 
 ```
 lib/
-├── providers/
-│   └── pro_provider.dart ..................... 訂閱狀態管理
-├── utils/
-│   ├── firebase_sync_config.dart ............ 動態同步配置
-│   └── data_migration.dart ................. 數據遷移工具
-├── pages/
-│   ├── subscription_info_page.dart ......... 訂閱信息展示
-│   └── upgrade_page.dart ................... 升級頁面
-├── widgets/
-│   ├── subscription_status_widget.dart .... 訂閱狀態組件
-│   └── upgrade_migration_dialog.dart ...... 遷移進度對話框
-└── FREEMIUM_MODEL_IMPLEMENTATION.md ....... 完整實現指南
+??? providers/
+??  ??? pro_provider.dart ..................... 閮??恣??
+??? utils/
+??  ??? firebase_sync_config.dart ............ ???郊?蔭
+??  ??? data_migration.dart ................. ?豢??瑞宏撌亙
+??? pages/
+??  ??? subscription_info_page.dart ......... 閮靽⊥撅內
+??  ??? upgrade_page.dart ................... ???
+??? widgets/
+??  ??? subscription_status_widget.dart .... 閮???隞?
+??  ??? upgrade_migration_dialog.dart ...... ?瑞宏?脣漲撠店獢?
+??? FREEMIUM_MODEL_IMPLEMENTATION.md ....... 摰撖衣??
 ```
 
 ---
 
-## ⚙️ 配置和常數
+## ?? ?蔭?虜??
 
-### 啟用/禁用調試模式
+### ?/蝳隤輯岫璅∪?
 ```dart
 // lib/providers/pro_provider.dart
-const bool kDebugUnlockAllProFeatures = false; // 正式上線改為 false
+const bool kDebugUnlockAllProFeatures = false; // 甇??銝??寧 false
 ```
 
-### 免費版數據保留期
+### ?祥?????
 ```dart
 // lib/daily/daily_record_history.dart
 const int FREE_VERSION_DAYS = 90;
@@ -167,50 +167,50 @@ const int FREE_VERSION_DAYS = 90;
 
 ---
 
-## ❓ 常見問題速查
+## ??撣貉????
 
-### Q: 如何添加新的 Pro 功能？
-1. 在 UI 中添加 `if (proProvider.isPro)` 檢查
-2. 或使用 `FreePlanLimitationBanner` 提示免費版限制
-3. 添加「升級」按鈕導向 `UpgradePage`
+### Q: 憒?瘛餃??啁? Pro ?嚗?
+1. ??UI 銝剜溶??`if (proProvider.isPro)` 瑼Ｘ
+2. ?蝙??`FreePlanLimitationBanner` ?內?祥????
+3. 瘛餃???蝝?????`UpgradePage`
 
-### Q: 升級失敗如何處理？
-- `DataMigration.migrateLocalToFirebase()` 返回 `MigrationResult`
-- 檢查 `result.success` 確認升級成功
-- 顯示 `result.message` 給用戶
+### Q: ??憭望?憒???嚗?
+- `DataMigration.migrateLocalToFirebase()` 餈? `MigrationResult`
+- 瑼Ｘ `result.success` 蝣箄?????
+- 憿舐內 `result.message` 蝯衣??
 
-### Q: 免費用戶能否臨時看到超過 90 天的數據？
-- 不能。90 天限制寫在數據加載邏輯中
-- 超過 90 天的數據在查詢時被過濾
+### Q: ?祥?冽?賢?冽??頞? 90 憭拍??豢?嚗?
+- 銝??0 憭拚??嗅神?冽??頛?頛臭葉
+- 頞? 90 憭拍??豢??冽閰Ｘ?鋡恍?瞈?
 
-### Q: Pro 用戶降級會怎樣？
-- 本地 SQLite 保留所有數據（已遷移上來的副本）
-- 無法訪問 Firebase
-- 重新升級時直接使用 Firebase（無需再次遷移）
-
----
-
-## 📝 生產環境檢查清單
-
-- [ ] 禁用 `kDebugUnlockAllProFeatures`
-- [ ] 集成實際支付 API (Google Play / App Store)
-- [ ] 測試所有升級場景
-- [ ] 添加支付失敗重試機制
-- [ ] 國際化訂閱文案
-- [ ] 設置訂閱取消/管理界面
-- [ ] 備份/恢復流程
-- [ ] 監控遷移成功率
+### Q: Pro ?冽???見嚗?
+- ?砍 SQLite 靽?????撌脤蝘颱?靘??舀嚗?
+- ?⊥?閮芸? Firebase
+- ?????乩蝙??Firebase嚗??活?瑞宏嚗?
 
 ---
 
-## 🌐 API 端點參考
+## ?? ??啣?瑼Ｘ皜
 
-### Firebase 集合結構
+- [ ] 蝳 `kDebugUnlockAllProFeatures`
+- [ ] ??撖阡??臭? API (Google Play / App Store)
+- [ ] 皜祈岫???蝝??
+- [ ] 瘛餃??臭?憭望??岫璈
+- [ ] ?????望?獢?
+- [ ] 閮剔蔭閮??/蝞∠??
+- [ ] ?遢/?Ｗ儔瘚?
+- [ ] ???瑞宏????
+
+---
+
+## ?? API 蝡舫???
+
+### Firebase ??蝯?
 ```
 users/{userId}/daily_records/{dateId}
 ```
 
-### 本地 SQLite 表
+### ?砍 SQLite 銵?
 ```sql
 CREATE TABLE daily_records (
   id TEXT PRIMARY KEY,
@@ -223,27 +223,27 @@ CREATE TABLE daily_records (
 
 ---
 
-## 🔐 安全考慮
+## ?? 摰?
 
-- ✅ 本地數據始終加密存儲（SQLite 支持）
-- ✅ Firebase 數據 TLS 傳輸
-- ✅ 用戶認證必須成功才能升級
-- ✅ 數據遷移使用批量 write（原子性）
-- ✅ 敏感字段不記錄到日誌
-
----
-
-## 📈 監控和分析
-
-建議追蹤的指標：
-- 免費版 vs Pro 版用戶數
-- 免費版→Pro 的轉換率
-- 數據遷移成功率
-- 升級失敗原因
-- 平均升級完成時間
+- ???砍?豢?憪???摮嚗QLite ?舀?嚗?
+- ??Firebase ?豢? TLS ?唾撓
+- ???冽隤?敹??????
+- ???豢??瑞宏雿輻?寥? write嚗?摮改?
+- ????摮挾銝???亥?
 
 ---
 
-**版本:** 1.0  
-**最後更新:** 2026 年 1 月 20 日  
-**維護者:** 心域開發團隊
+## ?? ??????
+
+撱箄降餈質馱??璅?
+- ?祥??vs Pro ??嗆
+- ?祥??Pro ????
+- ?豢??瑞宏????
+- ??憭望???
+- 撟喳???摰???
+
+---
+
+**?:** 1.0  
+**?敺??** 2026 撟?1 ??20 ?? 
+**蝬剛風??** 敹????

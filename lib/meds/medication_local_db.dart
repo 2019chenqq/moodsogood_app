@@ -387,4 +387,79 @@ class MedicationLocalDB {
       };
     }).toList();
   }
+
+  // ── 修正：回診調藥後同步更新藥物卡的劑量欄位 ─────────────────────────
+  //
+  // 說明：
+  //   回診調藥記錄（medAdjustments）只儲存「總劑量變化」，不會自動更新
+  //   藥物卡的 dosePerUnit / pillCount。
+  //   請在「儲存調整記錄」的 function 裡，針對 action == 'adjust' 的每筆
+  //   change，呼叫此方法，讓本地 DB 藥物卡與打卡頁同步。
+  //
+  // 參數說明：
+  //   medId       → medications.id（藥物卡的主鍵）
+  //   dosePerUnit → 每顆（每單位）劑量，例如 25.0
+  //   pillCount   → 每次顆數，例如 2.0
+  //   unit        → 單位字串，例如 'mg'
+  //
+  // 使用範例（在調藥儲存 function 裡）：
+  //   for (final change in changes) {
+  //     if (change['action'] == 'adjust') {
+  //       await MedicationLocalDB().applyAdjustmentToMedication(
+  //         uid,
+  //         change['medId'],
+  //         dosePerUnit : change['dosePerUnit'],
+  //         pillCount   : change['pillCount'],
+  //         unit        : change['unit'] ?? 'mg',
+  //       );
+  //     }
+  //   }
+  Future<void> applyAdjustmentToMedication(
+    String uid,
+    String medId, {
+    required double dosePerUnit,
+    required double pillCount,
+    required String unit,
+  }) async {
+    try {
+      final db = await database;
+      final totalDose = _roundDose(dosePerUnit * pillCount);
+      final now = DateTime.now().toIso8601String();
+
+      debugPrint('💊 applyAdjustmentToMedication: medId=$medId '
+          'dosePerUnit=$dosePerUnit × pillCount=$pillCount = $totalDose $unit');
+
+      final rows = await db.query(
+        'medications',
+        columns: ['id'],
+        where: 'id = ? AND uid = ?',
+        whereArgs: [medId, uid],
+      );
+      if (rows.isEmpty) {
+        debugPrint('⚠️ applyAdjustmentToMedication: 找不到藥物 $medId，略過');
+        return;
+      }
+
+      await db.update(
+        'medications',
+        {
+          'dose'        : totalDose,
+          'dosePerUnit' : dosePerUnit,
+          'pillCount'   : pillCount,
+          'unit'        : unit,
+          'updatedAt'   : now,
+          'lastChangeAt': now,
+        },
+        where: 'id = ? AND uid = ?',
+        whereArgs: [medId, uid],
+      );
+      debugPrint('✅ 藥物卡劑量已同步：$totalDose $unit ($dosePerUnit × $pillCount)');
+    } catch (e) {
+      debugPrint('❌ applyAdjustmentToMedication 失敗：$e');
+      rethrow;
+    }
+  }
+
+  // 四捨五入到小數點後一位
+  double _roundDose(double v) => (v * 10).round() / 10;
 }

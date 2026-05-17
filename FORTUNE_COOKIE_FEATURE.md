@@ -1,68 +1,68 @@
-# 🥠 幸運餅乾與籤詩功能
+﻿# ?? 撟賊?擗嗾?惜閰拙???
 
-## 功能概述
+## ?璁膩
 
-將原本的心情小語改成互動式的「幸運餅乾」體驗：
-- 每次打開 APP 時，頁面頂部自動顯示一個幸運餅乾動畫
-- 用戶點擊幸運餅乾後，会展開展示一張籤詩
-- 籤詩上隨機展示 quotes 中的勵志小語
-- 用戶可以點擊「再試一次」按鈕來重新獲得新的籤詩
+撠??祉?敹?撠??寞?鈭?撘??兢??銋整?撽?
+- 瘥活?? APP ?????芸?憿舐內銝?兢??銋曉???
+- ?冽暺?撟賊?擗嗾敺?隡???蝷箔?撘萇惜閰?
+- 蝐方帘銝璈?蝷?quotes 銝剔??萄?撠?
+- ?冽?臭誑暺???閰虫?甈～?????脣??啁?蝐方帘
 
-## 文件結構
+## ?辣蝯?
 
-### 新增檔案
+### ?啣?瑼?
 - **[lib/widgets/fortune_cookie_widget.dart](lib/widgets/fortune_cookie_widget.dart)**
-  - 主要 Widget，包含幸運餅乾的動畫和籤詩卡片
-  - `FortuneCookieWidget`: 主容器，管理動畫狀態
-  - `FortuneFaceCard`: 籤詩卡片展示組件
+  - 銝餉? Widget嚗??怠兢??銋曄???惜閰拙??
+  - `FortuneCookieWidget`: 銝餃捆?剁?蝞∠?????
+  - `FortuneFaceCard`: 蝐方帘?∠?撅內蝯辣
 
-### 修改檔案
+### 靽格瑼?
 - **[lib/quotes.dart](lib/quotes.dart)**
-  - 新增 `getRandomQuote()` 函數用於隨機選擇籤詩
-  - 保留原有的 `_pickQuoteForToday()` 函數以供其他頁面使用
+  - ?啣? `getRandomQuote()` ?賣?冽?冽??豢?蝐方帘
+  - 靽?????`_pickQuoteForToday()` ?賣隞乩??嗡??雿輻
 
 - **[lib/daily/daily_record_screen.dart](lib/daily/daily_record_screen.dart)**
-  - 將 `title: const QuotesTitle()` 改為 `title: const FortuneCookieWidget()`
-  - 將 `toolbarHeight: 120` 改為 `toolbarHeight: 200` 以容納更大的餅乾動畫
+  - 撠?`title: const QuotesTitle()` ?寧 `title: const FortuneCookieWidget()`
+  - 撠?`toolbarHeight: 120` ?寧 `toolbarHeight: 200` 隞亙捆蝝憭抒?擗嗾?
 
 - **[lib/daily/daily_record_history.dart](lib/daily/daily_record_history.dart)**
-  - 同上，替換為 FortuneCookieWidget
+  - ??嚗? FortuneCookieWidget
 
 - **[lib/diary/diary_home_page.dart](lib/diary/diary_home_page.dart)**
-  - 同上，替換為 FortuneCookieWidget
+  - ??嚗? FortuneCookieWidget
 
-## 使用的圖文件
+## 雿輻???辣
 
-位置: `assets/UI/`
-- `幸運餅乾.png` - 靜態餅乾圖像（150x150px）
-- `幸運餅乾動畫.mp4` - 動畫參考（當前實作使用 Dart 動畫）
+雿蔭: `assets/UI/`
+- `撟賊?擗嗾.png` - ??擗嗾??嚗?50x150px嚗?
+- `撟賊?擗嗾?.mp4` - ????嗅?撖虫?雿輻 Dart ?嚗?
 
-## 動畫效果
+## ???
 
-### 1. 餅乾進入動畫
-- **類型**: ScaleTransition
-- **曲線**: elasticOut（彈跳效果）
-- **時長**: 600ms
-- **效果**: 餅乾從 0 放大到正常大小，帶有彈跳感
+### 1. 擗嗾?脣?
+- **憿?**: ScaleTransition
+- **?脩?**: elasticOut嚗?頝單???
+- **?**: 600ms
+- **??**: 擗嗾敺?0 ?曉之?唳迤撣詨之撠?撣嗆?敶歲??
 
-### 2. 籤詩展開動畫
-- **旋轉**: -0.5 轉到 0（展開效果）
-- **滑動**: 從下方滑動到中心
-- **時長**: 800ms
-- **曲線**: easeOut
+### 2. 蝐方帘撅??
+- **??**: -0.5 頧 0嚗?????
+- **皛?**: 敺??寞??銝剖?
+- **?**: 800ms
+- **?脩?**: easeOut
 
-## 籤詩卡片設計
+## 蝐方帘?∠?閮剛?
 
-使用橙黃色漸變背景，帶有：
-- 标題: "✨ 籤詩 ✨"
-- 居中顯示的勵志文字
-- 「再試一次」按鈕用於重新抽籤
+雿輻璈??脫撓霈??荔?撣嗆?嚗?
+- ??: "??蝐方帘 ??
+- 撅葉憿舐內?敹?摮?
+- ??閰虫?甈～???潮??唳蝐?
 
-## 核心功能代碼
+## ?詨??隞?Ⅳ
 
-### 獲取隨機籤詩
+### ?脣??冽?蝐方帘
 ```dart
-/// quotes.dart 中的新函數
+/// quotes.dart 銝剔??啣??
 String getRandomQuote() {
   final random = Random();
   final index = random.nextInt(_quotes.length);
@@ -70,7 +70,7 @@ String getRandomQuote() {
 }
 ```
 
-### 點擊幸運餅乾
+### 暺?撟賊?擗嗾
 ```dart
 void _handleCookieClick() {
   if (_cookieClicked) return;
@@ -80,12 +80,12 @@ void _handleCookieClick() {
     _selectedQuote = getRandomQuote();
   });
 
-  // 播放籤展開動畫
+  // ?剜蝐文?????
   _fortuneController.forward();
 }
 ```
 
-### 重新開始
+### ???
 ```dart
 void _resetCookie() {
   setState(() {
@@ -98,18 +98,18 @@ void _resetCookie() {
 }
 ```
 
-## 使用情境
+## 雿輻??
 
-該功能已集成到以下三個主要頁面：
-1. 📊 **每日記錄頁** (DailyRecordScreen) - 首頁
-2. 📈 **統計頁面** (DailyRecordHistory) - 查看趨勢
-3. 📓 **日記頁面** (DiaryHomePage) - 日記
+閰脣??賢歇???唬誑銝??蜓閬??ｇ?
+1. ?? **瘥閮???* (DailyRecordScreen) - 擐?
+2. ?? **蝯梯??** (DailyRecordHistory) - ?亦?頞典
+3. ?? **?亥??** (DiaryHomePage) - ?亥?
 
-## 未來改進建議
+## ?芯??寥脣遣霅?
 
-- [ ] 集成 `幸運餅乾動畫.mp4` 影片動畫（使用 video_player 套件）
-- [ ] 添加聲音效果（點擊音、展開音）
-- [ ] 保存用戶已經看過的籤詩，避免重複
-- [ ] 添加分享籤詩功能
-- [ ] 根據時間動態選擇籤詩（每日不同的籤）
-- [ ] 添加籤詩搖晃和翻轉動畫
+- [ ] ?? `撟賊?擗嗾?.mp4` 敶梁??嚗蝙??video_player 憟辣嚗?
+- [ ] 瘛餃??脤??嚗?????嚗?
+- [ ] 靽??冽撌脩????惜閰抬??踹???
+- [ ] 瘛餃??澈蝐方帘?
+- [ ] ?寞??????豢?蝐方帘嚗??乩???蝐歹?
+- [ ] 瘛餃?蝐方帘???蕃頧???

@@ -334,6 +334,8 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
         final name = ((med['name'] ?? med['nameZh'] ?? med['nameEn'] ?? '未命名藥物') as String)
             .trim();
         final dose = med['dose'];
+        final dosePerUnit = med['dosePerUnit'];
+        final pillCount = med['pillCount'];
         final unit = (med['unit'] ?? 'mg').toString();
         final type = (med['type'] ?? 'tablet').toString();
         final plannedAmount = (type == 'drops')
@@ -342,13 +344,22 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
         final plannedUnit = type == 'drops' ? 'mL' : '顆';
         final times = (med['times'] as List?)?.whereType<String>().toList() ?? const <String>[];
 
+        // ── 修正：顯示「每顆劑量 × 顆數 = 總量」，讓打卡頁與藥物卡一致 ──
+        final doseText = _buildCheckinDoseText(
+          dose: dose,
+          dosePerUnit: dosePerUnit,
+          pillCount: pillCount,
+          unit: unit,
+          type: type,
+        );
+
         final slots = times.isEmpty ? <String>['未設定'] : times;
         for (final slot in slots) {
           items.add(
             _CheckinItem(
               medId: medId,
               medName: name.isEmpty ? '未命名藥物' : name,
-              doseText: dose == null ? '劑量未填' : '$dose $unit',
+              doseText: doseText,
               slot: slot,
               plannedAmount: plannedAmount,
               plannedUnit: plannedUnit,
@@ -1322,6 +1333,35 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
       sum += item.rate;
     }
     return sum / items.length;
+  }
+
+  // ── 修正：正確顯示「每顆劑量 × 顆數 = 總量」 ──────────────────────────
+  // 解決「回診調藥後打卡只顯示總量、無法看出是幾顆」的 bug。
+  // 資料來源為藥物卡（dosePerUnit / pillCount / dose），確保與卡片同步。
+  static String _buildCheckinDoseText({
+    required dynamic dose,
+    required dynamic dosePerUnit,
+    required dynamic pillCount,
+    required String unit,
+    required String type,
+  }) {
+    if (dose == null) return '劑量未填';
+
+    String numStr(dynamic v) {
+      if (v is num) return v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1);
+      return v?.toString() ?? '?';
+    }
+
+    // 口服藥且 pillCount > 1：顯示完整拆解
+    if (type == 'tablet' && dosePerUnit is num && pillCount is num) {
+      final pc = (pillCount as num).toDouble();
+      if (pc > 1.0) {
+        return '${numStr(dosePerUnit)}$unit × ${numStr(pillCount)}顆 = ${numStr(dose)}$unit';
+      }
+    }
+
+    // 一般（單顆 / 滴劑 / 注射）：直接顯示總量
+    return '${numStr(dose)} $unit';
   }
 }
 
