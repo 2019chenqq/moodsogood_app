@@ -15,6 +15,7 @@ class SecureStorageService {
   static const _verifierField     = 'encryptionVerifier';
   static const _verifierPlaintext = 'moodsogood-e2e-key-check-v1';
   static const _localVerifierKey  = 'e2eVerifier';
+  static const _recoveryWrappedKeyField = 'recoveryWrappedKey';
  
   // ─────────────────────────────────────────
   //  金鑰驗證工具
@@ -117,6 +118,49 @@ class SecureStorageService {
         .set({'recoveryKeyHash': hash}, SetOptions(merge: true));
     print('🔑 [保險箱] 備援金鑰雜湊已存入 Firebase');
   }
+
+  /// 使用 recoveryKey 派生出的 KEK 加密「原始 AES key.base64」後，
+  /// 儲存到 users/{uid}.recoveryWrappedKey。
+  static Future<void> saveRecoveryWrappedKey({
+    required String uid,
+    required String recoveryKey,
+    required String salt,
+    required encrypt_lib.Key aesKey,
+  }) async {
+    final recoveryKeyEncryptionKey =
+        await KeyManager.deriveKeyFromRecoveryKey(recoveryKey, salt);
+    final wrappedKey =
+        EncryptionService(recoveryKeyEncryptionKey).encryptData(aesKey.base64);
+
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .set({_recoveryWrappedKeyField: wrappedKey}, SetOptions(merge: true));
+
+    print('🔐 [保險箱] recoveryWrappedKey 已存入 Firebase');
+  }
+
+  /// 使用 recoveryKey 解開 users/{uid}.recoveryWrappedKey，回復原始 AES key。
+  static Future<encrypt_lib.Key?> recoverOriginalAesKeyFromRecoveryKey({
+    required String recoveryKey,
+    required String salt,
+    required String wrappedKey,
+  }) async {
+    final recoveryKeyEncryptionKey =
+        await KeyManager.deriveKeyFromRecoveryKey(recoveryKey, salt);
+    final decryptedBase64 =
+        EncryptionService(recoveryKeyEncryptionKey).tryDecryptData(wrappedKey);
+
+    if (decryptedBase64 == null || decryptedBase64.isEmpty) {
+      return null;
+    }
+
+    try {
+      return encrypt_lib.Key.fromBase64(decryptedBase64);
+    } catch (_) {
+      return null;
+    }
+  }
  
   // ─────────────────────────────────────────
   //  金鑰自動重建（換機/重裝時使用）
@@ -133,10 +177,6 @@ class SecureStorageService {
       final prefs     = await SharedPreferences.getInstance();
       final e2ePin    = (await getPin() ?? '').trim();
       final appLockPin = (prefs.getString('appLockPin') ?? '').trim();
-      if (e2ePin.isEmpty && appLockPin.isEmpty) {
-        print('🚨 [保險箱] 無法重建金鑰：找不到本地 PIN');
-        return null;
-      }
  
       final existing = await getKey();
       String verifier = (prefs.getString(_localVerifierKey) ?? '').trim();
@@ -183,6 +223,11 @@ class SecureStorageService {
       if (e2ePin.isNotEmpty) candidatePins.add(e2ePin);
       if (appLockPin.isNotEmpty && appLockPin != e2ePin) {
         candidatePins.add(appLockPin);
+      }
+
+      if (candidatePins.isEmpty) {
+        print('🚨 [保險箱] 無法重建金鑰：找不到本地 PIN');
+        return null;
       }
  
       encrypt_lib.Key? recoveredKey;
