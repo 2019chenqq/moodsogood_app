@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
  
 import '../utils/key_manager.dart';
 import '../utils/secure_storage_service.dart';
-import 'main.dart'; // 替換成你的 AuthGate 所在路徑
+import 'pin_setup_screen.dart';
  
 class RecoveryKeyRestoreScreen extends StatefulWidget {
   const RecoveryKeyRestoreScreen({super.key});
@@ -76,7 +76,7 @@ class _RecoveryKeyRestoreScreenState
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception('用戶未登入');
  
-      // 從 Firebase 取得用戶的 salt 與 recoveryKeyHash
+        // 從 Firebase 取得用戶的 salt、recoveryKeyHash 與 recoveryWrappedKey
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
@@ -85,6 +85,8 @@ class _RecoveryKeyRestoreScreenState
       final salt = (userDoc.data()?['encryptionSalt'] as String?)?.trim() ?? '';
       final storedHash =
           (userDoc.data()?['recoveryKeyHash'] as String?)?.trim() ?? '';
+        final wrappedKey =
+          (userDoc.data()?['recoveryWrappedKey'] as String?)?.trim() ?? '';
  
       if (salt.isEmpty) {
         throw Exception('找不到加密資料，請確認帳號是否正確。');
@@ -92,6 +94,10 @@ class _RecoveryKeyRestoreScreenState
  
       if (storedHash.isEmpty) {
         throw Exception('此帳號尚未設定備援金鑰，無法使用此方式還原。');
+      }
+
+      if (wrappedKey.isEmpty) {
+        throw Exception('此帳號缺少備援包裹金鑰，請改用安全碼重新設定。');
       }
  
       // 驗證用戶輸入的備援金鑰是否與雲端雜湊吻合
@@ -103,10 +109,19 @@ class _RecoveryKeyRestoreScreenState
         return;
       }
  
-      // ✅ 驗證成功 → 用備援金鑰推導 AES 金鑰
-      final aesKey = await KeyManager.deriveKeyFromRecoveryKey(inputKey, salt);
- 
-      // 驗證金鑰是否能解開 verifier（二次確認）
+      // ✅ 驗證成功 → 用 recoveryKey 解開 wrapped key，回復「原本 AES key」
+      final aesKey = await SecureStorageService.recoverOriginalAesKeyFromRecoveryKey(
+        recoveryKey: inputKey,
+        salt: salt,
+        wrappedKey: wrappedKey,
+      );
+
+      if (aesKey == null) {
+        setState(() => _errorMessage = '備援金鑰驗證失敗，無法解開原始金鑰。');
+        return;
+      }
+
+      // 驗證還原出的原始金鑰是否能解開 verifier（二次確認）
       final verifier =
           (userDoc.data()?['encryptionVerifier'] as String?)?.trim() ?? '';
       if (verifier.isNotEmpty &&
@@ -165,7 +180,8 @@ class _RecoveryKeyRestoreScreenState
           ],
         ),
         content: Text(
-          '金鑰已重建完成。\n\n請重新設定一組新的 6 位數安全碼來保護您的日記。',
+          '原始加密金鑰已成功還原。\n\n'
+          '請立即重新設定一組新的 6 位數安全碼。',
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.85),
             fontSize: 14,
@@ -178,9 +194,10 @@ class _RecoveryKeyRestoreScreenState
             child: ElevatedButton(
               onPressed: () {
                 Navigator.of(ctx).pop();
-                // 回到 PinSetupScreen 重設新 PIN
                 Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const AuthGate()),
+                  MaterialPageRoute(
+                    builder: (_) => const PinSetupScreen(resetMode: true),
+                  ),
                   (route) => false,
                 );
               },

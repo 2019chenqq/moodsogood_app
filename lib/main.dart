@@ -37,6 +37,7 @@ import 'community/compose_post_page.dart';
 import 'onboarding_page.dart';
 import 'utils/secure_storage_service.dart';
 import 'pin_setup_screen.dart';
+import 'recovery_key_restore_screen.dart';
 
 bool _firebaseReady = false;
 String? _startupIssueMessage;
@@ -253,10 +254,16 @@ class MainApp extends StatelessWidget {
         useMaterial3: true,
         fontFamily: 'LXGWWenKai',
         scaffoldBackgroundColor: const Color(0xFF121212),
+        cardColor: const Color(0xFF1C1C1C),
         appBarTheme: const AppBarTheme(
           backgroundColor: Color(0xFF121212),
           surfaceTintColor: Colors.transparent,
+          foregroundColor: Colors.white,
         ),
+        textTheme: ThemeData.dark().textTheme.apply(
+              bodyColor: Colors.white,
+              displayColor: Colors.white,
+            ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: const Color(0xFF1E1E1E),
@@ -264,7 +271,7 @@ class MainApp extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide.none,
           ),
-          hintStyle: TextStyle(color: Colors.grey.shade600),
+          hintStyle: const TextStyle(color: Colors.white60),
         ),
       ),
 
@@ -431,7 +438,8 @@ class AuthGate extends StatelessWidget {
           return const Scaffold(
               body: Center(child: CircularProgressIndicator()));
         }
-        if (snap.data == null) {
+        final user = snap.data;
+        if (user == null || user.isAnonymous) {
           return const SignInPage(); // 未登入
         }
         // 👇 把原本的 return const LockWrapper(); 改成這行 👇
@@ -561,6 +569,7 @@ class _EncryptionGateState extends State<EncryptionGate> {
   bool _loading = true;
   bool _hasKey = true;
   bool _e2eConfigured = false;
+  bool _hasRecoveryBundle = false;
   static const _e2eOwnerUidKey = 'e2eOwnerUid';
 
   @override
@@ -572,6 +581,17 @@ class _EncryptionGateState extends State<EncryptionGate> {
   Future<void> _checkEncryptionKey() async {
     final prefs = await SharedPreferences.getInstance();
     final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null || user.isAnonymous) {
+      if (mounted) {
+        setState(() {
+          _hasKey = false;
+          _e2eConfigured = false;
+          _loading = false;
+        });
+      }
+      return;
+    }
 
     // 使用 uid 綁定本機 E2E 快取：只有「切換帳號」才清理，避免每次登入都被網路卡住。
     final currentUid = user?.uid;
@@ -585,19 +605,52 @@ class _EncryptionGateState extends State<EncryptionGate> {
       await prefs.setString(_e2eOwnerUidKey, currentUid);
     }
 
-    // 檢查 E2E 是否已配置（從安全儲存檢查 PIN 而非明文 SharedPreferences）
-    final e2ePinExists = (await SecureStorageService.getPin())?.isNotEmpty ?? false;
-    final configured = (prefs.getBool('e2eConfigured') ?? false) || e2ePinExists;
+    final userDoc = await FirebaseFirestore.instance
+      .collection('users')
+      .doc(user.uid)
+      .get();
+    final cloudSalt = (userDoc.data()?['encryptionSalt'] as String?)?.trim() ?? '';
+    final cloudVerifier =
+      (userDoc.data()?['encryptionVerifier'] as String?)?.trim() ?? '';
+    final cloudRecoveryHash =
+      (userDoc.data()?['recoveryKeyHash'] as String?)?.trim() ?? '';
+    final cloudWrappedKey =
+      (userDoc.data()?['recoveryWrappedKey'] as String?)?.trim() ?? '';
 
-    // 這裡不要阻塞登入流程：金鑰改為背景預熱，避免使用者卡在登入轉圈。
+    // 僅以雲端欄位判斷是否已設定過 E2E：salt + verifier 必須同時存在。
+    final configured = cloudSalt.isNotEmpty && cloudVerifier.isNotEmpty;
+
+    if (cloudSalt.isNotEmpty && (prefs.getString('e2eSalt') ?? '').isEmpty) {
+      await prefs.setString('e2eSalt', cloudSalt);
+    }
+
+    final hasRecoveryBundle =
+        cloudRecoveryHash.isNotEmpty && cloudWrappedKey.isNotEmpty;
+
+    // 已設定過 E2E 時，只檢查本機金鑰是否存在且能通過 verifier。
+    bool hasKey = !configured;
     if (configured) {
-      unawaited(SecureStorageService.getOrRecoverKey());
+      final localKey = await SecureStorageService.getKey();
+      if (localKey != null &&
+          SecureStorageService.verifyKeyWithVerifier(
+            key: localKey,
+            verifier: cloudVerifier,
+          )) {
+        hasKey = true;
+      } else {
+        hasKey = false;
+        if (localKey != null) {
+          // 本機有錯誤金鑰時先清掉，避免後續頁面反覆解密失敗。
+          await SecureStorageService.deleteKey();
+        }
+      }
     }
 
     if (mounted) {
       setState(() {
-        _hasKey = true;
+        _hasKey = hasKey;
         _e2eConfigured = configured;
+        _hasRecoveryBundle = hasRecoveryBundle;
         _loading = false;
       });
     }
@@ -617,7 +670,68 @@ class _EncryptionGateState extends State<EncryptionGate> {
       return const PinSetupScreen();
     }
 
+    if (!_hasKey) {
+      // 已設定過加密但本機無 key：顯示使用安全碼或備援金鑰兩種路徑。
+      return _EncryptionRecoveryChoiceScreen(
+        hasRecoveryBundle: _hasRecoveryBundle,
+      );
+    }
+
     // 金鑰確認無誤！放行進入原本的 App 鎖檢查與首頁
     return const LockWrapper();
+  }
+}
+
+class _EncryptionRecoveryChoiceScreen extends StatelessWidget {
+  final bool hasRecoveryBundle;
+
+  const _EncryptionRecoveryChoiceScreen({required this.hasRecoveryBundle});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('恢復加密金鑰')),
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              '偵測到此帳號已設定端到端加密，但本機尚未持有可用金鑰。',
+              style: TextStyle(fontSize: 16),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const PinSetupScreen()),
+                );
+              },
+              child: const Text('輸入原本安全碼'),
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton(
+              onPressed: hasRecoveryBundle
+                  ? () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const RecoveryKeyRestoreScreen(),
+                        ),
+                      );
+                    }
+                  : null,
+              child: const Text('使用備援金鑰還原'),
+            ),
+            if (!hasRecoveryBundle) ...[
+              const SizedBox(height: 12),
+              const Text(
+                '此帳號尚未找到 recoveryWrappedKey 或 recoveryKeyHash，請改用原本安全碼。',
+                style: TextStyle(color: Colors.orange),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }

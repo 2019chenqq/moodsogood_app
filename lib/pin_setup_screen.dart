@@ -19,7 +19,12 @@ import 'recovery_key_display_screen.dart';
 import 'recovery_key_restore_screen.dart';
 
 class PinSetupScreen extends StatefulWidget {
-  const PinSetupScreen({super.key});
+  final bool resetMode;
+
+  const PinSetupScreen({
+    super.key,
+    this.resetMode = false,
+  });
 
   @override
   State<PinSetupScreen> createState() => _PinSetupScreenState();
@@ -33,6 +38,14 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
   bool _understandNoRecovery = false;
   bool _understandDifferentPassword = false;
 
+@override
+void initState() {
+  super.initState();
+
+  if (widget.resetMode) {
+    _statusMessage = '請設定新的 6 位數安全碼。這不會改變原本的加密資料，只會更新本機解鎖密碼。';
+  }
+}
   @override
   void dispose() {
     _pinController.dispose();
@@ -77,14 +90,23 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
       }
 
       // 🔐 核心加密轉換 (利用我們寫好的 KeyManager)
-      // 使用 PBKDF2-HMAC-SHA256（200,000 次迭代），Loading 屬正常現象
-      final aesKey = await KeyManager.deriveKey(pin, salt);
+      // resetMode 時沿用剛剛由備援金鑰還原出的原始 AES key，不重新派生。
+      final existingKey = widget.resetMode
+          ? await SecureStorageService.getKey()
+          : null;
 
-      if (verifier.isNotEmpty &&
-          !SecureStorageService.verifyKeyWithVerifier(
-            key: aesKey,
-            verifier: verifier,
-          )) {
+      if (widget.resetMode && existingKey == null) {
+        throw Exception('找不到已還原的加密金鑰，請重新使用備援金鑰還原。');
+      }
+
+      final aesKey = existingKey ?? await KeyManager.deriveKey(pin, salt);
+
+      if (!widget.resetMode &&
+    verifier.isNotEmpty &&
+    !SecureStorageService.verifyKeyWithVerifier(
+      key: aesKey,
+      verifier: verifier,
+    )) {
         // 新 KDF 對不上 → 試試舊 KDF（SHA-256 × 10,000）
         final oldKey = _deriveKeyLegacy(pin, salt);
         final oldKeyMatches = SecureStorageService.verifyKeyWithVerifier(
@@ -110,6 +132,33 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
       await prefs.setString('e2eSalt', salt);
       await prefs.setBool('e2eConfigured', true);
 
+      if (widget.resetMode) {
+  final restoredKey = await SecureStorageService.getKey();
+
+  if (restoredKey == null) {
+    throw Exception('找不到已還原的加密金鑰，請重新使用備援金鑰還原。');
+  }
+
+  if (verifier.isNotEmpty &&
+      !SecureStorageService.verifyKeyWithVerifier(
+        key: restoredKey,
+        verifier: verifier,
+      )) {
+    throw Exception('已還原的金鑰無法通過驗證，請重新使用備援金鑰還原。');
+  }
+
+  if (mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('新安全碼已設定完成！')),
+    );
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const AuthGate()),
+      (route) => false,
+    );
+  }
+  return;
+}
+
       // 確保雲端存在 verifier，供未來重裝/換機時做金鑰正確性檢查。
       final verifierToSave = SecureStorageService.buildKeyVerifier(aesKey);
       await userDocRef.set({
@@ -128,20 +177,47 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
 
       await _encryptOldData(user.uid, aesKey);
 
-      // 🎉 成功！產生備援金鑰後導向備援金鑰顯示頁
-      final recoveryKey = KeyManager.generateRecoveryKey();
-      await SecureStorageService.saveRecoveryKeyHash(
-        uid: user.uid,
-        recoveryKey: recoveryKey,
-      );
+      // 🎉 成功！判斷是否需要顯示備援金鑰
+      // 舊用戶換機時 Firebase 已有 recoveryKeyHash，不重新產生
+      // （避免覆蓋掉用戶原本抄下來的備援金鑰）
+      final data = userDoc.data();
+final alreadyHasRecovery =
+    data?['recoveryKeyHash'] != null &&
+    data?['recoveryWrappedKey'] != null;
 
-      if (mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(
-            builder: (_) => RecoveryKeyDisplayScreen(recoveryKey: recoveryKey),
-          ),
-          (route) => false,
+      if (!alreadyHasRecovery) {
+        // 全新用戶 → 產生備援金鑰並引導用戶抄下來
+        final recoveryKey = KeyManager.generateRecoveryKey();
+        await SecureStorageService.saveRecoveryKeyHash(
+          uid: user.uid,
+          recoveryKey: recoveryKey,
         );
+        await SecureStorageService.saveRecoveryWrappedKey(
+          uid: user.uid,
+          recoveryKey: recoveryKey,
+          salt: salt,
+          aesKey: aesKey,
+        );
+        if (mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(
+              builder: (_) =>
+                  RecoveryKeyDisplayScreen(recoveryKey: recoveryKey),
+            ),
+            (route) => false,
+          );
+        }
+      } else {
+        // 舊用戶換機 → 直接進入 App，備援金鑰維持原本用戶抄下的那組
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('保險箱解鎖成功！')),
+          );
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const AuthGate()),
+            (route) => false,
+          );
+        }
       }
 
     } catch (e) {
