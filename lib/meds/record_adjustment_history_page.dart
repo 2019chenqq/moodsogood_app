@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../constants/healing_design_system.dart';
 import 'medication_local_db.dart';
 
 class RecordAdjustmentHistoryPage extends StatefulWidget {
@@ -98,7 +99,25 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('調藥時間線')),
+      backgroundColor: HealingDesignSystem.adaptiveBackground(context),
+      appBar: AppBar(
+        backgroundColor: HealingDesignSystem.primaryBlue,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: HealingDesignSystem.adaptivePrimaryText(context)),
+          tooltip: '返回',
+          onPressed: () => Navigator.maybePop(context),
+        ),
+        title: Text(
+          '調藥時間線',
+          style: TextStyle(
+            color: HealingDesignSystem.adaptivePrimaryText(context),
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
       body: FutureBuilder<List<Map<String, dynamic>>>(
         future: _future,
         builder: (context, snap) {
@@ -114,57 +133,36 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
 
           final records = snap.data ?? [];
           if (records.isEmpty) {
-            return const Center(child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('尚無調藥紀錄。\n建立第一筆「紀錄調整」後，這裡會自動形成時間線。', textAlign: TextAlign.center),
-            ));
+            return const _EmptyHistoryTimeline();
           }
 
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            itemCount: records.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 10),
-            itemBuilder: (context, i) {
-              final record = records[i];
+          return Container(
+            color: HealingDesignSystem.adaptiveBackground(context),
+            child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
+              itemCount: records.length,
+              itemBuilder: (context, i) {
+                final record = records[i];
 
-              final dateStr = record['date'] as String?;
-              final note = (record['note'] as String?)?.trim() ?? '';
-              final items = (record['items'] as List?)?.whereType<Map>().toList() ?? const [];
+                final dateStr = (record['date'] as String?) ?? '';
+                final note = (record['note'] as String?)?.trim() ?? '';
+                final items = (record['items'] as List?)?.whereType<Map>().toList() ?? const [];
+                final summary = _buildSummary(items);
 
-              final summary = _buildSummary(items);
+                final isFirst = i == 0;
+                final isLast = i == records.length - 1;
 
-              return Card(
-                elevation: 0,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: () => _showDetailSheet(context, dateStr ?? '', note, items),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.timeline, size: 18),
-                            const SizedBox(width: 8),
-                            Text(dateStr ?? '', style: Theme.of(context).textTheme.titleSmall),
-                            const Spacer(),
-                            Text('${items.length} 項',
-                                style: Theme.of(context).textTheme.bodySmall),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(summary, style: Theme.of(context).textTheme.bodyMedium),
-                        if (note.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          Text(note, style: Theme.of(context).textTheme.bodySmall),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
+                return _HistoryTimelineItem(
+                  dateText: dateStr,
+                  note: note,
+                  summary: summary,
+                  count: items.length,
+                  isFirst: isFirst,
+                  isLast: isLast,
+                  onTap: () => _showDetailSheet(context, dateStr, note, items),
+                );
+              },
+            ),
           );
         },
       ),
@@ -343,5 +341,331 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
       return t.isEmpty ? '未設定' : t;
     }
     return '未設定';
+  }
+}
+
+class _HistoryTimelineItem extends StatelessWidget {
+  final String dateText;
+  final String note;
+  final String summary;
+  final int count;
+  final bool isFirst;
+  final bool isLast;
+  final VoidCallback onTap;
+
+  const _HistoryTimelineItem({
+    required this.dateText,
+    required this.note,
+    required this.summary,
+    required this.count,
+    required this.isFirst,
+    required this.isLast,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: 34,
+            child: Column(
+              children: [
+                Expanded(
+                  child: Container(
+                    width: 2,
+                    color: isFirst ? Colors.transparent : HealingDesignSystem.lineColor,
+                  ),
+                ),
+                Container(
+                  width: 18,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: HealingDesignSystem.primaryBlue,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: HealingDesignSystem.primaryBlue.withOpacity(0.25),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Container(
+                      width: 7,
+                      height: 7,
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Container(
+                    width: 2,
+                    color: isLast ? Colors.transparent : HealingDesignSystem.lineColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: onTap,
+                  borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
+                  child: Ink(
+                    decoration: BoxDecoration(
+                      color: HealingDesignSystem.cardBg,
+                      borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
+                      border: Border.all(
+                        color: const Color(0xFFE4F1F7),
+                        width: 1,
+                      ),
+                      boxShadow: [HealingDesignSystem.shadowMedium()],
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 15, 16, 15),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _HistoryHeaderRow(
+                            title: dateText,
+                            count: count,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            summary,
+                            style: const TextStyle(
+                              color: HealingDesignSystem.deepText,
+                              fontSize: 14,
+                              height: 1.55,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          if (note.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            _HistoryNoteBox(note: note),
+                          ],
+                          const SizedBox(height: 12),
+                          const Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              Text(
+                                '查看細節',
+                                style: TextStyle(
+                                  color: HealingDesignSystem.primaryBlue,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              SizedBox(width: 4),
+                              Icon(
+                                Icons.chevron_right_rounded,
+                                size: 18,
+                                color: HealingDesignSystem.primaryBlue,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HistoryHeaderRow extends StatelessWidget {
+  final String title;
+  final int count;
+
+  const _HistoryHeaderRow({
+    required this.title,
+    required this.count,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: HealingDesignSystem.softBlue,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: const Icon(
+            Icons.medication_liquid_rounded,
+            color: HealingDesignSystem.primaryBlue,
+            size: 21,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '藥物調整紀錄',
+                style: TextStyle(
+                  color: HealingDesignSystem.mutedText,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                title,
+                style: const TextStyle(
+                  color: HealingDesignSystem.deepText,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF1F8FC),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: const Color(0xFFDCEEF7)),
+          ),
+          child: Text(
+            '$count 項',
+            style: const TextStyle(
+              color: HealingDesignSystem.primaryBlue,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _HistoryNoteBox extends StatelessWidget {
+  final String note;
+
+  const _HistoryNoteBox({required this.note});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFAF1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFFF3E6C8),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.notes_rounded,
+            size: 17,
+            color: Color(0xFFC7A458),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              note,
+              style: const TextStyle(
+                color: HealingDesignSystem.mutedText,
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyHistoryTimeline extends StatelessWidget {
+  const _EmptyHistoryTimeline();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: HealingDesignSystem.softBlue,
+      width: double.infinity,
+      padding: const EdgeInsets.all(28),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(22, 26, 22, 26),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: const Color(0xFFE4F1F7)),
+            boxShadow: [
+              BoxShadow(
+                color: HealingDesignSystem.primaryBlue.withOpacity(0.10),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  color: HealingDesignSystem.softBlue,
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: const Icon(
+                  Icons.spa_rounded,
+                  size: 30,
+                  color: HealingDesignSystem.primaryBlue,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                '還沒有調藥紀錄',
+                style: TextStyle(
+                  color: HealingDesignSystem.deepText,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '當你新增回診或藥物調整後，\n這裡會慢慢形成一條屬於你的用藥時間線。',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: HealingDesignSystem.mutedText,
+                  fontSize: 14,
+                  height: 1.6,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

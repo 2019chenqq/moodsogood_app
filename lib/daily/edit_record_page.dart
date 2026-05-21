@@ -6,6 +6,7 @@ import 'record_detail_screen.dart';
 import '../utils/date_helper.dart';
 import '../utils/firebase_sync_config.dart';
 import 'daily_record_repository.dart';
+import '../constants/healing_design_system.dart';
 
 class EditRecordPage extends StatefulWidget {
   final String uid;
@@ -237,197 +238,279 @@ newSleep['naps'] = naps;
  @override
 Widget build(BuildContext context) {
   return Scaffold(
+    backgroundColor: HealingDesignSystem.adaptiveBackground(context),
     appBar: AppBar(
-  title: const Text('編輯每日紀錄'),
-  actions: [
-    IconButton(
-      icon: const Icon(Icons.save),
-      onPressed: _saveAndClose,     // ⬅️ 要接這個
+      backgroundColor: HealingDesignSystem.adaptiveAppBarBackground(context),
+      foregroundColor: HealingDesignSystem.adaptiveAppBarForeground(context),
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      title: Text(
+        '編輯每日紀錄',
+        style: TextStyle(
+          color: HealingDesignSystem.adaptiveAppBarForeground(context),
+          fontWeight: FontWeight.w700,
+          fontSize: 18,
+        ),
+      ),
+      iconTheme: IconThemeData(color: HealingDesignSystem.adaptiveAppBarForeground(context)),
+      actions: [
+        IconButton(
+          icon: Icon(
+            Icons.save,
+            color: HealingDesignSystem.adaptiveAppBarForeground(context),
+          ),
+          tooltip: '儲存',
+          onPressed: _saveAndClose,
+        ),
+      ],
     ),
-  ],
-),
-
-
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
+    body: ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+          // 情緒區塊
           _sectionHeader('情緒', onAdd: _addEmotion),
-          if (emotions.isEmpty)
-            const ListTile(title: Text('沒有情緒項目')),
-          ...emotions.asMap().entries.map((entry) {
-            final idx = entry.key;
-            final m = entry.value;
-            return ListTile(
-              title: Text(m['name']?.toString() ?? ''),
-              subtitle: Slider(
-                value: (m['value'] is num) ? (m['value'] as num).toDouble() : 0,
-                min: 0,
-                max: 10,
-                divisions: 10,
-                label: '${m['value'] ?? 0}',
-                onChanged: (v) => setState(() => emotions[idx]['value'] = v.round()),
-              ),
-              trailing: IconButton(
-                icon: const Icon(Icons.delete_outline),
-                onPressed: () => setState(() => emotions.removeAt(idx)),
-              ),
-            );
-          }),
+          Container(
+            margin: const EdgeInsets.only(bottom: 18),
+            decoration: HealingDesignSystem.adaptiveCardDecoration(
+              context,
+              bgColor: HealingDesignSystem.adaptiveSurface(context),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+            child: Column(
+              children: [
+                if (emotions.isEmpty)
+                  ListTile(title: Text('沒有情緒項目', style: TextStyle(color: HealingDesignSystem.adaptiveSecondaryText(context)))),
+                ...emotions.asMap().entries.map((entry) {
+                  final idx = entry.key;
+                  final m = entry.value;
+                  return ListTile(
+                    title: Text(m['name']?.toString() ?? '', style: HealingDesignSystem.bodyMedium.copyWith(color: HealingDesignSystem.adaptivePrimaryText(context))),
+                    subtitle: Slider(
+                      value: (m['value'] is num) ? (m['value'] as num).toDouble() : 0,
+                      min: 0,
+                      max: 10,
+                      divisions: 10,
+                      label: '${m['value'] ?? 0}',
+                      activeColor: HealingDesignSystem.primaryBlue,
+                      inactiveColor: HealingDesignSystem.lineColor,
+                      onChanged: (v) => setState(() => emotions[idx]['value'] = v.round()),
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete_outline, color: HealingDesignSystem.dangerRed),
+                      onPressed: () => setState(() => emotions.removeAt(idx)),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
 
-          const Divider(height: 32),
-
+          // 症狀區塊
           _sectionHeader('症狀', onAdd: _addSymptom),
-          if (symptoms.isEmpty)
-            const ListTile(title: Text('沒有症狀項目')),
-          ...symptoms.asMap().entries.map((entry) {
-            final idx = entry.key;
-            final s = entry.value;
-            return Dismissible(
-              key: ValueKey('sym-$idx-$s'),
-              direction: DismissDirection.endToStart,
-              background: Container(
-                color: Colors.redAccent,
-                alignment: Alignment.centerRight,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: const Icon(Icons.delete, color: Colors.white),
-              ),
-              onDismissed: (_) => setState(() => symptoms.removeAt(idx)),
-              child: ListTile(title: Text(s)),
-            );
-          }),
+          Container(
+            margin: const EdgeInsets.only(bottom: 18),
+            decoration: HealingDesignSystem.adaptiveCardDecoration(
+              context,
+              bgColor: HealingDesignSystem.adaptiveSurface(context),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+            child: Column(
+              children: [
+                if (symptoms.isEmpty)
+                  ListTile(title: Text('沒有症狀項目', style: TextStyle(color: HealingDesignSystem.adaptiveSecondaryText(context)))),
+                ...symptoms.asMap().entries.map((entry) {
+                  final idx = entry.key;
+                  final s = entry.value;
+                  return Dismissible(
+                    key: ValueKey('sym-$idx-$s'),
+                    direction: DismissDirection.endToStart,
+                    background: Container(
+                      decoration: BoxDecoration(
+                        color: HealingDesignSystem.dangerRed,
+                        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+                      ),
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: const Icon(Icons.delete, color: Colors.white),
+                    ),
+                    onDismissed: (_) => setState(() => symptoms.removeAt(idx)),
+                    child: ListTile(title: Text(s, style: HealingDesignSystem.bodyMedium.copyWith(color: HealingDesignSystem.adaptivePrimaryText(context)))),
+                  );
+                }),
+              ],
+            ),
+          ),
 
           const Divider(height: 32),
 
           _sectionHeader('睡眠'),
-          // 服藥
-          SwitchListTile(
-            title: const Text('前一晚是否服用安眠藥'),
-            value: _tookHypnotic,
-            onChanged: (v) => setState(() => _tookHypnotic = v),
-          ),
-          _textTile('藥物名稱', _hypNameCtrl),
-          _textTile('劑量', _hypDoseCtrl),
-
-          // 入睡 / 起床
-          ListTile(
-            title: const Text('入睡時間'),
-            trailing: Text(DateHelper.formatTime(_sleepTime)),
-            onTap: () async {
-              final t = await _pickTime(_sleepTime);
-              if (t != null) setState(() => _sleepTime = t);
-            },
-          ),
-ListTile(
-  title: const Text('夜間醒來時間'),
-  subtitle: TextField(
-    controller: _midWakeCtrl,
-    decoration: const InputDecoration(
-      hintText: '例如：03:20 / 05:10 或 03:40醒過一次',
-    ),
-  ),
-),
-          ListTile(
-            title: const Text('起床時間'),
-            trailing: Text(DateHelper.formatTime(_wakeTime)),
-            onTap: () async {
-              final t = await _pickTime(_wakeTime);
-              if (t != null) setState(() => _wakeTime = t);
-            },
-          ),
-
-          // 自覺睡眠品質
-          ListTile(
-            title: const Text('自覺睡眠品質（1~10）'),
-            trailing: Text(_sleepQuality?.toString() ?? '-'),
-            onTap: () async {
-              final v = await _pickQuality(context, _sleepQuality ?? 5);
-              if (v != null) setState(() => _sleepQuality = v);
-            },
-          ),
-
-          // 夜間睡眠狀況 flags
-          const SizedBox(height: 8),
-const Text('夜間睡眠狀況', style: TextStyle(fontWeight: FontWeight.w600)),
-          Wrap(            alignment: WrapAlignment.spaceBetween,            spacing: 8,
-            runSpacing: 8,
-            children: kSleepFlags.map((f) {
-              final key = f['key']!;
-              final label = f['label']!;
-              final selected = ((sleep['flags'] as List?) ?? const []).contains(key);
-              return FilterChip(
-                label: Text(label),
-                selected: selected,
-                onSelected: (v) {
-                  final list = ((sleep['flags'] as List?) ?? const []).map((e) => e.toString()).toList();
-                  if (v) {
-                    if (!list.contains(key)) list.add(key);
-                  } else {
-                    list.remove(key);
-                  }
-                  setState(() => sleep['flags'] = list);
-                },
-              );
-            }).toList(),
-          ),
-
-          const SizedBox(height: 12),
-
-          // 註記
-          ListTile(
-            title: const Text('睡眠註記'),
-            subtitle: Text((sleep['note'] ?? '').toString().isEmpty ? '—' : (sleep['note'] ?? '').toString()),
-            onTap: () async {
-              final v = await _editNote(context, (sleep['note'] ?? '').toString());
-              if (v != null) setState(() => sleep['note'] = v);
-            },
+          Container(
+            margin: const EdgeInsets.only(bottom: 18),
+            decoration: HealingDesignSystem.adaptiveCardDecoration(
+              context,
+              bgColor: HealingDesignSystem.adaptiveSurface(context),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 服藥
+                SwitchListTile(
+                  title: Text('前一晚是否服用安眠藥', style: HealingDesignSystem.bodyMedium.copyWith(color: HealingDesignSystem.adaptivePrimaryText(context))),
+                  value: _tookHypnotic,
+                  activeColor: HealingDesignSystem.primaryBlue,
+                  onChanged: (v) => setState(() => _tookHypnotic = v),
+                  contentPadding: EdgeInsets.zero,
+                ),
+                _textTile('藥物名稱', _hypNameCtrl),
+                _textTile('劑量', _hypDoseCtrl),
+                // 入睡 / 起床
+                ListTile(
+                  title: Text('入睡時間', style: HealingDesignSystem.bodyMedium.copyWith(color: HealingDesignSystem.adaptivePrimaryText(context))),
+                  trailing: Text(DateHelper.formatTime(_sleepTime), style: HealingDesignSystem.bodyMedium.copyWith(color: HealingDesignSystem.adaptivePrimaryText(context))),
+                  onTap: () async {
+                    final t = await _pickTime(_sleepTime);
+                    if (t != null) setState(() => _sleepTime = t);
+                  },
+                ),
+                ListTile(
+                  title: Text('夜間醒來時間', style: HealingDesignSystem.bodyMedium.copyWith(color: HealingDesignSystem.adaptivePrimaryText(context))),
+                  subtitle: TextField(
+                    controller: _midWakeCtrl,
+                    style: HealingDesignSystem.bodyMedium.copyWith(color: HealingDesignSystem.adaptivePrimaryText(context)),
+                    decoration: InputDecoration(
+                      hintText: '例如：03:20 / 05:10 或 03:40醒過一次',
+                      filled: true,
+                      fillColor: HealingDesignSystem.adaptiveFill(context),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.all(Radius.circular(HealingDesignSystem.radiusS)),
+                        borderSide: BorderSide(color: HealingDesignSystem.lineColor),
+                      ),
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    ),
+                  ),
+                ),
+                ListTile(
+                  title: Text('起床時間', style: HealingDesignSystem.bodyMedium.copyWith(color: HealingDesignSystem.adaptivePrimaryText(context))),
+                  trailing: Text(DateHelper.formatTime(_wakeTime), style: HealingDesignSystem.bodyMedium.copyWith(color: HealingDesignSystem.adaptivePrimaryText(context))),
+                  onTap: () async {
+                    final t = await _pickTime(_wakeTime);
+                    if (t != null) setState(() => _wakeTime = t);
+                  },
+                ),
+                // 自覺睡眠品質
+                ListTile(
+                  title: Text('自覺睡眠品質（1~10）', style: HealingDesignSystem.bodyMedium.copyWith(color: HealingDesignSystem.adaptivePrimaryText(context))),
+                  trailing: Text(_sleepQuality?.toString() ?? '-', style: HealingDesignSystem.bodyMedium.copyWith(color: HealingDesignSystem.adaptivePrimaryText(context))),
+                  onTap: () async {
+                    final v = await _pickQuality(context, _sleepQuality ?? 5);
+                    if (v != null) setState(() => _sleepQuality = v);
+                  },
+                ),
+                // 夜間睡眠狀況 flags
+                const SizedBox(height: 8),
+                Text('夜間睡眠狀況', style: HealingDesignSystem.titleSmall.copyWith(color: HealingDesignSystem.adaptivePrimaryText(context))),
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: kSleepFlags.map((f) {
+                    final key = f['key']!;
+                    final label = f['label']!;
+                    final selected = ((sleep['flags'] as List?) ?? const []).contains(key);
+                    return FilterChip(
+                      label: Text(label, style: HealingDesignSystem.bodySmall.copyWith(color: HealingDesignSystem.adaptivePrimaryText(context))),
+                      selected: selected,
+                      selectedColor: HealingDesignSystem.adaptiveAccent(context).withOpacity(0.22),
+                      checkmarkColor: HealingDesignSystem.adaptiveAccent(context),
+                      backgroundColor: HealingDesignSystem.adaptiveSurface(context),
+                      side: BorderSide(
+                        color: selected
+                            ? HealingDesignSystem.adaptiveAccent(context)
+                            : HealingDesignSystem.adaptiveCardBorder(context),
+                      ),
+                      onSelected: (v) {
+                        final list = ((sleep['flags'] as List?) ?? const []).map((e) => e.toString()).toList();
+                        if (v) {
+                          if (!list.contains(key)) list.add(key);
+                        } else {
+                          list.remove(key);
+                        }
+                        setState(() => sleep['flags'] = list);
+                      },
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 12),
+                // 註記
+                ListTile(
+                  title: Text('睡眠註記', style: HealingDesignSystem.bodyMedium.copyWith(color: HealingDesignSystem.adaptivePrimaryText(context))),
+                  subtitle: Text((sleep['note'] ?? '').toString().isEmpty ? '—' : (sleep['note'] ?? '').toString(), style: HealingDesignSystem.bodySmall.copyWith(color: HealingDesignSystem.adaptivePrimaryText(context))),
+                  onTap: () async {
+                    final v = await _editNote(context, (sleep['note'] ?? '').toString());
+                    if (v != null) setState(() => sleep['note'] = v);
+                  },
+                ),
+              ],
+            ),
           ),
 
           const Divider(height: 32),
 
           // 小睡
           _sectionHeader('小睡', onAdd: _addNap),
-          ...(((sleep['naps'] as List?) ?? const [])
-              .map((e) => Map<String, dynamic>.from(e as Map))
-              .toList()
-              .asMap()
-              .entries
-              .map((entry) {
-            final idx = entry.key;
-            final m = entry.value;
-            final start = (m['start'] ?? '-').toString();
-final end = (m['end'] ?? '-').toString();
-final mins = (m['minutes'] ?? 0) as int;
-
-// 🕒 將分鐘轉換成「x 小時 y 分」格式
-String durationText = '';
-if (mins > 0) {
-  final hours = mins ~/ 60;
-  final remain = mins % 60;
-  if (hours > 0 && remain > 0) {
-    durationText = '（$hours 小時 $remain 分）';
-  } else if (hours > 0) {
-    durationText = '（$hours 小時）';
-  } else {
-    durationText = '（$remain 分）';
-  }
-}
-
-final text = '$start → $end $durationText';
-            return ListTile(
-              title: Text(text),
-              trailing: IconButton(
-                icon: const Icon(Icons.delete_outline),
-                onPressed: () {
-                  final list = ((sleep['naps'] as List?) ?? const [])
-                      .map((e) => Map<String, dynamic>.from(e as Map))
-                      .toList();
-                  list.removeAt(idx);
-                  setState(() => sleep['naps'] = list);
-                },
-              ),
-              onTap: () => _editNap(idx),
-            );
-          }).toList()),
+          Container(
+            margin: const EdgeInsets.only(bottom: 18),
+            decoration: HealingDesignSystem.adaptiveCardDecoration(
+              context,
+              bgColor: HealingDesignSystem.adaptiveSurface(context),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+            child: Column(
+              children: [
+                ...(((sleep['naps'] as List?) ?? const [])
+                    .map((e) => Map<String, dynamic>.from(e as Map))
+                    .toList()
+                    .asMap()
+                    .entries
+                    .map((entry) {
+                  final idx = entry.key;
+                  final m = entry.value;
+                  final start = (m['start'] ?? '-').toString();
+                  final end = (m['end'] ?? '-').toString();
+                  final mins = (m['minutes'] ?? 0) as int;
+                  String durationText = '';
+                  if (mins > 0) {
+                    final hours = mins ~/ 60;
+                    final remain = mins % 60;
+                    if (hours > 0 && remain > 0) {
+                      durationText = '（$hours 小時 $remain 分）';
+                    } else if (hours > 0) {
+                      durationText = '（$hours 小時）';
+                    } else {
+                      durationText = '（$remain 分）';
+                    }
+                  }
+                  final text = '$start → $end $durationText';
+                  return ListTile(
+                    title: Text(text, style: HealingDesignSystem.bodyMedium.copyWith(color: HealingDesignSystem.adaptivePrimaryText(context))),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete_outline, color: HealingDesignSystem.dangerRed),
+                      onPressed: () {
+                        final list = ((sleep['naps'] as List?) ?? const [])
+                            .map((e) => Map<String, dynamic>.from(e as Map))
+                            .toList();
+                        list.removeAt(idx);
+                        setState(() => sleep['naps'] = list);
+                      },
+                    ),
+                    onTap: () => _editNap(idx),
+                  );
+                }).toList()),
+              ],
+            ),
+          ),
           const SizedBox(height: 24),
         ],
       ),
@@ -440,13 +523,29 @@ final text = '$start → $end $durationText';
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         children: [
+          Container(
+            width: 8,
+            height: 8,
+            margin: const EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              color: HealingDesignSystem.adaptiveAccent(context),
+              shape: BoxShape.circle,
+            ),
+          ),
           Expanded(
-            child: Text(title,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            child: Text(
+              title,
+              style: HealingDesignSystem.titleSmall.copyWith(
+                color: HealingDesignSystem.adaptivePrimaryText(context),
+              ),
+            ),
           ),
           if (onAdd != null)
             IconButton(
-              icon: const Icon(Icons.add),
+              icon: Icon(
+                Icons.add,
+                color: HealingDesignSystem.adaptiveAccent(context),
+              ),
               tooltip: '新增$title',
               onPressed: onAdd,
             ),
@@ -461,10 +560,31 @@ final text = '$start → $end $durationText';
       child: TextField(
         controller: ctrl, // 保持同一個 controller，避免反向輸入
         textDirection: TextDirection.ltr,
+        style: HealingDesignSystem.bodyMedium.copyWith(
+          color: HealingDesignSystem.adaptivePrimaryText(context),
+        ),
         decoration: InputDecoration(
           labelText: title,
-          border: const OutlineInputBorder(),
+          labelStyle: TextStyle(color: HealingDesignSystem.adaptiveSecondaryText(context)),
+          filled: true,
+          fillColor: HealingDesignSystem.adaptiveFill(context),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(HealingDesignSystem.radiusS),
+            borderSide: BorderSide(color: HealingDesignSystem.adaptiveCardBorder(context)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(HealingDesignSystem.radiusS),
+            borderSide: BorderSide(color: HealingDesignSystem.adaptiveCardBorder(context)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(HealingDesignSystem.radiusS),
+            borderSide: BorderSide(
+              color: HealingDesignSystem.adaptiveAccent(context),
+              width: 2,
+            ),
+          ),
           isDense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         ),
       ),
     );

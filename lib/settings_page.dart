@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart'; // 需要安裝這�
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
+import 'constants/healing_design_system.dart';
 import 'utils/notification_helper.dart';
 import 'providers/theme_provider.dart';
 import 'onboarding_page.dart';
@@ -36,128 +37,137 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('設定')),
-      body: ListView(
-        children: [
-          // if (kDebugMode)
-          //   Padding(
-          //     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          //     child: Row(
-          //       children: [
-          //         Expanded(
-          //           child: ElevatedButton.icon(
-          //             icon: const Icon(Icons.lock_open),
-          //             label: const Text('解鎖 Pro'),
-          //             onPressed: () {
-          //               proProvider.debugUnlock();
-          //             },
-          //           ),
-          //         ),
-          //         const SizedBox(width: 8),
-          //         Expanded(
-          //           child: ElevatedButton.icon(
-          //             icon: const Icon(Icons.lock),
-          //             label: const Text('鎖定'),
-          //             onPressed: () {
-          //               proProvider.lock();
-          //             },
-          //           ),
-          //         ),
-          //       ],
-          //     ),
-          //   ),
-
-          // if (kDebugMode)
-          //   ElevatedButton(
-          //     onPressed: () async {
-          //       await NotificationHelper().showNow(
-          //         id: 999,
-          //         title: '測試通知',
-          //         body: '這是一則測試通知（立刻跳出）',
-          //       );
-          //     },
-          //     child: const Text('測試通知（立刻跳出）'),
-          //   ),
-          SwitchListTile(
-            title: const Text('每日提醒'),
-            subtitle: Text(_isReminderOn
-                ? '將於每天 ${_reminderTime.format(context)} 提醒'
-                : '提醒已關閉'),
-            value: _isReminderOn,
-            onChanged: (val) {
-              _updateSettings(val, _reminderTime);
-            },
+      backgroundColor: HealingDesignSystem.adaptiveBackground(context),
+      appBar: AppBar(
+        backgroundColor: HealingDesignSystem.adaptiveAppBarBackground(context),
+        foregroundColor: HealingDesignSystem.adaptiveAppBarForeground(context),
+        elevation: 0,
+        title: Text(
+          '設定',
+          style: TextStyle(
+            color: HealingDesignSystem.adaptiveAppBarForeground(context),
+            fontWeight: FontWeight.w700,
           ),
-          if (_isReminderOn)
-            ListTile(
-              leading: const Icon(Icons.access_time),
-              title: const Text('提醒時間'),
-              trailing: Text(
-                _reminderTime.format(context),
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: HealingDesignSystem.adaptiveCardDecoration(
+                context,
+                bgColor: HealingDesignSystem.adaptiveSurface(context),
+                radius: HealingDesignSystem.radiusL,
               ),
-              onTap: () async {
-                final picked = await showTimePicker(
-                  context: context,
-                  initialTime: _reminderTime,
-                );
-                if (picked != null) {
-                  _updateSettings(true, picked);
-                }
-              },
-            ),
-          const Divider(), // 分隔線
-
-          Consumer<ThemeProvider>(
-            builder: (context, themeProvider, child) {
-              return Column(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: Text('外觀',
-                        style: TextStyle(
-                            color: Colors.grey, fontWeight: FontWeight.bold)),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: SegmentedButton<ThemeMode>(
-                      segments: const [
-                        ButtonSegment(
-                          value: ThemeMode.system,
-                          label: Text('跟隨系統'),
-                        ),
-                        ButtonSegment(
-                          value: ThemeMode.light,
-                          label: Text('淺色模式'),
-                        ),
-                        ButtonSegment(
-                          value: ThemeMode.dark,
-                          label: Text('深色模式 🌙'),
-                        ),
-                      ],
-                      selected: {themeProvider.themeMode},
-                      onSelectionChanged: (selection) {
-                        final mode = selection.first;
-                        themeProvider.setTheme(mode);
-                      },
+                  Text(
+                    '設定與偏好',
+                    style: HealingDesignSystem.titleMedium.copyWith(
+                      color: HealingDesignSystem.adaptiveAccent(context),
                     ),
                   ),
-                  const Divider(),
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: Text('隱私',
-                        style: TextStyle(
-                            color: Colors.grey, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  Text(
+                    '調整提醒、外觀與安全設定，讓 App 更貼近你的使用習慣。',
+                    style: TextStyle(
+                      color: HealingDesignSystem.adaptiveSecondaryText(context),
+                      height: 1.5,
+                    ),
                   ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            _sectionHeader('提醒'),
+            _sectionCard(
+              child: Column(
+                children: [
                   SwitchListTile(
+                    activeColor: HealingDesignSystem.primaryBlue,
+                    title: const Text('每日提醒'),
+                    subtitle: Text(
+                      _isReminderOn
+                          ? '將於每天 ${_reminderTime.format(context)} 提醒'
+                          : '提醒已關閉',
+                    ),
+                    value: _isReminderOn,
+                    onChanged: (val) => _updateSettings(val, _reminderTime),
+                  ),
+                  if (_isReminderOn)
+                    ListTile(
+                      leading: const Icon(
+                        Icons.access_time,
+                        color: HealingDesignSystem.primaryBlue,
+                      ),
+                      title: const Text('提醒時間'),
+                      trailing: Text(
+                        _reminderTime.format(context),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      onTap: () async {
+                        final picked = await showTimePicker(
+                          context: context,
+                          initialTime: _reminderTime,
+                        );
+                        if (picked != null) {
+                          _updateSettings(true, picked);
+                        }
+                      },
+                    ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 14),
+            _sectionHeader('外觀'),
+            Consumer<ThemeProvider>(
+              builder: (context, themeProvider, child) {
+                return _sectionCard(
+                  child: SegmentedButton<ThemeMode>(
+                    segments: const [
+                      ButtonSegment(
+                        value: ThemeMode.system,
+                        label: Text('跟隨系統'),
+                      ),
+                      ButtonSegment(
+                        value: ThemeMode.light,
+                        label: Text('淺色模式'),
+                      ),
+                      ButtonSegment(
+                        value: ThemeMode.dark,
+                        label: Text('深色模式 🌙'),
+                      ),
+                    ],
+                    selected: {themeProvider.themeMode},
+                    onSelectionChanged: (selection) {
+                      final mode = selection.first;
+                      themeProvider.setTheme(mode);
+                    },
+                  ),
+                );
+              },
+            ),
+
+            const SizedBox(height: 14),
+            _sectionHeader('隱私'),
+            _sectionCard(
+              child: Column(
+                children: [
+                  SwitchListTile(
+                    activeColor: HealingDesignSystem.primaryBlue,
                     title: const Text('啟用 App 密碼鎖定'),
                     subtitle: const Text('打開 App 時需要輸入密碼才能查看日記'),
                     value: _appLockEnabled,
                     onChanged: (val) async {
                       if (val) {
-                        // 開啟時先設定一組密碼
                         final ok = await _showSetPinDialog();
                         if (ok) {
                           final prefs = await SharedPreferences.getInstance();
@@ -165,52 +175,47 @@ class _SettingsPageState extends State<SettingsPage> {
                           setState(() => _appLockEnabled = true);
                         }
                       } else {
-                        // 關閉鎖定
                         final prefs = await SharedPreferences.getInstance();
                         await prefs.setBool('appLockEnabled', false);
-                        // 可以選擇是否刪除密碼
-                        // await prefs.remove('appLockPin');
                         setState(() => _appLockEnabled = false);
                       }
                     },
                   ),
                   if (_appLockEnabled)
                     ListTile(
-                      leading: const Icon(Icons.password),
+                      leading: const Icon(
+                        Icons.password,
+                        color: HealingDesignSystem.primaryBlue,
+                      ),
                       title: const Text('變更解鎖密碼'),
                       subtitle: const Text('修改打開 App 時使用的解鎖密碼'),
-                      enabled: _appLockEnabled, // 只有開啟密碼鎖定時才能按
+                      enabled: _appLockEnabled,
                       onTap: _appLockEnabled ? _showChangePinDialog : null,
                     ),
                   _buildDeleteAccountButton(context),
                 ],
-              );
-            },
-          ),
+              ),
+            ),
 
-          const Divider(),
-
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text('說明',
-                style:
-                    TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
-          ),
-
-          ListTile(
-            leading: const Icon(Icons.school),
-            title: const Text('應用導覽'),
-            subtitle: const Text('初次使用指南和應用概述'),
-            onTap: () async {
-              await Navigator.of(context).push<bool>(
-                MaterialPageRoute(
-                  builder: (context) => const OnboardingPage(),
+            const SizedBox(height: 14),
+            _sectionHeader('說明'),
+            _sectionCard(
+              child: ListTile(
+                leading: const Icon(
+                  Icons.school,
+                  color: HealingDesignSystem.primaryBlue,
                 ),
-              );
-            },
-          ),
-
-          const Divider(),
+                title: const Text('應用導覽'),
+                subtitle: const Text('初次使用指南和應用概述'),
+                onTap: () async {
+                  await Navigator.of(context).push<bool>(
+                    MaterialPageRoute(
+                      builder: (context) => const OnboardingPage(),
+                    ),
+                  );
+                },
+              ),
+            ),
 
           // Padding(
           //   padding: const EdgeInsets.all(16.0),
@@ -361,8 +366,46 @@ class _SettingsPageState extends State<SettingsPage> {
           //       );
           //     },
           //   ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+      child: Row(
+        children: [
+          Container(
+            width: 4,
+            height: 20,
+            decoration: BoxDecoration(
+              color: HealingDesignSystem.adaptiveAccent(context),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: HealingDesignSystem.titleMedium.copyWith(
+              color: HealingDesignSystem.adaptiveAccent(context),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _sectionCard({required Widget child}) {
+    return Container(
+      decoration: HealingDesignSystem.adaptiveCardDecoration(
+        context,
+        bgColor: HealingDesignSystem.adaptiveSurface(context),
+        radius: HealingDesignSystem.radiusL,
+      ),
+      child: child,
     );
   }
 
@@ -695,7 +738,17 @@ class _SettingsPageState extends State<SettingsPage> {
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
-              title: const Text('設定解鎖密碼'),
+              backgroundColor: HealingDesignSystem.adaptiveSurface(context),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
+              ),
+              title: Text(
+                '設定解鎖密碼',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: HealingDesignSystem.adaptivePrimaryText(context),
+                ),
+              ),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -704,9 +757,15 @@ class _SettingsPageState extends State<SettingsPage> {
                     keyboardType: TextInputType.number,
                     obscureText: true,
                     maxLength: 6,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: '密碼（6 位數字）',
-                      border: OutlineInputBorder(),
+                      filled: true,
+                      fillColor: HealingDesignSystem.adaptiveFill(context),
+                      border: OutlineInputBorder(
+                        borderRadius:
+                            BorderRadius.circular(HealingDesignSystem.radiusM),
+                        borderSide: BorderSide.none,
+                      ),
                       counterText: '',
                     ),
                   ),
@@ -718,7 +777,13 @@ class _SettingsPageState extends State<SettingsPage> {
                     maxLength: 6,
                     decoration: InputDecoration(
                       labelText: '再次輸入密碼',
-                      border: const OutlineInputBorder(),
+                      filled: true,
+                      fillColor: HealingDesignSystem.adaptiveFill(context),
+                      border: OutlineInputBorder(
+                        borderRadius:
+                            BorderRadius.circular(HealingDesignSystem.radiusM),
+                        borderSide: BorderSide.none,
+                      ),
                       counterText: '',
                       errorText: error,
                     ),
@@ -728,9 +793,14 @@ class _SettingsPageState extends State<SettingsPage> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('取消'),
+                  child: Text(
+                    '取消',
+                    style: TextStyle(
+                      color: HealingDesignSystem.adaptiveSecondaryText(context),
+                    ),
+                  ),
                 ),
-                FilledButton(
+                ElevatedButton(
                   onPressed: () async {
                     final navigator = Navigator.of(context);
                     final pin = pinController.text.trim();
@@ -756,6 +826,14 @@ class _SettingsPageState extends State<SettingsPage> {
 
                     navigator.pop(true);
                   },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: HealingDesignSystem.primaryBlue,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius:
+                          BorderRadius.circular(HealingDesignSystem.radiusM),
+                    ),
+                  ),
                   child: const Text('確認'),
                 ),
               ],
@@ -784,7 +862,17 @@ class _SettingsPageState extends State<SettingsPage> {
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
-              title: const Text('變更解鎖密碼'),
+              backgroundColor: HealingDesignSystem.adaptiveSurface(context),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
+              ),
+              title: Text(
+                '變更解鎖密碼',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: HealingDesignSystem.adaptivePrimaryText(context),
+                ),
+              ),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -793,8 +881,15 @@ class _SettingsPageState extends State<SettingsPage> {
                       controller: _oldPinController,
                       obscureText: true,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: '目前密碼',
+                        filled: true,
+                        fillColor: HealingDesignSystem.adaptiveFill(context),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(
+                              HealingDesignSystem.radiusM),
+                          borderSide: BorderSide.none,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -802,8 +897,15 @@ class _SettingsPageState extends State<SettingsPage> {
                       controller: _newPinController,
                       obscureText: true,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: '新密碼（6 位數）',
+                        filled: true,
+                        fillColor: HealingDesignSystem.adaptiveFill(context),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(
+                              HealingDesignSystem.radiusM),
+                          borderSide: BorderSide.none,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -811,8 +913,15 @@ class _SettingsPageState extends State<SettingsPage> {
                       controller: _confirmPinController,
                       obscureText: true,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: '再次輸入新密碼',
+                        filled: true,
+                        fillColor: HealingDesignSystem.adaptiveFill(context),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(
+                              HealingDesignSystem.radiusM),
+                          borderSide: BorderSide.none,
+                        ),
                       ),
                     ),
                     if (errorText != null) ...[
@@ -833,9 +942,14 @@ class _SettingsPageState extends State<SettingsPage> {
                     _confirmPinController.clear();
                     Navigator.of(context).pop();
                   },
-                  child: const Text('取消'),
+                  child: Text(
+                    '取消',
+                    style: TextStyle(
+                      color: HealingDesignSystem.adaptiveSecondaryText(context),
+                    ),
+                  ),
                 ),
-                FilledButton(
+                ElevatedButton(
                   onPressed: () async {
                     final navigator = Navigator.of(context);
                     final messenger = ScaffoldMessenger.of(context);
@@ -876,6 +990,14 @@ class _SettingsPageState extends State<SettingsPage> {
                       const SnackBar(content: Text('解鎖密碼已更新')),
                     );
                   },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: HealingDesignSystem.primaryBlue,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius:
+                          BorderRadius.circular(HealingDesignSystem.radiusM),
+                    ),
+                  ),
                   child: const Text('儲存'),
                 ),
               ],
@@ -888,35 +1010,80 @@ class _SettingsPageState extends State<SettingsPage> {
 
   // 放在設定頁面 BuildContext 中
   Widget _buildDeleteAccountButton(BuildContext context) {
-    return ListTile(
-      leading: const Icon(Icons.delete_forever, color: Colors.redAccent),
-      title: const Text('刪除帳號與所有資料', style: TextStyle(color: Colors.redAccent)),
-      onTap: () {
-        // 點擊後跳出雙重確認視窗
-        showDialog(
-          context: context,
-          builder: (BuildContext ctx) {
-            return AlertDialog(
-              title: const Text('確定要刪除帳號嗎？'),
-              content: const Text('此動作將會永久刪除您的帳號、情緒紀錄與所有相關資料，且無法復原。'),
-              actions: [
-                TextButton(
-                  child: const Text('取消'),
-                  onPressed: () => Navigator.of(ctx).pop(),
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      decoration: BoxDecoration(
+        color: HealingDesignSystem.dangerRed.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+        border: Border.all(color: HealingDesignSystem.dangerRed.withOpacity(0.18)),
+      ),
+      child: ListTile(
+        leading: const Icon(
+          Icons.delete_forever,
+          color: HealingDesignSystem.dangerRed,
+        ),
+        title: const Text(
+          '刪除帳號與所有資料',
+          style: TextStyle(
+            color: HealingDesignSystem.dangerRed,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        subtitle: const Text('此動作無法復原，會永久刪除所有資料'),
+        onTap: () {
+          showDialog(
+            context: context,
+            builder: (BuildContext ctx) {
+              return AlertDialog(
+                backgroundColor: HealingDesignSystem.adaptiveSurface(context),
+                shape: RoundedRectangleBorder(
+                  borderRadius:
+                      BorderRadius.circular(HealingDesignSystem.radiusL),
                 ),
-                TextButton(
-                  child:
-                      const Text('確認永久刪除', style: TextStyle(color: Colors.red)),
-                  onPressed: () {
-                    Navigator.of(ctx).pop(); // 關閉對話框
-                    _executeDeleteAccount(context); // 執行刪除邏輯
-                  },
+                title: Text(
+                  '確定要刪除帳號嗎？',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: HealingDesignSystem.adaptivePrimaryText(context),
+                  ),
                 ),
-              ],
-            );
-          },
-        );
-      },
+                content: Text(
+                  '此動作將會永久刪除您的帳號、情緒紀錄與所有相關資料，且無法復原。',
+                  style: TextStyle(
+                    color: HealingDesignSystem.adaptiveSecondaryText(context),
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    child: Text(
+                      '取消',
+                      style: TextStyle(
+                        color: HealingDesignSystem.adaptiveSecondaryText(context),
+                      ),
+                    ),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: HealingDesignSystem.dangerRed,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius:
+                            BorderRadius.circular(HealingDesignSystem.radiusM),
+                      ),
+                    ),
+                    child: const Text('確認永久刪除'),
+                    onPressed: () {
+                      Navigator.of(ctx).pop();
+                      _executeDeleteAccount(context);
+                    },
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      ),
     );
   }
 

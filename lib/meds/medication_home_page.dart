@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../constants/healing_design_system.dart';
 import 'add_medication_page.dart';
 import 'edit_medication_page.dart';
 import '../widgets/main_drawer.dart';
 import 'record_adjustment_page.dart';
+import 'record_adjustment_history_page.dart';
 import 'med_symptom_compare_page.dart';
 import 'medication_local_db.dart';
 
@@ -34,13 +36,27 @@ DateTime? _parseFlexibleDate(dynamic value) {
   return null;
 }
 
+DateTime? _latestChangeAt(List<Map<String, dynamic>> meds) {
+  DateTime? latest;
+  for (final med in meds) {
+    final candidate = _parseFlexibleDate(med['lastChangeAt']) ??
+        _parseFlexibleDate(med['updatedAt']);
+    if (candidate == null) continue;
+    if (latest == null || candidate.isAfter(latest)) {
+      latest = candidate;
+    }
+  }
+  return latest;
+}
+
 String? _injectionBadgeText({
   required DateTime? startDate,
   required DateTime? lastChangeAt,
   required int? intervalDays,
   required DateTime today,
 }) {
-  if (startDate == null || intervalDays == null || intervalDays <= 0) return null;
+  if (startDate == null || intervalDays == null || intervalDays <= 0)
+    return null;
 
   // 優先使用最近一次調整日當作「上次施打/更新基準日」
   final anchor = _startOfDay(lastChangeAt ?? startDate);
@@ -69,8 +85,8 @@ class MedicationHomePage extends StatefulWidget {
 
 class _MedicationHomePageState extends State<MedicationHomePage> {
   late Future<List<Map<String, dynamic>>> _future;
-  Future<void>? _pendingSync;  // 追蹤未完成的 Firebase 同步
-  int _refreshCounter = 0;  // 用於強制 FutureBuilder 重新構建
+  Future<void>? _pendingSync; // 追蹤未完成的 Firebase 同步
+  int _refreshCounter = 0; // 用於強制 FutureBuilder 重新構建
 
   @override
   void initState() {
@@ -101,10 +117,10 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
       debugPrint('📱 [SYNC] 開始 Firebase 同步...');
       await _mergeFirebaseIntoLocal(uid);
       debugPrint('✅ [SYNC] Firebase 合併完成，重新讀取本地資料');
-      
+
       // 加入額外延遲，確保本地資料庫寫入完成
       await Future.delayed(const Duration(milliseconds: 200));
-      
+
       _future = MedicationLocalDB().getMedicationsForDisplay(uid);
       if (mounted) {
         setState(() => _refreshCounter++);
@@ -127,58 +143,74 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
+        backgroundColor: HealingDesignSystem.adaptiveBackground(context),
         drawer: const MainDrawer(),
         appBar: AppBar(
-          title: const Text('藥物'),
+          backgroundColor: HealingDesignSystem.primaryBlue,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          titleSpacing: 0,
+          iconTheme: IconThemeData(color: HealingDesignSystem.adaptivePrimaryText(context)),
+          title: Text(
+            '藥物紀錄',
+            style: TextStyle(
+              color: HealingDesignSystem.adaptivePrimaryText(context),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             tooltip: '返回',
             onPressed: () => Navigator.maybePop(context),
           ),
-          bottom: const TabBar(
+          bottom: TabBar(
+            indicatorColor: HealingDesignSystem.primaryBlue,
+            labelColor: HealingDesignSystem.adaptivePrimaryText(context),
+            unselectedLabelColor: HealingDesignSystem.adaptiveSecondaryText(context),
             tabs: [
               Tab(text: '目前使用藥物'),
               Tab(text: '已停用'),
             ],
           ),
-          actions: [
-            IconButton(
-              tooltip: '症狀交叉比對',
-              icon: const Icon(Icons.compare_arrows),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const MedSymptomComparePage()),
-                );
-              },
-            ),
-            IconButton(
-              tooltip: '紀錄調整（回診/調藥）',
-              onPressed: () async {
-                final changed = await Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const RecordAdjustmentPage()),
-                );
-                if (changed == true) _refresh();
-              },
-              icon: const Icon(Icons.edit_note),
-            ),
-            IconButton(
-              tooltip: '新增藥物',
-              onPressed: () async {
-                final added = await Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const AddMedicationPage()),
-                );
-                if (added == true) _refresh();
-              },
-              icon: const Icon(Icons.add),
-            ),
-          ],
+          // 功能已移到首頁總覽卡片（_OverviewBanner）中
+          // actions: [
+          //   IconButton(
+          //     tooltip: '症狀交叉比對',
+          //     icon: const Icon(Icons.compare_arrows, color: HealingDesignSystem.deepText),
+          //     onPressed: () {
+          //       Navigator.push(
+          //         context,
+          //         MaterialPageRoute(builder: (_) => const MedSymptomComparePage()),
+          //       );
+          //     },
+          //   ),
+          //   IconButton(
+          //     tooltip: '紀錄調整（回診/調藥）',
+          //     onPressed: () async {
+          //       final changed = await Navigator.push(
+          //         context,
+          //         MaterialPageRoute(builder: (_) => const RecordAdjustmentPage()),
+          //       );
+          //       if (changed == true) _refresh();
+          //     },
+          //     icon: const Icon(Icons.edit_note, color: HealingDesignSystem.deepText),
+          //   ),
+          //   IconButton(
+          //     tooltip: '新增藥物',
+          //     onPressed: () async {
+          //       final added = await Navigator.push(
+          //         context,
+          //         MaterialPageRoute(builder: (_) => const AddMedicationPage()),
+          //       );
+          //       if (added == true) _refresh();
+          //     },
+          //     icon: const Icon(Icons.add, color: HealingDesignSystem.primaryBlue),
+          //   ),
+          // ],
         ),
         body: FutureBuilder<List<Map<String, dynamic>>>(
           future: _future,
-          key: ValueKey(_refreshCounter),  // 強制重新構建
+          key: ValueKey(_refreshCounter), // 強制重新構建
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
@@ -189,8 +221,10 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
 
             final allMeds = snapshot.data ?? [];
 
-            final activeMeds = allMeds.where((m) => (m['isActive'] ?? true) == true).toList();
-            final inactiveMeds = allMeds.where((m) => (m['isActive'] ?? true) == false).map((m) {
+            final activeMeds =
+                allMeds.where((m) => (m['isActive'] ?? true) == true).toList();
+            final inactiveMeds =
+                allMeds.where((m) => (m['isActive'] ?? true) == false).map((m) {
               // 若有 resumedAt，顯示於 badge（停用後曾恢復的歷史）
               final resumedAt = _parseFlexibleDate(m['resumedAt']);
               if (resumedAt != null) {
@@ -204,8 +238,18 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
 
             return TabBarView(
               children: [
-                _buildMedicationList(context, activeMeds),
-                _buildMedicationList(context, inactiveMeds),
+                _buildMedicationList(
+                  context,
+                  activeMeds,
+                  showOverview: true,
+                  inactiveCount: inactiveMeds.length,
+                ),
+                _buildMedicationList(
+                  context,
+                  inactiveMeds,
+                  showOverview: false,
+                  inactiveCount: inactiveMeds.length,
+                ),
               ],
             );
           },
@@ -236,7 +280,7 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
           // 比較更新時間：如果本地比 Firebase 更新，則跳過覆蓋
           final localUpdatedStr = localMed['updatedAt'] as String?;
           final remoteUpdated = (data['updatedAt'] as Timestamp?)?.toDate();
-          
+
           if (localUpdatedStr != null && remoteUpdated != null) {
             final localUpdated = DateTime.tryParse(localUpdatedStr);
             if (localUpdated != null && localUpdated.isAfter(remoteUpdated)) {
@@ -263,10 +307,11 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
           'note': data['note'],
           'startDate': startDate?.toString(),
           'isActive': data['isActive'] ?? true,
-          'bodySymptoms': (data['bodySymptoms'] as List?)?.cast<String>() ?? <String>[],
+          'bodySymptoms':
+              (data['bodySymptoms'] as List?)?.cast<String>() ?? <String>[],
           'purposeOther': data['purposeOther'],
           'createdAt': (localMed?['createdAt']) ?? DateTime.now().toString(),
-          'updatedAt': data['updatedAt'] is Timestamp 
+          'updatedAt': data['updatedAt'] is Timestamp
               ? (data['updatedAt'] as Timestamp).toDate().toString()
               : data['updatedAt']?.toString() ?? DateTime.now().toString(),
           'lastChangeAt': (data['lastChangeAt'] is Timestamp)
@@ -282,12 +327,17 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
   }
 
   Widget _buildMedicationList(
-    BuildContext context,
-    List<Map<String, dynamic>> meds,
-  ) {
+      BuildContext context, List<Map<String, dynamic>> meds,
+      {required bool showOverview, required int inactiveCount}) {
     if (meds.isEmpty) {
-      return const Center(
-        child: Text('目前沒有藥物紀錄'),
+      return _EmptyState(
+        onAdd: () async {
+          final added = await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AddMedicationPage()),
+          );
+          if (added == true) _refresh();
+        },
       );
     }
 
@@ -329,12 +379,53 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
       }
     }
 
+    final latestChangeAt = _latestChangeAt(meds);
+
     return ListView(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
+        if (showOverview) ...[
+          _OverviewBanner(
+            activeCount: meds.length,
+            inactiveCount: inactiveCount,
+            lastChangeAt: latestChangeAt,
+            onAdd: () async {
+              final added = await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AddMedicationPage()),
+              );
+              if (added == true) _refresh();
+            },
+            onAdjust: () async {
+              final changed = await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const RecordAdjustmentPage()),
+              );
+              if (changed == true) _refresh();
+            },
+            onCompare: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const MedSymptomComparePage()),
+              );
+            },
+            onOpenTimeline: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const RecordAdjustmentHistoryPage(),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 14),
+        ],
+
         // 注射藥物
         if (injectionMeds.isNotEmpty) ...[
           _SectionTitle(title: '長效針', count: injectionMeds.length),
+          const SizedBox(height: 8),
           ...injectionMeds.map((med) {
             final medId = med['id'] as String? ?? '';
             final startDate = _parseFlexibleDate(med['startDate']);
@@ -379,6 +470,7 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _SectionTitle(title: timeLabel, count: medsInTime.length),
+              const SizedBox(height: 8),
               ...medsInTime.map((med) {
                 final medId = med['id'] as String? ?? '';
                 return _MedicationCard(
@@ -401,215 +493,177 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
   }
 
   void _showMedActions(
-  BuildContext context, {
-  required String uid,
-  required String medId,
-  required Map<String, dynamic> data,
-}) {
-  final isActive = (data['isActive'] as bool?) ?? true;
-  
-  showModalBottomSheet(
-    context: context,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    ),
-    builder: (_) {
-      return SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: const Text('編輯藥物資料'),
-              onTap: () async {
-                Navigator.pop(context);
-                final updated = await Navigator.push<bool>(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => EditMedicationPage(
-                      docId: medId,
-                      initialData: data,
-                    ),
-                  ),
-                );
-                if (updated == true) {
-                  // ⏱️ 延遲以確保本地資料庫完全寫入
-                  debugPrint('⏳ 編輯完成，等待資料庫同步...');
-                  await Future.delayed(const Duration(milliseconds: 800));
-                  
-                  // 立即刷新本地資料
-                  debugPrint('🔄 開始刷新本地資料...');
-                  _refresh();
-                  
-                  // 等待 Firebase 同步完成
-                  if (_pendingSync != null) {
-                    debugPrint('⏳ 等待 Firebase 同步...');
-                    await _pendingSync;
-                    debugPrint('✅ Firebase 同步完成');
-                  }
-                }
-},
-            ),
-            if (isActive)
-              ListTile(
-                leading: const Icon(Icons.pause_circle_outline),
-                title: const Text('停藥（標記為已停用）'),
-                onTap: () async {
-                  Navigator.pop(context);
-                  // 本地更新
-                  final nowStr = DateTime.now().toString();
-                  await MedicationLocalDB().updateMedicationStatus(
-                    uid,
-                    medId,
-                    isActive: false,
-                    updatedAt: nowStr,
-                    lastChangeAt: nowStr,
-                  );
+    BuildContext context, {
+    required String uid,
+    required String medId,
+    required Map<String, dynamic> data,
+  }) {
+    final isActive = (data['isActive'] as bool?) ?? true;
 
-                  // Firebase 更新
-                  await FirebaseFirestore.instance
-                      .collection('users')
-                      .doc(uid)
-                      .collection('medications')
-                      .doc(medId)
-                      .update({'isActive': false});
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('已標記為停藥')),
-                  );
-                  _refresh();
-                },
-              )
-            else
-              ListTile(
-                leading: const Icon(Icons.play_circle_outline),
-                title: const Text('恢復使用'),
-                onTap: () async {
-                  Navigator.pop(context);
-                  final nowStr = DateTime.now().toString();
-                  await MedicationLocalDB().updateMedicationStatus(
-                    uid,
-                    medId,
-                    isActive: true,
-                    updatedAt: nowStr,
-                    lastChangeAt: nowStr,
-                  );
-
-                  // 將恢復日期也寫入本地DB
-                  final localMed = await MedicationLocalDB().getMedication(uid, medId);
-                  if (localMed != null) {
-                    final updated = Map<String, dynamic>.from(localMed);
-                    updated['resumedAt'] = nowStr;
-                    await MedicationLocalDB().updateMedication(uid, medId, updated);
-                  }
-
-                  // Firebase 更新
-                  await FirebaseFirestore.instance
-                      .collection('users')
-                      .doc(uid)
-                      .collection('medications')
-                      .doc(medId)
-                      .update({
-                    'isActive': true,
-                    'resumedAt': FieldValue.serverTimestamp(),
-                  });
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('已恢復使用，恢復日期已標註')),
-                  );
-                  _refresh();
-                },
-              ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline, color: Colors.red),
-              title: const Text(
-                '刪除藥物（永久）',
-                style: TextStyle(color: Colors.red),
-              ),
-              onTap: () async {
-                Navigator.pop(context);
-
-                final ok = await showDialog<bool>(
-                  context: context,
-                  builder: (_) => AlertDialog(
-                    title: const Text('確認刪除'),
-                    content: const Text('刪除後將無法復原，確定要刪除嗎？'),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text('取消'),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        child: const Text('刪除'),
-                      ),
-                    ],
-                  ),
-                );
-
-                if (ok == true) {
-                  // 本地刪除
-                  await MedicationLocalDB().deleteMedication(uid, medId);
-
-                  await FirebaseFirestore.instance
-                      .collection('users')
-                      .doc(uid)
-                      .collection('medications')
-                      .doc(medId)
-                      .delete();
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('藥物已刪除')),
-                  );
-                  _refresh();
-                }
-              },
-            ),
-          ],
-        ),
-      );
-    },
-  );
-}
-
-}
-
-class _HeaderHintCard extends StatelessWidget {
-  final DateTime? lastChangeAt;
-  const _HeaderHintCard({required this.lastChangeAt});
-
-  @override
-  Widget build(BuildContext context) {
-    final text = (lastChangeAt == null)
-        ? '若今天回診或調藥，點右上角「紀錄調整」。'
-        : '上次調整：${_fmtYmd(lastChangeAt!)}｜若今天回診或調藥，點右上角「紀錄調整」。';
-
-    return Card(
-      elevation: 0,
-      color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.6),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          children: [
-            const Icon(Icons.info_outline, size: 18),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                text,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ),
-          ],
-        ),
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-    );
-  }
+      builder: (_) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('編輯藥物資料'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  final updated = await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => EditMedicationPage(
+                        docId: medId,
+                        initialData: data,
+                      ),
+                    ),
+                  );
+                  if (updated == true) {
+                    // ⏱️ 延遲以確保本地資料庫完全寫入
+                    debugPrint('⏳ 編輯完成，等待資料庫同步...');
+                    await Future.delayed(const Duration(milliseconds: 800));
 
-  String _fmtYmd(DateTime dt) {
-    final y = dt.year.toString().padLeft(4, '0');
-    final m = dt.month.toString().padLeft(2, '0');
-    final d = dt.day.toString().padLeft(2, '0');
-    return '$y/$m/$d';
+                    // 立即刷新本地資料
+                    debugPrint('🔄 開始刷新本地資料...');
+                    _refresh();
+
+                    // 等待 Firebase 同步完成
+                    if (_pendingSync != null) {
+                      debugPrint('⏳ 等待 Firebase 同步...');
+                      await _pendingSync;
+                      debugPrint('✅ Firebase 同步完成');
+                    }
+                  }
+                },
+              ),
+              if (isActive)
+                ListTile(
+                  leading: const Icon(Icons.pause_circle_outline),
+                  title: const Text('停藥（標記為已停用）'),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    // 本地更新
+                    final nowStr = DateTime.now().toString();
+                    await MedicationLocalDB().updateMedicationStatus(
+                      uid,
+                      medId,
+                      isActive: false,
+                      updatedAt: nowStr,
+                      lastChangeAt: nowStr,
+                    );
+
+                    // Firebase 更新
+                    await FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(uid)
+                        .collection('medications')
+                        .doc(medId)
+                        .update({'isActive': false});
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('已標記為停藥')),
+                    );
+                    _refresh();
+                  },
+                )
+              else
+                ListTile(
+                  leading: const Icon(Icons.play_circle_outline),
+                  title: const Text('恢復使用'),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    final nowStr = DateTime.now().toString();
+                    await MedicationLocalDB().updateMedicationStatus(
+                      uid,
+                      medId,
+                      isActive: true,
+                      updatedAt: nowStr,
+                      lastChangeAt: nowStr,
+                    );
+
+                    // 將恢復日期也寫入本地DB
+                    final localMed =
+                        await MedicationLocalDB().getMedication(uid, medId);
+                    if (localMed != null) {
+                      final updated = Map<String, dynamic>.from(localMed);
+                      updated['resumedAt'] = nowStr;
+                      await MedicationLocalDB()
+                          .updateMedication(uid, medId, updated);
+                    }
+
+                    // Firebase 更新
+                    await FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(uid)
+                        .collection('medications')
+                        .doc(medId)
+                        .update({
+                      'isActive': true,
+                      'resumedAt': FieldValue.serverTimestamp(),
+                    });
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('已恢復使用，恢復日期已標註')),
+                    );
+                    _refresh();
+                  },
+                ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.red),
+                title: const Text(
+                  '刪除藥物（永久）',
+                  style: TextStyle(color: Colors.red),
+                ),
+                onTap: () async {
+                  Navigator.pop(context);
+
+                  final ok = await showDialog<bool>(
+                    context: context,
+                    builder: (_) => AlertDialog(
+                      title: const Text('確認刪除'),
+                      content: const Text('刪除後將無法復原，確定要刪除嗎？'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('取消'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('刪除'),
+                        ),
+                      ],
+                    ),
+                  );
+
+                  if (ok == true) {
+                    // 本地刪除
+                    await MedicationLocalDB().deleteMedication(uid, medId);
+
+                    await FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(uid)
+                        .collection('medications')
+                        .doc(medId)
+                        .delete();
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('藥物已刪除')),
+                    );
+                    _refresh();
+                  }
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -622,7 +676,14 @@ class _SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Text(title, style: Theme.of(context).textTheme.titleMedium),
+        Text(
+          title,
+          style: const TextStyle(
+            color: HealingDesignSystem.deepText,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
         const SizedBox(width: 8),
         _CountPill(count: count),
       ],
@@ -640,11 +701,16 @@ class _CountPill extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: HealingDesignSystem.softBlue,
+        border: Border.all(color: HealingDesignSystem.lineColor),
       ),
       child: Text(
         '$count',
-        style: Theme.of(context).textTheme.labelMedium,
+        style: const TextStyle(
+          color: HealingDesignSystem.primaryBlue,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+        ),
       ),
     );
   }
@@ -680,6 +746,13 @@ class _ExpandableSectionState extends State<_ExpandableSection> {
   Widget build(BuildContext context) {
     return Card(
       elevation: 0,
+      color: HealingDesignSystem.cardBg,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: HealingDesignSystem.primaryBlue.withOpacity(0.08),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
+        side: const BorderSide(color: HealingDesignSystem.lineColor),
+      ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
         child: Column(
@@ -694,13 +767,23 @@ class _ExpandableSectionState extends State<_ExpandableSection> {
                     Expanded(
                       child: Row(
                         children: [
-                          Text(widget.title, style: Theme.of(context).textTheme.titleMedium),
+                          Text(
+                            widget.title,
+                            style: const TextStyle(
+                              color: HealingDesignSystem.deepText,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                           const SizedBox(width: 8),
                           _CountPill(count: widget.count),
                         ],
                       ),
                     ),
-                    Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+                    Icon(
+                      _expanded ? Icons.expand_less : Icons.expand_more,
+                      color: HealingDesignSystem.mutedText,
+                    ),
                   ],
                 ),
               ),
@@ -737,9 +820,9 @@ class _MedicationCard extends StatelessWidget {
     }
 
     final rawName = data['name'] ?? data['nameZh'] ?? data['nameEn'];
-final name = (rawName as String?)?.trim().isNotEmpty == true
-    ? rawName.toString().trim()
-    : '未命名藥物';
+    final name = (rawName as String?)?.trim().isNotEmpty == true
+        ? rawName.toString().trim()
+        : '未命名藥物';
     final dose = data['dose'];
     final dosePerUnit = data['dosePerUnit'];
     final pillCount = data['pillCount'];
@@ -749,48 +832,87 @@ final name = (rawName as String?)?.trim().isNotEmpty == true
     final unit = (data['unit'] as String?) ?? 'mg';
     final type = (data['type'] as String?) ?? 'tablet';
 
-    final times = (data['times'] as List?)?.whereType<String>().toList() ?? const <String>[];
-    final purposes = (data['purposes'] as List?)?.whereType<String>().toList() ?? const <String>[];
+    final times = (data['times'] as List?)?.whereType<String>().toList() ??
+        const <String>[];
+    final purposes =
+        (data['purposes'] as List?)?.whereType<String>().toList() ??
+            const <String>[];
 
     final subtitleOverride = data['_subtitleOverride'] as String?;
-final subtitle = subtitleOverride ?? (() {
-  if (type == 'drops' && concentrationMg != null && concentrationMl != null && intakeMl != null) {
-    return '${fmt1(concentrationMg)}mg/${fmt1(concentrationMl)}mL x ${fmt1(intakeMl)}mL';
-  }
-  if (dosePerUnit != null && pillCount != null) {
-    return '${fmt1(dosePerUnit)} $unit x ${fmt1(pillCount)} 顆';
-  }
-  if (dose == null) return '劑量未填';
-  return '$dose $unit';
-})();
+    final subtitle = subtitleOverride ??
+        (() {
+          if (type == 'drops' &&
+              concentrationMg != null &&
+              concentrationMl != null &&
+              intakeMl != null) {
+            return '${fmt1(concentrationMg)}mg/${fmt1(concentrationMl)}mL x ${fmt1(intakeMl)}mL';
+          }
+          if (dosePerUnit != null && pillCount != null) {
+            return '${fmt1(dosePerUnit)} $unit x ${fmt1(pillCount)} 顆';
+          }
+          if (dose == null) return '劑量未填';
+          return '$dose $unit';
+        })();
 
-final badge = data['_badgeOverride'] as String?;
+    final badge = data['_badgeOverride'] as String?;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
-                child: Card(
+        child: Card(
           elevation: 0,
+          color: HealingDesignSystem.cardBg,
+          surfaceTintColor: Colors.transparent,
+          shadowColor: HealingDesignSystem.primaryBlue.withOpacity(0.08),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: const BorderSide(color: HealingDesignSystem.lineColor),
+          ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.medication_outlined),
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: HealingDesignSystem.softBlue,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.medication_outlined,
+                    color: HealingDesignSystem.primaryBlue,
+                  ),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(name, style: Theme.of(context).textTheme.titleMedium),
+                      Text(
+                        name,
+                        style: const TextStyle(
+                          color: HealingDesignSystem.deepText,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                       const SizedBox(height: 2),
-                      Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          color: HealingDesignSystem.mutedText,
+                          fontSize: 13,
+                          height: 1.3,
+                        ),
+                      ),
                       if (badge != null && badge.trim().isNotEmpty) ...[
-  const SizedBox(height: 8),
-  _Chip(text: badge),
-],
+                        const SizedBox(height: 8),
+                        _Chip(text: badge),
+                      ],
                       if (times.isNotEmpty) ...[
                         const SizedBox(height: 8),
                         Wrap(
@@ -806,7 +928,9 @@ final badge = data['_badgeOverride'] as String?;
                           alignment: WrapAlignment.spaceBetween,
                           spacing: 6,
                           runSpacing: 6,
-                          children: purposes.map((p) => _Chip(text: p, isSecondary: true)).toList(),
+                          children: purposes
+                              .map((p) => _Chip(text: p, isSecondary: true))
+                              .toList(),
                         ),
                       ],
                     ],
@@ -815,7 +939,8 @@ final badge = data['_badgeOverride'] as String?;
                 IconButton(
                   tooltip: '更多',
                   onPressed: onMore,
-                  icon: const Icon(Icons.more_horiz),
+                  icon: const Icon(Icons.more_horiz,
+                      color: HealingDesignSystem.deepText),
                 ),
               ],
             ),
@@ -834,16 +959,24 @@ class _Chip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bg = isSecondary
-        ? Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.7)
-        : Theme.of(context).colorScheme.surfaceContainerHighest;
+        ? HealingDesignSystem.softBlue.withOpacity(0.6)
+        : HealingDesignSystem.softBlue;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: HealingDesignSystem.lineColor),
       ),
-      child: Text(text, style: Theme.of(context).textTheme.labelMedium),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: HealingDesignSystem.deepText,
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
     );
   }
 }
@@ -878,20 +1011,253 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.medication_outlined, size: 44),
+            Container(
+              width: 68,
+              height: 68,
+              decoration: BoxDecoration(
+                color: HealingDesignSystem.softBlue,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Icon(Icons.medication_outlined,
+                  size: 36, color: HealingDesignSystem.primaryBlue),
+            ),
             const SizedBox(height: 12),
-            Text('先建立你的藥物清單', style: Theme.of(context).textTheme.titleLarge),
+            const Text(
+              '先建立你的藥物清單',
+              style: TextStyle(
+                color: HealingDesignSystem.deepText,
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
             const SizedBox(height: 6),
-            Text(
+            const Text(
               '平常不需要每天填藥。只有回診或調藥時，再做一次「紀錄調整」。',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium,
+              style: TextStyle(
+                color: HealingDesignSystem.mutedText,
+                fontSize: 14,
+                height: 1.5,
+              ),
             ),
             const SizedBox(height: 14),
             FilledButton.icon(
               onPressed: onAdd,
               icon: const Icon(Icons.add),
               label: const Text('新增第一顆藥'),
+              style: FilledButton.styleFrom(
+                backgroundColor: HealingDesignSystem.primaryBlue,
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OverviewBanner extends StatelessWidget {
+  final int activeCount;
+  final int inactiveCount;
+  final DateTime? lastChangeAt;
+  final VoidCallback onAdd;
+  final VoidCallback onAdjust;
+  final VoidCallback onCompare;
+  final VoidCallback onOpenTimeline;
+
+  const _OverviewBanner({
+    required this.activeCount,
+    required this.inactiveCount,
+    required this.lastChangeAt,
+    required this.onAdd,
+    required this.onAdjust,
+    required this.onCompare,
+    required this.onOpenTimeline,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final lastChangeText = lastChangeAt == null
+        ? '尚未紀錄調整'
+        : '上次調整：${lastChangeAt!.year}/${lastChangeAt!.month.toString().padLeft(2, '0')}/${lastChangeAt!.day.toString().padLeft(2, '0')}';
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: HealingDesignSystem.cardDecoration(
+        bgColor: HealingDesignSystem.cardBg,
+        radius: HealingDesignSystem.radiusL,
+        shadows: [
+          HealingDesignSystem.shadowMedium(
+              color: HealingDesignSystem.primaryBlue)
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  gradient: HealingDesignSystem.primaryGradient(),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child:
+                    const Icon(Icons.medication_rounded, color: Colors.white),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '藥物總覽',
+                      style: TextStyle(
+                        color: HealingDesignSystem.deepText,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      '先看現在吃哪些，再進入個別藥物管理。',
+                      style: TextStyle(
+                        color: HealingDesignSystem.mutedText,
+                        fontSize: 13,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              _StatPill(
+                  label: '使用中',
+                  value: activeCount,
+                  accent: HealingDesignSystem.primaryBlue),
+              const SizedBox(width: 10),
+              _StatPill(
+                  label: '已停用',
+                  value: inactiveCount,
+                  accent: HealingDesignSystem.mutedText),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            lastChangeText,
+            style: const TextStyle(
+              color: HealingDesignSystem.mutedText,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              FilledButton.icon(
+                onPressed: onAdd,
+                icon: const Icon(Icons.add),
+                label: const Text('新增藥物'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: HealingDesignSystem.primaryBlue,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: onAdjust,
+                icon: const Icon(Icons.edit_note),
+                label: const Text('調藥紀錄'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: HealingDesignSystem.deepText,
+                  side: const BorderSide(color: HealingDesignSystem.lineColor),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: onCompare,
+                icon: const Icon(Icons.compare_arrows),
+                label: const Text('症狀比對'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: HealingDesignSystem.deepText,
+                  side: const BorderSide(color: HealingDesignSystem.lineColor),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+              FilledButton.icon(
+                onPressed: onOpenTimeline,
+                icon: const Icon(Icons.timeline_rounded),
+                label: const Text('完整時間線'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: HealingDesignSystem.primaryBlue,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatPill extends StatelessWidget {
+  final String label;
+  final int value;
+  final Color accent;
+
+  const _StatPill({
+    required this.label,
+    required this.value,
+    required this.accent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: accent.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: accent.withOpacity(0.16)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: accent,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '$value',
+              style: const TextStyle(
+                color: HealingDesignSystem.deepText,
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ],
         ),

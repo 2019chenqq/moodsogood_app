@@ -15,6 +15,7 @@ import 'daily_record_repository.dart';
 import 'emotion_page_checkbox.dart';
 import '../utils/firebase_sync_config.dart';
 import '../widgets/trend_range_selector.dart'; // 加入這行 import
+import '../constants/healing_design_system.dart';
 
 const Map<String, String> ksleepFlagMap = {
     'good': '優',
@@ -241,17 +242,37 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> with SingleTick
     }
 
     return Scaffold(
+      backgroundColor: HealingDesignSystem.adaptiveBackground(context),
       drawer: const MainDrawer(),
       appBar: AppBar(
-        toolbarHeight: 60,
+        backgroundColor: HealingDesignSystem.adaptiveAppBarBackground(context),
+        foregroundColor: HealingDesignSystem.adaptiveAppBarForeground(context),
         elevation: 0,
+        scrolledUnderElevation: 0,
+        toolbarHeight: 60,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: Icon(
+            Icons.arrow_back,
+            color: HealingDesignSystem.adaptiveAppBarForeground(context),
+          ),
           tooltip: '返回',
           onPressed: () => Navigator.maybePop(context),
         ),
+        title: Text(
+          '紀錄歷程',
+          style: TextStyle(
+            color: HealingDesignSystem.adaptiveAppBarForeground(context),
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         bottom: TabBar(
           controller: _tabController,
+          labelColor: HealingDesignSystem.adaptiveAppBarForeground(context),
+          unselectedLabelColor:
+              HealingDesignSystem.adaptiveAppBarForeground(context).withOpacity(0.72),
+          indicatorColor: HealingDesignSystem.adaptiveAccent(context),
+          indicatorSize: TabBarIndicatorSize.tab,
           tabs: const [
             Tab(text: '列表與週報'),
             Tab(text: '情緒趨勢圖'),
@@ -536,108 +557,201 @@ bool _isHistoryLocked(bool isPro) {
   List<DailyRecord> allRecordsForSummary,
   bool isPro,
 ) {
-  return Column(
-    children: [
-      // ─────────────────────
-      // 簡易週報卡片（永遠顯示）
-      // ─────────────────────
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-        child: WeeklySummaryCard(
-          allRecords: allRecordsForSummary,
-          weekStartDay: _historyWeekStartDay,
+  return Container(
+    color: HealingDesignSystem.softBlue,
+    child: Column(
+      children: [
+        // ─────────────────────
+        // 簡易週報卡片（永遠顯示）
+        // ─────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          child: WeeklySummaryCard(
+            allRecords: allRecordsForSummary,
+            weekStartDay: _historyWeekStartDay,
+          ),
         ),
-      ),
 
-      // ─────────────────────
-      // 日期篩選器（7 / 30 / 全部）
-      // ─────────────────────
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-        child: _buildDateRangeDropdown(),
-      ),
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-        child: _buildWeekStartSelector(),
-      ),
-      const Divider(height: 1),
+        // ─────────────────────
+        // 日期篩選器
+        // ─────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            decoration: BoxDecoration(
+              color: HealingDesignSystem.cardBg,
+              borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+              border: Border.all(color: HealingDesignSystem.lineColor),
+              boxShadow: [HealingDesignSystem.shadowLight()],
+            ),
+            child: Column(
+              children: [
+                _buildDateRangeDropdown(),
+                const SizedBox(height: 8),
+                _buildWeekStartSelector(),
+              ],
+            ),
+          ),
+        ),
 
-      // ─────────────────────
-      // 每日紀錄清單（此區依 Pro 狀態鎖）
-      // ─────────────────────
-      Expanded(
-  child: _isHistoryLocked(isPro)
-      ? _buildProLockedView(
-        context: context,
-          title: '記錄歷程',
-          description: '查看 30 天與全部的每日記錄，需要升級 Pro',
-        )
-            : records.isEmpty
-                ? const Center(child: Text('沒有符合條件的紀錄'))
-                : ListView.separated(
-                    itemCount: records.length,
-                    separatorBuilder: (_, __) =>
-                        const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      final r = records[index];
-                      final periodText = _periodLabel(r);
+        const SizedBox(height: 8),
 
-                      return ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        title: Text(
-                          DateHelper.toDisplay(r.date),
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w600),
-                        ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (periodText != null)
-                              Padding(
-                                padding:
-                                    const EdgeInsets.only(top: 4),
-                                child: Text(
-                                  periodText,
-                                  style: const TextStyle(
-                                    color: Colors.pink,
-                                    fontWeight: FontWeight.w600,
+        // ─────────────────────
+        // 每日紀錄清單（此區依 Pro 狀態鎖）
+        // ─────────────────────
+        Expanded(
+          child: _isHistoryLocked(isPro)
+              ? _buildProLockedView(
+                  context: context,
+                  title: '記錄歷程',
+                  description: '查看 30 天與全部的每日記錄，需要升級 Pro',
+                )
+              : records.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.history_rounded,
+                              size: 54,
+                              color: HealingDesignSystem.primaryBlue
+                                  .withOpacity(0.3)),
+                          const SizedBox(height: 12),
+                          const Text(
+                            '沒有符合條件的紀錄',
+                            style: TextStyle(
+                              color: HealingDesignSystem.mutedText,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                      itemCount: records.length,
+                      itemBuilder: (context, index) {
+                        final r = records[index];
+                        final periodText = _periodLabel(r);
+                        final nightMinutes = _nightSleepMinutes(r.sleep);
+                        final sleepText = nightMinutes != null
+                            ? DateHelper.formatDurationText(nightMinutes)
+                            : null;
+
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(
+                                  HealingDesignSystem.radiusM),
+                              onTap: () {
+                                final uid =
+                                    FirebaseAuth.instance.currentUser?.uid;
+                                if (uid != null) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => RecordDetailScreen(
+                                        uid: uid,
+                                        docId: r.id,
+                                      ),
+                                    ),
+                                  ).then((_) {
+                                    setState(() => _refreshCounter++);
+                                  });
+                                }
+                              },
+                              child: Ink(
+                                decoration: BoxDecoration(
+                                  color: HealingDesignSystem.cardBg,
+                                  borderRadius: BorderRadius.circular(
+                                      HealingDesignSystem.radiusM),
+                                  border: Border.all(
+                                      color: HealingDesignSystem.lineColor),
+                                  boxShadow: [
+                                    HealingDesignSystem.shadowLight()
+                                  ],
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 14, vertical: 12),
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.center,
+                                    children: [
+                                      Container(
+                                        width: 40,
+                                        height: 40,
+                                        decoration: BoxDecoration(
+                                          color: HealingDesignSystem.softBlue,
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                        ),
+                                        child: const Icon(
+                                          Icons.calendar_today_rounded,
+                                          color:
+                                              HealingDesignSystem.primaryBlue,
+                                          size: 20,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              DateHelper.toDisplay(r.date),
+                                              style: const TextStyle(
+                                                color: HealingDesignSystem
+                                                    .deepText,
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                            if (periodText != null) ... [
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                periodText,
+                                                style: const TextStyle(
+                                                  color: Colors.pink,
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ],
+                                            if (sleepText != null) ... [
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                '睡眠：$sleepText',
+                                                style: const TextStyle(
+                                                  color: HealingDesignSystem
+                                                      .mutedText,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                      const Icon(
+                                        Icons.chevron_right_rounded,
+                                        color: HealingDesignSystem.primaryBlue,
+                                        size: 20,
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
-                            _buildRecordSubtitle(context, r),
-                          ],
-                        ),
-                        trailing:
-                            const Icon(Icons.chevron_right),
-                        onTap: () {
-                          final uid = FirebaseAuth
-                              .instance.currentUser?.uid;
-                          if (uid != null) {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    RecordDetailScreen(
-                                  uid: uid,
-                                  docId: r.id,
-                                ),
-                              ),
-                            ).then((_) {
-                              // 返回時刷新頁面
-                              setState(() => _refreshCounter++);
-                            });
-                          }
-                        },
-                      );
-                    },
-                  ),
-      ),
-    ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+        ),
+      ],
+    ),
   );
 }
 
@@ -833,16 +947,26 @@ bool _isHistoryLocked(bool isPro) {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.calendar_view_week, size: 18, color: Colors.grey.shade700),
+          const Icon(Icons.calendar_view_week, size: 18, color: HealingDesignSystem.primaryBlue),
           const SizedBox(width: 8),
-          Text(
-            '第一天',
-            style: Theme.of(context).textTheme.bodyMedium,
+          const Text(
+            '週開始',
+            style: TextStyle(
+              color: HealingDesignSystem.deepText,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
           ),
           const SizedBox(width: 8),
           DropdownButtonHideUnderline(
             child: DropdownButton<int>(
               value: _historyWeekStartDay,
+              style: const TextStyle(
+                color: HealingDesignSystem.deepText,
+                fontSize: 13,
+              ),
+              dropdownColor: HealingDesignSystem.cardBg,
+              icon: const Icon(Icons.arrow_drop_down, color: HealingDesignSystem.primaryBlue),
               onChanged: (value) {
                 if (value != null) {
                   _updateHistoryWeekStartDay(value);
@@ -1012,9 +1136,9 @@ class _ChartWidget extends StatelessWidget {
   /// 正規化日期（去除時間部分）
   DateTime _norm(DateTime d) => DateTime(d.year, d.month, d.day);
 
-  /// 建立經期粉紅區塊（依照日期距離 startDate 的天數作為 x 座標）
+  /// 建立經期粉紅區塊（依照日期距離 startDate 的天數作為 x 座標，並限制在 minX/maxX 內）
   List<VerticalRangeAnnotation> _buildPeriodRanges(
-      List<DailyRecord> sorted, DateTime startDate) {
+      List<DailyRecord> sorted, DateTime startDate, {int minX = 0, int? maxX}) {
     final List<VerticalRangeAnnotation> list = [];
     int? periodStartDay;
 
@@ -1023,22 +1147,39 @@ class _ChartWidget extends StatelessWidget {
       if (r.isPeriod) {
         periodStartDay ??= dayD;
       } else if (periodStartDay != null) {
-        list.add(VerticalRangeAnnotation(
-          x1: periodStartDay.toDouble() - 0.5,
-          x2: (dayD - 1).toDouble() + 0.5,
-          color: Colors.pink.withValues(alpha: 0.15),
-        ));
+        double x1 = periodStartDay.toDouble() - 0.5;
+        double x2 = (dayD - 1).toDouble() + 0.5;
+        // 限制區塊在 minX/maxX 內
+        if (maxX != null) {
+          x1 = x1.clamp(minX.toDouble(), maxX.toDouble());
+          x2 = x2.clamp(minX.toDouble(), maxX.toDouble());
+        }
+        if (x2 >= x1) {
+          list.add(VerticalRangeAnnotation(
+            x1: x1,
+            x2: x2,
+            color: Colors.pink.withValues(alpha: 0.15),
+          ));
+        }
         periodStartDay = null;
       }
     }
     // 若最後一筆仍為經期
     if (periodStartDay != null && sorted.isNotEmpty) {
       final lastDay = _norm(sorted.last.date).difference(startDate).inDays;
-      list.add(VerticalRangeAnnotation(
-        x1: periodStartDay.toDouble() - 0.5,
-        x2: lastDay.toDouble() + 0.5,
-        color: Colors.pink.withValues(alpha: 0.15),
-      ));
+      double x1 = periodStartDay.toDouble() - 0.5;
+      double x2 = lastDay.toDouble() + 0.5;
+      if (maxX != null) {
+        x1 = x1.clamp(minX.toDouble(), maxX.toDouble());
+        x2 = x2.clamp(minX.toDouble(), maxX.toDouble());
+      }
+      if (x2 >= x1) {
+        list.add(VerticalRangeAnnotation(
+          x1: x1,
+          x2: x2,
+          color: Colors.pink.withValues(alpha: 0.15),
+        ));
+      }
     }
     return list;
   }
@@ -1257,7 +1398,12 @@ class _ChartWidget extends StatelessWidget {
     }
 
     // ===== 4️⃣ 經期粉紅區塊 =====
-    final periodRanges = _buildPeriodRanges(sorted, startDate);
+    final periodRanges = _buildPeriodRanges(
+      sorted,
+      startDate,
+      minX: 0,
+      maxX: totalDays > 0 ? totalDays - 1 : 0,
+    );
 
     // ===== 5️⃣ X 軸標籤：只在有紀錄的位置顯示，最多 7 個 =====
     final labelPositions = <int>{};
@@ -1483,14 +1629,12 @@ class WeeklySummaryCard extends StatelessWidget {
       return !date.isBefore(start) && !date.isAfter(end);
     }).toList();
 
-    final totalDays = 7;
+    const totalDays = 7;
     final recordedDays = weekRecords.length;
-
 
     final nightSleepMinutesList = <int>[];
     final dailyTotalMinutesList = <int>[];
 
-    // 平均睡眠改為使用全部歷史資料，不只本週。
     for (final record in allRecords) {
       final nightMinutes = _nightSleepMinutes(record);
       if (nightMinutes != null) {
@@ -1516,11 +1660,11 @@ class WeeklySummaryCard extends StatelessWidget {
             dailyTotalMinutesList.length;
 
     final nightAvgText = avgNightSleepMinutes == null
-      ? '-'
-      : DateHelper.formatDurationText(avgNightSleepMinutes.round());
+        ? '-'
+        : DateHelper.formatDurationText(avgNightSleepMinutes.round());
     final dailyAvgText = avgDailySleepMinutes == null
-      ? '-'
-      : DateHelper.formatDurationText(avgDailySleepMinutes.round());
+        ? '-'
+        : DateHelper.formatDurationText(avgDailySleepMinutes.round());
 
     // 鼓勵語句
     final String message;
@@ -1534,54 +1678,193 @@ class WeeklySummaryCard extends StatelessWidget {
       message = '這週每天都有陪自己走一下，謝謝你這麼努力地活著。';
     }
 
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '這週小結（本週 7 天）',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '區間：${start.month}/${start.day} - ${end.month}/${end.day}',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: Colors.grey.shade600),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '有紀錄的天數：$recordedDays / $totalDays 天',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '夜間平均睡眠（累積）：$nightAvgText',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '全日平均睡眠（夜間＋小睡，累積）：$dailyAvgText',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              message,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    fontStyle: FontStyle.italic,
-                    color: Colors.grey[700],
+    // 紀錄天數進度條比例
+    final progress = recordedDays / totalDays;
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: HealingDesignSystem.softBlueGradient(),
+        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
+        border: Border.all(color: HealingDesignSystem.lineColor),
+        boxShadow: [HealingDesignSystem.shadowMedium()],
+      ),
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header row
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: HealingDesignSystem.primaryBlue.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.auto_awesome_rounded,
+                  color: HealingDesignSystem.primaryBlue,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '這週小結',
+                    style: TextStyle(
+                      color: HealingDesignSystem.deepText,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
+                  Text(
+                    '${start.month}/${start.day} – ${end.month}/${end.day}',
+                    style: const TextStyle(
+                      color: HealingDesignSystem.mutedText,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // Progress bar
+          Row(
+            children: [
+              const Text(
+                '紀錄天數',
+                style: TextStyle(
+                  color: HealingDesignSystem.mutedText,
+                  fontSize: 12,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '$recordedDays / $totalDays 天',
+                style: const TextStyle(
+                  color: HealingDesignSystem.primaryBlue,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(99),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 8,
+              backgroundColor: HealingDesignSystem.lineColor,
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                  HealingDesignSystem.primaryBlue),
             ),
-          ],
-        ),
+          ),
+
+          const SizedBox(height: 14),
+
+          // Stats row
+          Row(
+            children: [
+              Expanded(
+                child: _WeekStatItem(
+                  icon: Icons.nightlight_round,
+                  label: '夜眠（累積均）',
+                  value: nightAvgText,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _WeekStatItem(
+                  icon: Icons.bedtime_outlined,
+                  label: '全日睡眠（均）',
+                  value: dailyAvgText,
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 14),
+
+          // Encouraging message
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            decoration: BoxDecoration(
+              color: HealingDesignSystem.cardBg,
+              borderRadius: BorderRadius.circular(HealingDesignSystem.radiusS),
+              border: Border.all(color: HealingDesignSystem.lineColor),
+            ),
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: HealingDesignSystem.deepText,
+                fontSize: 13,
+                fontStyle: FontStyle.italic,
+                height: 1.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WeekStatItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _WeekStatItem({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: HealingDesignSystem.cardBg,
+        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusS),
+        border: Border.all(color: HealingDesignSystem.lineColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 14, color: HealingDesignSystem.primaryBlue),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: HealingDesignSystem.mutedText,
+                    fontSize: 11,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: const TextStyle(
+              color: HealingDesignSystem.deepText,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1594,27 +1877,63 @@ Widget _buildProLockedView({
   return Center(
     child: Padding(
       padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.lock_outline, size: 48, color: Colors.grey),
-          const SizedBox(height: 16),
-          Text(
-            title,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            description,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.grey),
-          ),
-          const SizedBox(height: 20),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('返回'),
-          ),
-        ],
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
+        decoration: HealingDesignSystem.adaptiveCardDecoration(
+          context,
+          bgColor: HealingDesignSystem.adaptiveSurface(context),
+          radius: HealingDesignSystem.radiusL,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                color: HealingDesignSystem.adaptiveFill(context),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Icon(
+                Icons.lock_outline_rounded,
+                size: 30,
+                color: HealingDesignSystem.adaptiveAccent(context),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: HealingDesignSystem.adaptivePrimaryText(context),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              description,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: HealingDesignSystem.adaptiveSecondaryText(context),
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 20),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: HealingDesignSystem.primaryBlue,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 44),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+                ),
+              ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('返回'),
+            ),
+          ],
+        ),
       ),
     ),
   );

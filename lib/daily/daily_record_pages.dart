@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../constants/healing_design_system.dart';
 import '../widgets/emotion_slider.dart';
 import '../utils/date_helper.dart';
 import '../models/daily_record.dart';
@@ -82,20 +83,20 @@ class EmotionPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final onSurface = colorScheme.onSurface;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         // 🔹 情緒清單（Slider 版）
         ...List.generate(items.length, (i) {
           final item = items[i];
-          return Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
+          return Container(
+            margin: const EdgeInsets.only(bottom: HealingDesignSystem.paddingM),
+            decoration: HealingDesignSystem.cardDecoration(),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(
+                horizontal: HealingDesignSystem.paddingL,
+                vertical: HealingDesignSystem.paddingM,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -107,13 +108,16 @@ class EmotionPage extends StatelessWidget {
                       Expanded(
                         child: Text(
                           emotionDisplayTextMap[item.name] ?? item.name,
-                          style: Theme.of(context).textTheme.titleMedium,
+                          style: HealingDesignSystem.titleSmall,
                         ),
                       ),
 
                       // 🔹 右邊：引導 / 編輯 / 刪除
                       IconButton(
-                        icon: const Icon(Icons.info_outline),
+                        icon: const Icon(
+                          Icons.info_outline,
+                          color: HealingDesignSystem.primaryBlue,
+                        ),
                         tooltip: '評分說明',
                         onPressed: () =>
                             showEmotionScaleGuideDialog(context, item.name),
@@ -121,19 +125,25 @@ class EmotionPage extends StatelessWidget {
 
                       if (i != 0)
                         IconButton(
-                          icon: const Icon(Icons.edit_outlined),
+                          icon: const Icon(
+                            Icons.edit_outlined,
+                            color: HealingDesignSystem.mutedText,
+                          ),
                           onPressed: () => onRename(i),
                         ),
 
                       if (i != 0)
                         IconButton(
-                          icon: const Icon(Icons.delete_outline),
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            color: HealingDesignSystem.mutedText,
+                          ),
                           onPressed: () => onDelete(i),
                         ),
                     ],
                   ),
 
-                  const SizedBox(height: 8),
+                  const SizedBox(height: HealingDesignSystem.paddingM),
 
                   // 🎚️ 情緒 Slider
                   EmotionSlider(
@@ -154,13 +164,47 @@ class EmotionPage extends StatelessWidget {
           );
         }),
 
-        const SizedBox(height: 12),
+        const SizedBox(height: HealingDesignSystem.paddingM),
 
         // ➕ 新增情緒
-        OutlinedButton.icon(
-          onPressed: onAdd,
-          icon: const Icon(Icons.add),
-          label: const Text('新增情緒項目'),
+        Container(
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: HealingDesignSystem.lineColor,
+              width: 2,
+            ),
+            borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onAdd,
+              borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: HealingDesignSystem.paddingL,
+                  vertical: HealingDesignSystem.paddingM,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.add,
+                      color: HealingDesignSystem.primaryBlue,
+                    ),
+                    const SizedBox(width: HealingDesignSystem.paddingM),
+                    Text(
+                      '新增情緒項目',
+                      style: HealingDesignSystem.labelMedium.copyWith(
+                        color: HealingDesignSystem.primaryBlue,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
       ],
     );
@@ -210,11 +254,6 @@ class SymptomPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 根據開關狀態決定顏色
-    final colorScheme = Theme.of(context).colorScheme;
-    final onSurface = colorScheme.onSurface;
-    final outline = colorScheme.outlineVariant;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     const presetSymptoms = <String>{
       '心悸',
       '胸悶',
@@ -268,95 +307,72 @@ class SymptomPage extends StatelessWidget {
         const SizedBox(height: 16),
 
         // 2. 症狀列表
-        Card(
-          elevation: 0,
-          color: isDark
-              ? colorScheme.surfaceVariant.withOpacity(0.95)
-              : const Color(0xFFFFF1CC),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(
-              color: isDark ? colorScheme.outline : outline.withOpacity(0.4),
+        Container(
+          padding: const EdgeInsets.all(HealingDesignSystem.paddingM),
+          decoration: BoxDecoration(
+            color: HealingDesignSystem.softBlue.withOpacity(0.4),
+            borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+            border: Border.all(
+              color: HealingDesignSystem.lineColor,
               width: 1,
             ),
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  Icons.lightbulb_outline,
-                  color: isDark
-                      ? onSurface.withOpacity(0.92)
-                      : Colors.amber.shade700,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '溫柔提醒',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: onSurface.withOpacity(isDark ? 0.98 : 0.9),
-                        ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.lightbulb_outline,
+                color: HealingDesignSystem.primaryBlue,
+                size: 20,
+              ),
+              const SizedBox(width: HealingDesignSystem.paddingM),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '溫柔提醒',
+                      style: HealingDesignSystem.titleSmall,
+                    ),
+                    const SizedBox(height: HealingDesignSystem.paddingS),
+                    Text(
+                      '不用很完整，想到什麼寫什麼就好。\n'
+                      '也可以先寫一個最明顯的感覺：例如「心悸」「胸悶」「頭痛」。',
+                      style: HealingDesignSystem.bodySmall.copyWith(
+                        height: 1.35,
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '不用很完整，想到什麼寫什麼就好。\n'
-                        '也可以先寫一個最明顯的感覺：例如「心悸」「胸悶」「頭痛」。',
-                        style: TextStyle(
-                          color: onSurface.withOpacity(isDark ? 0.9 : 0.8),
-                          height: 1.35,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
 
-        const SizedBox(height: 14),
+        const SizedBox(height: HealingDesignSystem.paddingL),
 
         // 2. 心血管症狀（勾選）
         Text(
           '心血管與呼吸',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+          style: HealingDesignSystem.titleSmall,
         ),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: ['心悸', '胸悶', '胸痛', '呼吸不順', '過度換氣'].map((name) {
-            final isSelected = items.any((s) => s.name == name);
-            return FilterChip(
-              label: Text(name),
-              selected: isSelected,
-              onSelected: (selected) => onTogglePreset(name, selected),
-            );
-          }).toList(),
+        const SizedBox(height: HealingDesignSystem.paddingS),
+        _buildSymptomChips(
+          symptoms: ['心悸', '胸悶', '胸痛', '呼吸不順', '過度換氣'],
+          items: items,
+          onTogglePreset: onTogglePreset,
         ),
 
-        const SizedBox(height: 12),
+        const SizedBox(height: HealingDesignSystem.paddingL),
 
         // 3. 消化系統（勾選）
         Text(
           '消化系統',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+          style: HealingDesignSystem.titleSmall,
         ),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
+        const SizedBox(height: HealingDesignSystem.paddingS),
+        _buildSymptomChips(
+          symptoms: [
             '胃食道逆流',
             '胃痛',
             '腹痛',
@@ -366,106 +382,65 @@ class SymptomPage extends StatelessWidget {
             '嘔吐',
             '脹氣',
             '食慾不振',
-          ].map((name) {
-            final isSelected = items.any((s) => s.name == name);
-            return FilterChip(
-              label: Text(name),
-              selected: isSelected,
-              onSelected: (selected) => onTogglePreset(name, selected),
-            );
-          }).toList(),
+          ],
+          items: items,
+          onTogglePreset: onTogglePreset,
         ),
 
-        const SizedBox(height: 12),
+        const SizedBox(height: HealingDesignSystem.paddingL),
 
         // 4. 頭部（勾選）
         Text(
           '頭部',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+          style: HealingDesignSystem.titleSmall,
         ),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: ['頭暈', '頭痛', '頭脹'].map((name) {
-            final isSelected = items.any((s) => s.name == name);
-            return FilterChip(
-              label: Text(name),
-              selected: isSelected,
-              onSelected: (selected) => onTogglePreset(name, selected),
-            );
-          }).toList(),
+        const SizedBox(height: HealingDesignSystem.paddingS),
+        _buildSymptomChips(
+          symptoms: ['頭暈', '頭痛', '頭脹'],
+          items: items,
+          onTogglePreset: onTogglePreset,
         ),
 
-        const SizedBox(height: 12),
+        const SizedBox(height: HealingDesignSystem.paddingL),
 
         // 5. 眼睛與耳朵（勾選）
         Text(
           '眼睛與耳朵',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+          style: HealingDesignSystem.titleSmall,
         ),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: ['眼睛乾澀', '眼睛疲勞', '視力模糊', '不斷流淚', '耳鳴'].map((name) {
-            final isSelected = items.any((s) => s.name == name);
-            return FilterChip(
-              label: Text(name),
-              selected: isSelected,
-              onSelected: (selected) => onTogglePreset(name, selected),
-            );
-          }).toList(),
+        const SizedBox(height: HealingDesignSystem.paddingS),
+        _buildSymptomChips(
+          symptoms: ['眼睛乾澀', '眼睛疲勞', '視力模糊', '不斷流淚', '耳鳴'],
+          items: items,
+          onTogglePreset: onTogglePreset,
         ),
 
-        const SizedBox(height: 12),
+        const SizedBox(height: HealingDesignSystem.paddingL),
 
         // 6. 口腔與咽喉（勾選）
         Text(
           '口腔與咽喉',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+          style: HealingDesignSystem.titleSmall,
         ),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: ['口乾舌燥', '失去味覺', '口腔苦澀', '咽喉異物感'].map((name) {
-            final isSelected = items.any((s) => s.name == name);
-            return FilterChip(
-              label: Text(name),
-              selected: isSelected,
-              onSelected: (selected) => onTogglePreset(name, selected),
-            );
-          }).toList(),
+        const SizedBox(height: HealingDesignSystem.paddingS),
+        _buildSymptomChips(
+          symptoms: ['口乾舌燥', '失去味覺', '口腔苦澀', '咽喉異物感'],
+          items: items,
+          onTogglePreset: onTogglePreset,
         ),
 
-        const SizedBox(height: 12),
+        const SizedBox(height: HealingDesignSystem.paddingL),
 
         // 7. 四肢與肌肉（勾選）
         Text(
           '四肢與肌肉',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+          style: HealingDesignSystem.titleSmall,
         ),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: ['顫抖', '發麻', '手汗變多', '肌肉緊繃', '肌肉抽蓄', '四肢無力'].map((name) {
-            final isSelected = items.any((s) => s.name == name);
-            return FilterChip(
-              label: Text(name),
-              selected: isSelected,
-              onSelected: (selected) => onTogglePreset(name, selected),
-            );
-          }).toList(),
+        const SizedBox(height: HealingDesignSystem.paddingS),
+        _buildSymptomChips(
+          symptoms: ['顫抖', '發麻', '手汗變多', '肌肉緊繃', '肌肉抽蓄', '四肢無力'],
+          items: items,
+          onTogglePreset: onTogglePreset,
         ),
 
         const SizedBox(height: 12),
@@ -477,46 +452,209 @@ class SymptomPage extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              const SizedBox(height: HealingDesignSystem.paddingL),
               Text(
                 '自訂症狀清單',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                style: HealingDesignSystem.titleSmall,
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: HealingDesignSystem.paddingS),
               Wrap(
-                spacing: 8,
-                runSpacing: 8,
+                spacing: HealingDesignSystem.paddingL,
+                runSpacing: HealingDesignSystem.paddingL,
                 children: items
                     .asMap()
                     .entries
                     .where((e) =>
                         e.value.name.trim().isNotEmpty &&
                         !presetSymptoms.contains(e.value.name))
-                    .map((e) => InputChip(
-                          label: Text(e.value.name),
-                          onPressed: () => onRename(e.key),
-                          onDeleted: () => onDelete(e.key),
+                    .map((e) => _buildCustomSymptomTag(
+                          symptomName: e.value.name,
+                          onEdit: () => onRename(e.key),
+                          onDelete: () => onDelete(e.key),
                         ))
                     .toList(),
               ),
             ],
           ),
 
-        const SizedBox(height: 8),
+        const SizedBox(height: HealingDesignSystem.paddingL),
 
         // 3. 新增按鈕
-        OutlinedButton.icon(
-          onPressed: onAdd,
-          icon: const Icon(Icons.add),
-          label: const Text('新增症狀'),
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size(double.infinity, 48),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        Container(
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: HealingDesignSystem.lineColor,
+              width: 2,
+            ),
+            borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onAdd,
+              borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: HealingDesignSystem.paddingL,
+                  vertical: HealingDesignSystem.paddingM,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.add,
+                      color: HealingDesignSystem.primaryBlue,
+                    ),
+                    const SizedBox(width: HealingDesignSystem.paddingM),
+                    Text(
+                      '新增症狀',
+                      style: HealingDesignSystem.labelMedium.copyWith(
+                        color: HealingDesignSystem.primaryBlue,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ],
+    );
+  }
+
+  /// 建立療癒風格的症狀卡片群組
+  static Widget _buildSymptomChips({
+    required List<String> symptoms,
+    required List<SymptomItem> items,
+    required void Function(String, bool) onTogglePreset,
+  }) {
+    return Wrap(
+      spacing: HealingDesignSystem.paddingL,
+      runSpacing: HealingDesignSystem.paddingL,
+      children: symptoms.map((name) {
+        final isSelected = items.any((s) => s.name == name);
+        return _buildSymptomCard(
+          name: name,
+          isSelected: isSelected,
+          onTap: () => onTogglePreset(name, !isSelected),
+        );
+      }).toList(),
+    );
+  }
+
+  /// 單個療癒症狀卡片
+  static Widget _buildSymptomCard({
+    required String name,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(
+            horizontal: HealingDesignSystem.paddingM,
+            vertical: HealingDesignSystem.paddingS,
+          ),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? HealingDesignSystem.primaryBlue.withOpacity(0.15)
+                : HealingDesignSystem.cardBg,
+            border: Border.all(
+              color: isSelected
+                  ? HealingDesignSystem.primaryBlue
+                  : HealingDesignSystem.lineColor,
+              width: isSelected ? 2 : 1,
+            ),
+            borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+            boxShadow: isSelected
+                ? [HealingDesignSystem.shadowLight()]
+                : [
+                    BoxShadow(
+                      color: HealingDesignSystem.primaryBlue.withOpacity(0.05),
+                      blurRadius: 6,
+                    ),
+                  ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isSelected) ...[
+                const Icon(
+                  Icons.check_circle,
+                  size: 18,
+                  color: HealingDesignSystem.primaryBlue,
+                ),
+                const SizedBox(width: HealingDesignSystem.paddingS),
+              ],
+              Text(
+                name,
+                style: TextStyle(
+                  color: isSelected
+                      ? HealingDesignSystem.primaryBlue
+                      : HealingDesignSystem.deepText,
+                  fontSize: 14,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 自訂症狀標籤
+  static Widget _buildCustomSymptomTag({
+    required String symptomName,
+    required VoidCallback onEdit,
+    required VoidCallback onDelete,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: HealingDesignSystem.paddingM,
+        vertical: HealingDesignSystem.paddingS,
+      ),
+      decoration: BoxDecoration(
+        color: HealingDesignSystem.softBlue.withOpacity(0.3),
+        border: Border.all(
+          color: HealingDesignSystem.lineColor,
+          width: 1,
+        ),
+        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusS),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            symptomName,
+            style: HealingDesignSystem.bodySmall,
+          ),
+          SizedBox(
+            width: 24,
+            height: 24,
+            child: IconButton(
+              icon: const Icon(Icons.edit, size: 14),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: onEdit,
+            ),
+          ),
+          SizedBox(
+            width: 24,
+            height: 24,
+            child: IconButton(
+              icon: const Icon(Icons.close, size: 14),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: onDelete,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -568,7 +706,8 @@ class _PeriodCalendarCardState extends State<_PeriodCalendarCard> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final colorScheme = Theme.of(context).colorScheme;
-    final month = DateTime(widget.focusedMonth.year, widget.focusedMonth.month, 1);
+    final month =
+        DateTime(widget.focusedMonth.year, widget.focusedMonth.month, 1);
     final days = _buildMonthCells(month);
     final today = _d(DateTime.now());
 
@@ -588,18 +727,20 @@ class _PeriodCalendarCardState extends State<_PeriodCalendarCard> {
       }
     }
 
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF2A1C20) : HealingDesignSystem.cardBg,
         borderRadius: BorderRadius.circular(20),
-        side: BorderSide(
+        border: Border.all(
           color: widget.isTodayPeriod
               ? Colors.pinkAccent
               : (isDark ? Colors.pink.shade200 : Colors.pink.shade100),
           width: 1.3,
         ),
+        boxShadow: isDark
+            ? const []
+            : [HealingDesignSystem.shadowLight(color: Colors.pinkAccent)],
       ),
-      color: isDark ? const Color(0xFF2A1C20) : const Color(0xFFFFF5F7),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
         child: Column(
@@ -626,8 +767,9 @@ class _PeriodCalendarCardState extends State<_PeriodCalendarCard> {
                     widget.isTodayPeriod ? '今天在生理期中 🩸' : '生理期月曆',
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      color:
-                          widget.isTodayPeriod ? Colors.pink : colorScheme.onSurface,
+                      color: widget.isTodayPeriod
+                          ? Colors.pink
+                          : colorScheme.onSurface,
                     ),
                   ),
                 ),
@@ -642,7 +784,9 @@ class _PeriodCalendarCardState extends State<_PeriodCalendarCard> {
                   visualDensity: VisualDensity.compact,
                   onPressed: () => setState(() => _collapsed = !_collapsed),
                   icon: Icon(
-                    _collapsed ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
+                    _collapsed
+                        ? Icons.keyboard_arrow_down
+                        : Icons.keyboard_arrow_up,
                   ),
                 ),
               ],
@@ -651,8 +795,9 @@ class _PeriodCalendarCardState extends State<_PeriodCalendarCard> {
               duration: const Duration(milliseconds: 220),
               firstCurve: Curves.easeOut,
               secondCurve: Curves.easeIn,
-              crossFadeState:
-                  _collapsed ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+              crossFadeState: _collapsed
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
               firstChild: Column(
                 children: [
                   const SizedBox(height: 10),
@@ -663,8 +808,8 @@ class _PeriodCalendarCardState extends State<_PeriodCalendarCard> {
                         onPressed: widget.busy
                             ? null
                             : () => widget.onChangeMonth(
-                                DateTime(month.year, month.month - 1, 1),
-                              ),
+                                  DateTime(month.year, month.month - 1, 1),
+                                ),
                         icon: const Icon(Icons.chevron_left),
                       ),
                       Expanded(
@@ -680,8 +825,8 @@ class _PeriodCalendarCardState extends State<_PeriodCalendarCard> {
                         onPressed: widget.busy
                             ? null
                             : () => widget.onChangeMonth(
-                                DateTime(month.year, month.month + 1, 1),
-                              ),
+                                  DateTime(month.year, month.month + 1, 1),
+                                ),
                         icon: const Icon(Icons.chevron_right),
                       ),
                     ],
@@ -703,7 +848,8 @@ class _PeriodCalendarCardState extends State<_PeriodCalendarCard> {
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: days.length,
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 7,
                       mainAxisSpacing: 6,
                       crossAxisSpacing: 6,
@@ -744,8 +890,9 @@ class _PeriodCalendarCardState extends State<_PeriodCalendarCard> {
                               '${day.day}',
                               style: TextStyle(
                                 color: fg,
-                                fontWeight:
-                                    selected ? FontWeight.w700 : FontWeight.w500,
+                                fontWeight: selected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
                               ),
                             ),
                           ),
@@ -790,11 +937,11 @@ class _PeriodCalendarCardState extends State<_PeriodCalendarCard> {
             Text(
               deltaText,
               style: TextStyle(
-              color: widget.arrivalDeltaDays == null
+                color: widget.arrivalDeltaDays == null
                     ? colorScheme.onSurface.withValues(alpha: 0.72)
-                : (widget.arrivalDeltaDays == 0
+                    : (widget.arrivalDeltaDays == 0
                         ? Colors.green.shade600
-                  : (widget.arrivalDeltaDays! > 0
+                        : (widget.arrivalDeltaDays! > 0
                             ? Colors.orange.shade700
                             : Colors.blue.shade700)),
                 fontSize: 12,
@@ -880,6 +1027,44 @@ class SleepPage extends StatelessWidget {
   final TextEditingController hypnoticNameCtrl;
   final TextEditingController hypnoticDoseCtrl;
 
+  Widget _sleepCard({required Widget child, EdgeInsetsGeometry? margin}) {
+    return Container(
+      margin: margin ?? const EdgeInsets.only(bottom: 10),
+      decoration: HealingDesignSystem.cardDecoration(),
+      child: child,
+    );
+  }
+
+  InputDecoration _sleepInputDecoration({
+    required String hintText,
+    String? labelText,
+    Widget? prefixIcon,
+  }) {
+    return InputDecoration(
+      hintText: hintText,
+      labelText: labelText,
+      prefixIcon: prefixIcon,
+      filled: true,
+      fillColor: HealingDesignSystem.softBlue.withOpacity(0.18),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+        borderSide: const BorderSide(color: HealingDesignSystem.lineColor),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+        borderSide: const BorderSide(color: HealingDesignSystem.lineColor),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+        borderSide: const BorderSide(
+          color: HealingDesignSystem.primaryBlue,
+          width: 1.4,
+        ),
+      ),
+      isDense: true,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -887,50 +1072,54 @@ class SleepPage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Card(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        _sleepCard(
           child: SwitchListTile(
-            secondary:
-                const Icon(Icons.medication_outlined, color: Colors.purple),
+            secondary: const Icon(
+              Icons.medication_outlined,
+              color: HealingDesignSystem.primaryBlue,
+            ),
             title: const Text('前一晚是否有吃安眠藥？'),
             value: tookHypnotic,
+            activeColor: HealingDesignSystem.primaryBlue,
             onChanged: onToggleHypnotic,
           ),
         ),
         if (tookHypnotic) ...[
-          const SizedBox(height: 8),
-          Card(
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          _sleepCard(
             child: Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.info_outline, size: 20, color: Colors.grey),
-                  const SizedBox(width: 8),
-                  Text('安眠藥名稱與劑量',
-                      style: Theme.of(context).textTheme.titleMedium),
+                  const Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        size: 20,
+                        color: HealingDesignSystem.mutedText,
+                      ),
+                      SizedBox(width: 8),
+                      Text(
+                        '安眠藥名稱與劑量',
+                        style: HealingDesignSystem.titleSmall,
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: hypnoticNameCtrl,
-                    decoration: const InputDecoration(
+                    decoration: _sleepInputDecoration(
                       hintText: '例如：Clonazepam（克癇平）',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                      prefixIcon: Icon(Icons.local_pharmacy_outlined),
+                      prefixIcon: const Icon(Icons.local_pharmacy_outlined),
                     ),
                     onChanged: onChangeHypnoticName,
                   ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: hypnoticDoseCtrl,
-                    decoration: const InputDecoration(
+                    decoration: _sleepInputDecoration(
                       hintText: '例如：0.5 mg',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                      prefixIcon: Icon(Icons.numbers),
+                      prefixIcon: const Icon(Icons.numbers),
                     ),
                     onChanged: onChangeHypnoticDose,
                   ),
@@ -939,29 +1128,32 @@ class SleepPage extends StatelessWidget {
             ),
           ),
         ],
-        Card(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        _sleepCard(
           child: ListTile(
-            leading: const Icon(Icons.bed_outlined, color: Colors.indigo),
+            leading: const Icon(
+              Icons.bed_outlined,
+              color: HealingDesignSystem.primaryBlue,
+            ),
             title: const Text('前一日準備睡覺時間'),
             subtitle: Text(
                 sleepTime == null ? '—' : DateHelper.formatTime(sleepTime!)),
             onTap: onPickSleepTime,
           ),
         ),
-        const SizedBox(height: 8),
-        Card(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        _sleepCard(
           child: ExpansionTile(
-            leading:
-                const Icon(Icons.nightlight_outlined, color: Colors.deepPurple),
+            leading: const Icon(
+              Icons.nightlight_outlined,
+              color: HealingDesignSystem.primaryBlue,
+            ),
             title: const Text('夜間睡眠狀況',
                 style: TextStyle(fontWeight: FontWeight.w600)),
             subtitle: Text(
               flags.isEmpty ? '未選擇' : '已選 ${flags.length} 項',
-              style: TextStyle(color: Colors.grey[600], fontSize: 13),
+              style: const TextStyle(
+                color: HealingDesignSystem.mutedText,
+                fontSize: 13,
+              ),
             ),
             children: [
               Padding(
@@ -970,7 +1162,10 @@ class SleepPage extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text('可多選',
-                        style: TextStyle(fontSize: 12, color: Colors.grey)),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: HealingDesignSystem.mutedText,
+                        )),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
@@ -1000,10 +1195,28 @@ class SleepPage extends StatelessWidget {
 
                         return list.map((f) {
                           final selected = flags.contains(f);
-                          return FilterChip(
+                          return ChoiceChip(
                             label: Text(sleepFlagLabel(f)),
                             selected: selected,
                             onSelected: (_) => onToggleFlag(f),
+                            selectedColor: HealingDesignSystem.primaryBlue
+                                .withOpacity(0.16),
+                            side: BorderSide(
+                              color: selected
+                                  ? HealingDesignSystem.primaryBlue
+                                  : HealingDesignSystem.lineColor,
+                            ),
+                            labelStyle: TextStyle(
+                              color: selected
+                                  ? HealingDesignSystem.primaryBlue
+                                  : HealingDesignSystem.deepText,
+                              fontWeight:
+                                  selected ? FontWeight.w700 : FontWeight.w500,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(
+                                  HealingDesignSystem.radiusM),
+                            ),
                           );
                         }).toList();
                       })(),
@@ -1014,79 +1227,101 @@ class SleepPage extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 12),
-        Card(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        _sleepCard(
           child: ListTile(
-            leading: const Icon(Icons.star_border_rounded, color: Colors.amber),
+            leading: const Icon(
+              Icons.star_border_rounded,
+              color: HealingDesignSystem.primaryBlue,
+            ),
             title: const Text('自覺睡眠品質'),
             subtitle: Text(sleepQuality == null ? '—' : '$sleepQuality'),
             onTap: onPickValue,
           ),
         ),
-        const SizedBox(height: 12),
-        const Text('睡眠註記', style: TextStyle(fontWeight: FontWeight.w600)),
-        TextField(
-          minLines: 1,
-          maxLines: 3,
-          decoration: const InputDecoration(
-            hintText: '例如：一直做夢，感覺好像沒睡覺，起床精神很差',
-            border: OutlineInputBorder(),
-            prefixIcon: Icon(Icons.edit_note, color: Colors.grey),
-          ),
-          onChanged: onChangeNote,
-        ),
-        const SizedBox(height: 24),
-        const Text('中途與甦醒',
-            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
-        Container(
-          margin: const EdgeInsets.symmetric(vertical: 8),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFFF4E5),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFFFCC80)),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.lightbulb_outline, color: Colors.orange),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('💡 紀錄小撇步',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, color: Colors.brown)),
-                    const SizedBox(height: 4),
-                    Text(
-                      '半夜醒來或剛睡醒時不想開 App？\n試試「手機截圖」！起床後再看相簿時間回填即可，減少看螢幕的焦慮。',
-                      style:
-                          TextStyle(fontSize: 13, color: Colors.brown.shade700),
-                    ),
-                  ],
+        _sleepCard(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('睡眠註記', style: HealingDesignSystem.titleSmall),
+                const SizedBox(height: 8),
+                TextField(
+                  minLines: 1,
+                  maxLines: 3,
+                  decoration: _sleepInputDecoration(
+                    hintText: '例如：一直做夢，感覺好像沒睡覺，起床精神很差',
+                    prefixIcon: const Icon(Icons.edit_note),
+                  ),
+                  onChanged: onChangeNote,
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-        TextField(
-          controller: midWakeCtrl,
-          decoration: const InputDecoration(
-            labelText: '半夜醒來時間 (可留白)',
-            hintText: '例：03:15, 05:40 (看截圖時間)',
-            border: OutlineInputBorder(),
-            prefixIcon: Icon(Icons.access_time_outlined),
+        _sleepCard(
+          margin: const EdgeInsets.fromLTRB(0, 2, 0, 10),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: HealingDesignSystem.softBlue.withOpacity(0.25),
+              borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
+              border: Border.all(color: HealingDesignSystem.lineColor),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.lightbulb_outline,
+                  color: HealingDesignSystem.primaryBlue,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('紀錄小撇步',
+                          style: HealingDesignSystem.titleSmall),
+                      const SizedBox(height: 4),
+                      Text(
+                        '半夜醒來或剛睡醒時不想開 App？\n試試「手機截圖」！起床後再看相簿時間回填即可，減少看螢幕的焦慮。',
+                        style: HealingDesignSystem.bodySmall.copyWith(
+                          color: HealingDesignSystem.mutedText,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-          onChanged: onChangeMidWake,
         ),
-        const SizedBox(height: 16),
-        Card(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        _sleepCard(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('中途與甦醒', style: HealingDesignSystem.titleSmall),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: midWakeCtrl,
+                  decoration: _sleepInputDecoration(
+                    labelText: '半夜醒來時間 (可留白)',
+                    hintText: '例：03:15, 05:40 (看截圖時間)',
+                    prefixIcon: const Icon(Icons.access_time_outlined),
+                  ),
+                  onChanged: onChangeMidWake,
+                ),
+              ],
+            ),
+          ),
+        ),
+        _sleepCard(
           child: ListTile(
-            leading: const Icon(Icons.wb_twilight, color: Colors.orange),
+            leading: const Icon(
+              Icons.wb_twilight,
+              color: HealingDesignSystem.primaryBlue,
+            ),
             title: const Text('甦醒時刻 (睜開眼)'),
             subtitle: Text(
               finalWakeTime == null
@@ -1101,11 +1336,12 @@ class SleepPage extends StatelessWidget {
             onTap: onPickFinalWakeTime,
           ),
         ),
-        Card(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        _sleepCard(
           child: ListTile(
-            leading: const Icon(Icons.directions_run, color: Colors.blue),
+            leading: const Icon(
+              Icons.directions_run,
+              color: HealingDesignSystem.primaryBlue,
+            ),
             title: const Text('離床活動時間'),
             subtitle: Text(
               wakeTime == null ? '—' : DateHelper.formatTime(wakeTime),
@@ -1113,30 +1349,65 @@ class SleepPage extends StatelessWidget {
             onTap: onPickWakeTime,
           ),
         ),
-        const SizedBox(height: 16),
-        const Text('小睡（可新增多筆)', style: TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        const Text('小睡（可新增多筆)', style: HealingDesignSystem.titleSmall),
+        const SizedBox(height: 8),
         ...List.generate(naps.length, (i) {
           final n = naps[i];
-          return Card(
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          return _sleepCard(
             child: ListTile(
-              leading: const Icon(Icons.timer_outlined, color: Colors.teal),
+              leading: const Icon(
+                Icons.timer_outlined,
+                color: HealingDesignSystem.primaryBlue,
+              ),
               title: Text(
                   '${DateHelper.formatTime(n.start)} – ${DateHelper.formatTime(n.end)}'),
               subtitle: Text(
-                  'time長：${DateHelper.formatDurationText(n.durationMinutes)}'),
+                  '時長：${DateHelper.formatDurationText(n.durationMinutes)}'),
               onTap: () => onEditNap(i),
               trailing: IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  onPressed: () => onDeleteNap(i)),
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () => onDeleteNap(i),
+              ),
             ),
           );
         }),
-        OutlinedButton.icon(
-            onPressed: onAddNap,
-            icon: const Icon(Icons.add),
-            label: const Text('新增小睡')),
+        Container(
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: HealingDesignSystem.lineColor,
+              width: 2,
+            ),
+            borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onAddNap,
+              borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: HealingDesignSystem.paddingL,
+                  vertical: HealingDesignSystem.paddingM,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.add, color: HealingDesignSystem.primaryBlue),
+                    SizedBox(width: HealingDesignSystem.paddingM),
+                    Text(
+                      '新增小睡',
+                      style: TextStyle(
+                        color: HealingDesignSystem.primaryBlue,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }

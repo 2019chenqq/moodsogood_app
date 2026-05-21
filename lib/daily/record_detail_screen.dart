@@ -6,6 +6,7 @@ import 'edit_record_page.dart';
 import '../utils/date_helper.dart';
 import '../models/daily_record.dart';
 import 'daily_record_repository.dart';
+import '../constants/healing_design_system.dart';
 
 class RecordDetailScreen extends StatefulWidget {
   final String uid;
@@ -223,14 +224,31 @@ Future<void> _clearRecord(BuildContext context) async {
     context: context,
     builder: (context) {
       return AlertDialog(
-        title: const Text('清除這一天的紀錄？'),
-        content: const Text('所有情緒、症狀、睡眠、生理期資料都會被清除，無法復原。'),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
+        ),
+        title: const Text('清除這一天的紀錄？',
+            style: TextStyle(fontWeight: FontWeight.w600)),
+        content: Text(
+          '所有情緒、症狀、睡眠、生理期資料都會被清除，無法復原。',
+          style: TextStyle(color: HealingDesignSystem.adaptiveSecondaryText(context)),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
+            child: Text(
+              '取消',
+              style: TextStyle(color: HealingDesignSystem.adaptiveSecondaryText(context)),
+            ),
           ),
-          TextButton(
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: HealingDesignSystem.dangerRed,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+              ),
+            ),
             onPressed: () => Navigator.pop(context, true),
             child: const Text('清除'),
           ),
@@ -281,15 +299,19 @@ Future<void> _clearRecord(BuildContext context) async {
 
         final sleep = record.sleep;
 
-        // 定義樣式
-        final TextStyle titleStyle = const TextStyle(fontSize: 16, height: 1.2);
-        final TextStyle valueStyle = const TextStyle(fontSize: 14, fontWeight: FontWeight.w600);
-        final TextStyle noteStyle = const TextStyle(fontSize: 13);
-
         return Scaffold(
+          backgroundColor: HealingDesignSystem.adaptiveBackground(context),
           appBar: AppBar(
-            // 使用 Helper 統一標題格式 (yyyy/MM/dd)
-            title: Text(DateHelper.toDisplay(record.date)),
+            backgroundColor: HealingDesignSystem.adaptiveAppBarBackground(context),
+            foregroundColor: HealingDesignSystem.adaptiveAppBarForeground(context),
+            elevation: 0,
+            title: Text(
+              DateHelper.toDisplay(record.date),
+              style: TextStyle(
+                color: HealingDesignSystem.adaptiveAppBarForeground(context),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             actions: [
               IconButton(
                 icon: const Icon(Icons.edit),
@@ -329,142 +351,145 @@ Future<void> _clearRecord(BuildContext context) async {
             children: [
               // ===== 情緒 =====
               _sectionHeader(context, '情緒'),
-              if (record.emotions.isEmpty)
-                const ListTile(title: Text('無情緒紀錄', style: TextStyle(color: Colors.grey))),
-              ...record.emotions.map((e) => ListTile(
-                    title: Text(e.name),
-                    trailing: Text(
-                      e.value == null ? '-' : '${e.value}',
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                    ),
-                  )),
-
-              const Divider(height: 32),
+              Container(
+                margin: const EdgeInsets.only(bottom: 18),
+                decoration: HealingDesignSystem.adaptiveCardDecoration(
+                  context,
+                  bgColor: HealingDesignSystem.adaptiveSurface(context),
+                ),
+                child: Column(
+                  children: [
+                    if (record.emotions.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text('無情緒紀錄',
+                            style: HealingDesignSystem.bodySmall.copyWith(
+                                color: HealingDesignSystem.adaptiveSecondaryText(context))),
+                      ),
+                    ...record.emotions.map((e) => ListTile(
+                          title: Text(e.name,
+                              style: HealingDesignSystem.bodyMedium.copyWith(
+                                  color: HealingDesignSystem.adaptivePrimaryText(context))),
+                          trailing: Text(
+                            e.value == null ? '-' : '${e.value}',
+                            style: HealingDesignSystem.bodyMedium
+                                .copyWith(
+                                    color: HealingDesignSystem.adaptivePrimaryText(context),
+                                    fontWeight: FontWeight.w600),
+                          ),
+                        )),
+                  ],
+                ),
+              ),
 
               // ===== 症狀 =====
               _sectionHeader(context, '症狀'),
-              if (record.symptoms.isEmpty)
-                const ListTile(title: Text('無症狀紀錄', style: TextStyle(color: Colors.grey)))
-              else
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  child: Text(
-                    record.symptoms
-                        .where((symptom) => symptom.trim().isNotEmpty)
-                        .join('、'),
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
+              Container(
+                margin: const EdgeInsets.only(bottom: 18),
+                decoration: HealingDesignSystem.adaptiveCardDecoration(
+                  context,
+                  bgColor: HealingDesignSystem.adaptiveSurface(context),
                 ),
-
-              const Divider(height: 32),
+                child: record.symptoms.isEmpty
+                    ? Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Center(
+                          child: Text(
+                            '無症狀紀錄',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: HealingDesignSystem.adaptiveSecondaryText(context),
+                              fontSize: 12,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      )
+                    : Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 14),
+                        child: Text(
+                          record.symptoms
+                              .where((s) => s.trim().isNotEmpty)
+                              .join('、'),
+                          style: HealingDesignSystem.bodyMedium.copyWith(
+                              color: HealingDesignSystem.adaptivePrimaryText(context)),
+                        ),
+                      ),
+              ),
 
               // ===== 睡眠 =====
               _sectionHeader(context, '睡眠'),
-
-              ListTile(
-                title: Text('前一晚是否服用安眠藥', style: titleStyle),
-                trailing: Text(
-                  sleep.tookHypnotic ? '有' : '無',
-                  style: valueStyle,
+              Container(
+                margin: const EdgeInsets.only(bottom: 18),
+                decoration: HealingDesignSystem.adaptiveCardDecoration(
+                  context,
+                  bgColor: HealingDesignSystem.adaptiveSurface(context),
+                ),
+                child: Column(
+                  children: [
+                    _detailTile(context, '前一晚是否服用安眠藥',
+                        sleep.tookHypnotic ? '有' : '無'),
+                    if (sleep.tookHypnotic) ...[
+                      _detailTile(context, '藥物名稱',
+                          (sleep.hypnoticName ?? '').isEmpty
+                              ? '-'
+                              : sleep.hypnoticName!),
+                      _detailTile(context, '劑量',
+                          (sleep.hypnoticDose ?? '').isEmpty
+                              ? '-'
+                              : sleep.hypnoticDose!),
+                    ],
+                    _detailTile(
+                      context,
+                        '入睡時間', DateHelper.formatTime(sleep.sleepTime)),
+                    _detailTile(
+                      context,
+                        '夜間睡眠狀況', _prettyFlags(sleep.flags)),
+                    _detailTile(
+                      context,
+                        '夜間醒來時間',
+                        sleep.midWakeList == null ||
+                                sleep.midWakeList!.trim().isEmpty
+                            ? '-'
+                            : sleep.midWakeList!),
+                    _detailTile(context, '自覺睡眠品質',
+                        sleep.quality == null ? '-' : '${sleep.quality}'),
+                    if ((sleep.note ?? '').isNotEmpty)
+                      ListTile(
+                        title: Text('睡眠註記',
+                        style: HealingDesignSystem.bodyMedium.copyWith(
+                          color: HealingDesignSystem.adaptiveSecondaryText(context))),
+                        subtitle: Text(sleep.note!,
+                        style: HealingDesignSystem.bodyMedium.copyWith(
+                          color: HealingDesignSystem.adaptivePrimaryText(context))),
+                      ),
+                    _detailTile(context, '甦醒時間',
+                        DateHelper.formatTime(
+                            sleep.finalWakeTime ?? sleep.wakeTime)),
+                    _detailTile(context, '起床開始活動時間',
+                        DateHelper.formatTime(sleep.wakeTime)),
+                    // 小睡
+                    if (sleep.naps.isNotEmpty)
+                      ListTile(
+                        title: Text('小睡',
+                          style: HealingDesignSystem.bodyMedium.copyWith(
+                            color: HealingDesignSystem.adaptiveSecondaryText(context))),
+                        subtitle: Text(
+                          sleep.naps.map((nap) {
+                            final s = DateHelper.formatTime(nap.start);
+                            final e = DateHelper.formatTime(nap.end);
+                            final dur = DateHelper.formatDurationText(
+                                nap.durationMinutes);
+                            return '$s → $e （$dur）';
+                          }).join('\n'),
+                          style: HealingDesignSystem.bodyMedium.copyWith(
+                              color: HealingDesignSystem.adaptivePrimaryText(context)),
+                        ),
+                      ),
+                  ],
                 ),
               ),
-              if (sleep.tookHypnotic) ...[
-                ListTile(
-                  title: Text('藥物名稱', style: titleStyle),
-                  trailing: Text(
-                    (sleep.hypnoticName ?? '').isEmpty ? '-' : sleep.hypnoticName!,
-                    style: valueStyle,
-                  ),
-                ),
-                ListTile(
-                  title: Text('劑量', style: titleStyle),
-                  trailing: Text(
-                    (sleep.hypnoticDose ?? '').isEmpty ? '-' : sleep.hypnoticDose!,
-                    style: valueStyle,
-                  ),
-                ),
-              ],
-              ListTile(
-                title: Text('入睡時間', style: titleStyle),
-                // 使用 Helper
-                trailing: Text(
-                  DateHelper.formatTime(sleep.sleepTime),
-                  style: valueStyle,
-                ),
-              ),
-              ListTile(
-  title: Text('夜間睡眠狀況', style: titleStyle),
-  trailing: Text(
-    _prettyFlags(sleep.flags),
-    style: valueStyle,
-  ),
-),
-              ListTile(
-  title: const Text('夜間醒來時間'),
-  trailing: Text(
-    sleep.midWakeList == null || sleep.midWakeList!.trim().isEmpty
-        ? '-'
-        : sleep.midWakeList!,
-    style: valueStyle,
-  ),
-),
-              ListTile(
-                title: Text('自覺睡眠品質', style: titleStyle),
-                trailing: Text(
-                  sleep.quality == null ? '-' : '${sleep.quality}',
-                  style: valueStyle,
-                ),
-              ),
-              ListTile(
-                title: Text('睡眠註記', style: titleStyle),
-                subtitle: Text(
-                  (sleep.note ?? '').isEmpty ? '-' : sleep.note!,
-                  style: noteStyle,
-                ),
-              ),
-
-              ListTile(
-                title: Text('甦醒時間', style: titleStyle),
-                trailing: Text(
-                  DateHelper.formatTime(sleep.finalWakeTime ?? sleep.wakeTime),
-                  style: valueStyle,
-                ),
-              ),
-
-              ListTile(
-                title: Text('起床開始活動時間', style: titleStyle),
-                trailing: Text(
-                  DateHelper.formatTime(sleep.wakeTime),
-                  style: valueStyle,
-                ),
-              ),
-
-              // === 小睡 (使用 Model 的 naps) ===
-              Builder(builder: (_) {
-                if (sleep.naps.isEmpty) return const SizedBox.shrink();
-
-                // 🔥 使用 Helper 處理顯示
-                final text = sleep.naps.map((nap) {
-                  final s = DateHelper.formatTime(nap.start);
-                  final e = DateHelper.formatTime(nap.end);
-                  final dur = DateHelper.formatDurationText(nap.durationMinutes);
-                  return '$s → $e （$dur）';
-                }).join('\n');
-
-                return ListTile(
-                  title: Text('小睡', style: titleStyle),
-                  subtitle: Text(text, style: noteStyle),
-                );
-              }),
-              // ===== 生理期 =====
-// _sectionHeader(context, '生理期'),
-// ListTile(
-//   title: const Text('生理期狀態'),
-//   trailing: Text(
-//     _buildPeriodText(record),
-//     style: valueStyle,
-//   ),
-// ),
             ],
           ),
         );
@@ -478,24 +503,57 @@ Future<void> _clearRecord(BuildContext context) async {
 //   return '—';
 }
 
-/// 區塊標題＋右上角編輯鈕（頂層函式，別放進 class 裡）
+/// 區塊標題
 Widget _sectionHeader(BuildContext context, String title, {VoidCallback? onEdit}) {
   return Padding(
-    padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
+    padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
     child: Row(
       children: [
+        Container(
+          width: 4,
+          height: 20,
+          decoration: BoxDecoration(
+            color: HealingDesignSystem.adaptiveAccent(context),
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 8),
         Expanded(
-          child: Text(title,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+          child: Text(
+            title,
+            style: HealingDesignSystem.titleMedium.copyWith(
+              fontWeight: FontWeight.w700,
+              color: HealingDesignSystem.adaptiveAccent(context),
+            ),
+          ),
         ),
         if (onEdit != null)
           IconButton(
-            icon: const Icon(Icons.edit_outlined),
+            icon: Icon(
+              Icons.edit_outlined,
+              color: HealingDesignSystem.adaptiveAccent(context),
+            ),
             tooltip: '編輯$title',
             onPressed: onEdit,
           ),
       ],
     ),
+  );
+}
+
+/// 明細行
+Widget _detailTile(BuildContext context, String label, String value) {
+  return ListTile(
+    dense: true,
+    title: Text(label,
+        style: HealingDesignSystem.bodyMedium.copyWith(
+          color: HealingDesignSystem.adaptiveSecondaryText(context),
+        )),
+    trailing: Text(value,
+        style: HealingDesignSystem.bodyMedium.copyWith(
+          color: HealingDesignSystem.adaptivePrimaryText(context),
+          fontWeight: FontWeight.w600,
+        )),
   );
 }
 

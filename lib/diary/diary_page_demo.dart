@@ -1,17 +1,24 @@
 // diary_page_demo.dart
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart' as m;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:crypto/crypto.dart';
+import 'package:encrypt/encrypt.dart' as encrypt_lib;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/date_helper.dart';
 import '../utils/firebase_sync_config.dart';
+import '../constants/healing_design_system.dart';
 import '../widgets/emotion_slider.dart';
 import 'ai_journal_reflection_page.dart';
 import 'diary_repository.dart';
 import '../utils/secure_storage_service.dart';
 import '../utils/encryption_service.dart';
+import '../utils/key_manager.dart';
 
 class DiaryPageDemo extends m.StatefulWidget {
   final DateTime date;
@@ -41,6 +48,9 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   DateTime? _savedAt;
   bool _isHydrating = false;
   bool _blockCloudSaveDueToDecryptFailure = false;
+  bool _needsLegacyRepair = false;
+  bool _isRepairingLegacy = false;
+  final Map<String, String> _failedEncryptedPayload = {};
 
   // ---------------- 上一筆 / 下一筆 ----------------
   DateTime? _prevDate;
@@ -129,10 +139,11 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
           m.debugPrint('📔 Loaded diary from Firebase, decrypting...');
           
           // 🔑 去保險箱拿鑰匙並啟動解密小幫手
-          final key = await SecureStorageService.getOrRecoverKey();
+          final key = await SecureStorageService.getKey();
           EncryptionService? encService;
           if (key != null) encService = EncryptionService(key);
           var decryptFailed = false;
+          _failedEncryptedPayload.clear();
           final fallbackValues = {
             'title': _titleCtrl.text,
             'content': _contentCtrl.text,
@@ -145,13 +156,19 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
           };
 
           // 🔓 建立一個輔助函數來解密文字
-          String decrypt(dynamic value, String fallback) {
+          String decrypt(String field, dynamic value, String fallback) {
             final str = (value ?? '') as String;
-            if (encService != null && str.contains(':')) {
+            if (str.contains(':')) {
+              if (encService == null) {
+                decryptFailed = true;
+                _failedEncryptedPayload[field] = str;
+                return fallback;
+              }
               final plain = encService.tryDecryptData(str);
               if (plain == null) {
                 decryptFailed = true;
-                return fallback.isNotEmpty ? fallback : '（解密失敗）';
+                _failedEncryptedPayload[field] = str;
+                return fallback;
               }
               return plain;
             }
@@ -161,24 +178,28 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
           // 將解密後的資料重新組裝，更新到畫面上
           final decryptedData = {
             ...data, // 保留不用加密的欄位 (如 date, overallMood 等分數)
-            'title': decrypt(data['title'], fallbackValues['title'] ?? ''),
-            'content': decrypt(data['content'], fallbackValues['content'] ?? ''),
-            'themeSong': decrypt(data['themeSong'], fallbackValues['themeSong'] ?? ''),
-            'highlight': decrypt(data['highlight'], fallbackValues['highlight'] ?? ''),
-            'metaphor': decrypt(data['metaphor'], fallbackValues['metaphor'] ?? ''),
-            'conceited': decrypt(data['conceited'], fallbackValues['conceited'] ?? ''),
-            'proudOf': decrypt(data['proudOf'], fallbackValues['proudOf'] ?? ''),
-            'selfCare': decrypt(data['selfCare'], fallbackValues['selfCare'] ?? ''),
+            'title': decrypt('title', data['title'], fallbackValues['title'] ?? ''),
+            'content': decrypt('content', data['content'], fallbackValues['content'] ?? ''),
+            'themeSong': decrypt('themeSong', data['themeSong'], fallbackValues['themeSong'] ?? ''),
+            'highlight': decrypt('highlight', data['highlight'], fallbackValues['highlight'] ?? ''),
+            'metaphor': decrypt('metaphor', data['metaphor'], fallbackValues['metaphor'] ?? ''),
+            'conceited': decrypt('conceited', data['conceited'], fallbackValues['conceited'] ?? ''),
+            'proudOf': decrypt('proudOf', data['proudOf'], fallbackValues['proudOf'] ?? ''),
+            'selfCare': decrypt('selfCare', data['selfCare'], fallbackValues['selfCare'] ?? ''),
           };
 
           _updateUIFromData(decryptedData);
 
+          if (mounted) {
+            setState(() {
+              _blockCloudSaveDueToDecryptFailure = decryptFailed;
+              _needsLegacyRepair = decryptFailed;
+            });
+          }
+
           if (decryptFailed && mounted) {
-            _blockCloudSaveDueToDecryptFailure = true;
             m.ScaffoldMessenger.of(context).showSnackBar(
-              const m.SnackBar(
-                content: m.Text('偵測到解密失敗，已暫停雲端覆寫以保護原始資料。'),
-              ),
+              const m.SnackBar(content: m.Text('此紀錄需要使用舊安全碼修復')),
             );
           }
         }
@@ -257,10 +278,180 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
     );
   }
 
- Future<void> _saveDraft() async {
+  encrypt_lib.Key _deriveLegacyKey(String pin, String salt) {
+    List<int> bytes = utf8.encode(pin + salt);
+    for (int i = 0; i < 10000; i++) {
+      bytes = sha256.convert(bytes).bytes;
+    }
+    return encrypt_lib.Key(Uint8List.fromList(bytes));
+  }
+
+  Future<void> _showRepairDialog() async {
+    if (!mounted) return;
+    final pinController = m.TextEditingController();
+    final oldPin = await m.showDialog<String>(
+      context: context,
+      builder: (dialogContext) => m.AlertDialog(
+        title: const m.Text('修復舊日記'),
+        content: m.TextField(
+          controller: pinController,
+          keyboardType: m.TextInputType.number,
+          obscureText: true,
+          maxLength: 6,
+          decoration: const m.InputDecoration(
+            labelText: '請輸入舊的 6 位數保險箱密碼',
+            counterText: '',
+          ),
+        ),
+        actions: [
+          m.TextButton(
+            onPressed: () => m.Navigator.of(dialogContext).pop(),
+            child: const m.Text('取消'),
+          ),
+          m.FilledButton(
+            onPressed: () {
+              final inputPin = pinController.text.trim();
+              if (inputPin.length != 6) return;
+              m.Navigator.of(dialogContext).pop(inputPin);
+            },
+            child: const m.Text('修復舊日記'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted) return;
+    if (oldPin == null || oldPin.length != 6) return;
+    await _repairLegacyDiary(oldPin);
+  }
+
+  Future<void> _repairLegacyDiary(String oldPin) async {
+    if (_isRepairingLegacy || _failedEncryptedPayload.isEmpty) return;
+    final uid = _uid;
+    final docRef = _docRef;
+    if (uid == null || docRef == null) return;
+    if (!mounted) return;
+
+    setState(() => _isRepairingLegacy = true);
     try {
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid == null) return;
+      final currentKey = await SecureStorageService.getKey();
+      if (!mounted) return;
+      if (currentKey == null) {
+        throw Exception('找不到目前保險箱金鑰');
+      }
+
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get(const GetOptions(source: Source.server));
+        if (!mounted) return;
+
+      final prefs = await SharedPreferences.getInstance();
+        if (!mounted) return;
+      final cloudSalt = (userDoc.data()?['encryptionSalt'] as String?)?.trim() ?? '';
+      final localSalt = (prefs.getString('e2eSalt') ?? '').trim();
+      final legacySalt = (userDoc.data()?['legacyEncryptionSalt'] as String?)?.trim() ?? '';
+      final oldSalt = (userDoc.data()?['oldEncryptionSalt'] as String?)?.trim() ?? '';
+
+      final salts = <String>{};
+      if (cloudSalt.isNotEmpty) salts.add(cloudSalt);
+      if (localSalt.isNotEmpty) salts.add(localSalt);
+      if (legacySalt.isNotEmpty) salts.add(legacySalt);
+      if (oldSalt.isNotEmpty) salts.add(oldSalt);
+      if (salts.isEmpty) {
+        throw Exception('找不到可用 salt');
+      }
+
+      Map<String, String>? repairedPlainText;
+      for (final salt in salts) {
+        final candidateKeys = <encrypt_lib.Key>[
+          await KeyManager.deriveKey(oldPin, salt),
+          _deriveLegacyKey(oldPin, salt),
+        ];
+        for (final candidateKey in candidateKeys) {
+          final oldEnc = EncryptionService(candidateKey);
+          final tryPlain = <String, String>{};
+          var allOk = true;
+
+          for (final entry in _failedEncryptedPayload.entries) {
+            final plain = oldEnc.tryDecryptData(entry.value);
+            if (plain == null) {
+              allOk = false;
+              break;
+            }
+            tryPlain[entry.key] = plain;
+          }
+
+          if (allOk && tryPlain.isNotEmpty) {
+            repairedPlainText = tryPlain;
+            break;
+          }
+        }
+        if (repairedPlainText != null) break;
+      }
+
+      if (repairedPlainText == null || repairedPlainText.isEmpty) {
+        throw Exception('安全碼不正確或此紀錄使用更早版本金鑰');
+      }
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('diaryMigrations')
+          .add({
+        'diaryId': _docId,
+        'legacyBackup': Map<String, String>.from(_failedEncryptedPayload),
+        'migratedAt': FieldValue.serverTimestamp(),
+      });
+      if (!mounted) return;
+
+      final newEnc = EncryptionService(currentKey);
+      final updates = <String, dynamic>{
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      for (final entry in repairedPlainText.entries) {
+        updates[entry.key] = newEnc.encryptData(entry.value);
+      }
+
+      await docRef.set(updates, SetOptions(merge: true));
+
+      if (!mounted) return;
+      setState(() {
+        _blockCloudSaveDueToDecryptFailure = false;
+        _needsLegacyRepair = false;
+        _failedEncryptedPayload.clear();
+      });
+
+      if (!mounted) return;
+      await _loadDraft();
+      if (!mounted) return;
+      m.ScaffoldMessenger.of(context).showSnackBar(
+        const m.SnackBar(content: m.Text('舊日記修復成功')), 
+      );
+    } catch (_) {
+      if (!mounted) return;
+      m.ScaffoldMessenger.of(context).showSnackBar(
+        const m.SnackBar(content: m.Text('安全碼不正確或此紀錄使用更早版本金鑰')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isRepairingLegacy = false);
+      }
+    }
+  }
+
+ Future<void> _saveDraft() async {
+  try {
+    if (_blockCloudSaveDueToDecryptFailure) {
+      m.debugPrint('🛡️ 已暫停本地與雲端寫入：避免覆蓋仍可恢復的加密資料');
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+      return;
+    }
+
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
 
       // ==========================================
       // 步驟 1：💾 永遠先存一份「明文」到本地資料庫
@@ -484,8 +675,18 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
     final d = DateTime(widget.date.year, widget.date.month, widget.date.day);
 
     return m.Scaffold(
+      backgroundColor: HealingDesignSystem.adaptiveBackground(context),
       appBar: m.AppBar(
-        title: m.Text('編輯日記 - ${_day.month}/${_day.day}'),
+        backgroundColor: HealingDesignSystem.primaryBlue,
+        foregroundColor: m.Colors.white,
+        elevation: 0,
+        title: m.Text(
+          '編輯日記 - ${_day.month}/${_day.day}',
+          style: const m.TextStyle(
+            color: m.Colors.white,
+            fontWeight: m.FontWeight.w700,
+          ),
+        ),
         actions: [
           m.IconButton(
             tooltip: 'AI 正念回饋',
@@ -522,6 +723,25 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
           children: [
             _DateHeaderCard(date: d),
             const m.SizedBox(height: 12),
+
+            if (_needsLegacyRepair) ...[
+              m.Text(
+                '此紀錄需要使用舊安全碼修復',
+                style: m.Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: HealingDesignSystem.dangerRed,
+                      fontWeight: m.FontWeight.w600,
+                    ),
+              ),
+              const m.SizedBox(height: 8),
+              m.Align(
+                alignment: m.Alignment.centerLeft,
+                child: m.OutlinedButton(
+                  onPressed: _isRepairingLegacy ? null : _showRepairDialog,
+                  child: m.Text(_isRepairingLegacy ? '修復中...' : '修復舊日記'),
+                ),
+              ),
+              const m.SizedBox(height: 12),
+            ],
 
             _OverallSlidersCard(
               overallMoodScore: _overallMoodScore,
@@ -694,25 +914,10 @@ class _DateHeaderCard extends m.StatelessWidget {
     return m.Container(
       margin: const m.EdgeInsets.fromLTRB(16, 4, 16, 8),
       padding: const m.EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: m.BoxDecoration(
-        color: m.Colors.white,
-        borderRadius: m.BorderRadius.circular(20),
-        boxShadow: [
-          m.BoxShadow(
-            color: m.Colors.black.withValues(alpha: 0.05),
-            blurRadius: 16,
-            offset: const m.Offset(0, 6),
-          ),
-        ],
-        // 淺淺的底：不會干擾整體
-        gradient: m.LinearGradient(
-          colors: [
-            m.Colors.black.withValues(alpha: 0.04),
-            m.Colors.black.withValues(alpha: 0.02)
-          ],
-          begin: m.Alignment.topLeft,
-          end: m.Alignment.bottomRight,
-        ),
+        decoration: HealingDesignSystem.cardDecoration(
+        bgColor: HealingDesignSystem.adaptiveSurface(context),
+        radius: HealingDesignSystem.radiusL,
+        shadowColor: HealingDesignSystem.primaryBlue,
       ),
       child: m.Row(
         children: [
@@ -723,13 +928,13 @@ class _DateHeaderCard extends m.StatelessWidget {
               children: [
                 m.Text(
                   text, // yyyy-MM-dd
-                  style: m.Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: m.FontWeight.w800,
-                        letterSpacing: -0.2,
-                      ),
+                  style: HealingDesignSystem.titleLarge.copyWith(
+                    color: HealingDesignSystem.adaptivePrimaryText(context),
+                    letterSpacing: -0.2,
+                  ),
                 ),
                 const m.SizedBox(height: 6),
-                _chip('星期${_weekdayZh(date.weekday)}'),
+                _chip(context, '星期${_weekdayZh(date.weekday)}'),
               ],
             ),
           ),
@@ -743,16 +948,19 @@ class _DateHeaderCard extends m.StatelessWidget {
   String _weekdayZh(int wd) =>
       const ['一', '二', '三', '四', '五', '六', '日'][wd - 1];
 
-  m.Widget _chip(String text) {
+  m.Widget _chip(m.BuildContext context, String text) {
     return m.Container(
       padding: const m.EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: m.BoxDecoration(
-        color: m.Colors.black.withValues(alpha: 0.06),
+        color: HealingDesignSystem.adaptiveFill(context),
         borderRadius: m.BorderRadius.circular(999),
       ),
       child: m.Text(
         text,
-        style: const m.TextStyle(fontSize: 12, height: 1.0, letterSpacing: 0.2),
+        style: HealingDesignSystem.labelSmall.copyWith(
+          color: HealingDesignSystem.primaryBlue,
+          letterSpacing: 0.2,
+        ),
       ),
     );
   }
@@ -777,24 +985,29 @@ class _OverallSlidersCard extends m.StatelessWidget {
 
   @override
   m.Widget build(m.BuildContext context) {
-    return m.Card(
-      elevation: 1.5,
-      shape:
-          m.RoundedRectangleBorder(borderRadius: m.BorderRadius.circular(20)),
+    return m.Container(
+      margin: const m.EdgeInsets.symmetric(vertical: 4),
+      decoration: HealingDesignSystem.cardDecoration(
+        bgColor: HealingDesignSystem.adaptiveSurface(context),
+        radius: HealingDesignSystem.radiusL,
+      ),
       child: m.Padding(
-        padding: const m.EdgeInsets.fromLTRB(16, 12, 16, 14),
+        padding: const m.EdgeInsets.fromLTRB(16, 14, 16, 16),
         child: m.Column(
           crossAxisAlignment: m.CrossAxisAlignment.start,
           children: [
             m.Text(
               '今日整體狀態',
-              style: m.Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: m.FontWeight.w700,
-                  ),
+              style: HealingDesignSystem.titleMedium.copyWith(
+                color: HealingDesignSystem.primaryBlue,
+                fontWeight: m.FontWeight.w700,
+              ),
             ),
             const m.SizedBox(height: 6),
-            m.Text('今天的整體情緒如何？',
-                style: m.Theme.of(context).textTheme.titleSmall),
+            m.Text(
+              '今天的整體情緒如何？',
+              style: HealingDesignSystem.bodySmall,
+            ),
             EmotionSlider(
               label: '今天的整體情緒如何？',
               value: overallMoodScore,
@@ -807,8 +1020,10 @@ class _OverallSlidersCard extends m.StatelessWidget {
               ],
             ),
             const m.SizedBox(height: 6),
-            m.Text('今天的健康狀況如何？',
-                style: m.Theme.of(context).textTheme.titleSmall),
+            m.Text(
+              '今天的健康狀況如何？',
+              style: HealingDesignSystem.bodySmall,
+            ),
             EmotionSlider(
               label: '今天的健康狀況如何？',
               value: overallHealthScore,
@@ -821,7 +1036,7 @@ class _OverallSlidersCard extends m.StatelessWidget {
               ],
             ),
             const m.SizedBox(height: 6),
-            m.Text('整體睡眠品質', style: m.Theme.of(context).textTheme.titleSmall),
+            m.Text('整體睡眠品質', style: HealingDesignSystem.bodySmall),
             EmotionSlider(
               label: '整體睡眠品質',
               value: overallSleepScore,
@@ -871,23 +1086,21 @@ class CountTextField extends m.StatelessWidget {
 
   @override
   m.Widget build(m.BuildContext context) {
-    final cs = m.Theme.of(context).colorScheme;
     final effectiveTextStyle =
-        (textStyle ?? const m.TextStyle(fontSize: 16, height: 1.5)).copyWith(
-      color: textStyle?.color ?? cs.onSurface,
+        (textStyle ?? HealingDesignSystem.bodyLarge).copyWith(
+      color: textStyle?.color ?? HealingDesignSystem.adaptivePrimaryText(context),
     );
     final effectiveHintStyle =
-        (hintStyle ?? const m.TextStyle(fontSize: 16, height: 1.5)).copyWith(
-      color: hintStyle?.color ?? cs.onSurfaceVariant,
+        (hintStyle ?? HealingDesignSystem.bodyLarge).copyWith(
+      color: hintStyle?.color ?? HealingDesignSystem.adaptiveSecondaryText(context),
     );
-    final effectiveCounterColor = cs.onSurfaceVariant;
 
-    return m.Card(
-      elevation: 1.5,
-      shadowColor: m.Colors.black12,
-      color: m.Theme.of(context).cardColor,
-      shape:
-          m.RoundedRectangleBorder(borderRadius: m.BorderRadius.circular(20)),
+    return m.Container(
+      margin: const m.EdgeInsets.symmetric(vertical: 4),
+      decoration: HealingDesignSystem.cardDecoration(
+        bgColor: HealingDesignSystem.adaptiveSurface(context),
+        radius: HealingDesignSystem.radiusL,
+      ),
       child: m.Padding(
         padding: const m.EdgeInsets.fromLTRB(16, 14, 16, 16),
         child: m.Column(
@@ -896,13 +1109,15 @@ class CountTextField extends m.StatelessWidget {
             m.Row(
               children: [
                 if (icon != null) ...[
-                  m.Icon(icon, size: 18, color: cs.primary),
+                  m.Icon(icon, size: 18, color: HealingDesignSystem.primaryBlue),
                   const m.SizedBox(width: 6),
                 ],
                 m.Expanded(
                   child: m.Text(
                     label,
-                    style: m.Theme.of(context).textTheme.titleMedium,
+                    style: HealingDesignSystem.titleMedium.copyWith(
+                      color: HealingDesignSystem.adaptivePrimaryText(context),
+                    ),
                   ),
                 ),
               ],
@@ -912,21 +1127,32 @@ class CountTextField extends m.StatelessWidget {
               controller: controller,
               minLines: minLines,
               maxLines: maxLines,
-              textAlign: m.TextAlign.justify, // ★ 兩端對齊（保留）
-              textAlignVertical: m.TextAlignVertical.top, // ★ 文字從上方開始（保留）
+              textAlign: m.TextAlign.justify,
+              textAlignVertical: m.TextAlignVertical.top,
               keyboardType: m.TextInputType.multiline,
               textInputAction: m.TextInputAction.newline,
-
-              // 依主題自動調整文字顏色
               style: effectiveTextStyle,
-
               decoration: m.InputDecoration(
+                filled: true,
+                fillColor: HealingDesignSystem.adaptiveFill(context),
                 hintText: hint,
-
-                // 依主題自動調整提示字顏色
                 hintStyle: effectiveHintStyle,
-
-                border: m.InputBorder.none,
+                border: m.OutlineInputBorder(
+                  borderRadius: m.BorderRadius.circular(HealingDesignSystem.radiusM),
+                  borderSide: m.BorderSide.none,
+                ),
+                enabledBorder: m.OutlineInputBorder(
+                  borderRadius: m.BorderRadius.circular(HealingDesignSystem.radiusM),
+                  borderSide: const m.BorderSide(color: m.Colors.transparent),
+                ),
+                focusedBorder: m.OutlineInputBorder(
+                  borderRadius: m.BorderRadius.circular(HealingDesignSystem.radiusM),
+                  borderSide: const m.BorderSide(color: HealingDesignSystem.primaryBlue),
+                ),
+                contentPadding: const m.EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
               ),
               onChanged: (_) => onAnyChanged?.call(),
             ),
@@ -934,10 +1160,9 @@ class CountTextField extends m.StatelessWidget {
               alignment: m.Alignment.bottomRight,
               child: m.Text(
                 '${controller.text.characters.length} 字',
-                style: m.Theme.of(context)
-                    .textTheme
-                    .labelSmall
-                    ?.copyWith(color: effectiveCounterColor),
+                style: HealingDesignSystem.labelSmall.copyWith(
+                  color: HealingDesignSystem.adaptiveSecondaryText(context),
+                ),
               ),
             ),
           ],

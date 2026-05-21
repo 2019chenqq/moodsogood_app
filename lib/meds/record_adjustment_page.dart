@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../constants/healing_design_system.dart';
 import '../utils/firebase_sync_config.dart';
 import 'medication_local_db.dart';
 import 'medication_reminder_service.dart';
@@ -197,31 +198,56 @@ String _timesLabel(List<String> times) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('紀錄調整')),
+        backgroundColor: HealingDesignSystem.adaptiveBackground(context),
+        appBar: AppBar(
+          backgroundColor: HealingDesignSystem.primaryBlue,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          title: Text(
+            '紀錄調整',
+            style: TextStyle(
+              color: HealingDesignSystem.adaptivePrimaryText(context),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
         body: const Center(child: Text('請先登入後使用')),
       );
     }
 
     return Scaffold(
+      backgroundColor: HealingDesignSystem.adaptiveBackground(context),
       appBar: AppBar(
-  title: const Text('紀錄調整'),
-  actions: [
-    IconButton(
-      tooltip: '調藥時間線',
-      icon: const Icon(Icons.timeline),
-      onPressed: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const RecordAdjustmentHistoryPage()),
-        );
-      },
-    ),
-  ],
-),
+        backgroundColor: HealingDesignSystem.primaryBlue,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: IconThemeData(color: HealingDesignSystem.adaptivePrimaryText(context)),
+        title: Text(
+          '紀錄調整',
+          style: TextStyle(
+            color: HealingDesignSystem.adaptivePrimaryText(context),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        actions: [
+          IconButton(
+            tooltip: '調藥時間線',
+            icon: Icon(Icons.timeline, color: HealingDesignSystem.adaptivePrimaryText(context)),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const RecordAdjustmentHistoryPage()),
+              );
+            },
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _saving ? null : _addNewMedication,
         icon: const Icon(Icons.add),
         label: const Text('新增這次新開的藥'),
+        backgroundColor: HealingDesignSystem.primaryBlue,
+        foregroundColor: Colors.white,
       ),
       body: SafeArea(
         child: FutureBuilder<List<Map<String, dynamic>>>(
@@ -310,14 +336,24 @@ String _timesLabel(List<String> times) {
                 FilledButton(
                   onPressed: _saving ? null : () => _save(uid),
                   style: FilledButton.styleFrom(
+                    backgroundColor: HealingDesignSystem.primaryBlue,
+                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   ),
                   child: _saving
                       ? const SizedBox(
-                          height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2),
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
                         )
-                      : const Text('儲存這次調整'),
+                      : const Text(
+                          '儲存這次調整',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
                 ),
               ],
             );
@@ -339,7 +375,7 @@ String _timesLabel(List<String> times) {
         children: [
           Text('已停用藥物——可在此次回診中恢復使用',
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: cs.onSurfaceVariant,
+                    color: HealingDesignSystem.mutedText,
                   )),
         ],
       ),
@@ -354,27 +390,39 @@ String _timesLabel(List<String> times) {
           key: ValueKey('inactive-med-$docId'),
           elevation: 0,
           margin: const EdgeInsets.only(bottom: 8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: HealingDesignSystem.lineColor),
+          ),
+          surfaceTintColor: Colors.transparent,
           color: isResumed
-              ? cs.primaryContainer.withOpacity(0.35)
-              : cs.surfaceContainerHighest.withOpacity(0.5),
+              ? HealingDesignSystem.primaryBlue.withOpacity(0.12)
+              : HealingDesignSystem.cardBg,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: Row(
               children: [
-                Icon(Icons.medication_outlined,
-                    size: 18, color: cs.onSurfaceVariant),
+                const Icon(
+                  Icons.medication_outlined,
+                  size: 18,
+                  color: HealingDesignSystem.primaryBlue,
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(name,
-                          style: Theme.of(context).textTheme.titleSmall),
+                      Text(
+                        name,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              color: HealingDesignSystem.deepText,
+                            ),
+                      ),
                       Text('已停用',
                           style: Theme.of(context)
                               .textTheme
                               .bodySmall
-                              ?.copyWith(color: cs.onSurfaceVariant)),
+                              ?.copyWith(color: HealingDesignSystem.mutedText)),
                     ],
                   ),
                 ),
@@ -384,7 +432,7 @@ String _timesLabel(List<String> times) {
                         style: Theme.of(context)
                             .textTheme
                             .labelMedium
-                            ?.copyWith(color: cs.primary)),
+                            ?.copyWith(color: HealingDesignSystem.primaryBlue)),
                     const SizedBox(width: 8),
                   ],
                 OutlinedButton(
@@ -435,6 +483,12 @@ String _timesLabel(List<String> times) {
       key: ValueKey('adj-med-$docId'),
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 10),
+      color: HealingDesignSystem.cardBg,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: const BorderSide(color: HealingDesignSystem.lineColor),
+      ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
         child: Column(
@@ -444,20 +498,37 @@ String _timesLabel(List<String> times) {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.medication_outlined, size: 18, color: cs.onSurfaceVariant),
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: HealingDesignSystem.softBlue,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.medication_outlined,
+                    size: 16,
+                    color: HealingDesignSystem.primaryBlue,
+                  ),
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(name, style: Theme.of(context).textTheme.titleSmall),
+                      Text(
+                        name,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              color: HealingDesignSystem.deepText,
+                            ),
+                      ),
                       const SizedBox(height: 2),
                       Text(
                         '$doseStr${times.isNotEmpty ? ' · ${times.join('、')}' : ''}${!isActive ? ' · 已停用' : ''}',
                         style: Theme.of(context)
                             .textTheme
                             .bodySmall
-                            ?.copyWith(color: cs.onSurfaceVariant),
+                            ?.copyWith(color: HealingDesignSystem.mutedText),
                       ),
                     ],
                   ),
@@ -466,12 +537,14 @@ String _timesLabel(List<String> times) {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: cs.primaryContainer.withOpacity(0.65),
+                      color: HealingDesignSystem.primaryBlue.withOpacity(0.14),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
                       _typeLabel(draft.type),
-                      style: Theme.of(context).textTheme.labelMedium,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: HealingDesignSystem.deepText,
+                          ),
                     ),
                   ),
               ],
@@ -600,13 +673,23 @@ String _timesLabel(List<String> times) {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: selected ? cs.primaryContainer.withOpacity(0.7) : cs.surfaceContainerHighest.withOpacity(0.55),
+          color: selected
+              ? HealingDesignSystem.primaryBlue.withOpacity(0.16)
+              : HealingDesignSystem.softBlue.withOpacity(0.7),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
-            color: selected ? cs.primary.withOpacity(0.3) : cs.outlineVariant.withOpacity(0.35),
+            color: selected
+                ? HealingDesignSystem.primaryBlue.withOpacity(0.35)
+                : HealingDesignSystem.lineColor,
           ),
         ),
-        child: Text(label, style: Theme.of(context).textTheme.labelLarge),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: HealingDesignSystem.deepText,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              ),
+        ),
       ),
     );
   }
@@ -1037,11 +1120,23 @@ Future<void> _editTimes({
   static InputDecoration _inputDeco(BuildContext context, String hint) {
     return InputDecoration(
       hintText: hint,
+      hintStyle: const TextStyle(
+        color: HealingDesignSystem.mutedText,
+        fontSize: 14,
+      ),
       filled: true,
-      fillColor: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.55),
+      fillColor: HealingDesignSystem.softBlue.withOpacity(0.75),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide.none,
+        borderSide: const BorderSide(color: HealingDesignSystem.lineColor),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: HealingDesignSystem.lineColor),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: HealingDesignSystem.primaryBlue, width: 1.4),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
     );
@@ -1156,20 +1251,12 @@ class _SoftHeaderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            cs.primaryContainer.withOpacity(0.55),
-            cs.secondaryContainer.withOpacity(0.45),
-          ],
-        ),
+      padding: const EdgeInsets.all(18),
+      decoration: HealingDesignSystem.cardDecoration(
+        bgColor: HealingDesignSystem.cardBg,
+        radius: HealingDesignSystem.radiusL,
+        shadows: [HealingDesignSystem.shadowMedium(color: HealingDesignSystem.primaryBlue)],
       ),
       child: Row(
         children: [
@@ -1177,24 +1264,25 @@ class _SoftHeaderCard extends StatelessWidget {
             width: 46,
             height: 46,
             decoration: BoxDecoration(
-              color: cs.surface.withOpacity(0.65),
+              gradient: HealingDesignSystem.primaryGradient(),
               borderRadius: BorderRadius.circular(16),
             ),
-            child: const Icon(Icons.playlist_add_check),
+            child: const Icon(Icons.playlist_add_check, color: Colors.white),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: Theme.of(context).textTheme.titleMedium),
+                Text(title, style: HealingDesignSystem.titleMedium),
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: cs.onSurfaceVariant),
+                  style: const TextStyle(
+                    color: HealingDesignSystem.mutedText,
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
                 ),
               ],
             ),
@@ -1214,10 +1302,14 @@ class _SectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
     return Card(
       elevation: 0,
+      color: HealingDesignSystem.cardBg,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
+        side: const BorderSide(color: HealingDesignSystem.lineColor),
+      ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
         child: Column(
@@ -1225,9 +1317,17 @@ class _SectionCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(icon, size: 18, color: cs.onSurfaceVariant),
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: HealingDesignSystem.softBlue,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, size: 16, color: HealingDesignSystem.primaryBlue),
+                ),
                 const SizedBox(width: 8),
-                Text(title, style: Theme.of(context).textTheme.titleSmall),
+                Text(title, style: HealingDesignSystem.titleSmall),
               ],
             ),
             const SizedBox(height: 10),
@@ -1252,21 +1352,31 @@ class _InlineEditRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     return InkWell(
       borderRadius: BorderRadius.circular(14),
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
-          color: cs.surfaceContainerHighest.withOpacity(0.45),
+          color: HealingDesignSystem.softBlue.withOpacity(0.75),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: cs.outlineVariant.withOpacity(0.35)),
+          border: Border.all(color: HealingDesignSystem.lineColor),
         ),
         child: Row(
           children: [
-            Expanded(child: Text('$title：$valueText')),
-            Icon(Icons.edit, size: 16, color: cs.onSurfaceVariant),
+            Expanded(
+              child: Text(
+                '$title：$valueText',
+                style: const TextStyle(
+                  color: HealingDesignSystem.deepText,
+                ),
+              ),
+            ),
+            const Icon(
+              Icons.edit,
+              size: 16,
+              color: HealingDesignSystem.mutedText,
+            ),
           ],
         ),
       ),
@@ -1286,20 +1396,46 @@ class _EmptyMedsView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.medication_outlined, size: 42),
+            Container(
+              width: 68,
+              height: 68,
+              decoration: BoxDecoration(
+                color: HealingDesignSystem.softBlue,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Icon(
+                Icons.medication_outlined,
+                size: 36,
+                color: HealingDesignSystem.primaryBlue,
+              ),
+            ),
             const SizedBox(height: 10),
-            Text('先建立你的藥物清單', style: Theme.of(context).textTheme.titleMedium),
+            const Text(
+              '先建立你的藥物清單',
+              style: TextStyle(
+                color: HealingDesignSystem.deepText,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
             const SizedBox(height: 6),
-            Text(
+            const Text(
               '先新增至少一顆藥，才可以開始「紀錄調整」。',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall,
+              style: TextStyle(
+                color: HealingDesignSystem.mutedText,
+                fontSize: 12,
+              ),
             ),
             const SizedBox(height: 14),
             FilledButton.icon(
               onPressed: onAdd,
               icon: const Icon(Icons.add),
               label: const Text('新增第一顆藥'),
+              style: FilledButton.styleFrom(
+                backgroundColor: HealingDesignSystem.primaryBlue,
+                foregroundColor: Colors.white,
+              ),
             ),
           ],
         ),

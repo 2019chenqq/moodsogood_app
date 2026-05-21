@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'daily_record_helpers.dart';
 import 'daily_record_pages.dart';
+import '../constants/healing_design_system.dart';
 import '../widgets/emotion_slider.dart';
 
 const Map<String, List<String>> kEmotionCheckboxCategories = {
@@ -75,7 +76,8 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
           // TOP SECTION: 情緒分類選擇區
           // ========================================
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(HealingDesignSystem.paddingL),
+            color: HealingDesignSystem.softBlue.withOpacity(0.3),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: kEmotionCheckboxCategories.entries.map((category) {
@@ -159,8 +161,11 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
       children: [
         // 標題欄 + 收合按鈕
         Container(
-          color: Theme.of(context).colorScheme.surface,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          color: HealingDesignSystem.softBlue,
+          padding: const EdgeInsets.symmetric(
+            horizontal: HealingDesignSystem.paddingL,
+            vertical: HealingDesignSystem.paddingM,
+          ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -168,13 +173,12 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
                 children: [
                   Text(
                     '情緒評分',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                    style: HealingDesignSystem.titleMedium,
                   ),
                   const SizedBox(width: 8),
                   IconButton(
-                    icon: const Icon(Icons.info_outline),
+                    icon: const Icon(Icons.info_outline,
+                        color: HealingDesignSystem.primaryBlue),
                     tooltip: '評分說明',
                     iconSize: 20,
                     padding: EdgeInsets.zero,
@@ -201,6 +205,7 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
               IconButton(
                 icon: Icon(
                   _isSliderExpanded ? Icons.expand_less : Icons.expand_more,
+                  color: HealingDesignSystem.primaryBlue,
                 ),
                 onPressed: () {
                   setState(() => _isSliderExpanded = !_isSliderExpanded);
@@ -213,23 +218,20 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
         // 內容區（展開時顯示）
         if (_isSliderExpanded)
           Container(
-            color: Theme.of(context).colorScheme.surface,
+            color: HealingDesignSystem.softBlue.withOpacity(0.2),
             constraints: const BoxConstraints(maxHeight: 400),
             child: selectedEmotions.isEmpty
                 ? Center(
                     child: Text(
                       '請從上方選擇情緒',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withOpacity(0.5),
-                          ),
+                      style: HealingDesignSystem.bodyMedium.copyWith(
+                        color: HealingDesignSystem.mutedText,
+                      ),
                     ),
                   )
                 : SingleChildScrollView(
                     child: Padding(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(HealingDesignSystem.paddingL),
                       child: Column(
                         children: selectedEmotions.map((emotion) {
                           final index = emotionIndices[emotion.name]!;
@@ -247,7 +249,7 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
     );
   }
 
-  /// 構建單個分類區塊
+  /// 構建單個分類區塊 - 用療癒卡片替代 Chip
   Widget _buildCategorySection(
     BuildContext context, {
     required String categoryName,
@@ -258,54 +260,117 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(bottom: 8, top: 8),
+          padding: const EdgeInsets.only(
+            bottom: HealingDesignSystem.paddingM,
+            top: HealingDesignSystem.paddingM,
+          ),
           child: Text(
             categoryName,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+            style: HealingDesignSystem.titleMedium,
           ),
         ),
         Wrap(
-          alignment: WrapAlignment.spaceBetween,
-          spacing: 8,
-          runSpacing: 8,
+          alignment: WrapAlignment.start,
+          spacing: HealingDesignSystem.paddingL,
+          runSpacing: HealingDesignSystem.paddingL,
           children: emotions.map((emotionName) {
             // 檢查這個情緒是否已存在於 items 中
             final index = emotionIndices[emotionName];
             final isSelected =
                 index != null && widget.items[index].value != null;
 
-            return FilterChip(
-              label: Text(emotionName),
-              selected: isSelected,
-              onSelected: (selected) {
+            return _buildEmotionCard(
+              emotionName: emotionName,
+              isSelected: isSelected,
+              onTap: () {
                 if (index == null) {
-                  // 如果該情緒不存在於 items，先添加
-                  // 這裡需要通過 onAdd 來處理，但 onAdd 目前沒有參數
-                  // 暫時跳過或者可以擴展 API
                   return;
                 }
-                widget.onToggleChecked(index, selected);
+                widget.onToggleChecked(index, !isSelected);
               },
             );
           }).toList(),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: HealingDesignSystem.paddingL),
       ],
     );
   }
 
-  /// 構建已選情緒卡片（帶 Slider）
+  /// 療癒風格情緒卡片 - 替代 FilterChip
+  Widget _buildEmotionCard({
+    required String emotionName,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(
+            horizontal: HealingDesignSystem.paddingM,
+            vertical: HealingDesignSystem.paddingS,
+          ),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? HealingDesignSystem.primaryBlue.withOpacity(0.15)
+                : HealingDesignSystem.cardBg,
+            border: Border.all(
+              color: isSelected
+                  ? HealingDesignSystem.primaryBlue
+                  : HealingDesignSystem.lineColor,
+              width: isSelected ? 2 : 1,
+            ),
+            borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+            boxShadow: isSelected
+                ? [HealingDesignSystem.shadowLight()]
+                : [
+                    BoxShadow(
+                      color: HealingDesignSystem.primaryBlue.withOpacity(0.05),
+                      blurRadius: 6,
+                    ),
+                  ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isSelected) ...[
+                const Icon(
+                  Icons.check_circle,
+                  size: 18,
+                  color: HealingDesignSystem.primaryBlue,
+                ),
+                const SizedBox(width: HealingDesignSystem.paddingS),
+              ],
+              Text(
+                emotionName,
+                style: TextStyle(
+                  color: isSelected
+                      ? HealingDesignSystem.primaryBlue
+                      : HealingDesignSystem.deepText,
+                  fontSize: 14,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 構建已選情緒卡片（帶 Slider）- 療癒設計
   Widget _buildSelectedEmotionCard(
     BuildContext context, {
     required EmotionItem emotion,
     required int index,
   }) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+    return Container(
+      margin: const EdgeInsets.only(bottom: HealingDesignSystem.paddingL),
+      decoration: HealingDesignSystem.cardDecoration(),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(HealingDesignSystem.paddingL),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -314,19 +379,23 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
                 Expanded(
                   child: Text(
                     emotion.name,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+                    style: HealingDesignSystem.titleSmall,
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close),
+                  icon: const Icon(
+                    Icons.close,
+                    color: HealingDesignSystem.mutedText,
+                  ),
                   tooltip: '移除',
+                  iconSize: 20,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                   onPressed: () => widget.onToggleChecked(index, false),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: HealingDesignSystem.paddingM),
             EmotionSlider(
               label: emotion.name,
               value: emotion.value ?? 1,

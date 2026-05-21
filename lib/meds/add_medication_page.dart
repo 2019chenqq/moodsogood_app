@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
 import 'drug_dictionary_service.dart';
+import '../constants/healing_design_system.dart';
 import '../utils/firebase_sync_config.dart';
 import 'medication_local_db.dart';
 import 'medication_reminder_service.dart';
@@ -199,24 +200,63 @@ List<Map<String, String>> _drugSuggestions = [];
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-final bodySelected = _purposes['身體症狀'] == true;
-final otherSelected = _purposes['其他'] == true;
+    final bodySelected = _purposes['身體症狀'] == true;
+    final otherSelected = _purposes['其他'] == true;
     return Scaffold(
+      backgroundColor: HealingDesignSystem.adaptiveBackground(context),
       appBar: AppBar(
-        title: const Text('新增藥物'),
+        backgroundColor: HealingDesignSystem.primaryBlue,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: IconThemeData(color: HealingDesignSystem.adaptivePrimaryText(context)),
+        title: Text(
+          '新增藥物',
+          style: TextStyle(
+            color: HealingDesignSystem.adaptivePrimaryText(context),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
       body: SafeArea(
         child: Form(
           key: _formKey,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
-            children: [
-              _SoftHeaderCard(
-                title: '建立藥物清單',
-                subtitle: '平常不需要每天填藥。只有回診或調藥時，再做一次「紀錄調整」。',
+          child: Theme(
+            data: Theme.of(context).copyWith(
+              sliderTheme: Theme.of(context).sliderTheme.copyWith(
+                activeTrackColor: HealingDesignSystem.primaryBlue,
+                inactiveTrackColor: HealingDesignSystem.lineColor,
+                thumbColor: HealingDesignSystem.primaryBlue,
+                overlayColor: HealingDesignSystem.primaryBlue.withOpacity(0.14),
               ),
+              chipTheme: Theme.of(context).chipTheme.copyWith(
+                selectedColor: HealingDesignSystem.primaryBlue.withOpacity(0.16),
+                backgroundColor: HealingDesignSystem.adaptiveSurface(context),
+                secondarySelectedColor: HealingDesignSystem.primaryBlue.withOpacity(0.16),
+                side: const BorderSide(color: HealingDesignSystem.lineColor),
+                labelStyle: TextStyle(color: HealingDesignSystem.adaptivePrimaryText(context)),
+              ),
+              switchTheme: Theme.of(context).switchTheme.copyWith(
+                thumbColor: WidgetStateProperty.resolveWith((states) {
+                  if (states.contains(WidgetState.selected)) return HealingDesignSystem.primaryBlue;
+                  return Colors.white;
+                }),
+                trackColor: WidgetStateProperty.resolveWith((states) {
+                  if (states.contains(WidgetState.selected)) {
+                    return HealingDesignSystem.primaryBlue.withOpacity(0.35);
+                  }
+                  return HealingDesignSystem.lineColor;
+                }),
+              ),
+            ),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+              children: [
+                _SoftHeaderCard(
+                  title: '建立藥物清單',
+                  subtitle: '先建立目前使用的藥物，之後回診或調藥時，再到「紀錄調整」更新變化。',
+                ),
 
-              const SizedBox(height: 14),
+                const SizedBox(height: 14),
 
               // 1) 藥名
               _SectionCard(
@@ -662,28 +702,41 @@ const SizedBox(height: 12),
               const SizedBox(height: 18),
 
               // 儲存按鈕
-              FilledButton(
-                onPressed: _saving ? null : _save,
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                FilledButton(
+                  onPressed: _saving ? null : _save,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: HealingDesignSystem.primaryBlue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  child: _saving
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Text(
+                          '儲存',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
                 ),
-                child: _saving
-                    ? const SizedBox(
-                        height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('儲存'),
-              ),
 
-              const SizedBox(height: 8),
+                const SizedBox(height: 8),
 
-              Text(
-                '提示：之後每次回診/調藥，請到藥物頁按「紀錄調整」，你就能和症狀趨勢做比對。',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: cs.onSurfaceVariant,
-                    ),
-              ),
-            ],
+                Text(
+                  '提示：之後每次回診或調藥，請到藥物頁按「紀錄調整」，就能和症狀趨勢做比對。',
+                  style: const TextStyle(
+                    color: HealingDesignSystem.mutedText,
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -701,11 +754,23 @@ const SizedBox(height: 12),
   InputDecoration _inputDeco(String hint) {
     return InputDecoration(
       hintText: hint,
+      hintStyle: const TextStyle(
+        color: HealingDesignSystem.mutedText,
+        fontSize: 14,
+      ),
       filled: true,
-      fillColor: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.55),
+      fillColor: HealingDesignSystem.softBlue.withOpacity(0.7),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide.none,
+        borderSide: const BorderSide(color: HealingDesignSystem.lineColor),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: HealingDesignSystem.lineColor),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: HealingDesignSystem.primaryBlue, width: 1.4),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
     );
@@ -1052,19 +1117,12 @@ class _SoftHeaderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            cs.primaryContainer.withOpacity(0.55),
-            cs.secondaryContainer.withOpacity(0.45),
-          ],
-        ),
+      padding: const EdgeInsets.all(18),
+      decoration: HealingDesignSystem.cardDecoration(
+        bgColor: HealingDesignSystem.cardBg,
+        radius: HealingDesignSystem.radiusL,
+        shadows: [HealingDesignSystem.shadowMedium(color: HealingDesignSystem.primaryBlue)],
       ),
       child: Row(
         children: [
@@ -1072,23 +1130,25 @@ class _SoftHeaderCard extends StatelessWidget {
             width: 46,
             height: 46,
             decoration: BoxDecoration(
-              color: cs.surface.withOpacity(0.65),
+              gradient: HealingDesignSystem.primaryGradient(),
               borderRadius: BorderRadius.circular(16),
             ),
-            child: const Icon(Icons.medication_outlined),
+            child: const Icon(Icons.medication_outlined, color: Colors.white),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: Theme.of(context).textTheme.titleMedium),
+                Text(title, style: HealingDesignSystem.titleMedium),
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: cs.onSurfaceVariant,
-                      ),
+                  style: const TextStyle(
+                    color: HealingDesignSystem.mutedText,
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
                 ),
               ],
             ),
@@ -1112,10 +1172,15 @@ class _SectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    
     return Card(
       elevation: 0,
+      color: HealingDesignSystem.cardBg,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: HealingDesignSystem.primaryBlue.withOpacity(0.08),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
+        side: const BorderSide(color: HealingDesignSystem.lineColor),
+      ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
         child: Column(
@@ -1123,9 +1188,17 @@ class _SectionCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(icon, size: 18, color: cs.onSurfaceVariant),
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: HealingDesignSystem.softBlue,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, size: 16, color: HealingDesignSystem.primaryBlue),
+                ),
                 const SizedBox(width: 8),
-                Text(title, style: Theme.of(context).textTheme.titleSmall),
+                Text(title, style: HealingDesignSystem.titleSmall),
               ],
             ),
             const SizedBox(height: 10),
@@ -1164,18 +1237,23 @@ class _SmallGhostButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
     return InkWell(
       borderRadius: BorderRadius.circular(12),
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: cs.surfaceContainerHighest.withOpacity(0.6),
+          color: HealingDesignSystem.softBlue,
           borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: HealingDesignSystem.lineColor),
         ),
-        child: Text(text, style: Theme.of(context).textTheme.labelLarge),
+        child: Text(
+          text,
+          style: const TextStyle(
+            color: HealingDesignSystem.deepText,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ),
     );
   }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../constants/healing_design_system.dart';
 
 // ============================================================
 // UI Widgets
@@ -12,15 +13,20 @@ class SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      padding: const EdgeInsets.fromLTRB(
+        HealingDesignSystem.paddingL,
+        HealingDesignSystem.paddingL,
+        HealingDesignSystem.paddingL,
+        HealingDesignSystem.paddingM,
+      ),
       child: Row(
         children: [
           Expanded(
             child: Text(
               title,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+              style: HealingDesignSystem.titleLarge.copyWith(
+                color: HealingDesignSystem.adaptivePrimaryText(context),
+              ),
             ),
           ),
           if (trailing != null) trailing!,
@@ -47,26 +53,59 @@ class RecordHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Theme.of(context).colorScheme.surfaceVariant,
+      color: HealingDesignSystem.adaptiveFill(context),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(
+          horizontal: HealingDesignSystem.paddingM,
+          vertical: HealingDesignSystem.paddingM,
+        ),
         child: Row(
           children: [
             Expanded(
               child: ListTile(
                 dense: true,
-                leading: const Icon(Icons.calendar_today),
-                title: const Text('日期', style: TextStyle(fontSize: 12)),
-                subtitle: Text(dateText),
+                leading: const Icon(
+                  Icons.calendar_today,
+                  color: HealingDesignSystem.primaryBlue,
+                ),
+                title: const Text(
+                  '日期',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: HealingDesignSystem.mutedText,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                subtitle: Text(
+                  dateText,
+                  style: HealingDesignSystem.bodyMedium.copyWith(
+                    color: HealingDesignSystem.adaptivePrimaryText(context),
+                  ),
+                ),
                 onTap: () async => await onPickDate(),
               ),
             ),
             Expanded(
               child: ListTile(
                 dense: true,
-                leading: const Icon(Icons.access_time),
-                title: const Text('時間', style: TextStyle(fontSize: 12)),
-                subtitle: Text(timeText),
+                leading: const Icon(
+                  Icons.access_time,
+                  color: HealingDesignSystem.primaryBlue,
+                ),
+                title: const Text(
+                  '時間',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: HealingDesignSystem.mutedText,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                subtitle: Text(
+                  timeText,
+                  style: HealingDesignSystem.bodyMedium.copyWith(
+                    color: HealingDesignSystem.adaptivePrimaryText(context),
+                  ),
+                ),
                 onTap: () async => await onPickTime(),
               ),
             ),
@@ -86,7 +125,9 @@ class SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       text,
-      style: Theme.of(context).textTheme.titleMedium,
+      style: HealingDesignSystem.titleSmall.copyWith(
+        color: HealingDesignSystem.adaptivePrimaryText(context),
+      ),
     );
   }
 }
@@ -105,10 +146,35 @@ class TimeTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      title: Text(label),
-      subtitle: Text(timeText),
-      onTap: onTap,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: HealingDesignSystem.paddingL,
+            vertical: HealingDesignSystem.paddingM,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                label,
+                style: HealingDesignSystem.bodyMedium.copyWith(
+                  color: HealingDesignSystem.adaptiveSecondaryText(context),
+                ),
+              ),
+              Text(
+                timeText,
+                style: HealingDesignSystem.bodyMedium.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: HealingDesignSystem.adaptiveAccent(context),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -126,13 +192,45 @@ class ListTileButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ListTile(
-        title: Text(label),
-        subtitle: Text(valueText),
-        trailing: const Icon(Icons.keyboard_arrow_down),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
         onTap: onTap,
+        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
+        child: Ink(
+          decoration: HealingDesignSystem.adaptiveCardDecoration(context),
+          child: Padding(
+            padding: const EdgeInsets.all(HealingDesignSystem.paddingL),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        style: HealingDesignSystem.labelMedium.copyWith(
+                          color: HealingDesignSystem.adaptiveSecondaryText(context),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        valueText,
+                        style: HealingDesignSystem.bodyMedium.copyWith(
+                          color: HealingDesignSystem.adaptivePrimaryText(context),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.keyboard_arrow_down,
+                  color: HealingDesignSystem.adaptiveAccent(context),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -145,14 +243,43 @@ class SaveHintButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ElevatedButton.icon(
-      icon: const Icon(Icons.save_outlined),
-      label: const Text('儲存'),
-      style: ElevatedButton.styleFrom(
-        minimumSize: const Size(double.infinity, 52),
-        shape: const StadiumBorder(),
+    return Container(
+      decoration: BoxDecoration(
+        gradient: HealingDesignSystem.primaryGradient(),
+        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
+        boxShadow: [HealingDesignSystem.shadowMedium()],
       ),
-      onPressed: onPressed,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: HealingDesignSystem.paddingL,
+              vertical: HealingDesignSystem.paddingM,
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.save_outlined,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: HealingDesignSystem.paddingM),
+                const Text(
+                  '儲存',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

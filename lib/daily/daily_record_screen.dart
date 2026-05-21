@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
+import '../constants/healing_design_system.dart';
 import '../utils/date_helper.dart';
 import '../utils/firebase_sync_config.dart';
 import '../models/daily_record.dart';
@@ -331,7 +332,31 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   Future<void> _onTapPeriodDate(DateTime date) async {
     final day = _dateOnly(date);
     if (_periodSelectedDates.contains(day)) {
+      final isStartOfRun = !_periodSelectedDates.contains(
+        day.subtract(const Duration(days: 1)),
+      );
+
+      if (isStartOfRun) {
+        final removedDays = _periodSelectedDates
+            .where((d) => !d.isBefore(day) && d.isBefore(day.add(const Duration(days: 7))))
+            .toSet();
+
+        if (removedDays.isNotEmpty) {
+          await _applyPeriodDaysUpdate(days: removedDays, isPeriod: false);
+        }
+        return;
+      }
+
       await _applyPeriodDaysUpdate(days: {day}, isPeriod: false);
+      return;
+    }
+
+    final hasAdjacentSelected =
+        _periodSelectedDates.contains(day.subtract(const Duration(days: 1))) ||
+        _periodSelectedDates.contains(day.add(const Duration(days: 1)));
+
+    if (hasAdjacentSelected) {
+      await _applyPeriodDaysUpdate(days: {day}, isPeriod: true, startId: null);
       return;
     }
 
@@ -414,6 +439,75 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         ),
         Expanded(child: child),
       ],
+    );
+  }
+
+  Widget _buildTopTabBar() {
+    const tabs = [
+      (icon: Icons.sentiment_satisfied, label: '情緒'),
+      (icon: Icons.healing, label: '症狀'),
+      (icon: Icons.nightlight_round, label: '睡眠'),
+    ];
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.72),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: HealingDesignSystem.lineColor),
+        boxShadow: [HealingDesignSystem.shadowLight()],
+      ),
+      child: Row(
+        children: List.generate(tabs.length, (i) {
+          final isSelected = _index == i;
+          return Expanded(
+            child: AnimatedContainer(
+              duration: HealingDesignSystem.animationFast,
+              curve: Curves.easeOut,
+              margin: const EdgeInsets.symmetric(horizontal: 2),
+              decoration: BoxDecoration(
+                gradient: isSelected ? HealingDesignSystem.primaryGradient() : null,
+                color: isSelected ? null : Colors.transparent,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () => setState(() => _index = i),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          tabs[i].icon,
+                          size: 18,
+                          color: isSelected
+                              ? Colors.white
+                              : HealingDesignSystem.primaryBlue,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          tabs[i].label,
+                          style: TextStyle(
+                            color: isSelected
+                                ? Colors.white
+                                : HealingDesignSystem.deepText,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
     );
   }
 
@@ -997,7 +1091,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark
         ? Theme.of(context).colorScheme.surface
-        : const Color.fromARGB(255, 200, 206, 231);
+        : HealingDesignSystem.softBlue;
     final pages = [
       // 情緒頁
       _pageWrapper(
@@ -1195,11 +1289,14 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     final currentIndex = _index >= pages.length ? 0 : _index;
 
     return Scaffold(
-      backgroundColor: scaffoldBg, // 淺色保持藍綠，深色改用系統底色
+      backgroundColor: scaffoldBg,
       drawer: const MainDrawer(),
       appBar: AppBar(
         toolbarHeight: 60,
         elevation: 0,
+        backgroundColor:
+            isDark ? Theme.of(context).colorScheme.surface : HealingDesignSystem.softBlue,
+        surfaceTintColor: Colors.transparent,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           tooltip: '返回',
@@ -1224,37 +1321,41 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         ],
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(child: pages[currentIndex]),
-            SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: _isSaving ? null : _saveAll,
-                    icon: const Icon(Icons.save),
-                    label: Text(_isSaving ? '儲存中…' : '儲存全部'),
+        child: Container(
+          decoration: isDark
+              ? null
+              : BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      HealingDesignSystem.softBlue,
+                      HealingDesignSystem.softBlue.withOpacity(0.82),
+                      const Color(0xFFF8FCFF),
+                    ],
+                  ),
+                ),
+          child: Column(
+            children: [
+              _buildTopTabBar(),
+              Expanded(child: pages[currentIndex]),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _isSaving ? null : _saveAll,
+                      icon: const Icon(Icons.save),
+                      label: Text(_isSaving ? '儲存中…' : '儲存全部'),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        currentIndex: currentIndex,
-        onTap: (i) => setState(() => _index = i),
-        items: const [
-          BottomNavigationBarItem(
-              icon: Icon(Icons.sentiment_satisfied), label: '情緒'),
-          BottomNavigationBarItem(icon: Icon(Icons.healing), label: '症狀'),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.nightlight_round), label: '睡眠'),
-        ],
       ),
     );
   }
