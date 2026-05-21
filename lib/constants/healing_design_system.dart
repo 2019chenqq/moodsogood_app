@@ -325,7 +325,5 @@ class HealingDesignSystem {
       );
     }
 
-  }
-
   // Additional methods or classes can be added here if needed.
 }

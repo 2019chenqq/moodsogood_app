@@ -29,7 +29,7 @@ class RecordHubPage extends StatelessWidget {
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
-        title: const Text('紀錄'),
+        title: const Text('紀錄系統'),
       ),
       body: Container(
         decoration: BoxDecoration(
@@ -55,7 +55,7 @@ class RecordHubPage extends StatelessWidget {
             const SizedBox(height: 12),
             _RecordEntryCard(
               icon: Icons.edit_note,
-              title: '紀錄',
+              title: '每日狀態紀錄',
               subtitle: '開始填寫今日紀錄',
               color: const Color.fromARGB(255, 129, 199, 132),
               onTap: () => _push(context, const DailyRecordScreen()),

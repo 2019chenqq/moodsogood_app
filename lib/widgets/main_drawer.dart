@@ -25,7 +25,7 @@ class _MainDrawerState extends State<MainDrawer> {
   bool _isUploading = false; // 用來控制轉圈圈
 
   static const _userGuideUrl =
-      'https://2019chenqq.github.io/HTML/index.html';
+      'https://2019chenqq.github.io/Innera/guide/daily-record.html';
 
   /// 從 Firestore 加載日記記錄用於導出
   Future<void> _pickAndUploadImage() async {
@@ -189,7 +189,7 @@ class _MainDrawerState extends State<MainDrawer> {
           // 主要分區
           ListTile(
             leading: const Icon(Icons.edit_note),
-            title: const Text('紀錄'),
+            title: const Text('紀錄系統'),
             onTap: () {
               Navigator.pop(context);
               Navigator.pushReplacement(
