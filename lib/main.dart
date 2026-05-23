@@ -24,7 +24,7 @@ import 'utils/notification_helper.dart';
 import 'utils/firebase_sync_config.dart';
 import 'providers/theme_provider.dart';
 import 'providers/firebase_sync_provider.dart';
-import 'pages/hub_pages.dart';
+
 import 'daily/daily_record_repository.dart';
 import 'app_lock_screen.dart';
 import 'providers/pro_provider.dart';
@@ -606,7 +606,7 @@ class _EncryptionGateState extends State<EncryptionGate> {
     }
 
     // 使用 uid 綁定本機 E2E 快取：只有「切換帳號」才清理，避免每次登入都被網路卡住。
-    final currentUid = user?.uid;
+    final currentUid = user.uid;
     final ownerUid = prefs.getString(_e2eOwnerUidKey);
     if (currentUid != null && ownerUid != currentUid) {
       await SecureStorageService.deleteKey();
@@ -618,27 +618,35 @@ class _EncryptionGateState extends State<EncryptionGate> {
     }
 
     // 檢查 E2E 是否已配置（從安全儲存檢查 PIN 而非明文 SharedPreferences）
-    final e2ePinExists = (await SecureStorageService.getPin())?.isNotEmpty ?? false;
-    final localConfigured = (prefs.getBool('e2eConfigured') ?? false) || e2ePinExists;
+    final e2ePinExists =
+        (await SecureStorageService.getPin())?.isNotEmpty ?? false;
+    final localConfigured =
+        (prefs.getBool('e2eConfigured') ?? false) || e2ePinExists;
 
     // 取得雲端 E2E 設定欄位
     final userDoc = await FirebaseFirestore.instance
         .collection('users')
         .doc(user.uid)
         .get();
-    final cloudSalt = (userDoc.data()?['encryptionSalt'] as String?)?.trim() ?? '';
-    final cloudVerifier = (userDoc.data()?['encryptionVerifier'] as String?)?.trim() ?? '';
-    final cloudRecoveryHash = (userDoc.data()?['recoveryKeyHash'] as String?)?.trim() ?? '';
-    final cloudWrappedKey = (userDoc.data()?['recoveryWrappedKey'] as String?)?.trim() ?? '';
+    final cloudSalt =
+        (userDoc.data()?['encryptionSalt'] as String?)?.trim() ?? '';
+    final cloudVerifier =
+        (userDoc.data()?['encryptionVerifier'] as String?)?.trim() ?? '';
+    final cloudRecoveryHash =
+        (userDoc.data()?['recoveryKeyHash'] as String?)?.trim() ?? '';
+    final cloudWrappedKey =
+        (userDoc.data()?['recoveryWrappedKey'] as String?)?.trim() ?? '';
 
     // 綜合本地與雲端判斷
-    final configured = localConfigured || (cloudSalt.isNotEmpty && cloudVerifier.isNotEmpty);
+    final configured =
+        localConfigured || (cloudSalt.isNotEmpty && cloudVerifier.isNotEmpty);
 
     if (cloudSalt.isNotEmpty && (prefs.getString('e2eSalt') ?? '').isEmpty) {
       await prefs.setString('e2eSalt', cloudSalt);
     }
 
-    final hasRecoveryBundle = cloudRecoveryHash.isNotEmpty && cloudWrappedKey.isNotEmpty;
+    final hasRecoveryBundle =
+        cloudRecoveryHash.isNotEmpty && cloudWrappedKey.isNotEmpty;
     bool hasKey = !configured;
     if (configured) {
       final localKey = await SecureStorageService.getKey();
