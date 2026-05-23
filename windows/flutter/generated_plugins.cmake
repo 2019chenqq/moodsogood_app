@@ -12,6 +12,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   flutter_timezone
   flutter_tts
   geolocator_windows
+  isar_flutter_libs
   printing
   share_plus
   url_launcher_windows
