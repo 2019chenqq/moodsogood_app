@@ -15,6 +15,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'firebase_options.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 
 import 'Sign_in_page.dart';
 import 'Home_shell.dart';
@@ -62,6 +63,11 @@ Future<void> _configureSDK() async {
 }
 
 /* =========================== main =========================== */
+class App {
+  static final FirebaseAnalytics analytics = FirebaseAnalytics.instance;
+  static final FirebaseAnalyticsObserver observer =
+      FirebaseAnalyticsObserver(analytics: analytics);
+}
 
 Future<void> main() async {
   debugPrint('🚀 App startup starting...');
@@ -100,7 +106,8 @@ Future<void> main() async {
     // Hot restart / isolate re-entry can hit duplicate-app; treat as ready.
     if (error is FirebaseException && error.code == 'duplicate-app') {
       _firebaseReady = true;
-      debugPrint('ℹ️ Firebase duplicate-app detected, using existing default app');
+      debugPrint(
+          'ℹ️ Firebase duplicate-app detected, using existing default app');
     } else {
       _startupIssueMessage = _buildStartupIssueMessage(error);
       debugPrint('❌ Firebase initialization failed: $error');
@@ -226,6 +233,8 @@ class MainApp extends StatelessWidget {
       navigatorKey: rootNavigatorKey,
       scaffoldMessengerKey: rootMessengerKey,
       debugShowCheckedModeBanner: false,
+
+      navigatorObservers: <NavigatorObserver>[App.observer],
 
       locale: const Locale('zh', 'TW'),
       supportedLocales: const [Locale('zh', 'TW'), Locale('en')],
@@ -404,7 +413,10 @@ class _FirstLaunchGateState extends State<FirstLaunchGate> {
     return FortuneCookieScreen(
       onEnterApp: () {
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const AuthGate()),
+          MaterialPageRoute(
+            settings: const RouteSettings(name: 'auth_gate'),
+            builder: (_) => const AuthGate(),
+          ),
         );
       },
     );
@@ -605,29 +617,28 @@ class _EncryptionGateState extends State<EncryptionGate> {
       await prefs.setString(_e2eOwnerUidKey, currentUid);
     }
 
-    final userDoc = await FirebaseFirestore.instance
-      .collection('users')
-      .doc(user.uid)
-      .get();
-    final cloudSalt = (userDoc.data()?['encryptionSalt'] as String?)?.trim() ?? '';
-    final cloudVerifier =
-      (userDoc.data()?['encryptionVerifier'] as String?)?.trim() ?? '';
-    final cloudRecoveryHash =
-      (userDoc.data()?['recoveryKeyHash'] as String?)?.trim() ?? '';
-    final cloudWrappedKey =
-      (userDoc.data()?['recoveryWrappedKey'] as String?)?.trim() ?? '';
+    // 檢查 E2E 是否已配置（從安全儲存檢查 PIN 而非明文 SharedPreferences）
+    final e2ePinExists = (await SecureStorageService.getPin())?.isNotEmpty ?? false;
+    final localConfigured = (prefs.getBool('e2eConfigured') ?? false) || e2ePinExists;
 
-    // 僅以雲端欄位判斷是否已設定過 E2E：salt + verifier 必須同時存在。
-    final configured = cloudSalt.isNotEmpty && cloudVerifier.isNotEmpty;
+    // 取得雲端 E2E 設定欄位
+    final userDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .get();
+    final cloudSalt = (userDoc.data()?['encryptionSalt'] as String?)?.trim() ?? '';
+    final cloudVerifier = (userDoc.data()?['encryptionVerifier'] as String?)?.trim() ?? '';
+    final cloudRecoveryHash = (userDoc.data()?['recoveryKeyHash'] as String?)?.trim() ?? '';
+    final cloudWrappedKey = (userDoc.data()?['recoveryWrappedKey'] as String?)?.trim() ?? '';
+
+    // 綜合本地與雲端判斷
+    final configured = localConfigured || (cloudSalt.isNotEmpty && cloudVerifier.isNotEmpty);
 
     if (cloudSalt.isNotEmpty && (prefs.getString('e2eSalt') ?? '').isEmpty) {
       await prefs.setString('e2eSalt', cloudSalt);
     }
 
-    final hasRecoveryBundle =
-        cloudRecoveryHash.isNotEmpty && cloudWrappedKey.isNotEmpty;
-
-    // 已設定過 E2E 時，只檢查本機金鑰是否存在且能通過 verifier。
+    final hasRecoveryBundle = cloudRecoveryHash.isNotEmpty && cloudWrappedKey.isNotEmpty;
     bool hasKey = !configured;
     if (configured) {
       final localKey = await SecureStorageService.getKey();
