@@ -9,6 +9,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:crypto/crypto.dart';
 import 'package:encrypt/encrypt.dart' as encrypt_lib;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
+
 
 import '../utils/date_helper.dart';
 import '../utils/firebase_sync_config.dart';
@@ -19,6 +21,7 @@ import 'diary_repository.dart';
 import '../utils/secure_storage_service.dart';
 import '../utils/encryption_service.dart';
 import '../utils/key_manager.dart';
+import '../test_pages/pro_preview_page.dart';
 
 class DiaryPageDemo extends m.StatefulWidget {
   final DateTime date;
@@ -537,6 +540,77 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
       m.debugPrint('自動儲存發生未預期的錯誤: $e');
     }
   }
+Future<void> _openBasicAiFeedback() async {
+  await FirebaseAnalytics.instance.logEvent(
+    name: 'basic_ai_click',
+    parameters: {
+      'source': 'diary_page',
+      'date': _docId,
+    },
+  );
+
+  if (!mounted) return;
+
+  m.showModalBottomSheet(
+    context: context,
+    showDragHandle: true,
+    shape: const m.RoundedRectangleBorder(
+      borderRadius: m.BorderRadius.vertical(top: m.Radius.circular(24)),
+    ),
+    builder: (_) {
+      return m.Padding(
+        padding: const m.EdgeInsets.fromLTRB(20, 8, 20, 28),
+        child: m.Column(
+          mainAxisSize: m.MainAxisSize.min,
+          crossAxisAlignment: m.CrossAxisAlignment.start,
+          children: [
+            m.Text(
+              'AI 基礎回饋',
+              style: m.Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: m.FontWeight.w800,
+                  ),
+            ),
+            const m.SizedBox(height: 12),
+            const m.Text(
+              '這裡之後會放「今日情緒摘要、主題分類、溫柔回饋、照顧自己的小建議」。',
+              style: m.TextStyle(height: 1.6),
+            ),
+            const m.SizedBox(height: 16),
+            m.Container(
+              padding: const m.EdgeInsets.all(14),
+              decoration: m.BoxDecoration(
+                color: m.Colors.teal.withOpacity(0.08),
+                borderRadius: m.BorderRadius.circular(18),
+              ),
+              child: const m.Text(
+                '範例：今天的文字裡，可以感覺到你正在努力整理自己的感受。即使狀態不一定很穩，你仍然願意記錄下來，這本身就是一種照顧自己的方式。',
+                style: m.TextStyle(height: 1.6),
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+Future<void> _openDeepAiPreview() async {
+  await FirebaseAnalytics.instance.logEvent(
+    name: 'deep_ai_pro_preview_click',
+    parameters: {
+      'source': 'diary_page',
+      'date': _docId,
+    },
+  );
+
+  if (!mounted) return;
+
+  m.Navigator.of(context).push(
+    m.MaterialPageRoute(
+      builder: (_) => const ProPreviewPage(),
+    ),
+  );
+}
 
   // 查上一筆 / 下一筆（以日記集合的 date 欄位為準）
   Future<void> _loadNeighbors() async {
@@ -723,7 +797,11 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
           children: [
             _DateHeaderCard(date: d),
             const m.SizedBox(height: 12),
-
+_AiEntryCard(
+  onBasicTap: _openBasicAiFeedback,
+  onDeepTap: _openDeepAiPreview,
+),
+const m.SizedBox(height: 12),
             if (_needsLegacyRepair) ...[
               m.Text(
                 '此紀錄需要使用舊安全碼修復',
@@ -1163,6 +1241,173 @@ class CountTextField extends m.StatelessWidget {
                 style: HealingDesignSystem.labelSmall.copyWith(
                   color: HealingDesignSystem.adaptiveSecondaryText(context),
                 ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AiEntryCard extends m.StatelessWidget {
+  final m.VoidCallback onBasicTap;
+  final m.VoidCallback onDeepTap;
+
+  const _AiEntryCard({
+    required this.onBasicTap,
+    required this.onDeepTap,
+  });
+
+  @override
+  m.Widget build(m.BuildContext context) {
+    final theme = m.Theme.of(context);
+    final color = theme.colorScheme;
+
+    return m.Container(
+      padding: const m.EdgeInsets.all(16),
+      decoration: m.BoxDecoration(
+        color: m.Colors.white,
+        borderRadius: m.BorderRadius.circular(24),
+        boxShadow: [
+          m.BoxShadow(
+            color: m.Colors.black.withOpacity(0.05),
+            blurRadius: 16,
+            offset: const m.Offset(0, 6),
+          ),
+        ],
+      ),
+      child: m.Column(
+        crossAxisAlignment: m.CrossAxisAlignment.start,
+        children: [
+          m.Row(
+            children: [
+              m.Icon(
+                m.Icons.auto_awesome,
+                color: color.primary,
+              ),
+              const m.SizedBox(width: 8),
+              m.Text(
+                'AI 情緒回饋',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: m.FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const m.SizedBox(height: 6),
+          m.Text(
+            '先從今天的文字開始整理，也可以升級成更完整的長期觀察。',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: color.onSurfaceVariant,
+              height: 1.5,
+            ),
+          ),
+          const m.SizedBox(height: 14),
+
+          m.Row(
+            children: [
+              m.Expanded(
+                child: _AiSmallButton(
+                  title: '基礎回饋',
+                  subtitle: '免費',
+                  icon: m.Icons.chat_bubble_outline,
+                  onTap: onBasicTap,
+                ),
+              ),
+              const m.SizedBox(width: 10),
+              m.Expanded(
+                child: _AiSmallButton(
+                  title: '深入分析',
+                  subtitle: 'Pro 預告',
+                  icon: m.Icons.workspace_premium_outlined,
+                  isPro: true,
+                  onTap: onDeepTap,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AiSmallButton extends m.StatelessWidget {
+  final String title;
+  final String subtitle;
+  final m.IconData icon;
+  final bool isPro;
+  final m.VoidCallback onTap;
+
+  const _AiSmallButton({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    this.isPro = false,
+    required this.onTap,
+  });
+
+  @override
+  m.Widget build(m.BuildContext context) {
+    final theme = m.Theme.of(context);
+    final color = theme.colorScheme;
+
+    return m.InkWell(
+      borderRadius: m.BorderRadius.circular(18),
+      onTap: onTap,
+      child: m.Container(
+        padding: const m.EdgeInsets.all(14),
+        decoration: m.BoxDecoration(
+          color: isPro
+              ? color.primaryContainer.withOpacity(0.65)
+              : color.surfaceContainerHighest.withOpacity(0.65),
+          borderRadius: m.BorderRadius.circular(18),
+          border: m.Border.all(
+            color: isPro
+                ? color.primary.withOpacity(0.35)
+                : color.outlineVariant.withOpacity(0.6),
+          ),
+        ),
+        child: m.Column(
+          crossAxisAlignment: m.CrossAxisAlignment.start,
+          children: [
+            m.Row(
+              children: [
+                m.Icon(icon, size: 22),
+                const m.Spacer(),
+                if (isPro)
+                  m.Container(
+                    padding: const m.EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: m.BoxDecoration(
+                      color: color.primary,
+                      borderRadius: m.BorderRadius.circular(999),
+                    ),
+                    child: m.Text(
+                      'PRO',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: color.onPrimary,
+                        fontWeight: m.FontWeight.w800,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const m.SizedBox(height: 10),
+            m.Text(
+              title,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: m.FontWeight.w800,
+              ),
+            ),
+            const m.SizedBox(height: 4),
+            m.Text(
+              subtitle,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: color.onSurfaceVariant,
               ),
             ),
           ],
