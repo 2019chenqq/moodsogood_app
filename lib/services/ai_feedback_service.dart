@@ -76,15 +76,10 @@ class AIFeedbackService {
         'quality': daySummary.sleepQuality,
       };
 
-      final promptPayload = buildDiaryAiPrompt(
+      final promptPayload = buildDiaryAiPromptBasic(
         date: dateKey,
         diaryText: diaryText,
-        emotionScores: emotionScores,
-        sleep: sleepData,
-        symptoms: symptomNames,
-        medications: const [],
-        isPeriodDay: daySummary.isPeriodDay,
-        isPredictedPeriodDay: daySummary.isPredictedPeriodDay,
+        emotions: emotionScores.where((e) => e['name'] == '整體情緒').toList(),
       );
 
       final diaryFields = <String, dynamic>{
@@ -95,28 +90,15 @@ class AIFeedbackService {
       };
 
       final dailyRecord = <String, dynamic>{
-        'overallMood': daySummary.averageMood,
-        'emotions': emotionScores,
-        'symptoms': symptomNames,
-        'sleep': sleepData,
-        'isPeriodDay': daySummary.isPeriodDay,
-        'isPredictedPeriodDay': daySummary.isPredictedPeriodDay,
+        if (daySummary.averageMood != null)
+          'overallMood': daySummary.averageMood,
       };
 
-      final payload = <String, dynamic>{
+            final payload = <String, dynamic>{
         'date': dateKey,
-
-        // 新版：給 Firebase Function / OpenAI 使用的結構化 prompt。
         'promptPayload': promptPayload,
-
-        // 舊版相容：如果 Cloud Function 還在讀 aiInput，也不會壞掉。
         'aiInput': promptPayload,
-
-        // 舊版相容：保留原本可能被後端使用的欄位。
-        'diaryContent': diaryText,
-        'diaryFields': diaryFields,
-        'dailyRecord': dailyRecord,
-      };
+            };
 
       debugPrint(
         '🧪 AI Feedback Service: Calling generateAiJournalReflection with payload: $payload',

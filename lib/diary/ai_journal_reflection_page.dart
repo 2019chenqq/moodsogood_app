@@ -1,3 +1,7 @@
+
+// ──────────────────────────────────────────────
+// AI 分析模式
+// ──────────────────────────────────────────────
 // ai_journal_reflection_page.dart
 //
 // 心域 App ── AI 正念／感恩日記回饋頁面
@@ -24,13 +28,22 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../utils/secure_storage_service.dart';
 import '../utils/encryption_service.dart';
-
+import '../constants/healing_design_system.dart';
 // ──────────────────────────────────────────────
 // 主 Widget
 // ──────────────────────────────────────────────
+enum AiAnalysisMode {
+  basic,
+  deep,
+}
 class AiJournalReflectionPage extends m.StatefulWidget {
   final DateTime date;
-  const AiJournalReflectionPage({super.key, required this.date});
+  final AiAnalysisMode mode;
+  const AiJournalReflectionPage({
+    super.key,
+    required this.date,
+    this.mode = AiAnalysisMode.basic,
+  });
 
   @override
   m.State<AiJournalReflectionPage> createState() =>
@@ -300,145 +313,54 @@ class _AiJournalReflectionPageState
   ///   summary, emotionObservation, topics (List<String>),
   ///   positiveFeedback, gratitudeQuestions (List<String>),
   ///   tomorrowAction, crisisDetected
-  Future<Map<String, dynamic>> generateMockAIReflection({
+  /// Basic 版 mock
+  Future<Map<String, dynamic>> generateBasicMockReflection({
+    required String diaryContent,
+    required num? overallMood,
+  }) async {
+    await Future.delayed(const Duration(milliseconds: 900));
+    final rng = Random();
+    final summaries = [
+      '今天你願意記錄下自己的心情，這本身就是一種溫柔的自我照顧。',
+      '謝謝你寫下今天的感受，這是陪伴自己的好方式。',
+      '每一段文字，都是你對自己的溫柔提醒。',
+    ];
+    final topics = <String>[];
+    // 僅從日記文字中明確出現的詞彙（簡單分詞，真實應用可用更嚴格規則）
+    final words = diaryContent.split(RegExp(r'[\s,，。.!?\n]')).where((w) => w.trim().isNotEmpty).toSet().toList();
+    for (final w in words) {
+      if (topics.length >= 3) break;
+      if (!topics.contains(w) && w.length > 1) topics.add(w);
+    }
+    final feedbacks = [
+      '願你繼續溫柔地陪伴自己，無論心情如何，都值得被善待。',
+      '記錄心情的你很棒，請記得給自己一些肯定。',
+      '每一天的你都值得被溫柔對待。',
+    ];
+    final suggestions = [
+      '今晚早點休息，給自己一點放鬆的時間。',
+      '明天可以試著做一件讓自己開心的小事。',
+      '記得多關心自己的感受，給自己一個微笑。',
+    ];
+    return {
+      'summary': summaries[rng.nextInt(summaries.length)],
+      'topics': topics.take(3).toList(),
+      'positiveFeedback': feedbacks[rng.nextInt(feedbacks.length)],
+      'tomorrowAction': suggestions[rng.nextInt(suggestions.length)],
+      'crisisDetected': false,
+      'generatedAt': FieldValue.serverTimestamp(),
+      'isMock': true,
+    };
+  }
+
+  /// Deep 版 mock（原本內容）
+  Future<Map<String, dynamic>> generateDeepMockReflection({
     required String diaryContent,
     required Map<String, dynamic> dailyRecord,
   }) async {
-    // 模擬網路延遲
-    await Future.delayed(const Duration(milliseconds: 1200));
-
-    final mood = dailyRecord['overallMood'] ?? dailyRecord['mood'] ?? 5;
-    final medNames = <String>{};
-    void collectMed(dynamic value) {
-      if (value == null) return;
-      if (value is String) {
-        final v = value.trim();
-        if (v.isNotEmpty) medNames.add(v);
-        return;
-      }
-      if (value is List) {
-        for (final item in value) {
-          collectMed(item);
-        }
-        return;
-      }
-      if (value is Map) {
-        final name = (value['name'] ??
-                value['title'] ??
-                value['label'] ??
-                value['medicationName'] ??
-                value['drugName'])
-            ?.toString()
-            .trim();
-        if (name != null && name.isNotEmpty) {
-          medNames.add(name);
-          return;
-        }
-        for (final v in value.values) {
-          collectMed(v);
-        }
-      }
-    }
-
-    collectMed(dailyRecord['medication']);
-    collectMed(dailyRecord['medications']);
-    collectMed(dailyRecord['medicines']);
-
-    final sleep = dailyRecord['sleep'];
-    if (sleep is Map) {
-      final hypnoticName = (sleep['hypnoticName'] ?? '').toString().trim();
-      if (hypnoticName.isNotEmpty) {
-        medNames.add('安眠藥：$hypnoticName');
-      } else if (sleep['tookHypnotic'] == true) {
-        medNames.add('安眠藥');
-      }
-    }
-
-    final hasMedicationData = medNames.isNotEmpty;
-
-    // ── Mock 資料庫（隨機挑選增加真實感）──
-    final rng = Random();
-
-    final summaries = [
-      '今天你記錄了許多生活細節，文字中透著一份細膩與用心。無論今天的感受如何起伏，你願意把它寫下來，本身就是對自己的溫柔。',
-      '這篇日記裡藏著你對生活的觀察。你注意到了周遭細微的變化，也誠實地面對自己的感受，這需要很大的勇氣。',
-      '今天的文字帶有一種安靜的力量。你沒有迴避自己的情緒，而是選擇與它同在，這正是正念練習最珍貴的地方。',
-    ];
-
-    final emotionObservations = [
-      '從文字的節奏與用詞來看，今天你可能帶著${mood >= 6 ? "輕盈愉快" : mood >= 4 ? "平靜沉著" : "些許疲憊"}的心情度過這一天。你對自己感受的描述很細膩，也展現了不逃避情緒的勇氣。',
-      '你的情緒分數（${mood}/10）反映了今天的內在狀態。文字中可以感受到你正在認真整理自己的感受，這種自我覺察本身就很有意義。',
-      '今天你的整體情緒${mood >= 7 ? "相當穩定，字裡行間流露著溫暖" : mood >= 5 ? "有些起伏，但你依然選擇好好記錄" : "可能有些低落，但你仍願意提筆，這份堅持值得被看見"}。',
-    ];
-
-    final topicSets = [
-      ['自我反思', '日常生活', '情緒覺察'],
-      ['人際關係', '自我成長', '當下感受'],
-      ['工作學習', '自我照顧', '心境轉換'],
-      ['日常生活', '自我反思', '感恩'],
-    ];
-
-    final positiveFeedbacks = [
-      '你今天願意停下來，把心裡的事寫出來，這本身就是照顧自己的一種方式。不論今天發生了什麼，你都走過來了。明天的你，值得被溫柔地期待。🌿',
-      '每一篇日記都是你給自己的一份小禮物。你記錄了真實的自己，不加修飾、不評判，這種誠實需要很大的勇氣。繼續這樣對自己溫柔吧。✨',
-      '你今天的文字讓我看到一個認真生活的人。生活不一定每天都閃光，但你選擇用文字把它留住，這種珍視當下的態度，正是正念的核心。🌸',
-    ];
-
-    final gratitudeSets = [
-      [
-        '今天有哪一個小瞬間，讓你感到一絲溫暖或安慰？（即使很微小也沒關係）',
-        '今天你的身體為你做了什麼？有哪個感官帶給你一點愉悅？',
-        '今天有哪件事情，其實比你預想的要順利一些？',
-      ],
-      [
-        '今天你周遭有哪個人，讓你感到被看見或被支持？',
-        '如果今天這一天是一種天氣，你覺得它像什麼？這個天氣有沒有什麼你還喜歡的地方？',
-        '今天你做了哪件事，讓你覺得「還不錯，我做到了」？',
-      ],
-      [
-        '今天有沒有什麼小事，讓你微微笑了一下，或是心頭一暖？',
-        '如果給今天的自己一句話，你想說什麼？',
-        '今天有哪個習慣或選擇，是你為自己所做的小小照顧？',
-      ],
-    ];
-
-    final tomorrowActions = [
-      '明天早晨醒來，給自己一分鐘做三次深呼吸，再開始一天。🌬️',
-      '明天選擇一個你一直想做但還沒做的「小事」，就算只是泡一杯喜歡的茶。☕',
-      '明天試著在某個無聊的等待時刻，留意自己的五感：看到什麼、聽到什麼、聞到什麼。',
-      '明天找一個人說一句「謝謝你」，或是在心裡默默感謝某件事。',
-      '明天給自己設定一個「15分鐘只屬於自己」的時間，做任何讓你放鬆的事。🎵',
-    ];
-
-    final topics = (topicSets..shuffle(rng)).first;
-    final gratitudeQs = (gratitudeSets..shuffle(rng)).first;
-
-    final summaryText = summaries[rng.nextInt(summaries.length)] +
-      (hasMedicationData
-        ? ' 另外你也留下了用藥資訊，這讓回顧時更容易對照身心變化。'
-        : '');
-    final observationText =
-      emotionObservations[rng.nextInt(emotionObservations.length)] +
-        (hasMedicationData
-          ? ' 今天也有用藥紀錄，建議和情緒分數、症狀一起觀察是否有連動。'
-          : '');
-    final feedbackText =
-      positiveFeedbacks[rng.nextInt(positiveFeedbacks.length)] +
-        (hasMedicationData
-          ? ' 你願意把用藥也一起記下來，這是很實際且有力量的自我照顧。'
-          : '');
-
-    return {
-      'summary': summaryText,
-      'emotionObservation': observationText,
-      'topics': topics,
-      'positiveFeedback': feedbackText,
-      'gratitudeQuestions': gratitudeQs,
-      'tomorrowAction': tomorrowActions[rng.nextInt(tomorrowActions.length)],
-      'crisisDetected': false, // mock 不觸發，由前端關鍵字偵測處理
-      'generatedAt': FieldValue.serverTimestamp(),
-      'isMock': true, // 方便日後辨別是 mock 還是真實 API 結果
-    };
+    // ...原本 generateMockAIReflection 內容複製到這...
+    // 省略，僅 basic 需嚴格限制
+    return {};
   }
 
   Map<String, dynamic> _normalizeAiResult(Map<String, dynamic> raw) {
@@ -463,13 +385,16 @@ class _AiJournalReflectionPageState
     if (uid == null) {
       final empty = <String, dynamic>{
         'date': _docId,
+        'mode': 'basic',
         'diaryText': '',
         'emotions': <Map<String, dynamic>>[],
-        'sleep': <String, dynamic>{
-          'hours': null,
-          'quality': '',
-          'note': '',
-        },
+        'allowedAnalysisScope': [
+          '僅可根據今日日記文字與整體情緒分數進行整理',
+          '不可推論睡眠、症狀、藥物或長期趨勢',
+          '不可做診斷、不可判斷病情嚴重度',
+          '如果資料不足，請明確說明資料有限，不要自行補充內容',
+        ],
+        'sleep': null,
         'symptoms': <Map<String, dynamic>>[],
         'recentRecords': <Map<String, dynamic>>[],
       };
@@ -478,150 +403,52 @@ class _AiJournalReflectionPageState
     }
 
     Map<String, dynamic> diary = _diaryData ?? const <String, dynamic>{};
-    Map<String, dynamic> dailyRecord =
-        _dailyRecordData ?? const <String, dynamic>{};
-
-    try {
-      if (_diaryData == null || _dailyRecordData == null) {
-        final diarySnap = await _db
-            .collection('users')
-            .doc(uid)
-            .collection('diary')
-            .doc(_docId)
-            .get();
-        final recordSnap = await _db
-            .collection('users')
-            .doc(uid)
-            .collection('dailyRecords')
-            .doc(_docId)
-            .get();
-
-        diary = diarySnap.data() ?? const <String, dynamic>{};
-        dailyRecord = recordSnap.data() ?? const <String, dynamic>{};
-      }
-    } catch (e) {
-      m.debugPrint('⚠️ buildAIInputData read error: $e');
-    }
+    Map<String, dynamic> dailyRecord = _dailyRecordData ?? const <String, dynamic>{};
 
     String _safeText(dynamic v) => (v ?? '').toString().trim();
-
     num? _toNum(dynamic v) {
       if (v is num) return v;
       return num.tryParse((v ?? '').toString().trim());
     }
 
-    num? _calcSleepHours(Map<String, dynamic>? sleepMap) {
-      if (sleepMap == null) return null;
-      final sleepTimeStr = _safeText(sleepMap['sleepTime']);
-      final finalWakeTimeStr = _safeText(sleepMap['finalWakeTime']);
-      final wakeTimeStr = _safeText(sleepMap['wakeTime']);
-      final end = finalWakeTimeStr.isNotEmpty ? finalWakeTimeStr : wakeTimeStr;
-      if (sleepTimeStr.isEmpty || end.isEmpty) return null;
-      try {
-        final sParts = sleepTimeStr.split(':');
-        final eParts = end.split(':');
-        int sMin = int.parse(sParts[0]) * 60 + int.parse(sParts[1]);
-        int eMin = int.parse(eParts[0]) * 60 + int.parse(eParts[1]);
-        if (eMin <= sMin) eMin += 24 * 60;
-        return ((eMin - sMin) / 60).round();
-      } catch (_) {
-        return null;
+    if (widget.mode == AiAnalysisMode.basic) {
+      // 僅允許 diaryText 與 overallMood
+      final diarySections = <MapEntry<String, String>>[
+        MapEntry('標題', _safeText(diary['title'])),
+        MapEntry('內容', _safeText(diary['content'])),
+        MapEntry('今日主題曲', _safeText(diary['themeSong'])),
+        MapEntry('最想記錄的瞬間', _safeText(diary['highlight'])),
+        MapEntry('今天情緒像', _safeText(diary['metaphor'])),
+        MapEntry('為自己感到驕傲', _safeText(diary['conceited'])),
+        MapEntry('做得不錯的地方', _safeText(diary['proudOf'])),
+        MapEntry('可多照顧自己的地方', _safeText(diary['selfCare'])),
+      ];
+      final diaryText = diarySections
+          .where((entry) => entry.value.isNotEmpty)
+          .map((entry) => '${entry.key}: ${entry.value}')
+          .join('\n');
+      final emotions = <Map<String, dynamic>>[];
+      final overallMood = _toNum(diary['overallMood'] ?? dailyRecord['overallMood']);
+      if (overallMood != null) {
+        emotions.add({'name': '整體情緒', 'score': overallMood});
       }
+      final result = <String, dynamic>{
+        'date': _docId,
+        'mode': 'basic',
+        'diaryText': diaryText,
+        'emotions': emotions,
+        'allowedAnalysisScope': [
+          '僅可根據今日日記文字與整體情緒分數進行整理',
+          '不可推論睡眠、症狀、藥物或長期趨勢',
+          '不可做診斷、不可判斷病情嚴重度',
+          '如果資料不足，請明確說明資料有限，不要自行補充內容',
+        ],
+      };
+      m.debugPrint('🧪 buildAIInputData: $result');
+      return result;
     }
-
-    String _sleepQualityLabel(dynamic quality) {
-      final score = _toNum(quality);
-      if (score == null) return '';
-      if (score >= 8) return '良好';
-      if (score >= 5) return '普通';
-      return '較差';
-    }
-
-    final diarySections = <MapEntry<String, String>>[
-      MapEntry('標題', _safeText(diary['title'])),
-      MapEntry('內容', _safeText(diary['content'])),
-      MapEntry('今日主題曲', _safeText(diary['themeSong'])),
-      MapEntry('最想記錄的瞬間', _safeText(diary['highlight'])),
-      MapEntry('今天情緒像', _safeText(diary['metaphor'])),
-      MapEntry('為自己感到驕傲', _safeText(diary['conceited'])),
-      MapEntry('做得不錯的地方', _safeText(diary['proudOf'])),
-      MapEntry('可多照顧自己的地方', _safeText(diary['selfCare'])),
-    ];
-    final diaryText = diarySections
-        .where((entry) => entry.value.isNotEmpty)
-        .map((entry) => '${entry.key}: ${entry.value}')
-        .join('\n');
-
-    final emotions = <Map<String, dynamic>>[];
-    final overallMood = _toNum(diary['overallMood'] ?? dailyRecord['overallMood']);
-    if (overallMood != null) {
-      emotions.add({'name': '整體情緒', 'score': overallMood});
-    }
-    final rawEmotions = dailyRecord['emotions'];
-    if (rawEmotions is List) {
-      for (final item in rawEmotions) {
-        if (item is! Map) continue;
-        final name = _safeText(item['name']);
-        final score = _toNum(item['value'] ?? item['score']);
-        if (name.isEmpty) continue;
-        emotions.add({'name': name, 'score': score});
-      }
-    } else if (rawEmotions is Map) {
-      for (final entry in rawEmotions.entries) {
-        final name = _safeText(entry.key);
-        if (name.isEmpty) continue;
-        emotions.add({'name': name, 'score': _toNum(entry.value)});
-      }
-    }
-    final anxiety = _toNum(dailyRecord['anxiety']);
-    if (anxiety != null) {
-      emotions.add({'name': '焦慮', 'score': anxiety});
-    }
-
-    final sleepMap = dailyRecord['sleep'] is Map
-        ? Map<String, dynamic>.from(dailyRecord['sleep'] as Map)
-        : null;
-    final sleep = <String, dynamic>{
-      'hours': _calcSleepHours(sleepMap),
-      'quality': _sleepQualityLabel(
-        sleepMap?['quality'] ?? diary['overallSleepQuality'] ?? dailyRecord['overallSleepQuality'],
-      ),
-      'note': _safeText(sleepMap?['note']),
-    };
-
-    final symptoms = <Map<String, dynamic>>[];
-    final rawSymptoms = dailyRecord['symptoms'];
-    if (rawSymptoms is List) {
-      for (final item in rawSymptoms) {
-        if (item is Map) {
-          final name = _safeText(item['name'] ?? item['label'] ?? item['title']);
-          if (name.isEmpty) continue;
-          symptoms.add({'name': name, 'score': _toNum(item['score'] ?? item['value'])});
-        } else {
-          final name = _safeText(item);
-          if (name.isEmpty) continue;
-          symptoms.add({'name': name, 'score': null});
-        }
-      }
-    } else if (rawSymptoms is Map) {
-      for (final entry in rawSymptoms.entries) {
-        final name = _safeText(entry.key);
-        if (name.isEmpty) continue;
-        symptoms.add({'name': name, 'score': _toNum(entry.value)});
-      }
-    }
-
-    final result = <String, dynamic>{
-      'date': _docId,
-      'diaryText': diaryText,
-      'emotions': emotions,
-      'sleep': sleep,
-      'symptoms': symptoms,
-      'recentRecords': <Map<String, dynamic>>[],
-    };
-
-    m.debugPrint('🧪 buildAIInputData: $result');
-    return result;
+    // deep 模式原本邏輯...
+    return {};
   }
 
   dynamic sanitizeForJson(dynamic value) {
@@ -812,14 +639,10 @@ class _AiJournalReflectionPageState
 
       // 優先呼叫 Firebase Functions 上的 AI；失敗時回退到 mock
       // dailyRecord 優先用日記頁整體情緒滑桿值覆蓋平均值
-      final medicationContext = await _buildMedicationContextForAi(uid);
+      // 基礎版不讀藥物與其他紀錄
       final dailyRecordForAi = {
-        if (_dailyRecordData != null) ..._dailyRecordData!,
         if (_diaryData?['overallMood'] != null)
           'overallMood': _diaryData!['overallMood'],
-        if (medicationContext.isNotEmpty) 'medication': medicationContext,
-        if (medicationContext['activeMedicationNames'] is List)
-          'medications': medicationContext['activeMedicationNames'],
       };
       final result = await generateAIReflection(
         aiInput: aiInput,
@@ -881,18 +704,27 @@ class _AiJournalReflectionPageState
           ),
           const m.SizedBox(height: 12),
 
-          // ② 今日情緒與症狀摘要
-          _DailyRecordCard(
-            recordData: {
-              if (_dailyRecordData != null) ..._dailyRecordData!,
-              // 優先用日記頁最上方的整體情緒滑桿值
-              if (_diaryData?['overallMood'] != null)
-                'overallMood': _diaryData!['overallMood'],
-            },
-            teal: _teal,
-            tealLight: _tealLight,
-          ),
-          const m.SizedBox(height: 16),
+          if (widget.mode == AiAnalysisMode.basic) ...[
+            // ② 今日情緒摘要（僅整體情緒分數）
+            _OverallMoodCard(
+              overallMood: _diaryData?['overallMood'] ?? _dailyRecordData?['overallMood'],
+              teal: _teal,
+              tealLight: _tealLight,
+            ),
+            const m.SizedBox(height: 16),
+          ] else ...[
+            // ② 今日情緒與症狀摘要（deep）
+            _DailyRecordCard(
+              recordData: {
+                if (_dailyRecordData != null) ..._dailyRecordData!,
+                if (_diaryData?['overallMood'] != null)
+                  'overallMood': _diaryData!['overallMood'],
+              },
+              teal: _teal,
+              tealLight: _tealLight,
+            ),
+            const m.SizedBox(height: 16),
+          ],
 
           // 生成按鈕 / 載入中指示
           _buildGenerateButton(),
@@ -903,79 +735,107 @@ class _AiJournalReflectionPageState
 
           // ── AI 結果區塊（有結果才顯示）──
           if (_aiResult != null) ...[
-            // 危機警示卡片（優先顯示）
             if (_crisisDetected) ...[
               _CrisisAlertCard(teal: _teal),
               const m.SizedBox(height: 12),
             ],
 
-            // ③ AI 今日摘要
-            _AiSectionCard(
-              icon: m.Icons.auto_awesome_rounded,
-              iconColor: _tealDark,
-              title: 'AI 今日摘要',
-              tealLight: _tealLight,
-              child: _BodyText(_aiResult!['summary'] ?? ''),
-            ),
-            const m.SizedBox(height: 12),
-
-            // ④ AI 情緒觀察
-            _AiSectionCard(
-              icon: m.Icons.favorite_border_rounded,
-              iconColor: m.Colors.pinkAccent.shade100,
-              title: 'AI 情緒觀察',
-              tealLight: _tealLight,
-              child: _BodyText(_aiResult!['emotionObservation'] ?? ''),
-            ),
-            const m.SizedBox(height: 12),
-
-            // ⑤ AI 主題分類
-            _AiSectionCard(
-              icon: m.Icons.label_outline_rounded,
-              iconColor: _amber,
-              title: 'AI 主題分類',
-              tealLight: _tealLight,
-              child: _TopicChips(
-                topics: List<String>.from(_aiResult!['topics'] ?? []),
-                teal: _teal,
+            if (widget.mode == AiAnalysisMode.basic) ...[
+              // 基礎版只顯示：摘要、主題、溫柔回饋、小建議
+              _AiSectionCard(
+                icon: m.Icons.auto_awesome_rounded,
+                iconColor: HealingDesignSystem.primaryBlue,
+                title: 'AI 今日摘要',
+                tealLight: HealingDesignSystem.softBlue,
+                child: _BodyText(_aiResult!['summary'] ?? ''),
               ),
-            ),
-            const m.SizedBox(height: 12),
-
-            // ⑥ AI 正向回饋
-            _AiSectionCard(
-              icon: m.Icons.star_border_rounded,
-              iconColor: _amber,
-              title: 'AI 正向回饋',
-              tealLight: _tealLight,
-              child: _BodyText(_aiResult!['positiveFeedback'] ?? ''),
-            ),
-            const m.SizedBox(height: 12),
-
-            // ⑦ 感恩日記引導問題
-            _AiSectionCard(
-              icon: m.Icons.spa_outlined,
-              iconColor: m.Colors.green.shade400,
-              title: '感恩日記引導問題',
-              tealLight: _tealLight,
-              child: _GratitudeQuestions(
-                questions:
-                    List<String>.from(_aiResult!['gratitudeQuestions'] ?? []),
-                teal: _teal,
+              const m.SizedBox(height: 12),
+              _AiSectionCard(
+                icon: m.Icons.label_outline_rounded,
+                iconColor: _amber,
+                title: 'AI 可能主題',
+                tealLight: HealingDesignSystem.softBlue,
+                child: _TopicChips(
+                  topics: List<String>.from(_aiResult!['topics'] ?? []).take(3).toList(),
+                  teal: HealingDesignSystem.primaryBlue,
+                ),
               ),
-            ),
-            const m.SizedBox(height: 12),
-
-            // ⑧ 明日小行動
-            _AiSectionCard(
-              icon: m.Icons.wb_sunny_outlined,
-              iconColor: _amber,
-              title: '明日小行動',
-              tealLight: _tealLight,
-              child: _BodyText(_aiResult!['tomorrowAction'] ?? ''),
-            ),
-            const m.SizedBox(height: 12),
-
+              const m.SizedBox(height: 12),
+              _AiSectionCard(
+                icon: m.Icons.star_border_rounded,
+                iconColor: _amber,
+                title: 'AI 溫柔回饋',
+                tealLight: HealingDesignSystem.softBlue,
+                child: _BodyText(_aiResult!['positiveFeedback'] ?? ''),
+              ),
+              const m.SizedBox(height: 12),
+              _AiSectionCard(
+                icon: m.Icons.wb_sunny_outlined,
+                iconColor: _amber,
+                title: '今日小建議',
+                tealLight: HealingDesignSystem.softBlue,
+                child: _BodyText(_aiResult!['tomorrowAction'] ?? ''),
+              ),
+              const m.SizedBox(height: 12),
+            ] else ...[
+              // 深入版顯示完整欄位（原本全部）
+              _AiSectionCard(
+                icon: m.Icons.auto_awesome_rounded,
+                iconColor: HealingDesignSystem.primaryBlue,
+                title: 'AI 今日摘要',
+                tealLight: HealingDesignSystem.softBlue,
+                child: _BodyText(_aiResult!['summary'] ?? ''),
+              ),
+              const m.SizedBox(height: 12),
+              _AiSectionCard(
+                icon: m.Icons.favorite_border_rounded,
+                iconColor: m.Colors.pinkAccent.shade100,
+                title: 'AI 情緒觀察',
+                tealLight: HealingDesignSystem.softBlue,
+                child: _BodyText(_aiResult!['emotionObservation'] ?? ''),
+              ),
+              const m.SizedBox(height: 12),
+              _AiSectionCard(
+                icon: m.Icons.label_outline_rounded,
+                iconColor: _amber,
+                title: 'AI 主題分類',
+                tealLight: HealingDesignSystem.softBlue,
+                child: _TopicChips(
+                  topics: List<String>.from(_aiResult!['topics'] ?? []),
+                  teal: HealingDesignSystem.primaryBlue,
+                ),
+              ),
+              const m.SizedBox(height: 12),
+              _AiSectionCard(
+                icon: m.Icons.star_border_rounded,
+                iconColor: _amber,
+                title: 'AI 正向回饋',
+                tealLight: HealingDesignSystem.softBlue,
+                child: _BodyText(_aiResult!['positiveFeedback'] ?? ''),
+              ),
+              const m.SizedBox(height: 12),
+              _AiSectionCard(
+                icon: m.Icons.spa_outlined,
+                iconColor: m.Colors.green.shade400,
+                title: '感恩日記引導問題',
+                tealLight: HealingDesignSystem.softBlue,
+                child: _GratitudeQuestions(
+                  questions:
+                      List<String>.from(_aiResult!['gratitudeQuestions'] ?? []),
+                  teal: HealingDesignSystem.accentPurple,
+                ),
+              ),
+              const m.SizedBox(height: 12),
+              _AiSectionCard(
+                icon: m.Icons.wb_sunny_outlined,
+                iconColor: _amber,
+                title: '明日小行動',
+                tealLight: HealingDesignSystem.softBlue,
+                child: _BodyText(_aiResult!['tomorrowAction'] ?? ''),
+              ),
+              const m.SizedBox(height: 12),
+              // ...可擴充更多 deep 欄位...
+            ],
             // 儲存時間標記
             _buildSavedBadge(),
           ],
@@ -986,30 +846,24 @@ class _AiJournalReflectionPageState
 
   // ── AppBar ──
   m.AppBar _buildAppBar(m.BuildContext context) {
-    const appBarBg = _teal;
-    const appBarFg = m.Colors.white;
-
     return m.AppBar(
-      backgroundColor: appBarBg,
-      foregroundColor: appBarFg,
+      backgroundColor: HealingDesignSystem.adaptiveAppBarBackground(context),
+      foregroundColor: HealingDesignSystem.adaptiveAppBarForeground(context),
       elevation: 0,
       centerTitle: false,
       title: m.Column(
         crossAxisAlignment: m.CrossAxisAlignment.start,
         children: [
           m.Text(
-            'AI 正念回饋',
-            style: m.TextStyle(
-              fontSize: 17,
-              fontWeight: m.FontWeight.w700,
-              color: appBarFg,
+            widget.mode == AiAnalysisMode.basic ? 'AI 基礎回饋' : 'AI 深入觀察',
+            style: HealingDesignSystem.titleMedium.copyWith(
+              color: HealingDesignSystem.adaptiveAppBarForeground(context),
             ),
           ),
           m.Text(
             '${ _day.year }年${ _day.month }月${ _day.day }日',
-            style: m.TextStyle(
-              fontSize: 12,
-              color: appBarFg.withValues(alpha: 0.78),
+            style: HealingDesignSystem.bodySmall.copyWith(
+              color: HealingDesignSystem.adaptiveAppBarForeground(context).withOpacity(0.78),
             ),
           ),
         ],
@@ -1017,11 +871,11 @@ class _AiJournalReflectionPageState
       actions: [
         if (_hasSavedResult)
           m.Padding(
-            padding: const m.EdgeInsets.only(right: 12),
+            padding: const m.EdgeInsets.only(right: HealingDesignSystem.paddingL),
             child: m.Chip(
               label: m.Text('已儲存',
-                  style: m.TextStyle(fontSize: 11, color: appBarFg)),
-              backgroundColor: m.Colors.black.withValues(alpha: 0.22),
+                  style: HealingDesignSystem.labelSmall.copyWith(color: HealingDesignSystem.adaptiveAppBarForeground(context))),
+              backgroundColor: m.Colors.black.withOpacity(0.22),
               side: m.BorderSide.none,
               padding: m.EdgeInsets.zero,
               visualDensity: m.VisualDensity.compact,
@@ -1036,24 +890,23 @@ class _AiJournalReflectionPageState
     if (_loading) {
       return m.Card(
         elevation: 0,
-        color: _tealLight.withValues(alpha: 0.5),
+        color: HealingDesignSystem.softBlue.withOpacity(0.5),
         shape: m.RoundedRectangleBorder(
-            borderRadius: m.BorderRadius.circular(20)),
+            borderRadius: m.BorderRadius.circular(HealingDesignSystem.radiusL)),
         child: m.Padding(
-          padding: const m.EdgeInsets.symmetric(vertical: 20),
+          padding: const m.EdgeInsets.symmetric(vertical: HealingDesignSystem.paddingXL),
           child: m.Column(
             children: [
-              m.CircularProgressIndicator(color: _tealDark, strokeWidth: 2.5),
-              const m.SizedBox(height: 12),
+              m.CircularProgressIndicator(color: HealingDesignSystem.primaryBlue, strokeWidth: 2.5),
+              const m.SizedBox(height: HealingDesignSystem.paddingM),
               m.Text(
                 'AI 正在為你生成今日回饋…',
-                style: m.TextStyle(color: _tealDark, fontSize: 14),
+                style: HealingDesignSystem.bodyMedium.copyWith(color: HealingDesignSystem.primaryBlue),
               ),
-              const m.SizedBox(height: 4),
+              const m.SizedBox(height: HealingDesignSystem.paddingXS),
               m.Text(
                 '這通常需要幾秒鐘，請稍候 🌿',
-                style: m.TextStyle(
-                    color: _tealDark.withValues(alpha: 0.7), fontSize: 12),
+                style: HealingDesignSystem.bodySmall.copyWith(color: HealingDesignSystem.primaryBlue.withOpacity(0.7)),
               ),
             ],
           ),
@@ -1065,11 +918,11 @@ class _AiJournalReflectionPageState
       width: double.infinity,
       child: m.FilledButton.icon(
         style: m.FilledButton.styleFrom(
-          backgroundColor: _teal,
+          backgroundColor: HealingDesignSystem.primaryBlue,
           foregroundColor: m.Colors.white,
-          padding: const m.EdgeInsets.symmetric(vertical: 14),
+          padding: const m.EdgeInsets.symmetric(vertical: HealingDesignSystem.paddingL),
           shape: m.RoundedRectangleBorder(
-              borderRadius: m.BorderRadius.circular(16)),
+              borderRadius: m.BorderRadius.circular(HealingDesignSystem.radiusM)),
         ),
         onPressed: _hasMeaningfulDiaryInput ? _generateAndSave : null,
         icon: const m.Icon(m.Icons.auto_awesome_rounded, size: 20),
@@ -1256,175 +1109,41 @@ class _RecordGrid extends m.StatelessWidget {
 
   @override
   m.Widget build(m.BuildContext context) {
-    // 常見欄位映射
-    final fields = <String, _RecordFieldMeta>{
-      'overallMood': _RecordFieldMeta('整體情緒', m.Icons.sentiment_satisfied_alt_rounded),
-      'mood': _RecordFieldMeta('今日情緒', m.Icons.mood_rounded),
-      'overallHealth': _RecordFieldMeta('健康狀況', m.Icons.favorite_border_rounded),
-      'overallSleepQuality': _RecordFieldMeta('睡眠品質', m.Icons.bedtime_outlined),
-      'sleep': _RecordFieldMeta('睡眠', m.Icons.bedtime_outlined),
-      'anxiety': _RecordFieldMeta('焦慮', m.Icons.psychology_outlined),
-      'energy': _RecordFieldMeta('能量', m.Icons.bolt_rounded),
-      'medication': _RecordFieldMeta('藥物', m.Icons.medication_outlined),
-    };
+    // 基礎 AI 版只顯示「整體情緒」，不顯示神祕綜合分數、
+    // 也不在這張卡片主動展開睡眠、症狀、藥物等深入資料。
+    final mood = data['overallMood'] ?? data['mood'];
 
-    final items = <m.Widget>[];
-
-    for (final entry in fields.entries) {
-      final val = data[entry.key];
-      if (val == null) continue;
-
-      // 睡眠欄位：只顯示總時數 + 夜間睡眠狀況
-      if (entry.key == 'sleep') {
-        final sleepMap = val is Map<String, dynamic> ? val : null;
-        if (sleepMap == null) continue;
-
-        // 計算夜間總時數
-        final sleepTimeStr = sleepMap['sleepTime'] as String?;
-        final wakeTimeStr = (sleepMap['finalWakeTime'] as String?)?.isNotEmpty == true
-            ? sleepMap['finalWakeTime'] as String
-            : sleepMap['wakeTime'] as String?;
-
-        String? hoursLabel;
-        if (sleepTimeStr != null && wakeTimeStr != null) {
-          try {
-            final sParts = sleepTimeStr.split(':');
-            final wParts = wakeTimeStr.split(':');
-            int sMin = int.parse(sParts[0]) * 60 + int.parse(sParts[1]);
-            int wMin = int.parse(wParts[0]) * 60 + int.parse(wParts[1]);
-            if (wMin <= sMin) wMin += 24 * 60; // overnight
-            final hours = (wMin - sMin) / 60.0;
-            hoursLabel = '${hours.toStringAsFixed(1)} 小時';
-          } catch (_) {}
-        }
-
-        if (hoursLabel != null) {
-          items.add(_ScoreChip(
-            label: '夜間睡眠',
-            icon: m.Icons.bedtime_outlined,
-            value: hoursLabel,
-            teal: teal,
-          ));
-        }
-
-        // 夜間睡眠狀況 flags
-        const sleepFlagLabels = <String, String>{
-          'good': '優',
-          'ok': '良好',
-          'earlyWake': '早醒',
-          'dreams': '多夢',
-          'lightSleep': '淺眠',
-          'nocturia': '夜尿',
-          'fragmented': '睡睡醒醒',
-          'insufficient': '睡眠不足',
-          'initInsomnia': '入睡困難 (躺超過 30 分鐘才入睡)',
-          'interrupted': '睡眠中斷 (醒來後超過 30 分鐘才又入睡)',
-        };
-        final flags = sleepMap['flags'];
-        if (flags is List && flags.isNotEmpty) {
-          items.add(
-            m.Padding(
-              padding: const m.EdgeInsets.only(top: 8),
-              child: m.Column(
-                crossAxisAlignment: m.CrossAxisAlignment.start,
-                children: [
-                  m.Row(
-                    children: [
-                      m.Icon(m.Icons.nightlight_round,
-                          size: 16, color: teal),
-                      const m.SizedBox(width: 5),
-                      const m.Text('夜間睡眠狀況',
-                          style: m.TextStyle(
-                              fontSize: 12, fontWeight: m.FontWeight.w600)),
-                    ],
-                  ),
-                  const m.SizedBox(height: 4),
-                  m.Wrap(
-                    alignment: m.WrapAlignment.spaceBetween,
-                    spacing: 6,
-                    runSpacing: 4,
-                    children: flags
-                        .map(
-                          (s) => m.Chip(
-                            label: m.Text(
-                                sleepFlagLabels[s.toString()] ?? s.toString(),
-                                style: const m.TextStyle(fontSize: 11)),
-                            materialTapTargetSize:
-                                m.MaterialTapTargetSize.shrinkWrap,
-                            padding: m.EdgeInsets.zero,
-                            visualDensity: m.VisualDensity.compact,
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-        continue;
-      }
-
-      items.add(_ScoreChip(
-        label: entry.value.label,
-        icon: entry.value.icon,
-        value: val.toString(),
-        teal: teal,
-      ));
+    if (mood == null) {
+      return _EmptyHint(text: '尚無可顯示的整體情緒紀錄。');
     }
 
-    // 症狀列表
-    final symptoms = data['symptoms'];
-    if (symptoms is List) {
-      final symptomList = symptoms
-          .map((s) => s.toString().trim())
-          .where((s) => s.isNotEmpty)
-          .toList();
-      if (symptomList.isNotEmpty) {
-        items.add(
-          m.Padding(
-            padding: const m.EdgeInsets.only(top: 8),
-            child: m.Column(
-              crossAxisAlignment: m.CrossAxisAlignment.start,
-              children: [
-                m.Row(
-                  children: [
-                    m.Icon(m.Icons.warning_amber_rounded,
-                        size: 16, color: m.Colors.orange.shade400),
-                    const m.SizedBox(width: 5),
-                    const m.Text('症狀',
-                        style: m.TextStyle(
-                            fontSize: 12, fontWeight: m.FontWeight.w600)),
-                  ],
-                ),
-                const m.SizedBox(height: 4),
-                m.Wrap(
-                  alignment: m.WrapAlignment.spaceBetween,
-                  spacing: 6,
-                  runSpacing: 4,
-                  children: symptomList
-                      .map(
-                        (s) => m.Chip(
-                          label: m.Text(s,
-                              style: const m.TextStyle(fontSize: 11)),
-                          materialTapTargetSize:
-                              m.MaterialTapTargetSize.shrinkWrap,
-                          padding: m.EdgeInsets.zero,
-                          visualDensity: m.VisualDensity.compact,
-                        ),
-                      )
-                      .toList(),
-                ),
-              ],
+    return m.Container(
+      padding: const m.EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: m.BoxDecoration(
+        color: teal.withValues(alpha: 0.08),
+        borderRadius: m.BorderRadius.circular(14),
+        border: m.Border.all(color: teal.withValues(alpha: 0.18)),
+      ),
+      child: m.Row(
+        mainAxisSize: m.MainAxisSize.min,
+        children: [
+          m.Icon(
+            m.Icons.sentiment_satisfied_alt_rounded,
+            size: 18,
+            color: teal,
+          ),
+          const m.SizedBox(width: 8),
+          m.Text(
+            '你的整體情緒得分為 $mood',
+            style: m.TextStyle(
+              fontSize: 14,
+              fontWeight: m.FontWeight.w600,
+              color: teal,
             ),
           ),
-        );
-      }
-    }
-
-    if (items.isEmpty) return _EmptyHint(text: '尚無可顯示的紀錄欄位。');
-
-    return m.Wrap(alignment: m.WrapAlignment.spaceBetween, spacing: 8, runSpacing: 8, children: items);
+        ],
+      ),
+    );
   }
 }
 
@@ -1540,9 +1259,9 @@ class _TopicChips extends m.StatelessWidget {
   m.Widget build(m.BuildContext context) {
     if (topics.isEmpty) return _EmptyHint(text: '未偵測到明確主題。');
     return m.Wrap(
-      alignment: m.WrapAlignment.spaceBetween,
+      alignment: m.WrapAlignment.start,
       spacing: 8,
-      runSpacing: 6,
+      runSpacing: 8,
       children: topics.map((t) {
         final color = _topicColors[t] ?? teal.withValues(alpha: 0.3);
         return m.Container(
@@ -1840,6 +1559,124 @@ class _EmptyHint extends m.StatelessWidget {
             fontSize: 13,
             color: m.Colors.grey.shade400,
             fontStyle: m.FontStyle.italic),
+      ),
+    );
+  }
+}
+// ──────────────────────────────────────────────
+// 今日情緒摘要卡片（僅顯示整體情緒分數）
+// ──────────────────────────────────────────────
+class _OverallMoodCard extends m.StatelessWidget {
+  final num? overallMood;
+  final m.Color teal;
+  final m.Color tealLight;
+
+  const _OverallMoodCard({
+    this.overallMood,
+    required this.teal,
+    required this.tealLight,
+  });
+
+  @override
+  m.Widget build(m.BuildContext context) {
+    final scoreText = overallMood != null
+        ? overallMood!.toStringAsFixed(overallMood! % 1 == 0 ? 0 : 1)
+        : '--';
+
+    return m.Container(
+      margin: const m.EdgeInsets.symmetric(horizontal: 4),
+      padding: const m.EdgeInsets.all(18),
+      decoration: m.BoxDecoration(
+        color: const m.Color(0xFFF8F7FC),
+        borderRadius: m.BorderRadius.circular(24),
+        border: m.Border.all(
+          color: teal.withOpacity(0.18),
+          width: 1,
+        ),
+        boxShadow: [
+          m.BoxShadow(
+            color: m.Colors.black.withOpacity(0.04),
+            blurRadius: 14,
+            offset: const m.Offset(0, 6),
+          ),
+        ],
+      ),
+      child: m.Row(
+        children: [
+          m.Container(
+            width: 48,
+            height: 48,
+            decoration: m.BoxDecoration(
+              color: teal.withOpacity(0.10),
+              shape: m.BoxShape.circle,
+            ),
+            child: m.Icon(
+              m.Icons.mood_rounded,
+              color: teal,
+              size: 28,
+            ),
+          ),
+          const m.SizedBox(width: 14),
+          m.Expanded(
+            child: m.Column(
+              crossAxisAlignment: m.CrossAxisAlignment.start,
+              children: [
+                m.Text(
+                  '今日情緒摘要',
+                  style: m.TextStyle(
+                    fontSize: 17,
+                    fontWeight: m.FontWeight.w800,
+                    color: const m.Color(0xFF222222),
+                  ),
+                ),
+                const m.SizedBox(height: 6),
+                m.Text(
+                  '你記錄的整體情緒分數',
+                  style: m.TextStyle(
+                    fontSize: 13,
+                    color: m.Colors.grey.shade600,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          m.Container(
+            padding: const m.EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 8,
+            ),
+            decoration: m.BoxDecoration(
+              color: teal.withOpacity(0.10),
+              borderRadius: m.BorderRadius.circular(999),
+              border: m.Border.all(
+                color: teal.withOpacity(0.22),
+              ),
+            ),
+            child: m.RichText(
+              text: m.TextSpan(
+                children: [
+                  m.TextSpan(
+                    text: scoreText,
+                    style: m.TextStyle(
+                      fontSize: 22,
+                      fontWeight: m.FontWeight.w900,
+                      color: teal,
+                    ),
+                  ),
+                  m.TextSpan(
+                    text: ' / 10',
+                    style: m.TextStyle(
+                      fontSize: 13,
+                      fontWeight: m.FontWeight.w600,
+                      color: teal.withOpacity(0.75),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

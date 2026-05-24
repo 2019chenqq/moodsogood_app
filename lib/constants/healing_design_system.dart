@@ -257,73 +257,85 @@ class HealingDesignSystem {
     height: 1.2,
   );
 
-    // ========================================
-    // 🌓 主題自適應工具
-    // ========================================
+// ========================================
+// 🌓 主題自適應工具
+// ========================================
 
-    static bool isDark(BuildContext context) {
-      return Theme.of(context).brightness == Brightness.dark;
-    }
+static bool isDark(BuildContext context) {
+  return Theme.of(context).brightness == Brightness.dark;
+}
 
-    static Color adaptiveBackground(BuildContext context) {
-      return isDark(context) ? const Color(0xFF121212) : softBlue;
-    }
+static Color adaptiveBackground(BuildContext context) {
+  return isDark(context) ? const Color(0xFF0F1720) : softBlue;
+}
 
-      static Color adaptiveAppBarBackground(BuildContext context) {
-        return isDark(context) ? const Color(0xFF1A2530) : primaryBlue;
-      }
+static Color adaptiveAppBarBackground(BuildContext context) {
+  return isDark(context) ? const Color(0xFF16222D) : primaryBlue;
+}
 
-      static Color adaptiveAppBarForeground(BuildContext context) {
-        return isDark(context) ? const Color(0xFFEAF4FB) : Colors.white;
-      }
+static Color adaptiveAppBarForeground(BuildContext context) {
+  return isDark(context) ? const Color(0xFFF4FAFF) : Colors.white;
+}
 
-    static Color adaptiveSurface(BuildContext context) {
-      return isDark(context)
-          ? Theme.of(context).colorScheme.surfaceContainerLow
-          : cardBg;
-    }
+static Color adaptiveSurface(BuildContext context) {
+  return isDark(context) ? const Color(0xFF1A2632) : cardBg;
+}
 
-    static Color adaptiveCardBorder(BuildContext context) {
-      return isDark(context)
-          ? Theme.of(context).colorScheme.outline.withOpacity(0.35)
-          : lineColor.withOpacity(0.8);
-    }
+static Color adaptiveCardBorder(BuildContext context) {
+  return isDark(context)
+      ? const Color(0xFF324657)
+      : lineColor.withOpacity(0.8);
+}
 
-    static Color adaptiveAccent(BuildContext context) {
-      return isDark(context) ? const Color(0xFF8FC7E6) : primaryBlue;
-    }
+static Color adaptiveAccent(BuildContext context) {
+  return isDark(context) ? const Color(0xFF8FC7E6) : primaryBlue;
+}
 
-    static Color adaptivePrimaryText(BuildContext context) {
-      return isDark(context) ? Theme.of(context).colorScheme.onSurface : deepText;
-    }
+static Color adaptivePrimaryText(BuildContext context) {
+  return isDark(context) ? const Color(0xFFF2F7FA) : deepText;
+}
 
-    static Color adaptiveSecondaryText(BuildContext context) {
-      return isDark(context)
-          ? Theme.of(context).colorScheme.onSurfaceVariant
-          : mutedText;
-    }
+static Color adaptiveSecondaryText(BuildContext context) {
+  return isDark(context) ? const Color(0xFFB8C7D3) : mutedText;
+}
 
-    static Color adaptiveFill(BuildContext context) {
-      return isDark(context)
-          ? Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.45)
-          : softBlue.withOpacity(0.35);
-    }
+static Color adaptiveMutedText(BuildContext context) {
+  return isDark(context) ? const Color(0xFF93A4B2) : mutedText;
+}
 
-    static BoxDecoration adaptiveCardDecoration(
-      BuildContext context, {
-      Color? bgColor,
-      Color? shadowColor,
-      double? radius,
-      List<BoxShadow>? shadows,
-    }) {
-      final dark = isDark(context);
-      return BoxDecoration(
-        color: bgColor ?? adaptiveSurface(context),
-        borderRadius: BorderRadius.circular(radius ?? radiusL),
-        border: Border.all(color: adaptiveCardBorder(context)),
-        boxShadow: shadows ?? (dark ? const [] : [shadowMedium(color: shadowColor)]),
-      );
-    }
+static Color adaptiveFill(BuildContext context) {
+  return isDark(context)
+      ? const Color(0xFF243443)
+      : softBlue.withOpacity(0.35);
+}
+
+static BoxDecoration adaptiveCardDecoration(
+  BuildContext context, {
+  Color? bgColor,
+  Color? shadowColor,
+  double? radius,
+  List<BoxShadow>? shadows,
+}) {
+  final dark = isDark(context);
+
+  return BoxDecoration(
+    color: bgColor ?? adaptiveSurface(context),
+    borderRadius: BorderRadius.circular(radius ?? radiusL),
+    border: Border.all(
+      color: adaptiveCardBorder(context),
+      width: dark ? 1.1 : 1,
+    ),
+    boxShadow: dark
+        ? [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.22),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ]
+        : shadows ?? [shadowMedium(color: shadowColor)],
+  );
+}
 
   // Additional methods or classes can be added here if needed.
 }
