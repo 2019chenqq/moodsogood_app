@@ -10,6 +10,8 @@ import 'package:crypto/crypto.dart';
 import 'package:encrypt/encrypt.dart' as encrypt_lib;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 
 import '../utils/date_helper.dart';
@@ -41,6 +43,8 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   final _conceitedCtrl = m.TextEditingController(); // 為自己感到驕傲的是
   final _proudOfCtrl = m.TextEditingController(); // 我做得不錯的地方
   final _selfCareCtrl = m.TextEditingController(); // 我還能多照顧自己一點
+ List<String> _imageUrls = [];
+  bool _uploadingImage = false;
   int _overallMoodScore = 5;
   int _overallHealthScore = 5;
   int _overallSleepScore = 5;
@@ -443,6 +447,68 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
     }
   }
 
+Future<void> _pickAndUploadImage() async {
+  if (_imageUrls.length >= 3) {
+    m.ScaffoldMessenger.of(context).showSnackBar(
+      const m.SnackBar(content: m.Text('每篇日記最多加入 3 張圖片')),
+    );
+    return;
+  }
+
+  final uid = _uid;
+  if (uid == null) return;
+
+  try {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 78,
+      maxWidth: 1600,
+    );
+
+    if (picked == null) return;
+
+    setState(() => _uploadingImage = true);
+
+    final safeDocId = _docId.replaceAll('/', '-');
+    final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final storagePath = 'users/$uid/diary_images/$safeDocId/$fileName';
+
+    final ref = FirebaseStorage.instance.ref(storagePath);
+    final bytes = await picked.readAsBytes();
+
+    await ref.putData(
+      bytes,
+      SettableMetadata(contentType: 'image/jpeg'),
+    );
+
+    final url = await ref.getDownloadURL();
+
+    if (!mounted) return;
+
+    setState(() {
+      _imageUrls.add(url);
+      _uploadingImage = false;
+    });
+
+    await _saveDraft();
+  } catch (e) {
+    if (!mounted) return;
+
+    setState(() => _uploadingImage = false);
+
+    m.ScaffoldMessenger.of(context).showSnackBar(
+      m.SnackBar(content: m.Text('圖片上傳失敗：$e')),
+    );
+  }
+}
+
+void _removeImageUrl(String url) {
+  setState(() {
+    _imageUrls.remove(url);
+  });
+  _saveDraft();
+}
  Future<void> _saveDraft() async {
   try {
     if (_blockCloudSaveDueToDecryptFailure) {
@@ -507,6 +573,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
             'conceited': encService.encryptData(_conceitedCtrl.text.trim()),
             'proudOf': encService.encryptData(_proudOfCtrl.text.trim()),
             'selfCare': encService.encryptData(_selfCareCtrl.text.trim()),
+            'imageUrls': _imageUrls,
             'overallMood': _overallMoodScore,
             'overallHealth': _overallHealthScore,
             'overallSleepQuality': _overallSleepScore,
@@ -515,8 +582,8 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
           }, SetOptions(merge: true));
           
           m.debugPrint('✅ 雲端加密儲存成功');
-          
-        } catch (e) {
+
+           } catch (e) {
           m.debugPrint('⚠️ 雲端加密上傳失敗 (已暫存於本地): $e');
           // 這裡故意拿掉 Snackbar，避免用戶在打字時一直被跳出的紅字打擾
         }
@@ -897,6 +964,15 @@ const m.SizedBox(height: 12),
               maxLines: 10,
               onAnyChanged: _onAnyFieldChanged,
             ),
+            const m.SizedBox(height: 12),
+
+            _PhotoPickerCard(
+  imageUrls: _imageUrls,
+  uploading: _uploadingImage,
+  onAdd: _pickAndUploadImage,
+  onRemove: _removeImageUrl,
+),
+
             const m.SizedBox(height: 12),
 
             CountTextField(
@@ -1412,6 +1488,120 @@ class _AiSmallButton extends m.StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+class _PhotoPickerCard extends m.StatelessWidget {
+  final List<String> imageUrls;
+  final bool uploading;
+  final m.VoidCallback onAdd;
+  final void Function(String url) onRemove;
+
+  const _PhotoPickerCard({
+    required this.imageUrls,
+    required this.uploading,
+    required this.onAdd,
+    required this.onRemove,
+  });
+
+  @override
+  m.Widget build(m.BuildContext context) {
+    final teal = HealingDesignSystem.adaptiveAccent(context);
+    final text = HealingDesignSystem.adaptivePrimaryText(context);
+    final sub = HealingDesignSystem.adaptiveSecondaryText(context);
+
+    return m.Container(
+      padding: const m.EdgeInsets.all(16),
+      decoration: HealingDesignSystem.adaptiveCardDecoration(context),
+      child: m.Column(
+        crossAxisAlignment: m.CrossAxisAlignment.start,
+        children: [
+          m.Row(
+            children: [
+              m.Icon(m.Icons.photo_outlined, color: teal),
+              const m.SizedBox(width: 8),
+              m.Text(
+                '加入照片',
+                style: m.TextStyle(
+                  fontSize: 17,
+                  fontWeight: m.FontWeight.w800,
+                  color: text,
+                ),
+              ),
+              const m.Spacer(),
+              m.Text(
+                '${imageUrls.length}/3',
+                style: m.TextStyle(color: sub),
+              ),
+            ],
+          ),
+          const m.SizedBox(height: 10),
+          m.Text(
+            '可以放今天的天空、食物、散步、或任何想留下的畫面。',
+            style: m.TextStyle(color: sub, height: 1.5),
+          ),
+          const m.SizedBox(height: 14),
+
+          if (imageUrls.isNotEmpty)
+            m.SizedBox(
+              height: 96,
+              child: m.ListView.separated(
+                scrollDirection: m.Axis.horizontal,
+                itemCount: imageUrls.length,
+                separatorBuilder: (_, __) => const m.SizedBox(width: 10),
+                itemBuilder: (context, index) {
+                  final url = imageUrls[index];
+                  return m.Stack(
+                    children: [
+                      m.ClipRRect(
+                        borderRadius: m.BorderRadius.circular(18),
+                        child: m.Image.network(
+                          url,
+                          width: 96,
+                          height: 96,
+                          fit: m.BoxFit.cover,
+                        ),
+                      ),
+                      m.Positioned(
+                        right: 4,
+                        top: 4,
+                        child: m.InkWell(
+                          onTap: () => onRemove(url),
+                          child: m.Container(
+                            padding: const m.EdgeInsets.all(4),
+                            decoration: const m.BoxDecoration(
+                              color: m.Colors.black54,
+                              shape: m.BoxShape.circle,
+                            ),
+                            child: const m.Icon(
+                              m.Icons.close,
+                              color: m.Colors.white,
+                              size: 16,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+
+          if (imageUrls.isNotEmpty) const m.SizedBox(height: 14),
+
+          m.OutlinedButton.icon(
+            onPressed: uploading ? null : onAdd,
+            icon: uploading
+                ? const m.SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: m.CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const m.Icon(m.Icons.add_photo_alternate_outlined),
+            label: m.Text(uploading ? '上傳中...' : '加入照片'),
+          ),
+        ],
       ),
     );
   }
