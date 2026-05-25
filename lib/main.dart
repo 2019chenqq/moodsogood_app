@@ -39,6 +39,8 @@ import 'onboarding_page.dart';
 import 'utils/secure_storage_service.dart';
 import 'pin_setup_screen.dart';
 import 'recovery_key_restore_screen.dart';
+import 'analytics_service.dart';
+import 'pages/profile_page.dart';
 
 bool _firebaseReady = false;
 String? _startupIssueMessage;
@@ -369,6 +371,7 @@ class _FirstLaunchGateState extends State<FirstLaunchGate> {
   @override
   void initState() {
     super.initState();
+    AnalyticsService.logPage('first_launch_gate');
     _checkOnboarding();
   }
 
@@ -569,6 +572,86 @@ class _LockWrapperState extends State<LockWrapper> {
   }
 }
 
+class ProfileCompletionGate extends StatefulWidget {
+  const ProfileCompletionGate({super.key});
+
+  @override
+  State<ProfileCompletionGate> createState() => _ProfileCompletionGateState();
+}
+
+class _ProfileCompletionGateState extends State<ProfileCompletionGate> {
+  bool _loading = true;
+  bool _profileCompleted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkProfileCompletion();
+  }
+
+  Future<void> _checkProfileCompletion() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _profileCompleted = false;
+        });
+      }
+      return;
+    }
+
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      final data = doc.data();
+      final completed = data?['profileCompleted'] == true;
+      final hasBirthday = data?['birthday'] != null;
+
+      if (mounted) {
+        setState(() {
+          _profileCompleted = completed && hasBirthday;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Profile completion check failed: $e');
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _profileCompleted = false;
+        });
+      }
+    }
+  }
+
+  void _onProfileCompleted() {
+    if (mounted) {
+      setState(() => _profileCompleted = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (!_profileCompleted) {
+      return ProfilePage(
+        requireCompletion: true,
+        onCompleted: _onProfileCompleted,
+      );
+    }
+
+    return const LockWrapper();
+  }
+}
+
 /* =========================== Encryption Gate (端到端加密守門員) =========================== */
 class EncryptionGate extends StatefulWidget {
   const EncryptionGate({super.key});
@@ -587,6 +670,7 @@ class _EncryptionGateState extends State<EncryptionGate> {
   @override
   void initState() {
     super.initState();
+    AnalyticsService.logPage('encryption_gate');
     _checkEncryptionKey();
   }
 
@@ -696,8 +780,8 @@ class _EncryptionGateState extends State<EncryptionGate> {
       );
     }
 
-    // 金鑰確認無誤！放行進入原本的 App 鎖檢查與首頁
-    return const LockWrapper();
+    // 金鑰確認無誤後，先確認首次登入資料已填完，再進入 App 鎖檢查與首頁。
+    return const ProfileCompletionGate();
   }
 }
 

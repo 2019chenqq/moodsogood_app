@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'rooms_management_page.dart';
+import '../../analytics_service.dart';
 
 /// 看板審核頁面（管理員用）
 class RoomRequestsAdminPage extends StatefulWidget {
@@ -11,6 +12,13 @@ class RoomRequestsAdminPage extends StatefulWidget {
 }
 
 class _RoomRequestsAdminPageState extends State<RoomRequestsAdminPage> {
+
+  @override
+  void initState() {
+    super.initState();
+    AnalyticsService.logPage('room_requests_admin_page');
+  }
+
   static const _requestsCollection = 'community_room_requests';
   static const _roomsCollection = 'community_rooms';
 

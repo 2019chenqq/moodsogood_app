@@ -17,6 +17,7 @@ import 'daily_record_dialogs.dart';
 import 'daily_record_widgets.dart';
 import 'daily_record_pages.dart';
 import 'emotion_page_checkbox.dart';
+import '../analytics_service.dart';
 
 /// Main Screen
 class DailyRecordScreen extends StatefulWidget {
@@ -49,7 +50,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     super.initState();
     _index = widget.initialTab.clamp(0, 2);
     _loadPeriodCalendarState();
-    _loadExistingData(_recordDate); // 一進來就載入今天的紀錄（含生理期狀態）
+    _loadExistingData(_recordDate);
+    AnalyticsService.logPage('daily_record_screen'); // 一進來就載入今天的紀錄（含生理期狀態）
   }
 
   DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);

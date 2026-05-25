@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import '../constants/healing_design_system.dart';
 import 'medication_local_db.dart';
+import '../analytics_service.dart';
 
 class MedSymptomComparePage extends StatefulWidget {
   const MedSymptomComparePage({super.key});
@@ -114,6 +115,7 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
     // Prefer Traditional Chinese if available
     _tts.setLanguage('zh-TW');
     _tts.setSpeechRate(0.45);
+     AnalyticsService.logPage('med_symptom_compare_page');
     
     // 初始化時從 Firebase 同步最新藥物到本地
     final uid = FirebaseAuth.instance.currentUser?.uid;

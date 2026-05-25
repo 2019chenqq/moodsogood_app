@@ -7,6 +7,7 @@ import '../utils/date_helper.dart';
 import '../models/daily_record.dart';
 import 'daily_record_repository.dart';
 import '../constants/healing_design_system.dart';
+import '../analytics_service.dart';
 
 class RecordDetailScreen extends StatefulWidget {
   final String uid;
@@ -25,6 +26,13 @@ class RecordDetailScreen extends StatefulWidget {
 }
 
 class _RecordDetailScreenState extends State<RecordDetailScreen> {
+
+  @override
+  void initState() {
+    super.initState();
+    AnalyticsService.logPage('record_detail_screen');
+  }
+
   /// 從本地 SQLite 和 Firebase 加載混合數據
   Future<DailyRecord?> _loadMergedRecord() async {
     final date = DateHelper.parseIdToDate(widget.docId);

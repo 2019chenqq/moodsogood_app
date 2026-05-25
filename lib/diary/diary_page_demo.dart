@@ -13,7 +13,6 @@ import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 
-
 import '../utils/date_helper.dart';
 import '../utils/firebase_sync_config.dart';
 import '../constants/healing_design_system.dart';
@@ -24,6 +23,7 @@ import '../utils/secure_storage_service.dart';
 import '../utils/encryption_service.dart';
 import '../utils/key_manager.dart';
 import '../test_pages/pro_preview_page.dart';
+import '../analytics_service.dart';
 
 class DiaryPageDemo extends m.StatefulWidget {
   final DateTime date;
@@ -43,7 +43,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   final _conceitedCtrl = m.TextEditingController(); // 為自己感到驕傲的是
   final _proudOfCtrl = m.TextEditingController(); // 我做得不錯的地方
   final _selfCareCtrl = m.TextEditingController(); // 我還能多照顧自己一點
- List<String> _imageUrls = [];
+  List<String> _imageUrls = [];
   bool _uploadingImage = false;
   int _overallMoodScore = 5;
   int _overallHealthScore = 5;
@@ -90,6 +90,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
     _loadDraft(); // 讀入當日已存的內容（如有）
     _attachAutoSave(); // 綁定每欄位防彈跳自動儲存
     _loadNeighbors(); // 查上一筆/下一筆
+     AnalyticsService.logPage('diary_page_demo');
   }
 
   @override
@@ -140,11 +141,12 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
       try {
         final docRef = _docRef;
         if (docRef == null) return;
-        final snap = await docRef.get(const GetOptions(source: Source.serverAndCache));
+        final snap =
+            await docRef.get(const GetOptions(source: Source.serverAndCache));
         final data = snap.data();
         if (data != null && mounted) {
           m.debugPrint('📔 Loaded diary from Firebase, decrypting...');
-          
+
           // 🔑 去保險箱拿鑰匙並啟動解密小幫手
           final key = await SecureStorageService.getKey();
           EncryptionService? encService;
@@ -185,14 +187,22 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
           // 將解密後的資料重新組裝，更新到畫面上
           final decryptedData = {
             ...data, // 保留不用加密的欄位 (如 date, overallMood 等分數)
-            'title': decrypt('title', data['title'], fallbackValues['title'] ?? ''),
-            'content': decrypt('content', data['content'], fallbackValues['content'] ?? ''),
-            'themeSong': decrypt('themeSong', data['themeSong'], fallbackValues['themeSong'] ?? ''),
-            'highlight': decrypt('highlight', data['highlight'], fallbackValues['highlight'] ?? ''),
-            'metaphor': decrypt('metaphor', data['metaphor'], fallbackValues['metaphor'] ?? ''),
-            'conceited': decrypt('conceited', data['conceited'], fallbackValues['conceited'] ?? ''),
-            'proudOf': decrypt('proudOf', data['proudOf'], fallbackValues['proudOf'] ?? ''),
-            'selfCare': decrypt('selfCare', data['selfCare'], fallbackValues['selfCare'] ?? ''),
+            'title':
+                decrypt('title', data['title'], fallbackValues['title'] ?? ''),
+            'content': decrypt(
+                'content', data['content'], fallbackValues['content'] ?? ''),
+            'themeSong': decrypt('themeSong', data['themeSong'],
+                fallbackValues['themeSong'] ?? ''),
+            'highlight': decrypt('highlight', data['highlight'],
+                fallbackValues['highlight'] ?? ''),
+            'metaphor': decrypt(
+                'metaphor', data['metaphor'], fallbackValues['metaphor'] ?? ''),
+            'conceited': decrypt('conceited', data['conceited'],
+                fallbackValues['conceited'] ?? ''),
+            'proudOf': decrypt(
+                'proudOf', data['proudOf'], fallbackValues['proudOf'] ?? ''),
+            'selfCare': decrypt(
+                'selfCare', data['selfCare'], fallbackValues['selfCare'] ?? ''),
           };
 
           _updateUIFromData(decryptedData);
@@ -351,14 +361,17 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
           .collection('users')
           .doc(uid)
           .get(const GetOptions(source: Source.server));
-        if (!mounted) return;
+      if (!mounted) return;
 
       final prefs = await SharedPreferences.getInstance();
-        if (!mounted) return;
-      final cloudSalt = (userDoc.data()?['encryptionSalt'] as String?)?.trim() ?? '';
+      if (!mounted) return;
+      final cloudSalt =
+          (userDoc.data()?['encryptionSalt'] as String?)?.trim() ?? '';
       final localSalt = (prefs.getString('e2eSalt') ?? '').trim();
-      final legacySalt = (userDoc.data()?['legacyEncryptionSalt'] as String?)?.trim() ?? '';
-      final oldSalt = (userDoc.data()?['oldEncryptionSalt'] as String?)?.trim() ?? '';
+      final legacySalt =
+          (userDoc.data()?['legacyEncryptionSalt'] as String?)?.trim() ?? '';
+      final oldSalt =
+          (userDoc.data()?['oldEncryptionSalt'] as String?)?.trim() ?? '';
 
       final salts = <String>{};
       if (cloudSalt.isNotEmpty) salts.add(cloudSalt);
@@ -433,7 +446,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
       await _loadDraft();
       if (!mounted) return;
       m.ScaffoldMessenger.of(context).showSnackBar(
-        const m.SnackBar(content: m.Text('舊日記修復成功')), 
+        const m.SnackBar(content: m.Text('舊日記修復成功')),
       );
     } catch (_) {
       if (!mounted) return;
@@ -447,80 +460,81 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
     }
   }
 
-Future<void> _pickAndUploadImage() async {
-  if (_imageUrls.length >= 3) {
-    m.ScaffoldMessenger.of(context).showSnackBar(
-      const m.SnackBar(content: m.Text('每篇日記最多加入 3 張圖片')),
-    );
-    return;
-  }
-
-  final uid = _uid;
-  if (uid == null) return;
-
-  try {
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 78,
-      maxWidth: 1600,
-    );
-
-    if (picked == null) return;
-
-    setState(() => _uploadingImage = true);
-
-    final safeDocId = _docId.replaceAll('/', '-');
-    final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
-    final storagePath = 'users/$uid/diary_images/$safeDocId/$fileName';
-
-    final ref = FirebaseStorage.instance.ref(storagePath);
-    final bytes = await picked.readAsBytes();
-
-    await ref.putData(
-      bytes,
-      SettableMetadata(contentType: 'image/jpeg'),
-    );
-
-    final url = await ref.getDownloadURL();
-
-    if (!mounted) return;
-
-    setState(() {
-      _imageUrls.add(url);
-      _uploadingImage = false;
-    });
-
-    await _saveDraft();
-  } catch (e) {
-    if (!mounted) return;
-
-    setState(() => _uploadingImage = false);
-
-    m.ScaffoldMessenger.of(context).showSnackBar(
-      m.SnackBar(content: m.Text('圖片上傳失敗：$e')),
-    );
-  }
-}
-
-void _removeImageUrl(String url) {
-  setState(() {
-    _imageUrls.remove(url);
-  });
-  _saveDraft();
-}
- Future<void> _saveDraft() async {
-  try {
-    if (_blockCloudSaveDueToDecryptFailure) {
-      m.debugPrint('🛡️ 已暫停本地與雲端寫入：避免覆蓋仍可恢復的加密資料');
-      if (mounted) {
-        setState(() => _saving = false);
-      }
+  Future<void> _pickAndUploadImage() async {
+    if (_imageUrls.length >= 3) {
+      m.ScaffoldMessenger.of(context).showSnackBar(
+        const m.SnackBar(content: m.Text('每篇日記最多加入 3 張圖片')),
+      );
       return;
     }
 
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = _uid;
     if (uid == null) return;
+
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 78,
+        maxWidth: 1600,
+      );
+
+      if (picked == null) return;
+
+      setState(() => _uploadingImage = true);
+
+      final safeDocId = _docId.replaceAll('/', '-');
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final storagePath = 'users/$uid/diary_images/$safeDocId/$fileName';
+
+      final ref = FirebaseStorage.instance.ref(storagePath);
+      final bytes = await picked.readAsBytes();
+
+      await ref.putData(
+        bytes,
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
+
+      final url = await ref.getDownloadURL();
+
+      if (!mounted) return;
+
+      setState(() {
+        _imageUrls.add(url);
+        _uploadingImage = false;
+      });
+
+      await _saveDraft();
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() => _uploadingImage = false);
+
+      m.ScaffoldMessenger.of(context).showSnackBar(
+        m.SnackBar(content: m.Text('圖片上傳失敗：$e')),
+      );
+    }
+  }
+
+  void _removeImageUrl(String url) {
+    setState(() {
+      _imageUrls.remove(url);
+    });
+    _saveDraft();
+  }
+
+  Future<void> _saveDraft() async {
+    try {
+      if (_blockCloudSaveDueToDecryptFailure) {
+        m.debugPrint('🛡️ 已暫停本地與雲端寫入：避免覆蓋仍可恢復的加密資料');
+        if (mounted) {
+          setState(() => _saving = false);
+        }
+        return;
+      }
+
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
 
       // ==========================================
       // 步驟 1：💾 永遠先存一份「明文」到本地資料庫
@@ -546,7 +560,8 @@ void _removeImageUrl(String url) {
       // ==========================================
       // 步驟 2：☁️ 嘗試加密並上傳到 Firebase (獨立區塊，失敗不影響本地)
       // ==========================================
-      if (FirebaseSyncConfig.shouldSync() && !_blockCloudSaveDueToDecryptFailure) {
+      if (FirebaseSyncConfig.shouldSync() &&
+          !_blockCloudSaveDueToDecryptFailure) {
         try {
           final docRef = _docRef;
           if (docRef == null) {
@@ -580,10 +595,9 @@ void _removeImageUrl(String url) {
             'updatedAt': FieldValue.serverTimestamp(),
             'isEncrypted': true,
           }, SetOptions(merge: true));
-          
-          m.debugPrint('✅ 雲端加密儲存成功');
 
-           } catch (e) {
+          m.debugPrint('✅ 雲端加密儲存成功');
+        } catch (e) {
           m.debugPrint('⚠️ 雲端加密上傳失敗 (已暫存於本地): $e');
           // 這裡故意拿掉 Snackbar，避免用戶在打字時一直被跳出的紅字打擾
         }
@@ -600,84 +614,84 @@ void _removeImageUrl(String url) {
         _saving = false;
         _savedAt = DateTime.now();
       });
-
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
       m.debugPrint('自動儲存發生未預期的錯誤: $e');
     }
   }
-Future<void> _openBasicAiFeedback() async {
-  await FirebaseAnalytics.instance.logEvent(
-    name: 'basic_ai_click',
-    parameters: {
-      'source': 'diary_page',
-      'date': _docId,
-    },
-  );
 
-  if (!mounted) return;
+  Future<void> _openBasicAiFeedback() async {
+    await FirebaseAnalytics.instance.logEvent(
+      name: 'basic_ai_click',
+      parameters: {
+        'source': 'diary_page',
+        'date': _docId,
+      },
+    );
 
-  m.showModalBottomSheet(
-    context: context,
-    showDragHandle: true,
-    shape: const m.RoundedRectangleBorder(
-      borderRadius: m.BorderRadius.vertical(top: m.Radius.circular(24)),
-    ),
-    builder: (_) {
-      return m.Padding(
-        padding: const m.EdgeInsets.fromLTRB(20, 8, 20, 28),
-        child: m.Column(
-          mainAxisSize: m.MainAxisSize.min,
-          crossAxisAlignment: m.CrossAxisAlignment.start,
-          children: [
-            m.Text(
-              'AI 基礎回饋',
-              style: m.Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: m.FontWeight.w800,
-                  ),
-            ),
-            const m.SizedBox(height: 12),
-            const m.Text(
-              '這裡之後會放「今日情緒摘要、主題分類、溫柔回饋、照顧自己的小建議」。',
-              style: m.TextStyle(height: 1.6),
-            ),
-            const m.SizedBox(height: 16),
-            m.Container(
-              padding: const m.EdgeInsets.all(14),
-              decoration: m.BoxDecoration(
-                color: m.Colors.teal.withOpacity(0.08),
-                borderRadius: m.BorderRadius.circular(18),
+    if (!mounted) return;
+
+    m.showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      shape: const m.RoundedRectangleBorder(
+        borderRadius: m.BorderRadius.vertical(top: m.Radius.circular(24)),
+      ),
+      builder: (_) {
+        return m.Padding(
+          padding: const m.EdgeInsets.fromLTRB(20, 8, 20, 28),
+          child: m.Column(
+            mainAxisSize: m.MainAxisSize.min,
+            crossAxisAlignment: m.CrossAxisAlignment.start,
+            children: [
+              m.Text(
+                'AI 基礎回饋',
+                style: m.Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: m.FontWeight.w800,
+                    ),
               ),
-              child: const m.Text(
-                '範例：今天的文字裡，可以感覺到你正在努力整理自己的感受。即使狀態不一定很穩，你仍然願意記錄下來，這本身就是一種照顧自己的方式。',
+              const m.SizedBox(height: 12),
+              const m.Text(
+                '這裡之後會放「今日情緒摘要、主題分類、溫柔回饋、照顧自己的小建議」。',
                 style: m.TextStyle(height: 1.6),
               ),
-            ),
-          ],
-        ),
-      );
-    },
-  );
-}
+              const m.SizedBox(height: 16),
+              m.Container(
+                padding: const m.EdgeInsets.all(14),
+                decoration: m.BoxDecoration(
+                  color: m.Colors.teal.withOpacity(0.08),
+                  borderRadius: m.BorderRadius.circular(18),
+                ),
+                child: const m.Text(
+                  '範例：今天的文字裡，可以感覺到你正在努力整理自己的感受。即使狀態不一定很穩，你仍然願意記錄下來，這本身就是一種照顧自己的方式。',
+                  style: m.TextStyle(height: 1.6),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
-Future<void> _openDeepAiPreview() async {
-  await FirebaseAnalytics.instance.logEvent(
-    name: 'deep_ai_pro_preview_click',
-    parameters: {
-      'source': 'diary_page',
-      'date': _docId,
-    },
-  );
+  Future<void> _openDeepAiPreview() async {
+    await FirebaseAnalytics.instance.logEvent(
+      name: 'deep_ai_pro_preview_click',
+      parameters: {
+        'source': 'diary_page',
+        'date': _docId,
+      },
+    );
 
-  if (!mounted) return;
+    if (!mounted) return;
 
-  m.Navigator.of(context).push(
-    m.MaterialPageRoute(
-      builder: (_) => const ProPreviewPage(),
-    ),
-  );
-}
+    m.Navigator.of(context).push(
+      m.MaterialPageRoute(
+        builder: (_) => const ProPreviewPage(),
+      ),
+    );
+  }
 
   // 查上一筆 / 下一筆（以日記集合的 date 欄位為準）
   Future<void> _loadNeighbors() async {
@@ -864,11 +878,11 @@ Future<void> _openDeepAiPreview() async {
           children: [
             _DateHeaderCard(date: d),
             const m.SizedBox(height: 12),
-_AiEntryCard(
-  onBasicTap: _openBasicAiFeedback,
-  onDeepTap: _openDeepAiPreview,
-),
-const m.SizedBox(height: 12),
+            _AiEntryCard(
+              onBasicTap: _openBasicAiFeedback,
+              onDeepTap: _openDeepAiPreview,
+            ),
+            const m.SizedBox(height: 12),
             if (_needsLegacyRepair) ...[
               m.Text(
                 '此紀錄需要使用舊安全碼修復',
@@ -967,11 +981,11 @@ const m.SizedBox(height: 12),
             const m.SizedBox(height: 12),
 
             _PhotoPickerCard(
-  imageUrls: _imageUrls,
-  uploading: _uploadingImage,
-  onAdd: _pickAndUploadImage,
-  onRemove: _removeImageUrl,
-),
+              imageUrls: _imageUrls,
+              uploading: _uploadingImage,
+              onAdd: _pickAndUploadImage,
+              onRemove: _removeImageUrl,
+            ),
 
             const m.SizedBox(height: 12),
 
@@ -1068,7 +1082,7 @@ class _DateHeaderCard extends m.StatelessWidget {
     return m.Container(
       margin: const m.EdgeInsets.fromLTRB(16, 4, 16, 8),
       padding: const m.EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: HealingDesignSystem.cardDecoration(
+      decoration: HealingDesignSystem.cardDecoration(
         bgColor: HealingDesignSystem.adaptiveSurface(context),
         radius: HealingDesignSystem.radiusL,
         shadowColor: HealingDesignSystem.primaryBlue,
@@ -1242,11 +1256,13 @@ class CountTextField extends m.StatelessWidget {
   m.Widget build(m.BuildContext context) {
     final effectiveTextStyle =
         (textStyle ?? HealingDesignSystem.bodyLarge).copyWith(
-      color: textStyle?.color ?? HealingDesignSystem.adaptivePrimaryText(context),
+      color:
+          textStyle?.color ?? HealingDesignSystem.adaptivePrimaryText(context),
     );
     final effectiveHintStyle =
         (hintStyle ?? HealingDesignSystem.bodyLarge).copyWith(
-      color: hintStyle?.color ?? HealingDesignSystem.adaptiveSecondaryText(context),
+      color: hintStyle?.color ??
+          HealingDesignSystem.adaptiveSecondaryText(context),
     );
 
     return m.Container(
@@ -1263,7 +1279,8 @@ class CountTextField extends m.StatelessWidget {
             m.Row(
               children: [
                 if (icon != null) ...[
-                  m.Icon(icon, size: 18, color: HealingDesignSystem.primaryBlue),
+                  m.Icon(icon,
+                      size: 18, color: HealingDesignSystem.primaryBlue),
                   const m.SizedBox(width: 6),
                 ],
                 m.Expanded(
@@ -1292,16 +1309,20 @@ class CountTextField extends m.StatelessWidget {
                 hintText: hint,
                 hintStyle: effectiveHintStyle,
                 border: m.OutlineInputBorder(
-                  borderRadius: m.BorderRadius.circular(HealingDesignSystem.radiusM),
+                  borderRadius:
+                      m.BorderRadius.circular(HealingDesignSystem.radiusM),
                   borderSide: m.BorderSide.none,
                 ),
                 enabledBorder: m.OutlineInputBorder(
-                  borderRadius: m.BorderRadius.circular(HealingDesignSystem.radiusM),
+                  borderRadius:
+                      m.BorderRadius.circular(HealingDesignSystem.radiusM),
                   borderSide: const m.BorderSide(color: m.Colors.transparent),
                 ),
                 focusedBorder: m.OutlineInputBorder(
-                  borderRadius: m.BorderRadius.circular(HealingDesignSystem.radiusM),
-                  borderSide: const m.BorderSide(color: HealingDesignSystem.primaryBlue),
+                  borderRadius:
+                      m.BorderRadius.circular(HealingDesignSystem.radiusM),
+                  borderSide: const m.BorderSide(
+                      color: HealingDesignSystem.primaryBlue),
                 ),
                 contentPadding: const m.EdgeInsets.symmetric(
                   horizontal: 14,
@@ -1380,7 +1401,6 @@ class _AiEntryCard extends m.StatelessWidget {
             ),
           ),
           const m.SizedBox(height: 14),
-
           m.Row(
             children: [
               m.Expanded(
@@ -1492,6 +1512,7 @@ class _AiSmallButton extends m.StatelessWidget {
     );
   }
 }
+
 class _PhotoPickerCard extends m.StatelessWidget {
   final List<String> imageUrls;
   final bool uploading;
@@ -1542,7 +1563,6 @@ class _PhotoPickerCard extends m.StatelessWidget {
             style: m.TextStyle(color: sub, height: 1.5),
           ),
           const m.SizedBox(height: 14),
-
           if (imageUrls.isNotEmpty)
             m.SizedBox(
               height: 96,
@@ -1587,9 +1607,7 @@ class _PhotoPickerCard extends m.StatelessWidget {
                 },
               ),
             ),
-
           if (imageUrls.isNotEmpty) const m.SizedBox(height: 14),
-
           m.OutlinedButton.icon(
             onPressed: uploading ? null : onAdd,
             icon: uploading

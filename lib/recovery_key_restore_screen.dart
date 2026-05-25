@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/key_manager.dart';
 import '../utils/secure_storage_service.dart';
 import 'pin_setup_screen.dart';
+import 'analytics_service.dart';
  
 class RecoveryKeyRestoreScreen extends StatefulWidget {
   const RecoveryKeyRestoreScreen({super.key});
@@ -18,6 +19,13 @@ class RecoveryKeyRestoreScreen extends StatefulWidget {
  
 class _RecoveryKeyRestoreScreenState
     extends State<RecoveryKeyRestoreScreen> {
+
+  @override
+  void initState() {
+    super.initState();
+    AnalyticsService.logPage('recovery_key_restore_screen');
+  }
+
   // 12 個輸入格的 controller
   final List<TextEditingController> _controllers =
       List.generate(12, (_) => TextEditingController());

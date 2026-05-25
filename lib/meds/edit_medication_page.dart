@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../utils/firebase_sync_config.dart';
 import 'medication_local_db.dart';
 import 'medication_reminder_service.dart';
+import '../analytics_service.dart';
 
 class EditMedicationPage extends StatefulWidget {
   final String docId;
@@ -70,6 +71,7 @@ List<Map<String, String>> _drugSuggestions = [];
   void initState() {
     super.initState();
     _hydrateFromInitial(widget.initialData);
+     AnalyticsService.logPage('edit_medication_page');
   }
 
   void _hydrateFromInitial(Map<String, dynamic> d) {

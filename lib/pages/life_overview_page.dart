@@ -8,6 +8,7 @@ import '../models/calendar_day_summary.dart';
 import '../services/ai_feedback_service.dart';
 import '../services/calendar_summary_service.dart';
 import '../widgets/unified_calendar_widget.dart';
+import '../analytics_service.dart';
 
 class LifeOverviewPage extends StatefulWidget {
   const LifeOverviewPage({super.key});
@@ -34,6 +35,7 @@ class _LifeOverviewPageState extends State<LifeOverviewPage> {
   @override
   void initState() {
     super.initState();
+    AnalyticsService.logPage('life_overview_page');
     final now = DateTime.now();
     _selectedDate = DateTime(now.year, now.month, now.day);
     _focusedMonth = DateTime(now.year, now.month, 1);

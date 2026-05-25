@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../../analytics_service.dart';
 
 /// 看板管理頁面（刪除重複看板）
 class RoomsManagementPage extends StatefulWidget {
@@ -11,6 +12,13 @@ class RoomsManagementPage extends StatefulWidget {
 }
 
 class _RoomsManagementPageState extends State<RoomsManagementPage> {
+
+  @override
+  void initState() {
+    super.initState();
+    AnalyticsService.logPage('rooms_management_page');
+  }
+
   static const _roomsCollection = 'community_rooms';
 
   @override

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../analytics_service.dart';
 
 /// 統計分析功能導覽
 class StatisticsTutorialPage extends StatefulWidget {
@@ -17,6 +18,7 @@ class _StatisticsTutorialPageState extends State<StatisticsTutorialPage> {
   void initState() {
     super.initState();
     _pageController = PageController();
+     AnalyticsService.logPage('statistics_tutorial_page');
   }
 
   @override

@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-
+import '../analytics_service.dart';
 class FeedbackPage extends StatefulWidget {
   const FeedbackPage({super.key});
 
@@ -29,6 +29,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
   @override
   void initState() {
     super.initState();
+     AnalyticsService.logPage('feedback_page');
     final user = FirebaseAuth.instance.currentUser;
     final email = user?.email;
     if (email != null) {

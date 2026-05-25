@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/calendar_day_summary.dart';
 import '../services/calendar_summary_service.dart';
 import '../widgets/unified_calendar_widget.dart';
+import '../analytics_service.dart';
 
 class CalendarIntegrationDemoPage extends StatefulWidget {
   const CalendarIntegrationDemoPage({super.key});
@@ -27,6 +28,7 @@ class _CalendarIntegrationDemoPageState extends State<CalendarIntegrationDemoPag
   @override
   void initState() {
     super.initState();
+    AnalyticsService.logPage('calendar_integration_demo_page');
     final now = DateTime.now();
     _selectedDate = DateTime(now.year, now.month, now.day);
     _focusedMonth = DateTime(now.year, now.month, 1);

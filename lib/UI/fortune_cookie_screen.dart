@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import '../quotes.dart';
+import '../analytics_service.dart';
 
 class FortuneCookieScreen extends StatefulWidget {
   const FortuneCookieScreen({
@@ -29,6 +30,7 @@ class _FortuneCookieScreenState extends State<FortuneCookieScreen> {
  @override
 void initState() {
   super.initState();
+  AnalyticsService.logPage('fortune_cookie_screen');
 
   _quote = QuotesTitle.randomQuote();
 

@@ -9,6 +9,7 @@ import '../PDF/export_config.dart';
 import '../PDF/export_metrics_calculator.dart';
 import '../PDF/summary_rule_engine.dart';
 import '../PDF/export_metrics.dart';
+import '../analytics_service.dart';
 
 /// ============================================================
 /// 導出報告頁面 - 包含預覽和導出功能
@@ -39,6 +40,7 @@ class _ExportReportPageState extends State<ExportReportPage> {
   @override
   void initState() {
     super.initState();
+    AnalyticsService.logPage('export_report_page');
     _endDate = DateTime.now();
     _startDate = _endDate.subtract(const Duration(days: 27)); // 28 天
     _loadPreview();

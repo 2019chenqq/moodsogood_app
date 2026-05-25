@@ -10,6 +10,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import 'legal_markdown_page.dart';
+import 'analytics_service.dart';
 
 const bool kEnableReviewQuickLogin =
     bool.fromEnvironment('ENABLE_REVIEW_QUICK_LOGIN', defaultValue: false);
@@ -31,6 +32,7 @@ class _SignInPageState extends State<SignInPage> {
   @override
   void initState() {
     super.initState();
+    AnalyticsService.logPage('sign_in_page');
     debugPrint('📝 SignInPage loaded - User needs to sign in');
     _prepareAppleSignIn();
     _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {

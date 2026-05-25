@@ -6,6 +6,7 @@ import '../diary/diary_home_page.dart';
 import '../meds/medication_home_page.dart';
 import '../meds/medication_checkin_page.dart';
 import '../community/community_home_page.dart';
+import '../analytics_service.dart';
 
 class RecordHubPage extends StatelessWidget {
   const RecordHubPage({super.key});
@@ -214,6 +215,7 @@ class _RecordEntryCardState extends State<_RecordEntryCard>
   @override
   void initState() {
     super.initState();
+     AnalyticsService.logPage('hub_pages');
     _controller = AnimationController(
       duration: const Duration(milliseconds: 200),
       vsync: this,

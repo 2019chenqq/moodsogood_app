@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 
 import 'diary_page_demo.dart';
 import '/diary/diary_repository.dart';
+import '../analytics_service.dart';
 
 // weekday label
 const _kWeekLabels = ['日', '一', '二', '三', '四', '五', '六'];
@@ -160,6 +161,7 @@ class _DiaryHomePageState extends m.State<DiaryHomePage> {
   void initState() {
     super.initState();
     final now = DateTime.now();
+     AnalyticsService.logPage('diary_home_page');
     _focusedMonth = DateTime(now.year, now.month, 1);
     final user = FirebaseAuth.instance.currentUser;
     _uid = user?.uid;

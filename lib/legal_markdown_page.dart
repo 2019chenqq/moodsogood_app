@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'analytics_service.dart';
 
 class LegalMarkdownPage extends StatefulWidget {
   final String title;
@@ -17,6 +18,7 @@ class _LegalMarkdownPageState extends State<LegalMarkdownPage> {
   @override
   void initState() {
     super.initState();
+    AnalyticsService.logPage('legal_markdown_page');
     _load();
   }
 

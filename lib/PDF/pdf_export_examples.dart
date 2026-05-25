@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/daily_record.dart';
 import 'export_config.dart';
 import 'pdf_export_provider.dart';
+import '../analytics_service.dart';
 
 /// ============================================================
 /// PDF 導出集成示例
@@ -89,6 +90,7 @@ class _AdvancedPDFExportPageState extends State<AdvancedPDFExportPage> {
   @override
   void initState() {
     super.initState();
+    AnalyticsService.logPage('advanced_pdf_export_page');
     endDate = DateTime.now();
     startDate = endDate.subtract(const Duration(days: 27));
   }

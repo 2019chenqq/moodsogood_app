@@ -5,6 +5,7 @@ import '../constants/healing_design_system.dart';
 import 'add_medication_page.dart';
 import 'edit_medication_page.dart';
 import '../widgets/main_drawer.dart';
+import '../analytics_service.dart';
 import 'record_adjustment_page.dart';
 import 'record_adjustment_history_page.dart';
 import 'med_symptom_compare_page.dart';
@@ -92,6 +93,7 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
   void initState() {
     super.initState();
     _refresh();
+     AnalyticsService.logPage('medication_home_page');
   }
 
   void _refresh() {

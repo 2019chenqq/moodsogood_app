@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'analytics_service.dart';
 
 /// 初次使用導覽頁面
 /// 展示應用的主要功能並引導用戶開始使用
@@ -17,6 +18,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
   @override
   void initState() {
     super.initState();
+    AnalyticsService.logPage('onboarding_page');
     _pageController = PageController();
   }
 

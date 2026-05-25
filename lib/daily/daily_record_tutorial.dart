@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../analytics_service.dart';
 
 /// 每日紀錄功能導覽
 class DailyRecordTutorialPage extends StatefulWidget {
@@ -17,6 +18,7 @@ class _DailyRecordTutorialPageState extends State<DailyRecordTutorialPage> {
   @override
   void initState() {
     super.initState();
+    AnalyticsService.logPage('daily_record_tutorial_page');
     _pageController = PageController();
   }
 

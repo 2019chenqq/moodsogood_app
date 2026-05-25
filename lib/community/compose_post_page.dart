@@ -7,6 +7,7 @@ import 'models/post.dart';
 import 'providers/rooms_provider.dart';
 import 'providers/room_feed_provider.dart';
 import 'widgets/community_style.dart';
+import '../analytics_service.dart';
 
 class ComposePostPage extends StatefulWidget {
   static const routeName = '/community/compose';
@@ -25,6 +26,7 @@ class _ComposePostPageState extends State<ComposePostPage> {
   @override
   void initState() {
     super.initState();
+    AnalyticsService.logPage('compose_post_page');
     _loadAnonName();
   }
 

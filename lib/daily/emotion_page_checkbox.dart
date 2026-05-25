@@ -3,6 +3,7 @@ import 'daily_record_helpers.dart';
 import 'daily_record_pages.dart';
 import '../constants/healing_design_system.dart';
 import '../widgets/emotion_slider.dart';
+import '../analytics_service.dart';
 
 const Map<String, List<String>> kEmotionCheckboxCategories = {
   '喜悅': ['快樂', '興奮', '愉悅', '滿足', '自在'],
@@ -49,6 +50,7 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
   @override
   void initState() {
     super.initState();
+    AnalyticsService.logPage('emotion_page_checkbox');
   }
 
   @override

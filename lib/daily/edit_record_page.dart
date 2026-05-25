@@ -7,7 +7,7 @@ import '../utils/date_helper.dart';
 import '../utils/firebase_sync_config.dart';
 import 'daily_record_repository.dart';
 import '../constants/healing_design_system.dart';
-
+import '../analytics_service.dart';
 class EditRecordPage extends StatefulWidget {
   final String uid;
   final String docId;
@@ -193,7 +193,7 @@ newSleep['naps'] = naps;
   @override
   void initState() {
     super.initState();
-
+AnalyticsService.logPage('edit_record_page');
     // ===== 初始化：把每日紀錄的內容帶進來 =====
     final init = widget.initData;
 

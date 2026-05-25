@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../constants/healing_design_system.dart';
 import 'medication_local_db.dart';
+import '../analytics_service.dart';
 
 class RecordAdjustmentHistoryPage extends StatefulWidget {
   const RecordAdjustmentHistoryPage({super.key});
@@ -18,6 +19,7 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
   @override
   void initState() {
     super.initState();
+    AnalyticsService.logPage('record_adjustment_history_page');
     final uid = FirebaseAuth.instance.currentUser?.uid;
     _loadFromLocal();
     // 背景同步 Firebase 資料到本地（非 await，異步執行）

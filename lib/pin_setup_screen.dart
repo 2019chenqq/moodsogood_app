@@ -17,6 +17,7 @@ import '../utils/encryption_service.dart';
 import 'main.dart';
 import 'recovery_key_display_screen.dart';
 import 'recovery_key_restore_screen.dart';
+import 'analytics_service.dart';
 
 class PinSetupScreen extends StatefulWidget {
   final bool resetMode;
@@ -41,6 +42,7 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
 @override
 void initState() {
   super.initState();
+  AnalyticsService.logPage('pin_setup_screen');
 
   if (widget.resetMode) {
     _statusMessage = '請設定新的 6 位數安全碼。這不會改變原本的加密資料，只會更新本機解鎖密碼。';

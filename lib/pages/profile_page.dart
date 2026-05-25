@@ -4,9 +4,17 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import '../analytics_service.dart';
 
 class ProfilePage extends StatefulWidget {
-  const ProfilePage({super.key});
+  const ProfilePage({
+    super.key,
+    this.requireCompletion = false,
+    this.onCompleted,
+  });
+
+  final bool requireCompletion;
+  final VoidCallback? onCompleted;
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
@@ -53,6 +61,7 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   void initState() {
     super.initState();
+    AnalyticsService.logPage('profile_page');
     _loadUserData();
   }
 
@@ -86,6 +95,27 @@ class _ProfilePageState extends State<ProfilePage> {
     final m = date.month.toString().padLeft(2, '0');
     final d = date.day.toString().padLeft(2, '0');
     return '$y-$m-$d';
+  }
+
+  int? _ageFromBirthday(DateTime? birthday) {
+    if (birthday == null) return null;
+    final now = DateTime.now();
+    var age = now.year - birthday.year;
+    final birthdayThisYear = DateTime(now.year, birthday.month, birthday.day);
+    if (now.isBefore(birthdayThisYear)) age--;
+    return age < 0 ? null : age;
+  }
+
+  String? _ageGroupFromBirthday(DateTime? birthday) {
+    final age = _ageFromBirthday(birthday);
+    if (age == null) return null;
+    if (age < 18) return 'under_18';
+    if (age <= 24) return '18_24';
+    if (age <= 34) return '25_34';
+    if (age <= 44) return '35_44';
+    if (age <= 54) return '45_54';
+    if (age <= 64) return '55_64';
+    return '65_plus';
   }
 
   Future<void> _loadUserData() async {
@@ -197,6 +227,15 @@ class _ProfilePageState extends State<ProfilePage> {
     final DateTime? normalizedBirthday = _birthday == null
         ? null
         : DateTime(_birthday!.year, _birthday!.month, _birthday!.day);
+    final age = _ageFromBirthday(normalizedBirthday);
+    final ageGroup = _ageGroupFromBirthday(normalizedBirthday);
+
+    if (widget.requireCompletion && normalizedBirthday == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('請填寫生日，方便統計年齡層')),
+      );
+      return;
+    }
 
     try {
       await _firestore.collection('users').doc(user.uid).set(
@@ -205,20 +244,32 @@ class _ProfilePageState extends State<ProfilePage> {
           'nickname': newName,
           'sexAssignedAtBirth': _sexAssignedAtBirth,
           'genderIdentity': _genderIdentity,
-          'birthday':
-              normalizedBirthday == null ? null : Timestamp.fromDate(normalizedBirthday),
+          'birthday': normalizedBirthday == null
+              ? null
+              : Timestamp.fromDate(normalizedBirthday),
           'diagnosis': diagnosis,
           'residence': residence,
           'livingStatus': _livingStatus,
           'occupation': occupation,
+          'age': age,
+          'ageGroup': ageGroup,
+          'birthYear': normalizedBirthday?.year,
+          'profileCompleted': true,
+          'profileCompletedAt': FieldValue.serverTimestamp(),
+          'profileUpdatedAt': FieldValue.serverTimestamp(),
         },
         SetOptions(merge: true),
+      );
+      await AnalyticsService.setUserProperty(
+        name: 'age_group',
+        value: ageGroup,
       );
       await user.updateDisplayName(newName);
       if (mounted) {
         setState(() {
           _displayName = newName;
         });
+        widget.onCompleted?.call();
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('個人資料已更新！')));
       }
@@ -233,134 +284,140 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('個人資料'),
-        backgroundColor: _primaryColor,
-        foregroundColor: Colors.white,
-        actions: [
-          TextButton(
-            onPressed: _saveProfile,
-            child: const Text('儲存', style: TextStyle(color: Colors.white, fontSize: 16)),
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
-              child: Column(
-                children: [
-                  // ── 大頭貼 ──────────────────────────────────────────────
-                  GestureDetector(
-                    onTap: _isUploading ? null : _pickAndUploadImage,
-                    child: Stack(
-                      alignment: Alignment.bottomRight,
-                      children: [
-                        CircleAvatar(
-                          radius: 56,
-                          backgroundColor: _primaryColor.withOpacity(0.2),
-                          backgroundImage:
-                              _photoUrl != null && !_isUploading
-                                  ? NetworkImage(_photoUrl!)
-                                  : null,
-                          child: _isUploading
-                              ? const CircularProgressIndicator(
-                                  color: _primaryColor)
-                              : (_photoUrl == null
-                                  ? const Icon(Icons.person,
-                                      size: 60, color: _primaryColor)
-                                  : null),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: const BoxDecoration(
-                            color: _primaryColor,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.camera_alt,
-                              size: 18, color: Colors.white),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _email,
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
-                  ),
-                  const SizedBox(height: 32),
-
-                  // ── 姓名 ────────────────────────────────────────────────
-                  _buildField(
-                    label: '姓名',
-                    controller: _nameController,
-                    hint: '輸入你的姓名',
-                    maxLength: 30,
-                  ),
-                  const SizedBox(height: 20),
-
-                  _buildDropdownField(
-                    label: '生理性別',
-                    value: _sexAssignedAtBirth,
-                    hint: '請選擇生理性別',
-                    items: _sexOptions,
-                    onChanged: (value) {
-                      setState(() => _sexAssignedAtBirth = value);
-                    },
-                  ),
-                  const SizedBox(height: 20),
-
-                  _buildDropdownField(
-                    label: '身分認同性別',
-                    value: _genderIdentity,
-                    hint: '請選擇身分認同性別',
-                    items: _genderIdentityOptions,
-                    onChanged: (value) {
-                      setState(() => _genderIdentity = value);
-                    },
-                  ),
-                  const SizedBox(height: 20),
-
-                  _buildDateField(),
-                  const SizedBox(height: 20),
-
-                  _buildField(
-                    label: '目前診斷',
-                    controller: _diagnosisController,
-                    hint: '例如：重鬱症、焦慮症（可複數）',
-                    maxLength: 120,
-                  ),
-                  const SizedBox(height: 20),
-
-                  _buildField(
-                    label: '居住地',
-                    controller: _residenceController,
-                    hint: '例如：台北市 / 新北市',
-                    maxLength: 60,
-                  ),
-                  const SizedBox(height: 20),
-
-                  _buildDropdownField(
-                    label: '居住狀況',
-                    value: _livingStatus,
-                    hint: '請選擇居住狀況',
-                    items: _livingStatusOptions,
-                    onChanged: (value) {
-                      setState(() => _livingStatus = value);
-                    },
-                  ),
-                  const SizedBox(height: 20),
-
-                  _buildField(
-                    label: '職業',
-                    controller: _occupationController,
-                    hint: '例如：學生、工程師、自由工作者',
-                    maxLength: 60,
-                  ),
-                ],
-              ),
+    return PopScope(
+      canPop: !widget.requireCompletion,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('個人資料'),
+          automaticallyImplyLeading: !widget.requireCompletion,
+          backgroundColor: _primaryColor,
+          foregroundColor: Colors.white,
+          actions: [
+            TextButton(
+              onPressed: _saveProfile,
+              child: const Text('儲存',
+                  style: TextStyle(color: Colors.white, fontSize: 16)),
             ),
+          ],
+        ),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : SingleChildScrollView(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
+                child: Column(
+                  children: [
+                    // ── 大頭貼 ──────────────────────────────────────────────
+                    GestureDetector(
+                      onTap: _isUploading ? null : _pickAndUploadImage,
+                      child: Stack(
+                        alignment: Alignment.bottomRight,
+                        children: [
+                          CircleAvatar(
+                            radius: 56,
+                            backgroundColor: _primaryColor.withOpacity(0.2),
+                            backgroundImage: _photoUrl != null && !_isUploading
+                                ? NetworkImage(_photoUrl!)
+                                : null,
+                            child: _isUploading
+                                ? const CircularProgressIndicator(
+                                    color: _primaryColor)
+                                : (_photoUrl == null
+                                    ? const Icon(Icons.person,
+                                        size: 60, color: _primaryColor)
+                                    : null),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: const BoxDecoration(
+                              color: _primaryColor,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.camera_alt,
+                                size: 18, color: Colors.white),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _email,
+                      style:
+                          TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                    ),
+                    const SizedBox(height: 32),
+
+                    // ── 姓名 ────────────────────────────────────────────────
+                    _buildField(
+                      label: '姓名',
+                      controller: _nameController,
+                      hint: '輸入你的姓名',
+                      maxLength: 30,
+                    ),
+                    const SizedBox(height: 20),
+
+                    _buildDropdownField(
+                      label: '生理性別',
+                      value: _sexAssignedAtBirth,
+                      hint: '請選擇生理性別',
+                      items: _sexOptions,
+                      onChanged: (value) {
+                        setState(() => _sexAssignedAtBirth = value);
+                      },
+                    ),
+                    const SizedBox(height: 20),
+
+                    _buildDropdownField(
+                      label: '身分認同性別',
+                      value: _genderIdentity,
+                      hint: '請選擇身分認同性別',
+                      items: _genderIdentityOptions,
+                      onChanged: (value) {
+                        setState(() => _genderIdentity = value);
+                      },
+                    ),
+                    const SizedBox(height: 20),
+
+                    _buildDateField(),
+                    const SizedBox(height: 20),
+
+                    _buildField(
+                      label: '目前診斷',
+                      controller: _diagnosisController,
+                      hint: '例如：重鬱症、焦慮症（可複數）',
+                      maxLength: 120,
+                    ),
+                    const SizedBox(height: 20),
+
+                    _buildField(
+                      label: '居住地',
+                      controller: _residenceController,
+                      hint: '例如：台北市 / 新北市',
+                      maxLength: 60,
+                    ),
+                    const SizedBox(height: 20),
+
+                    _buildDropdownField(
+                      label: '居住狀況',
+                      value: _livingStatus,
+                      hint: '請選擇居住狀況',
+                      items: _livingStatusOptions,
+                      onChanged: (value) {
+                        setState(() => _livingStatus = value);
+                      },
+                    ),
+                    const SizedBox(height: 20),
+
+                    _buildField(
+                      label: '職業',
+                      controller: _occupationController,
+                      hint: '例如：學生、工程師、自由工作者',
+                      maxLength: 60,
+                    ),
+                  ],
+                ),
+              ),
+      ),
     );
   }
 
@@ -407,7 +464,8 @@ class _ProfilePageState extends State<ProfilePage> {
             child: Text(
               _birthday == null ? '請選擇生日' : _formatBirthday(_birthday!),
               style: TextStyle(
-                color: _birthday == null ? Colors.grey.shade500 : Colors.black87,
+                color:
+                    _birthday == null ? Colors.grey.shade500 : Colors.black87,
               ),
             ),
           ),

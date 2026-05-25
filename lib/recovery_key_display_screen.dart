@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'main.dart'; // 替換成你的 AuthGate 所在路徑
+import 'analytics_service.dart';
  
 class RecoveryKeyDisplayScreen extends StatefulWidget {
   /// 備援金鑰字串，格式為 12 個單字以破折號串接
@@ -20,6 +21,13 @@ class RecoveryKeyDisplayScreen extends StatefulWidget {
 }
  
 class _RecoveryKeyDisplayScreenState extends State<RecoveryKeyDisplayScreen> {
+
+  @override
+  void initState() {
+    super.initState();
+    AnalyticsService.logPage('recovery_key_display_screen');
+  }
+
   bool _savedConfirmed = false;
   bool _riskConfirmed = false;
   bool _copied = false;

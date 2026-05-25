@@ -7,6 +7,7 @@ import '../constants/healing_design_system.dart';
 import '../utils/firebase_sync_config.dart';
 import 'medication_local_db.dart';
 import 'medication_reminder_service.dart';
+import '../analytics_service.dart';
 
 const List<String> kOralTimeSlots = ['早上', '中午', '下午', '晚上', '睡前', '需要時'];
 
@@ -58,6 +59,7 @@ void _applyDrugSuggestion(Map<String, String> s) {
 void initState() {
   super.initState();
   DrugDictionaryService.instance.ensureLoaded();
+   AnalyticsService.logPage('add_medication_page');
 }
 
 // 候選結果：[{id, zh, en}]

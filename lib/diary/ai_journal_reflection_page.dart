@@ -29,6 +29,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../utils/secure_storage_service.dart';
 import '../utils/encryption_service.dart';
 import '../constants/healing_design_system.dart';
+import '../analytics_service.dart';
 // ──────────────────────────────────────────────
 // 主 Widget
 // ──────────────────────────────────────────────
@@ -114,6 +115,7 @@ class _AiJournalReflectionPageState
   @override
   void initState() {
     super.initState();
+    AnalyticsService.logPage('ai_journal_reflection_page');
     _init();
   }
 

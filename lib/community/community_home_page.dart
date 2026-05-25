@@ -13,6 +13,7 @@ import 'providers/rooms_provider.dart';
 import '../widgets/main_drawer.dart';
 import 'widgets/community_style.dart';
 import 'pages/room_requests_admin_page.dart';
+import '../analytics_service.dart';
 
 class CommunityHomePage extends StatefulWidget {
   static const routeName = '/community';
@@ -31,6 +32,7 @@ class _CommunityHomePageState extends State<CommunityHomePage> with TickerProvid
   @override
   void initState() {
     super.initState();
+    AnalyticsService.logPage('community_home_page');
     _tabController = TabController(length: 2, vsync: this);
   }
 

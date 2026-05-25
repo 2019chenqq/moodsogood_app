@@ -9,6 +9,7 @@ import 'utils/notification_helper.dart';
 import 'providers/theme_provider.dart';
 import 'onboarding_page.dart';
 import 'utils/data_sync_diagnostics.dart';
+import 'analytics_service.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -556,6 +557,7 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   void initState() {
     super.initState();
+    AnalyticsService.logPage('settings_page');
     _loadSettings();
   }
 

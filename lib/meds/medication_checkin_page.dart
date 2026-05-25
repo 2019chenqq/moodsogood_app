@@ -4,6 +4,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../analytics_service.dart';
 import 'medication_local_db.dart';
 import 'medication_reminder_service.dart';
 
@@ -49,6 +50,7 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
     super.initState();
     _loadSlotTimes();
     _loadData();
+     AnalyticsService.logPage('medication_checkin_page');
   }
 
   String _docId(DateTime d) {

@@ -5,6 +5,7 @@ import '../constants/healing_design_system.dart';
 import '../utils/firebase_sync_config.dart';
 import 'medication_local_db.dart';
 import 'medication_reminder_service.dart';
+import '../analytics_service.dart';
 
 // 你已經有的新增藥物頁（路徑依你的專案調整）
 import 'add_medication_page.dart';
@@ -35,6 +36,7 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
   @override
   void initState() {
     super.initState();
+     AnalyticsService.logPage('record_adjustment_page');
     // 初始化時從 Firebase 同步最新藥物到本地
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {

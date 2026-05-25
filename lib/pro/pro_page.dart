@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 
 import '../providers/pro_provider.dart';
+import '../analytics_service.dart';
 
 class ProPage extends StatefulWidget {
   const ProPage({super.key});
@@ -29,6 +30,7 @@ class _ProPageState extends State<ProPage> {
   @override
   void initState() {
     super.initState();
+    AnalyticsService.logPage('pro_page');
     _loadOfferings();
   }
 

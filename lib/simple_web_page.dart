@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'analytics_service.dart';
 
 class SimpleWebPage extends StatefulWidget {
   final String title;
@@ -17,6 +18,7 @@ class _SimpleWebPageState extends State<SimpleWebPage> {
   @override
   void initState() {
     super.initState();
+    AnalyticsService.logPage('simple_web_page');
     _c = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(NavigationDelegate(
