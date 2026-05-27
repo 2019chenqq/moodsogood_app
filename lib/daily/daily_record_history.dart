@@ -75,7 +75,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
     _tabController =
         TabController(length: 2, vsync: this, initialIndex: safeIndex);
     _loadHistoryWeekStartDay();
-    AnalyticsService.logPage('daily_record_history');
+    AnalyticsService.logPage('record_history_page');
   }
 
   @override

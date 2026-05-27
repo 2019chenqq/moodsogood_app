@@ -92,7 +92,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
     _loadDraft(); // 讀入當日已存的內容（如有）
     _attachAutoSave(); // 綁定每欄位防彈跳自動儲存
     _loadNeighbors(); // 查上一筆/下一筆
-    AnalyticsService.logPage('diary_page_demo');
+    AnalyticsService.logPage('diary_page');
   }
 
   @override

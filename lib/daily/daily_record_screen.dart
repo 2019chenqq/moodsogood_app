@@ -51,7 +51,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     _index = widget.initialTab.clamp(0, 2);
     _loadPeriodCalendarState();
     _loadExistingData(_recordDate);
-    AnalyticsService.logPage('daily_record_screen'); // 一進來就載入今天的紀錄（含生理期狀態）
+    AnalyticsService.logPage('daily_record_page'); // 一進來就載入今天的紀錄（含生理期狀態）
   }
 
   DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);

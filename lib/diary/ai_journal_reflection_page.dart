@@ -116,7 +116,7 @@ class _AiJournalReflectionPageState
   void initState() {
     super.initState();
     _init();
-     AnalyticsService.logPage('ai_journal_reflection_page');
+     AnalyticsService.logPage('ai_reflection_page');
   }
 
   Future<void> _init() async {
