@@ -26,10 +26,10 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
+import '../analytics_service.dart';
 import '../utils/secure_storage_service.dart';
 import '../utils/encryption_service.dart';
 import '../constants/healing_design_system.dart';
-import '../analytics_service.dart';
 // ──────────────────────────────────────────────
 // 主 Widget
 // ──────────────────────────────────────────────
@@ -115,8 +115,8 @@ class _AiJournalReflectionPageState
   @override
   void initState() {
     super.initState();
-    AnalyticsService.logPage('ai_journal_reflection_page');
     _init();
+     AnalyticsService.logPage('ai_journal_reflection_page');
   }
 
   Future<void> _init() async {
