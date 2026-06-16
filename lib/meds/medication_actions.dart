@@ -1,11 +1,9 @@
-  import 'package:flutter/material.dart';
-  import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import 'edit_medication_page.dart';
-import '../utils/firebase_sync_config.dart';
 import 'medication_local_db.dart';
 import 'medication_reminder_service.dart';
 
-  Future<void> showMedicationMoreSheet({
+Future<void> showMedicationMoreSheet({
   required BuildContext context,
   required String uid,
   required String medId,
@@ -92,8 +90,12 @@ import 'medication_reminder_service.dart';
           title: const Text('確認刪除？'),
           content: Text('確定要永久刪除「$name」嗎？\n此操作不可復原。'),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(dctx, false), child: const Text('取消')),
-            FilledButton(onPressed: () => Navigator.pop(dctx, true), child: const Text('刪除')),
+            TextButton(
+                onPressed: () => Navigator.pop(dctx, false),
+                child: const Text('取消')),
+            FilledButton(
+                onPressed: () => Navigator.pop(dctx, true),
+                child: const Text('刪除')),
           ],
         ),
       );
@@ -105,7 +107,7 @@ import 'medication_reminder_service.dart';
 
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已刪除：$name${!FirebaseSyncConfig.shouldSync() ? ' (本機只)' : ''}')),
+        SnackBar(content: Text('已刪除：$name')),
       );
     }
   } catch (e) {
@@ -116,8 +118,8 @@ import 'medication_reminder_service.dart';
   }
 }
 
-
-Future<void> _deactivateMedication({required String uid, required String medId}) async {
+Future<void> _deactivateMedication(
+    {required String uid, required String medId}) async {
   final now = DateTime.now().toString();
 
   await MedicationLocalDB().updateMedicationStatus(
@@ -126,22 +128,10 @@ Future<void> _deactivateMedication({required String uid, required String medId})
     isActive: false,
     updatedAt: now,
   );
-
-  // Only sync to Firebase if enabled
-  if (FirebaseSyncConfig.shouldSync()) {
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('medications')
-        .doc(medId)
-        .set({
-      'isActive': false,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-  }
 }
 
-Future<void> _activateMedication({required String uid, required String medId}) async {
+Future<void> _activateMedication(
+    {required String uid, required String medId}) async {
   final now = DateTime.now().toString();
 
   await MedicationLocalDB().updateMedicationStatus(
@@ -150,33 +140,11 @@ Future<void> _activateMedication({required String uid, required String medId}) a
     isActive: true,
     updatedAt: now,
   );
-
-  // Only sync to Firebase if enabled
-  if (FirebaseSyncConfig.shouldSync()) {
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('medications')
-        .doc(medId)
-        .set({
-      'isActive': true,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-  }
 }
 
-Future<void> _deleteMedication({required String uid, required String medId}) async {
+Future<void> _deleteMedication(
+    {required String uid, required String medId}) async {
   await MedicationLocalDB().deleteMedication(uid, medId);
-
-  // Only sync to Firebase if enabled
-  if (FirebaseSyncConfig.shouldSync()) {
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('medications')
-        .doc(medId)
-        .delete();
-  }
 }
 
 Future<bool> _confirmDeleteMedication(BuildContext context, String name) async {

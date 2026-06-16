@@ -1,6 +1,8 @@
-import 'dart:async';
-import 'package:path_provider/path_provider.dart';
-import 'package:sqflite/sqflite.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+import '../utils/encryption_service.dart';
+import '../utils/secure_storage_service.dart';
 
 class DiaryEntry {
   final int? id;
@@ -24,13 +26,11 @@ class DiaryEntry {
     required this.content,
     this.moodScore,
     this.moodKeyword,
-    // ★ 這五個是新加的，可為 null，建構子要接起來
     this.themeSong,
     this.highlight,
     this.metaphor,
     this.proudOf,
     this.selfCare,
-    // 時間欄位給預設值
     DateTime? createdAt,
     DateTime? updatedAt,
   })  : createdAt = createdAt ?? DateTime.now(),
@@ -83,151 +83,130 @@ class DiaryEntry {
         'proudOf': proudOf,
         'selfCare': selfCare,
       };
-
-  static DiaryEntry fromMap(Map<String, Object?> m) => DiaryEntry(
-        id: m['id'] as int?,
-        date: DateTime.parse(m['date'] as String),
-        title: (m['title'] as String?) ?? '',
-        content: (m['content'] as String?) ?? '',
-        // sqflite 可能回 int 或 double，轉成 double 保險
-        moodScore: (m['moodScore'] as num?)?.toDouble(),
-        moodKeyword: m['moodKeyword'] as String?,
-        createdAt: DateTime.parse(m['createdAt'] as String),
-        updatedAt: DateTime.parse(m['updatedAt'] as String),
-        themeSong: m['themeSong'] as String?,
-        highlight: m['highlight'] as String?,
-        metaphor: m['metaphor'] as String?,
-        proudOf: m['proudOf'] as String?,
-        selfCare: m['selfCare'] as String?,
-      );
 }
 
 class DiaryRepository {
   static final DiaryRepository _instance = DiaryRepository._internal();
+
   factory DiaryRepository() => _instance;
+
   DiaryRepository._internal();
 
-  Database? _db;
-
-  Future<Database> _open() async {
-    if (_db != null) return _db!;
-    final docs = await getApplicationDocumentsDirectory();
-    final dbPath = '${docs.path}/mood_so_good.db';
-    _db = await openDatabase(
-      dbPath,
-      version: 2, // 增加版本號以觸發升級
-      onCreate: (db, version) async {
-        await db.execute('''
-        CREATE TABLE diary_entries (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          date TEXT NOT NULL,
-          title TEXT NOT NULL,
-          content TEXT NOT NULL,
-          moodScore REAL,
-          moodKeyword TEXT,
-          createdAt TEXT NOT NULL,
-          updatedAt TEXT NOT NULL,
-          themeSong TEXT,
-          highlight TEXT,
-          metaphor TEXT,
-          proudOf TEXT,
-          selfCare TEXT
-        );
-        ''');
-        await db.execute(
-            'CREATE INDEX IF NOT EXISTS idx_diary_date ON diary_entries(date DESC);');
-      },
-      onUpgrade: (db, oldVersion, newVersion) async {
-        if (oldVersion < 2) {
-          // 添加新欄位（如果舊資料庫不存在這些欄位）
-          await db
-              .execute('ALTER TABLE diary_entries ADD COLUMN themeSong TEXT;');
-          await db
-              .execute('ALTER TABLE diary_entries ADD COLUMN highlight TEXT;');
-          await db
-              .execute('ALTER TABLE diary_entries ADD COLUMN metaphor TEXT;');
-          await db
-              .execute('ALTER TABLE diary_entries ADD COLUMN proudOf TEXT;');
-          await db
-              .execute('ALTER TABLE diary_entries ADD COLUMN selfCare TEXT;');
-        }
-      },
-    );
-    return _db!;
+  String get _uid {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) throw StateError('A signed-in user is required.');
+    return uid;
   }
 
-  Future<int> insert(DiaryEntry entry) async {
-    final db = await _open();
-    return db.insert('diary_entries', entry.toMap());
-  }
+  CollectionReference<Map<String, dynamic>> get _entries =>
+      FirebaseFirestore.instance
+          .collection('users')
+          .doc(_uid)
+          .collection('diary');
 
-  Future<int> update(DiaryEntry entry) async {
-    if (entry.id == null) throw StateError('update 需要 id');
-    final db = await _open();
-    return db.update(
-      'diary_entries',
-      entry.toMap()..remove('id'),
-      where: 'id = ?',
-      whereArgs: [entry.id],
-    );
-  }
+  Future<int> insert(DiaryEntry entry) => upsert(entry);
+
+  Future<int> update(DiaryEntry entry) => upsert(entry);
 
   Future<List<DiaryEntry>> list({int limit = 200, int offset = 0}) async {
-    final db = await _open();
-    final rows = await db.query(
-      'diary_entries',
-      orderBy: 'date DESC, id DESC',
-      limit: limit,
-      offset: offset,
-    );
-    return rows.map(DiaryEntry.fromMap).toList();
+    final snapshot = await _entries
+        .orderBy('date', descending: true)
+        .limit(limit + offset)
+        .get();
+    final docs = snapshot.docs.skip(offset);
+    return _decodeDocuments(docs);
   }
 
   Future<DiaryEntry?> getById(int id) async {
-    final db = await _open();
-    final rows = await db.query('diary_entries',
-        where: 'id = ?', whereArgs: [id], limit: 1);
-    if (rows.isEmpty) return null;
-    return DiaryEntry.fromMap(rows.first);
+    final date = _dateFromInt(id);
+    return getByDate(date);
   }
 
-  /// 按日期查詢日記
   Future<DiaryEntry?> getByDate(DateTime date) async {
-    final db = await _open();
-    final dateStr = date.toIso8601String().split('T')[0]; // yyyy-MM-dd
-    final rows = await db.query(
-      'diary_entries',
-      where: 'date LIKE ?',
-      whereArgs: ['$dateStr%'],
-      limit: 1,
-    );
-    if (rows.isEmpty) return null;
-    return DiaryEntry.fromMap(rows.first);
+    final doc = await _entries.doc(_dateId(date)).get();
+    if (!doc.exists || doc.data() == null) return null;
+    final entries = await _decodeDocuments([doc]);
+    return entries.isEmpty ? null : entries.first;
   }
 
-  /// Upsert：如果該日期的日記已存在則更新，否則插入
   Future<int> upsert(DiaryEntry entry) async {
-    final existing = await getByDate(entry.date);
-    if (existing != null) {
-      return await update(entry.copyWith(id: existing.id));
-    } else {
-      return await insert(entry);
-    }
+    final key = await SecureStorageService.getOrRecoverKey();
+    if (key == null) throw StateError('Encryption key is unavailable.');
+    final encryption = EncryptionService(key);
+    await _entries.doc(_dateId(entry.date)).set({
+      'date': Timestamp.fromDate(entry.date),
+      'title': encryption.encryptData(entry.title),
+      'content': encryption.encryptData(entry.content),
+      'themeSong': encryption.encryptData(entry.themeSong ?? ''),
+      'highlight': encryption.encryptData(entry.highlight ?? ''),
+      'metaphor': encryption.encryptData(entry.metaphor ?? ''),
+      'proudOf': encryption.encryptData(entry.proudOf ?? ''),
+      'selfCare': encryption.encryptData(entry.selfCare ?? ''),
+      'overallMood': entry.moodScore,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'isEncrypted': true,
+    }, SetOptions(merge: true));
+    return _dateInt(entry.date);
   }
 
-  Future<int> delete(int id) async {
-    final db = await _open();
-    return db.delete('diary_entries', where: 'id = ?', whereArgs: [id]);
-  }
+  Future<int> delete(int id) => deleteByDate(_dateFromInt(id));
 
-  /// 按日期刪除整天日記（yyyy-MM-dd）
   Future<int> deleteByDate(DateTime date) async {
-    final db = await _open();
-    final dateStr = date.toIso8601String().split('T')[0];
-    return db.delete(
-      'diary_entries',
-      where: 'date LIKE ?',
-      whereArgs: ['$dateStr%'],
-    );
+    await _entries.doc(_dateId(date)).delete();
+    return 1;
   }
+
+  Future<List<DiaryEntry>> _decodeDocuments(
+    Iterable<DocumentSnapshot<Map<String, dynamic>>> docs,
+  ) async {
+    final key = await SecureStorageService.getOrRecoverKey();
+    if (key == null) throw StateError('Encryption key is unavailable.');
+    final encryption = EncryptionService(key);
+    return docs.map((doc) {
+      final data = doc.data() ?? const <String, dynamic>{};
+      final date = _asDate(data['date']) ?? _dateFromId(doc.id);
+      String text(String field) {
+        final value = data[field]?.toString() ?? '';
+        return data['isEncrypted'] == true
+            ? encryption.tryDecryptData(value) ?? ''
+            : value;
+      }
+
+      return DiaryEntry(
+        id: _dateInt(date),
+        date: date,
+        title: text('title'),
+        content: text('content'),
+        themeSong: text('themeSong'),
+        highlight: text('highlight'),
+        metaphor: text('metaphor'),
+        proudOf: text('proudOf'),
+        selfCare: text('selfCare'),
+        moodScore: (data['overallMood'] as num?)?.toDouble(),
+        createdAt: _asDate(data['createdAt']),
+        updatedAt: _asDate(data['updatedAt']),
+      );
+    }).toList();
+  }
+
+  DateTime? _asDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+    return null;
+  }
+
+  String _dateId(DateTime date) => '${date.year.toString().padLeft(4, '0')}-'
+      '${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')}';
+
+  int _dateInt(DateTime date) =>
+      date.year * 10000 + date.month * 100 + date.day;
+
+  DateTime _dateFromInt(int value) {
+    return DateTime(value ~/ 10000, (value ~/ 100) % 100, value % 100);
+  }
+
+  DateTime _dateFromId(String id) =>
+      DateTime.tryParse(id) ?? DateTime.fromMillisecondsSinceEpoch(0);
 }

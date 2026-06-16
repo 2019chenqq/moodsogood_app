@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.8+33
+version: 1.0.8+36
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -43,7 +43,6 @@ dependencies:
   google_sign_in: ^6.2.1
   sign_in_with_apple: ^6.1.4
   path_provider: ^2.1.5
-  sqflite: ^2.4.2
   image_picker: ^1.1.2
   firebase_storage: ^12.3.2
   fl_chart: ^1.1.1
@@ -61,8 +60,6 @@ dependencies:
   workmanager: ^0.9.0
   flutter_tts: ^4.0.0
   video_player: ^2.10.1
-  isar: ^3.1.0+1
-  isar_flutter_libs: ^3.1.0+1
   home_widget: ^0.8.1
   
 
@@ -93,7 +90,6 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.14.4
-  isar_generator: ^3.1.0+1
   build_runner: ^2.4.13
 
 # For information on the generic Dart part of this file, see the
@@ -131,6 +127,10 @@ flutter:
   # list giving the asset and other descriptors for the font. For
   # example:
   fonts:
+    - family: Iansui
+      fonts:
+        - asset: assets/font/Iansui/Iansui-Regular.ttf
+          weight: 400
     - family: LXGWWenKai
       fonts:
         - asset: assets/font/Wenkai/LXGWWenKai-Light.ttf

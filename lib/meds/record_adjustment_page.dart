@@ -11,7 +11,15 @@ import '../analytics_service.dart';
 import 'add_medication_page.dart';
 import 'record_adjustment_history_page.dart';
 
-enum MedChangeType { unchanged, added, injected, doseChanged, scheduleChanged, stopped, resumed }
+enum MedChangeType {
+  unchanged,
+  added,
+  injected,
+  doseChanged,
+  scheduleChanged,
+  stopped,
+  resumed
+}
 
 const List<String> kAdjustmentTimeSlots = ['早上', '中午', '下午', '晚上', '睡前', '需要時'];
 
@@ -25,7 +33,8 @@ class RecordAdjustmentPage extends StatefulWidget {
 class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
   DateTime _date = DateTime.now();
   final _noteCtrl = TextEditingController();
-  Future<List<Map<String, dynamic>>> _medsFuture = Future.value(<Map<String, dynamic>>[]);
+  Future<List<Map<String, dynamic>>> _medsFuture =
+      Future.value(<Map<String, dynamic>>[]);
 
   // 每顆藥的暫存變動
   final Map<String, _MedDraft> _draftByDocId = {};
@@ -36,7 +45,7 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
   @override
   void initState() {
     super.initState();
-     AnalyticsService.logPage('record_adjustment_page');
+    AnalyticsService.logPage('record_adjustment_page');
     // 初始化時從 Firebase 同步最新藥物到本地
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
@@ -108,7 +117,8 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
           'note': data['note'],
           'startDate': startDate?.toString(),
           'isActive': data['isActive'] ?? true,
-          'bodySymptoms': (data['bodySymptoms'] as List?)?.cast<String>() ?? <String>[],
+          'bodySymptoms':
+              (data['bodySymptoms'] as List?)?.cast<String>() ?? <String>[],
           'purposeOther': data['purposeOther'],
           'createdAt': DateTime.now().toString(),
           'updatedAt': DateTime.now().toString(),
@@ -129,63 +139,65 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
     return all;
   }
 
-_MedDraft _ensureUiDraft(
-  String docId,
-  Map<String, dynamic> baseData,
-) {
-  return _draftByDocId.putIfAbsent(docId, () {
-    final oldDose = (baseData['dose'] is num)
-        ? (baseData['dose'] as num).toDouble()
-        : 0.0;
+  _MedDraft _ensureUiDraft(
+    String docId,
+    Map<String, dynamic> baseData,
+  ) {
+    return _draftByDocId.putIfAbsent(docId, () {
+      final oldDose = (baseData['dose'] is num)
+          ? (baseData['dose'] as num).toDouble()
+          : 0.0;
 
-    final unit = (baseData['unit'] as String?) ?? 'mg';
-    final name = (baseData['name'] as String?) ?? '未命名藥物';
-    final oldTimes = _readTimes(baseData['times']);
+      final unit = (baseData['unit'] as String?) ?? 'mg';
+      final name = (baseData['name'] as String?) ?? '未命名藥物';
+      final oldTimes = _readTimes(baseData['times']);
 
-    return _MedDraft(
-      name: name,
-      unit: unit,
-      oldDose: oldDose,
-      oldTimes: oldTimes,
-      type: MedChangeType.unchanged,
-      newDose: oldDose, // 預設 = 原劑量
-      newTimes: List<String>.from(oldTimes),
-    );
-  });
-}
-
-double? _toDouble(dynamic v) {
-  if (v == null) return null;
-  if (v is num) return v.toDouble();
-  return double.tryParse(v.toString());
-}
-
-String _toStr(dynamic v, [String fallback = '']) {
-  final s = (v ?? '').toString().trim();
-  return s.isEmpty ? fallback : s;
-}
-
-List<String> _readTimes(dynamic raw) {
-  if (raw is List) {
-    final normalized = raw
-        .whereType<String>()
-        .map((t) => t.trim())
-        .where((t) => t.isNotEmpty)
-        .toSet()
-        .toList();
-    normalized.sort((a, b) => kAdjustmentTimeSlots.indexOf(a).compareTo(kAdjustmentTimeSlots.indexOf(b)));
-    return normalized;
+      return _MedDraft(
+        name: name,
+        unit: unit,
+        oldDose: oldDose,
+        oldTimes: oldTimes,
+        type: MedChangeType.unchanged,
+        newDose: oldDose, // 預設 = 原劑量
+        newTimes: List<String>.from(oldTimes),
+      );
+    });
   }
-  if (raw is String && raw.trim().isNotEmpty) {
-    return _readTimes(raw.split(','));
-  }
-  return <String>[];
-}
 
-String _timesLabel(List<String> times) {
-  if (times.isEmpty) return '未設定';
-  return times.join('、');
-}
+  double? _toDouble(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString());
+  }
+
+  String _toStr(dynamic v, [String fallback = '']) {
+    final s = (v ?? '').toString().trim();
+    return s.isEmpty ? fallback : s;
+  }
+
+  List<String> _readTimes(dynamic raw) {
+    if (raw is List) {
+      final normalized = raw
+          .whereType<String>()
+          .map((t) => t.trim())
+          .where((t) => t.isNotEmpty)
+          .toSet()
+          .toList();
+      normalized.sort((a, b) => kAdjustmentTimeSlots
+          .indexOf(a)
+          .compareTo(kAdjustmentTimeSlots.indexOf(b)));
+      return normalized;
+    }
+    if (raw is String && raw.trim().isNotEmpty) {
+      return _readTimes(raw.split(','));
+    }
+    return <String>[];
+  }
+
+  String _timesLabel(List<String> times) {
+    if (times.isEmpty) return '未設定';
+    return times.join('、');
+  }
 
   @override
   void dispose() {
@@ -223,7 +235,8 @@ String _timesLabel(List<String> times) {
         backgroundColor: HealingDesignSystem.primaryBlue,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        iconTheme: IconThemeData(color: HealingDesignSystem.adaptivePrimaryText(context)),
+        iconTheme: IconThemeData(
+            color: HealingDesignSystem.adaptivePrimaryText(context)),
         title: Text(
           '紀錄調整',
           style: TextStyle(
@@ -234,11 +247,13 @@ String _timesLabel(List<String> times) {
         actions: [
           IconButton(
             tooltip: '調藥時間線',
-            icon: Icon(Icons.timeline, color: HealingDesignSystem.adaptivePrimaryText(context)),
+            icon: Icon(Icons.timeline,
+                color: HealingDesignSystem.adaptivePrimaryText(context)),
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const RecordAdjustmentHistoryPage()),
+                MaterialPageRoute(
+                    builder: (_) => const RecordAdjustmentHistoryPage()),
               );
             },
           ),
@@ -280,8 +295,7 @@ String _timesLabel(List<String> times) {
               children: [
                 _SoftHeaderCard(
                   title: '回診 / 調藥紀錄',
-                  subtitle:
-                      '沒有變動就不用改。只把這次有調整的藥標出來，之後可和症狀趨勢做比對。',
+                  subtitle: '沒有變動就不用改。只把這次有調整的藥標出來，之後可和症狀趨勢做比對。',
                 ),
                 const SizedBox(height: 12),
 
@@ -312,6 +326,9 @@ String _timesLabel(List<String> times) {
                     controller: _noteCtrl,
                     minLines: 2,
                     maxLines: 5,
+                    style: TextStyle(
+                      color: HealingDesignSystem.adaptivePrimaryText(context),
+                    ),
                     decoration: _inputDeco(context, '例如：醫師交代、調藥原因、觀察重點…'),
                   ),
                 ),
@@ -325,13 +342,13 @@ String _timesLabel(List<String> times) {
                 const SizedBox(height: 8),
 
                 // ── 使用中藥物 ──
-                ...docs
-                    .where((m) => (m['isActive'] ?? true) == true)
-                    .map((med) => _buildMedCard(context, med, _draftByDocId[med['id'] as String? ?? '']!)),
+                ...docs.where((m) => (m['isActive'] ?? true) == true).map(
+                    (med) => _buildMedCard(context, med,
+                        _draftByDocId[med['id'] as String? ?? '']!)),
 
                 // ── 已停用藥物（可恢復） ──
-                if (docs.any((m) => (m['isActive'] ?? true) == false)) ...
-                  _buildInactiveMedSection(context, docs, cs),
+                if (docs.any((m) => (m['isActive'] ?? true) == false))
+                  ..._buildInactiveMedSection(context, docs, cs),
 
                 const SizedBox(height: 14),
 
@@ -341,7 +358,8 @@ String _timesLabel(List<String> times) {
                     backgroundColor: HealingDesignSystem.primaryBlue,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
                   ),
                   child: _saving
                       ? const SizedBox(
@@ -349,7 +367,8 @@ String _timesLabel(List<String> times) {
                           width: 18,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
                         )
                       : const Text(
@@ -370,7 +389,8 @@ String _timesLabel(List<String> times) {
     List<Map<String, dynamic>> docs,
     ColorScheme cs,
   ) {
-    final inactive = docs.where((m) => (m['isActive'] ?? true) == false).toList();
+    final inactive =
+        docs.where((m) => (m['isActive'] ?? true) == false).toList();
     return [
       const SizedBox(height: 8),
       Row(
@@ -399,7 +419,7 @@ String _timesLabel(List<String> times) {
           surfaceTintColor: Colors.transparent,
           color: isResumed
               ? HealingDesignSystem.primaryBlue.withOpacity(0.12)
-              : HealingDesignSystem.cardBg,
+              : HealingDesignSystem.adaptiveSurface(context),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: Row(
@@ -417,7 +437,8 @@ String _timesLabel(List<String> times) {
                       Text(
                         name,
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              color: HealingDesignSystem.deepText,
+                              color: HealingDesignSystem.adaptivePrimaryText(
+                                  context),
                             ),
                       ),
                       Text('已停用',
@@ -428,15 +449,14 @@ String _timesLabel(List<String> times) {
                     ],
                   ),
                 ),
-                if (isResumed) ...
-                  [
-                    Text('恢復使用 ✓',
-                        style: Theme.of(context)
-                            .textTheme
-                            .labelMedium
-                            ?.copyWith(color: HealingDesignSystem.primaryBlue)),
-                    const SizedBox(width: 8),
-                  ],
+                if (isResumed) ...[
+                  Text('恢復使用 ✓',
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelMedium
+                          ?.copyWith(color: HealingDesignSystem.primaryBlue)),
+                  const SizedBox(width: 8),
+                ],
                 OutlinedButton(
                   onPressed: () {
                     setState(() {
@@ -474,7 +494,8 @@ String _timesLabel(List<String> times) {
     final dose = med['dose'];
     final doseStr = _doseToString(dose, unit);
 
-    final times = (med['times'] as List?)?.whereType<String>().toList() ?? const <String>[];
+    final times = (med['times'] as List?)?.whereType<String>().toList() ??
+        const <String>[];
     final isActive = (med['isActive'] as bool?) ?? true;
     final isInjectionMed = (med['type'] as String?) == 'injection';
 
@@ -485,11 +506,12 @@ String _timesLabel(List<String> times) {
       key: ValueKey('adj-med-$docId'),
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 10),
-      color: HealingDesignSystem.cardBg,
+      color: HealingDesignSystem.adaptiveSurface(context),
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
-        side: const BorderSide(color: HealingDesignSystem.lineColor),
+        side:
+            BorderSide(color: HealingDesignSystem.adaptiveCardBorder(context)),
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
@@ -504,7 +526,7 @@ String _timesLabel(List<String> times) {
                   width: 28,
                   height: 28,
                   decoration: BoxDecoration(
-                    color: HealingDesignSystem.softBlue,
+                    color: HealingDesignSystem.adaptiveFill(context),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(
@@ -521,7 +543,8 @@ String _timesLabel(List<String> times) {
                       Text(
                         name,
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              color: HealingDesignSystem.deepText,
+                              color: HealingDesignSystem.adaptivePrimaryText(
+                                  context),
                             ),
                       ),
                       const SizedBox(height: 2),
@@ -537,7 +560,8 @@ String _timesLabel(List<String> times) {
                 ),
                 if (changed)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       color: HealingDesignSystem.primaryBlue.withOpacity(0.14),
                       borderRadius: BorderRadius.circular(999),
@@ -545,7 +569,8 @@ String _timesLabel(List<String> times) {
                     child: Text(
                       _typeLabel(draft.type),
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            color: HealingDesignSystem.deepText,
+                            color: HealingDesignSystem.adaptivePrimaryText(
+                                context),
                           ),
                     ),
                   ),
@@ -624,17 +649,24 @@ String _timesLabel(List<String> times) {
               const SizedBox(height: 10),
               _InlineEditRow(
                 title: '新劑量',
-                valueText: draft.newDose == null ? '點擊輸入' : _doseToString(draft.newDose, unit),
-                onTap: () => _editDose(docId: med['id'] as String? ?? '', unit: unit),
+                valueText: draft.newDose == null
+                    ? '點擊輸入'
+                    : _doseToString(draft.newDose, unit),
+                onTap: () =>
+                    _editDose(docId: med['id'] as String? ?? '', unit: unit),
               ),
               const SizedBox(height: 8),
               Text(
                 '建議填「調整後」的劑量（支援 0.5 / 1.25 這類小數）',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: cs.onSurfaceVariant),
               ),
             ],
 
-            if (draft.type == MedChangeType.scheduleChanged && !isInjectionMed) ...[
+            if (draft.type == MedChangeType.scheduleChanged &&
+                !isInjectionMed) ...[
               const SizedBox(height: 10),
               _InlineEditRow(
                 title: '服藥時間',
@@ -644,7 +676,10 @@ String _timesLabel(List<String> times) {
               const SizedBox(height: 8),
               Text(
                 '例如把「早上」改成「早上、晚上」。',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: cs.onSurfaceVariant),
               ),
             ],
 
@@ -652,7 +687,11 @@ String _timesLabel(List<String> times) {
             if (draft.type == MedChangeType.stopped) ...[
               const SizedBox(height: 10),
               TextField(
-                onChanged: (v) => draft.stopReason = v.trim().isEmpty ? null : v.trim(),
+                style: TextStyle(
+                  color: HealingDesignSystem.adaptivePrimaryText(context),
+                ),
+                onChanged: (v) =>
+                    draft.stopReason = v.trim().isEmpty ? null : v.trim(),
                 decoration: _inputDeco(context, '停藥原因（可選）例如：副作用、療程結束、醫師建議…'),
               ),
             ],
@@ -677,7 +716,7 @@ String _timesLabel(List<String> times) {
         decoration: BoxDecoration(
           color: selected
               ? HealingDesignSystem.primaryBlue.withOpacity(0.16)
-              : HealingDesignSystem.softBlue.withOpacity(0.7),
+              : HealingDesignSystem.adaptiveFill(context),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
             color: selected
@@ -688,7 +727,7 @@ String _timesLabel(List<String> times) {
         child: Text(
           label,
           style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: HealingDesignSystem.deepText,
+                color: HealingDesignSystem.adaptivePrimaryText(context),
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
               ),
         ),
@@ -696,131 +735,126 @@ String _timesLabel(List<String> times) {
     );
   }
 
-Future<void> _editDose({
-  required String docId,
-  required String unit,
-}) async {
-  final draft = _draftByDocId[docId]!;
+  Future<void> _editDose({
+    required String docId,
+    required String unit,
+  }) async {
+    final draft = _draftByDocId[docId]!;
 
-  final initText = draft.newDose == null
-      ? ''
-      : (draft.newDose! % 1 == 0
-          ? draft.newDose!.toInt().toString()
-          : draft.newDose!.toString());
+    final initText = draft.newDose == null
+        ? ''
+        : (draft.newDose! % 1 == 0
+            ? draft.newDose!.toInt().toString()
+            : draft.newDose!.toString());
 
-  final ctrl = TextEditingController(text: initText);
-  double? picked;
+    final ctrl = TextEditingController(text: initText);
+    double? picked;
 
-  await showDialog<void>(
-    context: context,
-    builder: (dialogContext) {
-      void submit() {
-        final raw = ctrl.text.trim().replaceAll(',', '.');
-        final v = double.tryParse(raw);
-        if (v == null || v < 0) return;
-        picked = v;
-        Navigator.of(dialogContext).pop();
-      }
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        void submit() {
+          final raw = ctrl.text.trim().replaceAll(',', '.');
+          final v = double.tryParse(raw);
+          if (v == null || v < 0) return;
+          picked = v;
+          Navigator.of(dialogContext).pop();
+        }
 
-      return AlertDialog(
-        title: const Text('輸入調整後劑量'),
-        content: TextField(
-          controller: ctrl,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          autofocus: true,
-          onSubmitted: (_) => submit(),
-          decoration: InputDecoration(
-            suffixText: unit,
-            hintText: '例如 0.5、1.25、25',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: submit,
-            child: const Text('確定'),
-          ),
-        ],
-      );
-    },
-  );
-
-  if (picked == null) return;
-
-  setState(() {
-    draft.newDose = picked;
-  });
-}
-
-Future<void> _editTimes({
-  required String docId,
-}) async {
-  final draft = _draftByDocId[docId]!;
-  final selected = <String>{...(draft.newTimes ?? draft.oldTimes)};
-  List<String>? picked;
-
-  await showDialog<void>(
-    context: context,
-    builder: (dialogContext) {
-      return StatefulBuilder(
-        builder: (context, setDialogState) {
-          return AlertDialog(
-            title: const Text('調整服藥時間'),
-            content: SingleChildScrollView(
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: kAdjustmentTimeSlots.map((slot) {
-                  return FilterChip(
-                    selected: selected.contains(slot),
-                    label: Text(slot),
-                    onSelected: (on) {
-                      setDialogState(() {
-                        if (on) {
-                          selected.add(slot);
-                        } else {
-                          selected.remove(slot);
-                        }
-                      });
-                    },
-                  );
-                }).toList(),
-              ),
+        return AlertDialog(
+          title: const Text('輸入調整後劑量'),
+          content: TextField(
+            controller: ctrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            autofocus: true,
+            onSubmitted: (_) => submit(),
+            decoration: InputDecoration(
+              suffixText: unit,
+              hintText: '例如 0.5、1.25、25',
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('取消'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: submit,
+              child: const Text('確定'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (picked == null) return;
+
+    setState(() {
+      draft.newDose = picked;
+    });
+  }
+
+  Future<void> _editTimes({
+    required String docId,
+  }) async {
+    final draft = _draftByDocId[docId]!;
+    final selected = <String>{...(draft.newTimes ?? draft.oldTimes)};
+    List<String>? picked;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('調整服藥時間'),
+              content: SingleChildScrollView(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: kAdjustmentTimeSlots.map((slot) {
+                    return FilterChip(
+                      selected: selected.contains(slot),
+                      label: Text(slot),
+                      onSelected: (on) {
+                        setDialogState(() {
+                          if (on) {
+                            selected.add(slot);
+                          } else {
+                            selected.remove(slot);
+                          }
+                        });
+                      },
+                    );
+                  }).toList(),
+                ),
               ),
-              FilledButton(
-                onPressed: () {
-                  final ordered = kAdjustmentTimeSlots.where(selected.contains).toList();
-                  picked = ordered;
-                  Navigator.pop(dialogContext);
-                },
-                child: const Text('確定'),
-              ),
-            ],
-          );
-        },
-      );
-    },
-  );
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final ordered =
+                        kAdjustmentTimeSlots.where(selected.contains).toList();
+                    picked = ordered;
+                    Navigator.pop(dialogContext);
+                  },
+                  child: const Text('確定'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
 
-  if (picked == null) return;
-  setState(() {
-    draft.newTimes = picked;
-  });
-}
-
-
-
-
-
-
+    if (picked == null) return;
+    setState(() {
+      draft.newTimes = picked;
+    });
+  }
 
   Future<void> _addNewMedication() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -854,7 +888,8 @@ Future<void> _editTimes({
         final med = afterMap[id];
         if (med == null) continue;
 
-        final draft = _draftByDocId.putIfAbsent(id, () => _MedDraft.fromMap(med));
+        final draft =
+            _draftByDocId.putIfAbsent(id, () => _MedDraft.fromMap(med));
         draft.type = MedChangeType.added;
         draft.newDose = draft.oldDose;
       }
@@ -916,15 +951,17 @@ Future<void> _editTimes({
       final userRef = FirebaseFirestore.instance.collection('users').doc(uid);
 
       final adjRef = userRef.collection('medAdjustments').doc();
-      final adjDate = Timestamp.fromDate(DateTime(_date.year, _date.month, _date.day));
+      final adjDate =
+          Timestamp.fromDate(DateTime(_date.year, _date.month, _date.day));
 
       final items = changed.map((e) {
         final docId = e.key;
         final d = e.value;
-        final isAddedThisSession =
-            d.type == MedChangeType.added || _sessionNewlyAddedDocIds.contains(docId);
+        final isAddedThisSession = d.type == MedChangeType.added ||
+            _sessionNewlyAddedDocIds.contains(docId);
 
-        final itemType = isAddedThisSession ? MedChangeType.added.name : d.type.name;
+        final itemType =
+            isAddedThisSession ? MedChangeType.added.name : d.type.name;
 
         return <String, dynamic>{
           'medDocId': docId,
@@ -944,8 +981,9 @@ Future<void> _editTimes({
       // 1) 寫入調整紀錄到本地 DB（一定要寫入）
       final adjId = adjRef.id;
       final dateStr = _fmtYmd(DateTime(_date.year, _date.month, _date.day));
-      debugPrint('📋 準備保存調整記錄 - adjId: $adjId, date: $dateStr, items 數量: ${items.length}');
-      
+      debugPrint(
+          '📋 準備保存調整記錄 - adjId: $adjId, date: $dateStr, items 數量: ${items.length}');
+
       try {
         await MedicationLocalDB().addAdjustmentRecord(uid, adjId, {
           'date': dateStr,
@@ -1035,7 +1073,8 @@ Future<void> _editTimes({
         if (localMed != null) {
           final updated = Map<String, dynamic>.from(localMed);
           updated['updatedAt'] = DateTime.now().toString();
-          updated['lastChangeAt'] = DateTime(_date.year, _date.month, _date.day).toString();
+          updated['lastChangeAt'] =
+              DateTime(_date.year, _date.month, _date.day).toString();
 
           if (d.type == MedChangeType.doseChanged) {
             updated.addAll(
@@ -1098,7 +1137,7 @@ Future<void> _editTimes({
         debugPrint('❌ Widget 已卸載，無法返回');
         return;
       }
-      
+
       Navigator.pop(context, true);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('已儲存本次調整')),
@@ -1106,7 +1145,8 @@ Future<void> _editTimes({
     } catch (e) {
       debugPrint('❌ 儲存異常：$e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('儲存失敗：$e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('儲存失敗：$e')));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -1122,23 +1162,26 @@ Future<void> _editTimes({
   static InputDecoration _inputDeco(BuildContext context, String hint) {
     return InputDecoration(
       hintText: hint,
-      hintStyle: const TextStyle(
-        color: HealingDesignSystem.mutedText,
+      hintStyle: TextStyle(
+        color: HealingDesignSystem.adaptiveSecondaryText(context),
         fontSize: 14,
       ),
       filled: true,
-      fillColor: HealingDesignSystem.softBlue.withOpacity(0.75),
+      fillColor: HealingDesignSystem.adaptiveFill(context),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: HealingDesignSystem.lineColor),
+        borderSide:
+            BorderSide(color: HealingDesignSystem.adaptiveCardBorder(context)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: HealingDesignSystem.lineColor),
+        borderSide:
+            BorderSide(color: HealingDesignSystem.adaptiveCardBorder(context)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: HealingDesignSystem.primaryBlue, width: 1.4),
+        borderSide: const BorderSide(
+            color: HealingDesignSystem.primaryBlue, width: 1.4),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
     );
@@ -1190,7 +1233,8 @@ Future<void> _editTimes({
       final pillCount = rawPillCount is num
           ? rawPillCount.toDouble()
           : double.tryParse(rawPillCount?.toString() ?? '');
-      final safePillCount = (pillCount != null && pillCount > 0) ? pillCount : 1.0;
+      final safePillCount =
+          (pillCount != null && pillCount > 0) ? pillCount : 1.0;
       out['pillCount'] = _round1(safePillCount);
       out['dosePerUnit'] = _round1(normalizedDose / safePillCount);
     }
@@ -1229,8 +1273,10 @@ class _MedDraft {
     final name = (m['name'] as String?) ?? '未命名藥物';
     final unit = (m['unit'] as String?) ?? 'mg';
     final dose = m['dose'];
-    final oldDose = (dose is int) ? dose.toDouble() : (dose is double ? dose : 0.0);
-    final oldTimes = (m['times'] as List?)?.whereType<String>().toList() ?? <String>[];
+    final oldDose =
+        (dose is int) ? dose.toDouble() : (dose is double ? dose : 0.0);
+    final oldTimes =
+        (m['times'] as List?)?.whereType<String>().toList() ?? <String>[];
 
     return _MedDraft(
       name: name,
@@ -1255,10 +1301,13 @@ class _SoftHeaderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(18),
-      decoration: HealingDesignSystem.cardDecoration(
-        bgColor: HealingDesignSystem.cardBg,
+      decoration: HealingDesignSystem.adaptiveCardDecoration(
+        context,
         radius: HealingDesignSystem.radiusL,
-        shadows: [HealingDesignSystem.shadowMedium(color: HealingDesignSystem.primaryBlue)],
+        shadows: [
+          HealingDesignSystem.shadowMedium(
+              color: HealingDesignSystem.primaryBlue)
+        ],
       ),
       child: Row(
         children: [
@@ -1276,12 +1325,17 @@ class _SoftHeaderCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: HealingDesignSystem.titleMedium),
+                Text(
+                  title,
+                  style: HealingDesignSystem.titleMedium.copyWith(
+                    color: HealingDesignSystem.adaptivePrimaryText(context),
+                  ),
+                ),
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: const TextStyle(
-                    color: HealingDesignSystem.mutedText,
+                  style: TextStyle(
+                    color: HealingDesignSystem.adaptiveSecondaryText(context),
                     fontSize: 12,
                     height: 1.4,
                   ),
@@ -1300,17 +1354,19 @@ class _SectionCard extends StatelessWidget {
   final IconData icon;
   final Widget child;
 
-  const _SectionCard({required this.title, required this.icon, required this.child});
+  const _SectionCard(
+      {required this.title, required this.icon, required this.child});
 
   @override
   Widget build(BuildContext context) {
     return Card(
       elevation: 0,
-      color: HealingDesignSystem.cardBg,
+      color: HealingDesignSystem.adaptiveSurface(context),
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
-        side: const BorderSide(color: HealingDesignSystem.lineColor),
+        side:
+            BorderSide(color: HealingDesignSystem.adaptiveCardBorder(context)),
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
@@ -1323,13 +1379,19 @@ class _SectionCard extends StatelessWidget {
                   width: 28,
                   height: 28,
                   decoration: BoxDecoration(
-                    color: HealingDesignSystem.softBlue,
+                    color: HealingDesignSystem.adaptiveFill(context),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(icon, size: 16, color: HealingDesignSystem.primaryBlue),
+                  child: Icon(icon,
+                      size: 16, color: HealingDesignSystem.primaryBlue),
                 ),
                 const SizedBox(width: 8),
-                Text(title, style: HealingDesignSystem.titleSmall),
+                Text(
+                  title,
+                  style: HealingDesignSystem.titleSmall.copyWith(
+                    color: HealingDesignSystem.adaptivePrimaryText(context),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 10),
@@ -1360,17 +1422,18 @@ class _InlineEditRow extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
-          color: HealingDesignSystem.softBlue.withOpacity(0.75),
+          color: HealingDesignSystem.adaptiveFill(context),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: HealingDesignSystem.lineColor),
+          border: Border.all(
+              color: HealingDesignSystem.adaptiveCardBorder(context)),
         ),
         child: Row(
           children: [
             Expanded(
               child: Text(
                 '$title：$valueText',
-                style: const TextStyle(
-                  color: HealingDesignSystem.deepText,
+                style: TextStyle(
+                  color: HealingDesignSystem.adaptivePrimaryText(context),
                 ),
               ),
             ),
@@ -1402,7 +1465,7 @@ class _EmptyMedsView extends StatelessWidget {
               width: 68,
               height: 68,
               decoration: BoxDecoration(
-                color: HealingDesignSystem.softBlue,
+                color: HealingDesignSystem.adaptiveFill(context),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: const Icon(
@@ -1412,10 +1475,10 @@ class _EmptyMedsView extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
-            const Text(
+            Text(
               '先建立你的藥物清單',
               style: TextStyle(
-                color: HealingDesignSystem.deepText,
+                color: HealingDesignSystem.adaptivePrimaryText(context),
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
               ),
@@ -1452,7 +1515,9 @@ class _ErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(child: Padding(padding: const EdgeInsets.all(16), child: Text(message)));
+    return Center(
+        child:
+            Padding(padding: const EdgeInsets.all(16), child: Text(message)));
   }
 }
 

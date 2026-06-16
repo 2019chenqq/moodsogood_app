@@ -20,7 +20,7 @@ plugins {
 android {
     namespace = "tw.heartsshine.app"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    ndkVersion = "27.0.12077973"
 
     defaultConfig {
         applicationId = "tw.heartsshine.app" // 之後換成你的正式 bundle id

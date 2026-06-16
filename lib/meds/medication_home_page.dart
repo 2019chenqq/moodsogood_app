@@ -93,7 +93,7 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
   void initState() {
     super.initState();
     _refresh();
-     AnalyticsService.logPage('medication_home_page');
+    AnalyticsService.logPage('medication_home_page');
   }
 
   void _refresh() {
@@ -152,7 +152,8 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           titleSpacing: 0,
-          iconTheme: IconThemeData(color: HealingDesignSystem.adaptivePrimaryText(context)),
+          iconTheme: IconThemeData(
+              color: HealingDesignSystem.adaptivePrimaryText(context)),
           title: Text(
             '藥物紀錄',
             style: TextStyle(
@@ -168,7 +169,8 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
           bottom: TabBar(
             indicatorColor: HealingDesignSystem.primaryBlue,
             labelColor: HealingDesignSystem.adaptivePrimaryText(context),
-            unselectedLabelColor: HealingDesignSystem.adaptiveSecondaryText(context),
+            unselectedLabelColor:
+                HealingDesignSystem.adaptiveSecondaryText(context),
             tabs: [
               Tab(text: '目前使用藥物'),
               Tab(text: '已停用'),
@@ -680,8 +682,8 @@ class _SectionTitle extends StatelessWidget {
       children: [
         Text(
           title,
-          style: const TextStyle(
-            color: HealingDesignSystem.deepText,
+          style: TextStyle(
+            color: HealingDesignSystem.adaptivePrimaryText(context),
             fontSize: 18,
             fontWeight: FontWeight.w600,
           ),
@@ -703,8 +705,9 @@ class _CountPill extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
-        color: HealingDesignSystem.softBlue,
-        border: Border.all(color: HealingDesignSystem.lineColor),
+        color: HealingDesignSystem.adaptiveFill(context),
+        border:
+            Border.all(color: HealingDesignSystem.adaptiveCardBorder(context)),
       ),
       child: Text(
         '$count',
@@ -748,12 +751,13 @@ class _ExpandableSectionState extends State<_ExpandableSection> {
   Widget build(BuildContext context) {
     return Card(
       elevation: 0,
-      color: HealingDesignSystem.cardBg,
+      color: HealingDesignSystem.adaptiveSurface(context),
       surfaceTintColor: Colors.transparent,
       shadowColor: HealingDesignSystem.primaryBlue.withOpacity(0.08),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
-        side: const BorderSide(color: HealingDesignSystem.lineColor),
+        side:
+            BorderSide(color: HealingDesignSystem.adaptiveCardBorder(context)),
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
@@ -771,8 +775,9 @@ class _ExpandableSectionState extends State<_ExpandableSection> {
                         children: [
                           Text(
                             widget.title,
-                            style: const TextStyle(
-                              color: HealingDesignSystem.deepText,
+                            style: TextStyle(
+                              color: HealingDesignSystem.adaptivePrimaryText(
+                                  context),
                               fontSize: 18,
                               fontWeight: FontWeight.w600,
                             ),
@@ -865,12 +870,13 @@ class _MedicationCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         child: Card(
           elevation: 0,
-          color: HealingDesignSystem.cardBg,
+          color: HealingDesignSystem.adaptiveSurface(context),
           surfaceTintColor: Colors.transparent,
           shadowColor: HealingDesignSystem.primaryBlue.withOpacity(0.08),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
-            side: const BorderSide(color: HealingDesignSystem.lineColor),
+            side: BorderSide(
+                color: HealingDesignSystem.adaptiveCardBorder(context)),
           ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
@@ -881,7 +887,7 @@ class _MedicationCard extends StatelessWidget {
                   width: 42,
                   height: 42,
                   decoration: BoxDecoration(
-                    color: HealingDesignSystem.softBlue,
+                    color: HealingDesignSystem.adaptiveFill(context),
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: const Icon(
@@ -896,8 +902,9 @@ class _MedicationCard extends StatelessWidget {
                     children: [
                       Text(
                         name,
-                        style: const TextStyle(
-                          color: HealingDesignSystem.deepText,
+                        style: TextStyle(
+                          color:
+                              HealingDesignSystem.adaptivePrimaryText(context),
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
                         ),
@@ -941,8 +948,10 @@ class _MedicationCard extends StatelessWidget {
                 IconButton(
                   tooltip: '更多',
                   onPressed: onMore,
-                  icon: const Icon(Icons.more_horiz,
-                      color: HealingDesignSystem.deepText),
+                  icon: Icon(
+                    Icons.more_horiz,
+                    color: HealingDesignSystem.adaptivePrimaryText(context),
+                  ),
                 ),
               ],
             ),
@@ -961,20 +970,21 @@ class _Chip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bg = isSecondary
-        ? HealingDesignSystem.softBlue.withOpacity(0.6)
-        : HealingDesignSystem.softBlue;
+        ? HealingDesignSystem.adaptiveFill(context).withOpacity(0.7)
+        : HealingDesignSystem.adaptiveFill(context);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: HealingDesignSystem.lineColor),
+        border:
+            Border.all(color: HealingDesignSystem.adaptiveCardBorder(context)),
       ),
       child: Text(
         text,
-        style: const TextStyle(
-          color: HealingDesignSystem.deepText,
+        style: TextStyle(
+          color: HealingDesignSystem.adaptivePrimaryText(context),
           fontSize: 12,
           fontWeight: FontWeight.w500,
         ),
@@ -1017,17 +1027,17 @@ class _EmptyState extends StatelessWidget {
               width: 68,
               height: 68,
               decoration: BoxDecoration(
-                color: HealingDesignSystem.softBlue,
+                color: HealingDesignSystem.adaptiveFill(context),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: const Icon(Icons.medication_outlined,
                   size: 36, color: HealingDesignSystem.primaryBlue),
             ),
             const SizedBox(height: 12),
-            const Text(
+            Text(
               '先建立你的藥物清單',
               style: TextStyle(
-                color: HealingDesignSystem.deepText,
+                color: HealingDesignSystem.adaptivePrimaryText(context),
                 fontSize: 22,
                 fontWeight: FontWeight.w700,
               ),
@@ -1091,8 +1101,8 @@ class _OverviewBanner extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.all(18),
-      decoration: HealingDesignSystem.cardDecoration(
-        bgColor: HealingDesignSystem.cardBg,
+      decoration: HealingDesignSystem.adaptiveCardDecoration(
+        context,
         radius: HealingDesignSystem.radiusL,
         shadows: [
           HealingDesignSystem.shadowMedium(
@@ -1115,14 +1125,14 @@ class _OverviewBanner extends StatelessWidget {
                     const Icon(Icons.medication_rounded, color: Colors.white),
               ),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       '藥物總覽',
                       style: TextStyle(
-                        color: HealingDesignSystem.deepText,
+                        color: HealingDesignSystem.adaptivePrimaryText(context),
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
                       ),
@@ -1131,7 +1141,8 @@ class _OverviewBanner extends StatelessWidget {
                     Text(
                       '先看現在吃哪些，再進入個別藥物管理。',
                       style: TextStyle(
-                        color: HealingDesignSystem.mutedText,
+                        color:
+                            HealingDesignSystem.adaptiveSecondaryText(context),
                         fontSize: 13,
                         height: 1.3,
                       ),
@@ -1184,8 +1195,10 @@ class _OverviewBanner extends StatelessWidget {
                 icon: const Icon(Icons.edit_note),
                 label: const Text('調藥紀錄'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: HealingDesignSystem.deepText,
-                  side: const BorderSide(color: HealingDesignSystem.lineColor),
+                  foregroundColor:
+                      HealingDesignSystem.adaptivePrimaryText(context),
+                  side: BorderSide(
+                      color: HealingDesignSystem.adaptiveCardBorder(context)),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14)),
                 ),
@@ -1195,8 +1208,10 @@ class _OverviewBanner extends StatelessWidget {
                 icon: const Icon(Icons.compare_arrows),
                 label: const Text('症狀比對'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: HealingDesignSystem.deepText,
-                  side: const BorderSide(color: HealingDesignSystem.lineColor),
+                  foregroundColor:
+                      HealingDesignSystem.adaptivePrimaryText(context),
+                  side: BorderSide(
+                      color: HealingDesignSystem.adaptiveCardBorder(context)),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14)),
                 ),
@@ -1255,8 +1270,8 @@ class _StatPill extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               '$value',
-              style: const TextStyle(
-                color: HealingDesignSystem.deepText,
+              style: TextStyle(
+                color: HealingDesignSystem.adaptivePrimaryText(context),
                 fontSize: 20,
                 fontWeight: FontWeight.w800,
               ),

@@ -9,10 +9,12 @@ class RecordAdjustmentHistoryPage extends StatefulWidget {
   const RecordAdjustmentHistoryPage({super.key});
 
   @override
-  State<RecordAdjustmentHistoryPage> createState() => _RecordAdjustmentHistoryPageState();
+  State<RecordAdjustmentHistoryPage> createState() =>
+      _RecordAdjustmentHistoryPageState();
 }
 
-class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPage> {
+class _RecordAdjustmentHistoryPageState
+    extends State<RecordAdjustmentHistoryPage> {
   late Future<List<Map<String, dynamic>>> _future;
   bool _initialized = false;
 
@@ -36,7 +38,9 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
       _future = Future.value([]);
     } else {
       debugPrint('📋 正在從本地 DB 載入調整記錄，uid: $uid');
-      _future = MedicationLocalDB().getAdjustmentRecordsForDisplay(uid).then((records) {
+      _future = MedicationLocalDB()
+          .getAdjustmentRecordsForDisplay(uid)
+          .then((records) {
         debugPrint('✅ 本地 DB 載入成功，共 ${records.length} 筆記錄');
         return records;
       }).catchError((e) {
@@ -73,7 +77,8 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
           'date': dateStr,
           'note': data['note'],
           'items': data['items'] ?? [],
-          'createdAt': data['createdAt']?.toString() ?? DateTime.now().toString(),
+          'createdAt':
+              data['createdAt']?.toString() ?? DateTime.now().toString(),
         });
       }
 
@@ -107,7 +112,8 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: HealingDesignSystem.adaptivePrimaryText(context)),
+          icon: Icon(Icons.arrow_back,
+              color: HealingDesignSystem.adaptivePrimaryText(context)),
           tooltip: '返回',
           onPressed: () => Navigator.maybePop(context),
         ),
@@ -123,8 +129,9 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
       body: FutureBuilder<List<Map<String, dynamic>>>(
         future: _future,
         builder: (context, snap) {
-          debugPrint('📊 FutureBuilder state: ${snap.connectionState}, hasData: ${snap.hasData}, hasError: ${snap.hasError}');
-          
+          debugPrint(
+              '📊 FutureBuilder state: ${snap.connectionState}, hasData: ${snap.hasData}, hasError: ${snap.hasError}');
+
           if (snap.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
@@ -148,7 +155,9 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
 
                 final dateStr = (record['date'] as String?) ?? '';
                 final note = (record['note'] as String?)?.trim() ?? '';
-                final items = (record['items'] as List?)?.whereType<Map>().toList() ?? const [];
+                final items =
+                    (record['items'] as List?)?.whereType<Map>().toList() ??
+                        const [];
                 final summary = _buildSummary(items);
 
                 final isFirst = i == 0;
@@ -208,14 +217,17 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
 
           String doseText;
           if (newDosePerUnit != null && newPillCount != null) {
-            doseText = '$name：${newDosePerUnit ?? ''}$unit × ${newPillCount ?? ''}顆（總量 ${newDose ?? ''} $unit）';
+            doseText =
+                '$name：${newDosePerUnit ?? ''}$unit × ${newPillCount ?? ''}顆（總量 ${newDose ?? ''} $unit）';
           } else {
             doseText = '$name：${oldDose ?? ''}→${newDose ?? ''} $unit';
           }
 
           if ((oldDosePerUnit != null && oldPillCount != null) &&
-              (oldDosePerUnit != newDosePerUnit || oldPillCount != newPillCount)) {
-            doseText = '$doseText；原本 ${oldDosePerUnit ?? ''}$unit × ${oldPillCount ?? ''}顆';
+              (oldDosePerUnit != newDosePerUnit ||
+                  oldPillCount != newPillCount)) {
+            doseText =
+                '$doseText；原本 ${oldDosePerUnit ?? ''}$unit × ${oldPillCount ?? ''}顆';
           }
 
           if (oldTimes != newTimes && newTimes.isNotEmpty) {
@@ -233,12 +245,14 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
       }
     }
 
-    final shown = items.take(3).map(fmtItem).where((s) => s.isNotEmpty).toList();
+    final shown =
+        items.take(3).map(fmtItem).where((s) => s.isNotEmpty).toList();
     final more = items.length > 3 ? '…等 ${items.length} 項' : '';
     return '${shown.join('、')} $more'.trim();
   }
 
-  static void _showDetailSheet(BuildContext context, String title, String note, List items) {
+  static void _showDetailSheet(
+      BuildContext context, String title, String note, List items) {
     showModalBottomSheet(
       context: context,
       showDragHandle: true,
@@ -259,7 +273,7 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
                 const SizedBox(height: 12),
                 ...items.map((it) {
                   if (it is! Map) return const SizedBox.shrink();
-                  
+
                   final name = (it['name'] ?? '未命名藥物').toString();
                   final type = (it['type'] ?? 'unchanged').toString();
                   final unit = (it['unit'] ?? '').toString();
@@ -281,10 +295,14 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
                     final newPillCount = it['newPillCount'];
 
                     if (newDosePerUnit != null && newPillCount != null) {
-                      line = '調整：${newDosePerUnit ?? ''}$unit × ${newPillCount ?? ''}顆（總量 ${newDose ?? ''} $unit）';
-                      if (oldDosePerUnit != null && oldPillCount != null &&
-                          (oldDosePerUnit != newDosePerUnit || oldPillCount != newPillCount)) {
-                        line = '$line；原本 ${oldDosePerUnit ?? ''}$unit × ${oldPillCount ?? ''}顆';
+                      line =
+                          '調整：${newDosePerUnit ?? ''}$unit × ${newPillCount ?? ''}顆（總量 ${newDose ?? ''} $unit）';
+                      if (oldDosePerUnit != null &&
+                          oldPillCount != null &&
+                          (oldDosePerUnit != newDosePerUnit ||
+                              oldPillCount != newPillCount)) {
+                        line =
+                            '$line；原本 ${oldDosePerUnit ?? ''}$unit × ${oldPillCount ?? ''}顆';
                       }
                     } else {
                       line = '調整：${oldDose ?? ''} → ${newDose ?? ''} $unit';
@@ -314,9 +332,12 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(name, style: Theme.of(context).textTheme.titleSmall),
+                              Text(name,
+                                  style:
+                                      Theme.of(context).textTheme.titleSmall),
                               const SizedBox(height: 2),
-                              Text(line, style: Theme.of(context).textTheme.bodySmall),
+                              Text(line,
+                                  style: Theme.of(context).textTheme.bodySmall),
                             ],
                           ),
                         ),
@@ -334,7 +355,8 @@ class _RecordAdjustmentHistoryPageState extends State<RecordAdjustmentHistoryPag
 
   static String _timesToText(dynamic value) {
     if (value is List) {
-      final parts = value.whereType<String>().where((s) => s.trim().isNotEmpty).toList();
+      final parts =
+          value.whereType<String>().where((s) => s.trim().isNotEmpty).toList();
       if (parts.isEmpty) return '未設定';
       return parts.join('、');
     }
@@ -378,7 +400,9 @@ class _HistoryTimelineItem extends StatelessWidget {
                 Expanded(
                   child: Container(
                     width: 2,
-                    color: isFirst ? Colors.transparent : HealingDesignSystem.lineColor,
+                    color: isFirst
+                        ? Colors.transparent
+                        : HealingDesignSystem.lineColor,
                   ),
                 ),
                 Container(
@@ -389,7 +413,8 @@ class _HistoryTimelineItem extends StatelessWidget {
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: HealingDesignSystem.primaryBlue.withOpacity(0.25),
+                        color:
+                            HealingDesignSystem.primaryBlue.withOpacity(0.25),
                         blurRadius: 10,
                         offset: const Offset(0, 3),
                       ),
@@ -409,7 +434,9 @@ class _HistoryTimelineItem extends StatelessWidget {
                 Expanded(
                   child: Container(
                     width: 2,
-                    color: isLast ? Colors.transparent : HealingDesignSystem.lineColor,
+                    color: isLast
+                        ? Colors.transparent
+                        : HealingDesignSystem.lineColor,
                   ),
                 ),
               ],
@@ -423,16 +450,12 @@ class _HistoryTimelineItem extends StatelessWidget {
                 color: Colors.transparent,
                 child: InkWell(
                   onTap: onTap,
-                  borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
+                  borderRadius:
+                      BorderRadius.circular(HealingDesignSystem.radiusL),
                   child: Ink(
-                    decoration: BoxDecoration(
-                      color: HealingDesignSystem.cardBg,
-                      borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
-                      border: Border.all(
-                        color: const Color(0xFFE4F1F7),
-                        width: 1,
-                      ),
-                      boxShadow: [HealingDesignSystem.shadowMedium()],
+                    decoration: HealingDesignSystem.adaptiveCardDecoration(
+                      context,
+                      radius: HealingDesignSystem.radiusL,
                     ),
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 15, 16, 15),
@@ -446,8 +469,9 @@ class _HistoryTimelineItem extends StatelessWidget {
                           const SizedBox(height: 12),
                           Text(
                             summary,
-                            style: const TextStyle(
-                              color: HealingDesignSystem.deepText,
+                            style: TextStyle(
+                              color: HealingDesignSystem.adaptivePrimaryText(
+                                  context),
                               fontSize: 14,
                               height: 1.55,
                               fontWeight: FontWeight.w500,
@@ -508,7 +532,7 @@ class _HistoryHeaderRow extends StatelessWidget {
           width: 38,
           height: 38,
           decoration: BoxDecoration(
-            color: HealingDesignSystem.softBlue,
+            color: HealingDesignSystem.adaptiveFill(context),
             borderRadius: BorderRadius.circular(14),
           ),
           child: const Icon(
@@ -533,8 +557,8 @@ class _HistoryHeaderRow extends StatelessWidget {
               const SizedBox(height: 2),
               Text(
                 title,
-                style: const TextStyle(
-                  color: HealingDesignSystem.deepText,
+                style: TextStyle(
+                  color: HealingDesignSystem.adaptivePrimaryText(context),
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
                 ),
@@ -574,10 +598,14 @@ class _HistoryNoteBox extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFFAF1),
+        color: HealingDesignSystem.isDark(context)
+            ? const Color(0xFF302A20)
+            : const Color(0xFFFFFAF1),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: const Color(0xFFF3E6C8),
+          color: HealingDesignSystem.isDark(context)
+              ? const Color(0xFF5A4B31)
+              : const Color(0xFFF3E6C8),
         ),
       ),
       child: Row(
@@ -592,8 +620,8 @@ class _HistoryNoteBox extends StatelessWidget {
           Expanded(
             child: Text(
               note,
-              style: const TextStyle(
-                color: HealingDesignSystem.mutedText,
+              style: TextStyle(
+                color: HealingDesignSystem.adaptiveSecondaryText(context),
                 fontSize: 13,
                 height: 1.5,
               ),
@@ -611,23 +639,15 @@ class _EmptyHistoryTimeline extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: HealingDesignSystem.softBlue,
+      color: HealingDesignSystem.adaptiveBackground(context),
       width: double.infinity,
       padding: const EdgeInsets.all(28),
       child: Center(
         child: Container(
           padding: const EdgeInsets.fromLTRB(22, 26, 22, 26),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: const Color(0xFFE4F1F7)),
-            boxShadow: [
-              BoxShadow(
-                color: HealingDesignSystem.primaryBlue.withOpacity(0.10),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
-              ),
-            ],
+          decoration: HealingDesignSystem.adaptiveCardDecoration(
+            context,
+            radius: 28,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -636,7 +656,7 @@ class _EmptyHistoryTimeline extends StatelessWidget {
                 width: 58,
                 height: 58,
                 decoration: BoxDecoration(
-                  color: HealingDesignSystem.softBlue,
+                  color: HealingDesignSystem.adaptiveFill(context),
                   borderRadius: BorderRadius.circular(22),
                 ),
                 child: const Icon(
@@ -646,20 +666,20 @@ class _EmptyHistoryTimeline extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 '還沒有調藥紀錄',
                 style: TextStyle(
-                  color: HealingDesignSystem.deepText,
+                  color: HealingDesignSystem.adaptivePrimaryText(context),
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 '當你新增回診或藥物調整後，\n這裡會慢慢形成一條屬於你的用藥時間線。',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: HealingDesignSystem.mutedText,
+                  color: HealingDesignSystem.adaptiveSecondaryText(context),
                   fontSize: 14,
                   height: 1.6,
                 ),

@@ -23,7 +23,6 @@ import 'app_globals.dart';
 import 'utils/notification_helper.dart';
 import 'utils/firebase_sync_config.dart';
 import 'providers/theme_provider.dart';
-import 'providers/firebase_sync_provider.dart';
 
 import 'daily/daily_record_repository.dart';
 import 'app_lock_screen.dart';
@@ -142,9 +141,6 @@ Future<void> main() async {
         ChangeNotifierProvider<ThemeProvider>.value(
           value: themeProvider,
         ),
-        ChangeNotifierProvider<FirebaseSyncProvider>(
-          create: (_) => FirebaseSyncProvider()..init(),
-        ),
         ChangeNotifierProvider<ProProvider>(
           create: (_) => ProProvider()..init(),
         ),
@@ -172,11 +168,6 @@ Future<void> main() async {
           Provider.of<ProProvider>(globalContext, listen: false);
 
       // 🔧 修復：正確設置 Pro 狀態回調，讓 Firebase 同步與本地存儲保持同步
-      FirebaseSyncConfig.setProStatusCallback(() {
-        debugPrint('📡 Checking Pro status: ${proProvider.isPro}');
-        return proProvider.isPro;
-      });
-
       // 📱 應用啟動時：如果是 Pro 用戶，自動同步本地數據到 Firebase
       Future.delayed(const Duration(milliseconds: 500), () async {
         final user = FirebaseAuth.instance.currentUser;
@@ -249,7 +240,7 @@ class MainApp extends StatelessWidget {
       // 淺色主題
       theme: ThemeData(
         useMaterial3: true,
-        fontFamily: 'LXGWWenKai',
+        fontFamily: 'Iansui',
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color.fromARGB(255, 154, 170, 221),
           brightness: Brightness.light,
@@ -263,7 +254,7 @@ class MainApp extends StatelessWidget {
           brightness: Brightness.dark,
         ),
         useMaterial3: true,
-        fontFamily: 'LXGWWenKai',
+        fontFamily: 'Iansui',
         scaffoldBackgroundColor: const Color(0xFF121212),
         cardColor: const Color(0xFF1C1C1C),
         appBarTheme: const AppBarTheme(

@@ -18,7 +18,6 @@ import '../utils/firebase_sync_config.dart';
 import '../constants/healing_design_system.dart';
 import '../widgets/emotion_slider.dart';
 import 'ai_journal_reflection_page.dart';
-import 'diary_repository.dart';
 import '../utils/secure_storage_service.dart';
 import '../utils/encryption_service.dart';
 import '../utils/key_manager.dart';
@@ -132,13 +131,6 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   Future<void> _loadDraft() async {
     try {
       // 1. 先從本地 SQLite 加載 (本地是明文，直接顯示)
-      final repo = DiaryRepository();
-      final localEntry = await repo.getByDate(_day);
-      if (localEntry != null && mounted) {
-        m.debugPrint('📔 Loaded diary from local SQLite');
-        _updateUIFromData(localEntry.toMap());
-      }
-
       // 2. 再嘗試從 Firebase 加載（抓下來的可能是密文）
       try {
         final docRef = _docRef;
@@ -542,23 +534,6 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
       // 步驟 1：💾 永遠先存一份「明文」到本地資料庫
       // 保證不管網路斷線或加密失敗，用戶打的字絕對不會不見！
       // ==========================================
-      try {
-        final repo = DiaryRepository();
-        await repo.upsert(DiaryEntry(
-          date: _day,
-          title: _titleCtrl.text.trim(),
-          content: _contentCtrl.text.trim(),
-          themeSong: _songCtrl.text.trim(),
-          highlight: _highlightCtrl.text.trim(),
-          metaphor: _metaphorCtrl.text.trim(),
-          proudOf: _proudOfCtrl.text.trim(),
-          selfCare: _selfCareCtrl.text.trim(),
-        ));
-        m.debugPrint('✅ 本地 SQLite 儲存成功');
-      } catch (e) {
-        m.debugPrint('❌ 本地儲存失敗: $e');
-      }
-
       // ==========================================
       // 步驟 2：☁️ 嘗試加密並上傳到 Firebase (獨立區塊，失敗不影響本地)
       // ==========================================
@@ -792,9 +767,6 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
       }
 
       // 再刪除本地資料
-      final repo = DiaryRepository();
-      await repo.deleteByDate(_day);
-
       if (!mounted) return;
       m.ScaffoldMessenger.of(context).showSnackBar(
         const m.SnackBar(content: m.Text('已刪除當日日記')),

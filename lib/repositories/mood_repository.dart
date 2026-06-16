@@ -1,105 +1,88 @@
-import 'package:isar/isar.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
 import '../daily/models/local_record.dart';
 
 class MoodRepository {
-  final Future<Isar> db;
-
-  MoodRepository() : db = openDB();
-
-  static Future<Isar> openDB() async {
-    final dir = await getApplicationDocumentsDirectory();
-    final existing = Isar.getInstance();
-    if (existing != null) return existing;
-
-    return Isar.open(
-      [LocalRecordSchema],
-      directory: dir.path,
-    );
+  String get _uid {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) throw StateError('A signed-in user is required.');
+    return uid;
   }
 
-  /// [days] 為 null 時代表查詢全部資料
+  CollectionReference<Map<String, dynamic>> get _records =>
+      FirebaseFirestore.instance
+          .collection('users')
+          .doc(_uid)
+          .collection('moodRecords');
+
   Future<List<LocalRecord>> getTrendData(int? days) async {
-    final isar = await db;
-
-    if (days == null) {
-      return isar.localRecords.where().anyDate().sortByDate().findAll();
+    Query<Map<String, dynamic>> query = _records.orderBy('date');
+    if (days != null) {
+      final fromDate = DateTime.now().subtract(Duration(days: days));
+      query = query.where(
+        'date',
+        isGreaterThanOrEqualTo: Timestamp.fromDate(fromDate),
+      );
     }
-
-    final fromDate = DateTime.now().subtract(Duration(days: days));
-
-    return isar.localRecords
-        .where()
-        .dateGreaterThan(fromDate)
-        .sortByDate()
-        .findAll();
+    final snapshot = await query.get();
+    return snapshot.docs.map(_fromDocument).toList();
   }
 
   Future<void> saveRecord(LocalRecord record, bool isPro) async {
-    final isar = await db;
-
-    await isar.writeTxn(() async {
-      record.updatedAt = DateTime.now();
-      record.isSynced = !isPro;
-      await isar.localRecords.put(record);
-    });
-
-    if (isPro) {
-      await _syncToFirebase(record);
-    }
+    final docId = _dateId(record.date);
+    await _records.doc(docId).set({
+      'date': Timestamp.fromDate(
+        DateTime(record.date.year, record.date.month, record.date.day),
+      ),
+      'overallMood': record.overallMood,
+      'note': record.note,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    record.id = docId;
+    record.updatedAt = DateTime.now();
   }
 
-  Future<void> _syncToFirebase(LocalRecord record) async {
-    try {
-      final firestore = FirebaseFirestore.instance;
-      final docId = record.date.toIso8601String().split('T')[0];
-
-      await firestore.collection('mood_records').doc(docId).set({
-        'overallMood': record.overallMood,
-        'note': record.note,
-        'date': record.date,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      final isar = await db;
-
-      await isar.writeTxn(() async {
-        record.isSynced = true;
-        await isar.localRecords.put(record);
-      });
-
-      debugPrint("心域雲端同步成功：$docId");
-    } catch (e) {
-      debugPrint("雲端同步失敗，資料仍保存在本地：$e");
-    }
-  }
-
-  /// 取得按月平均的趨勢數據
   Future<Map<String, double>> getMonthlyAverages() async {
-    final isar = await db;
-
-    final allRecords = await isar.localRecords.where().sortByDate().findAll();
-
-    final Map<String, List<double>> groupedData = {};
-
-    for (final record in allRecords) {
+    final records = await getTrendData(null);
+    final grouped = <String, List<double>>{};
+    for (final record in records) {
       final mood = record.overallMood;
-
-      if (mood != null) {
-        final monthKey =
-            "${record.date.year}-${record.date.month.toString().padLeft(2, '0')}";
-
-        groupedData.putIfAbsent(monthKey, () => []).add(mood);
-      }
+      if (mood == null) continue;
+      final key =
+          '${record.date.year}-${record.date.month.toString().padLeft(2, '0')}';
+      grouped.putIfAbsent(key, () => []).add(mood);
     }
-
-    return groupedData.map(
+    return grouped.map(
       (key, scores) => MapEntry(
         key,
         scores.reduce((a, b) => a + b) / scores.length,
       ),
     );
+  }
+
+  LocalRecord _fromDocument(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data();
+    final rawDate = data['date'];
+    final date = rawDate is Timestamp
+        ? rawDate.toDate()
+        : DateTime.tryParse(rawDate?.toString() ?? '') ?? DateTime.now();
+    return LocalRecord(
+      id: doc.id,
+      date: date,
+      overallMood: (data['overallMood'] as num?)?.toDouble(),
+      note: data['note'] as String?,
+      updatedAt: data['updatedAt'] is Timestamp
+          ? (data['updatedAt'] as Timestamp).toDate()
+          : null,
+    );
+  }
+
+  String _dateId(DateTime date) {
+    return '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
   }
 }

@@ -79,7 +79,7 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
           // ========================================
           Container(
             padding: const EdgeInsets.all(HealingDesignSystem.paddingL),
-            color: HealingDesignSystem.softBlue.withOpacity(0.3),
+            color: HealingDesignSystem.adaptiveFill(context).withOpacity(0.45),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: kEmotionCheckboxCategories.entries.map((category) {
@@ -163,7 +163,7 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
       children: [
         // 標題欄 + 收合按鈕
         Container(
-          color: HealingDesignSystem.softBlue,
+          color: HealingDesignSystem.adaptiveFill(context),
           padding: const EdgeInsets.symmetric(
             horizontal: HealingDesignSystem.paddingL,
             vertical: HealingDesignSystem.paddingM,
@@ -175,7 +175,9 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
                 children: [
                   Text(
                     '情緒評分',
-                    style: HealingDesignSystem.titleMedium,
+                    style: HealingDesignSystem.titleMedium.copyWith(
+                      color: HealingDesignSystem.adaptivePrimaryText(context),
+                    ),
                   ),
                   const SizedBox(width: 8),
                   IconButton(
@@ -220,7 +222,7 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
         // 內容區（展開時顯示）
         if (_isSliderExpanded)
           Container(
-            color: HealingDesignSystem.softBlue.withOpacity(0.2),
+            color: HealingDesignSystem.adaptiveFill(context).withOpacity(0.3),
             constraints: const BoxConstraints(maxHeight: 400),
             child: selectedEmotions.isEmpty
                 ? Center(
@@ -233,7 +235,8 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
                   )
                 : SingleChildScrollView(
                     child: Padding(
-                      padding: const EdgeInsets.all(HealingDesignSystem.paddingL),
+                      padding:
+                          const EdgeInsets.all(HealingDesignSystem.paddingL),
                       child: Column(
                         children: selectedEmotions.map((emotion) {
                           final index = emotionIndices[emotion.name]!;
@@ -268,7 +271,9 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
           ),
           child: Text(
             categoryName,
-            style: HealingDesignSystem.titleMedium,
+            style: HealingDesignSystem.titleMedium.copyWith(
+              color: HealingDesignSystem.adaptivePrimaryText(context),
+            ),
           ),
         ),
         Wrap(
@@ -317,11 +322,11 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
           decoration: BoxDecoration(
             color: isSelected
                 ? HealingDesignSystem.primaryBlue.withOpacity(0.15)
-                : HealingDesignSystem.cardBg,
+                : HealingDesignSystem.adaptiveSurface(context),
             border: Border.all(
               color: isSelected
                   ? HealingDesignSystem.primaryBlue
-                  : HealingDesignSystem.lineColor,
+                  : HealingDesignSystem.adaptiveCardBorder(context),
               width: isSelected ? 2 : 1,
             ),
             borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
@@ -350,7 +355,7 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
                 style: TextStyle(
                   color: isSelected
                       ? HealingDesignSystem.primaryBlue
-                      : HealingDesignSystem.deepText,
+                      : HealingDesignSystem.adaptivePrimaryText(context),
                   fontSize: 14,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                 ),
@@ -370,7 +375,7 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: HealingDesignSystem.paddingL),
-      decoration: HealingDesignSystem.cardDecoration(),
+      decoration: HealingDesignSystem.adaptiveCardDecoration(context),
       child: Padding(
         padding: const EdgeInsets.all(HealingDesignSystem.paddingL),
         child: Column(
@@ -381,7 +386,9 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
                 Expanded(
                   child: Text(
                     emotion.name,
-                    style: HealingDesignSystem.titleSmall,
+                    style: HealingDesignSystem.titleSmall.copyWith(
+                      color: HealingDesignSystem.adaptivePrimaryText(context),
+                    ),
                   ),
                 ),
                 IconButton(
@@ -392,7 +399,8 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
                   tooltip: '移除',
                   iconSize: 20,
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
                   onPressed: () => widget.onToggleChecked(index, false),
                 ),
               ],

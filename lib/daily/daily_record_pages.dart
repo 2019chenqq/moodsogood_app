@@ -91,7 +91,7 @@ class EmotionPage extends StatelessWidget {
           final item = items[i];
           return Container(
             margin: const EdgeInsets.only(bottom: HealingDesignSystem.paddingM),
-            decoration: HealingDesignSystem.cardDecoration(),
+            decoration: HealingDesignSystem.adaptiveCardDecoration(context),
             child: Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: HealingDesignSystem.paddingL,
@@ -108,7 +108,10 @@ class EmotionPage extends StatelessWidget {
                       Expanded(
                         child: Text(
                           emotionDisplayTextMap[item.name] ?? item.name,
-                          style: HealingDesignSystem.titleSmall,
+                          style: HealingDesignSystem.titleSmall.copyWith(
+                            color: HealingDesignSystem.adaptivePrimaryText(
+                                context),
+                          ),
                         ),
                       ),
 
@@ -310,7 +313,7 @@ class SymptomPage extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(HealingDesignSystem.paddingM),
           decoration: BoxDecoration(
-            color: HealingDesignSystem.softBlue.withOpacity(0.4),
+            color: HealingDesignSystem.adaptiveFill(context),
             borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
             border: Border.all(
               color: HealingDesignSystem.lineColor,
@@ -332,7 +335,9 @@ class SymptomPage extends StatelessWidget {
                   children: [
                     Text(
                       '溫柔提醒',
-                      style: HealingDesignSystem.titleSmall,
+                      style: HealingDesignSystem.titleSmall.copyWith(
+                        color: HealingDesignSystem.adaptivePrimaryText(context),
+                      ),
                     ),
                     const SizedBox(height: HealingDesignSystem.paddingS),
                     Text(
@@ -354,7 +359,9 @@ class SymptomPage extends StatelessWidget {
         // 2. 心血管症狀（勾選）
         Text(
           '心血管與呼吸',
-          style: HealingDesignSystem.titleSmall,
+          style: HealingDesignSystem.titleSmall.copyWith(
+            color: HealingDesignSystem.adaptivePrimaryText(context),
+          ),
         ),
         const SizedBox(height: HealingDesignSystem.paddingS),
         _buildSymptomChips(
@@ -368,7 +375,9 @@ class SymptomPage extends StatelessWidget {
         // 3. 消化系統（勾選）
         Text(
           '消化系統',
-          style: HealingDesignSystem.titleSmall,
+          style: HealingDesignSystem.titleSmall.copyWith(
+            color: HealingDesignSystem.adaptivePrimaryText(context),
+          ),
         ),
         const SizedBox(height: HealingDesignSystem.paddingS),
         _buildSymptomChips(
@@ -392,7 +401,9 @@ class SymptomPage extends StatelessWidget {
         // 4. 頭部（勾選）
         Text(
           '頭部',
-          style: HealingDesignSystem.titleSmall,
+          style: HealingDesignSystem.titleSmall.copyWith(
+            color: HealingDesignSystem.adaptivePrimaryText(context),
+          ),
         ),
         const SizedBox(height: HealingDesignSystem.paddingS),
         _buildSymptomChips(
@@ -406,7 +417,9 @@ class SymptomPage extends StatelessWidget {
         // 5. 眼睛與耳朵（勾選）
         Text(
           '眼睛與耳朵',
-          style: HealingDesignSystem.titleSmall,
+          style: HealingDesignSystem.titleSmall.copyWith(
+            color: HealingDesignSystem.adaptivePrimaryText(context),
+          ),
         ),
         const SizedBox(height: HealingDesignSystem.paddingS),
         _buildSymptomChips(
@@ -420,7 +433,9 @@ class SymptomPage extends StatelessWidget {
         // 6. 口腔與咽喉（勾選）
         Text(
           '口腔與咽喉',
-          style: HealingDesignSystem.titleSmall,
+          style: HealingDesignSystem.titleSmall.copyWith(
+            color: HealingDesignSystem.adaptivePrimaryText(context),
+          ),
         ),
         const SizedBox(height: HealingDesignSystem.paddingS),
         _buildSymptomChips(
@@ -434,7 +449,9 @@ class SymptomPage extends StatelessWidget {
         // 7. 四肢與肌肉（勾選）
         Text(
           '四肢與肌肉',
-          style: HealingDesignSystem.titleSmall,
+          style: HealingDesignSystem.titleSmall.copyWith(
+            color: HealingDesignSystem.adaptivePrimaryText(context),
+          ),
         ),
         const SizedBox(height: HealingDesignSystem.paddingS),
         _buildSymptomChips(
@@ -455,7 +472,9 @@ class SymptomPage extends StatelessWidget {
               const SizedBox(height: HealingDesignSystem.paddingL),
               Text(
                 '自訂症狀清單',
-                style: HealingDesignSystem.titleSmall,
+                style: HealingDesignSystem.titleSmall.copyWith(
+                  color: HealingDesignSystem.adaptivePrimaryText(context),
+                ),
               ),
               const SizedBox(height: HealingDesignSystem.paddingS),
               Wrap(
@@ -549,58 +568,61 @@ class SymptomPage extends StatelessWidget {
     required bool isSelected,
     required VoidCallback onTap,
   }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
-        child: Ink(
-          padding: const EdgeInsets.symmetric(
-            horizontal: HealingDesignSystem.paddingM,
-            vertical: HealingDesignSystem.paddingS,
-          ),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? HealingDesignSystem.primaryBlue.withOpacity(0.15)
-                : HealingDesignSystem.cardBg,
-            border: Border.all(
-              color: isSelected
-                  ? HealingDesignSystem.primaryBlue
-                  : HealingDesignSystem.lineColor,
-              width: isSelected ? 2 : 1,
+    return Builder(
+      builder: (context) => Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+          child: Ink(
+            padding: const EdgeInsets.symmetric(
+              horizontal: HealingDesignSystem.paddingM,
+              vertical: HealingDesignSystem.paddingS,
             ),
-            borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
-            boxShadow: isSelected
-                ? [HealingDesignSystem.shadowLight()]
-                : [
-                    BoxShadow(
-                      color: HealingDesignSystem.primaryBlue.withOpacity(0.05),
-                      blurRadius: 6,
-                    ),
-                  ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (isSelected) ...[
-                const Icon(
-                  Icons.check_circle,
-                  size: 18,
-                  color: HealingDesignSystem.primaryBlue,
-                ),
-                const SizedBox(width: HealingDesignSystem.paddingS),
-              ],
-              Text(
-                name,
-                style: TextStyle(
-                  color: isSelected
-                      ? HealingDesignSystem.primaryBlue
-                      : HealingDesignSystem.deepText,
-                  fontSize: 14,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                ),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? HealingDesignSystem.primaryBlue.withOpacity(0.15)
+                  : HealingDesignSystem.adaptiveSurface(context),
+              border: Border.all(
+                color: isSelected
+                    ? HealingDesignSystem.primaryBlue
+                    : HealingDesignSystem.adaptiveCardBorder(context),
+                width: isSelected ? 2 : 1,
               ),
-            ],
+              borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+              boxShadow: isSelected
+                  ? [HealingDesignSystem.shadowLight()]
+                  : [
+                      BoxShadow(
+                        color:
+                            HealingDesignSystem.primaryBlue.withOpacity(0.05),
+                        blurRadius: 6,
+                      ),
+                    ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isSelected) ...[
+                  const Icon(
+                    Icons.check_circle,
+                    size: 18,
+                    color: HealingDesignSystem.primaryBlue,
+                  ),
+                  const SizedBox(width: HealingDesignSystem.paddingS),
+                ],
+                Text(
+                  name,
+                  style: TextStyle(
+                    color: isSelected
+                        ? HealingDesignSystem.primaryBlue
+                        : HealingDesignSystem.adaptivePrimaryText(context),
+                    fontSize: 14,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -613,47 +635,49 @@ class SymptomPage extends StatelessWidget {
     required VoidCallback onEdit,
     required VoidCallback onDelete,
   }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: HealingDesignSystem.paddingM,
-        vertical: HealingDesignSystem.paddingS,
-      ),
-      decoration: BoxDecoration(
-        color: HealingDesignSystem.softBlue.withOpacity(0.3),
-        border: Border.all(
-          color: HealingDesignSystem.lineColor,
-          width: 1,
+    return Builder(
+      builder: (context) => Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: HealingDesignSystem.paddingM,
+          vertical: HealingDesignSystem.paddingS,
         ),
-        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusS),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            symptomName,
-            style: HealingDesignSystem.bodySmall,
+        decoration: BoxDecoration(
+          color: HealingDesignSystem.adaptiveFill(context),
+          border: Border.all(
+            color: HealingDesignSystem.adaptiveCardBorder(context),
+            width: 1,
           ),
-          SizedBox(
-            width: 24,
-            height: 24,
-            child: IconButton(
-              icon: const Icon(Icons.edit, size: 14),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-              onPressed: onEdit,
+          borderRadius: BorderRadius.circular(HealingDesignSystem.radiusS),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              symptomName,
+              style: HealingDesignSystem.bodySmall,
             ),
-          ),
-          SizedBox(
-            width: 24,
-            height: 24,
-            child: IconButton(
-              icon: const Icon(Icons.close, size: 14),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-              onPressed: onDelete,
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: IconButton(
+                icon: const Icon(Icons.edit, size: 14),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: onEdit,
+              ),
             ),
-          ),
-        ],
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: IconButton(
+                icon: const Icon(Icons.close, size: 14),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: onDelete,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1028,14 +1052,17 @@ class SleepPage extends StatelessWidget {
   final TextEditingController hypnoticDoseCtrl;
 
   Widget _sleepCard({required Widget child, EdgeInsetsGeometry? margin}) {
-    return Container(
-      margin: margin ?? const EdgeInsets.only(bottom: 10),
-      decoration: HealingDesignSystem.cardDecoration(),
-      child: child,
+    return Builder(
+      builder: (context) => Container(
+        margin: margin ?? const EdgeInsets.only(bottom: 10),
+        decoration: HealingDesignSystem.adaptiveCardDecoration(context),
+        child: child,
+      ),
     );
   }
 
   InputDecoration _sleepInputDecoration({
+    required BuildContext context,
     required String hintText,
     String? labelText,
     Widget? prefixIcon,
@@ -1045,14 +1072,24 @@ class SleepPage extends StatelessWidget {
       labelText: labelText,
       prefixIcon: prefixIcon,
       filled: true,
-      fillColor: HealingDesignSystem.softBlue.withOpacity(0.18),
+      fillColor: HealingDesignSystem.adaptiveFill(context),
+      hintStyle: TextStyle(
+        color: HealingDesignSystem.adaptiveSecondaryText(context),
+      ),
+      labelStyle: TextStyle(
+        color: HealingDesignSystem.adaptiveSecondaryText(context),
+      ),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
-        borderSide: const BorderSide(color: HealingDesignSystem.lineColor),
+        borderSide: BorderSide(
+          color: HealingDesignSystem.adaptiveCardBorder(context),
+        ),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
-        borderSide: const BorderSide(color: HealingDesignSystem.lineColor),
+        borderSide: BorderSide(
+          color: HealingDesignSystem.adaptiveCardBorder(context),
+        ),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
@@ -1091,24 +1128,31 @@ class SleepPage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Row(
+                  Row(
                     children: [
-                      Icon(
+                      const Icon(
                         Icons.info_outline,
                         size: 20,
                         color: HealingDesignSystem.mutedText,
                       ),
-                      SizedBox(width: 8),
+                      const SizedBox(width: 8),
                       Text(
                         '安眠藥名稱與劑量',
-                        style: HealingDesignSystem.titleSmall,
+                        style: HealingDesignSystem.titleSmall.copyWith(
+                          color:
+                              HealingDesignSystem.adaptivePrimaryText(context),
+                        ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: hypnoticNameCtrl,
+                    style: TextStyle(
+                      color: HealingDesignSystem.adaptivePrimaryText(context),
+                    ),
                     decoration: _sleepInputDecoration(
+                      context: context,
                       hintText: '例如：Clonazepam（克癇平）',
                       prefixIcon: const Icon(Icons.local_pharmacy_outlined),
                     ),
@@ -1117,7 +1161,11 @@ class SleepPage extends StatelessWidget {
                   const SizedBox(height: 8),
                   TextField(
                     controller: hypnoticDoseCtrl,
+                    style: TextStyle(
+                      color: HealingDesignSystem.adaptivePrimaryText(context),
+                    ),
                     decoration: _sleepInputDecoration(
+                      context: context,
                       hintText: '例如：0.5 mg',
                       prefixIcon: const Icon(Icons.numbers),
                     ),
@@ -1209,7 +1257,8 @@ class SleepPage extends StatelessWidget {
                             labelStyle: TextStyle(
                               color: selected
                                   ? HealingDesignSystem.primaryBlue
-                                  : HealingDesignSystem.deepText,
+                                  : HealingDesignSystem.adaptivePrimaryText(
+                                      context),
                               fontWeight:
                                   selected ? FontWeight.w700 : FontWeight.w500,
                             ),
@@ -1244,12 +1293,21 @@ class SleepPage extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('睡眠註記', style: HealingDesignSystem.titleSmall),
+                Text(
+                  '睡眠註記',
+                  style: HealingDesignSystem.titleSmall.copyWith(
+                    color: HealingDesignSystem.adaptivePrimaryText(context),
+                  ),
+                ),
                 const SizedBox(height: 8),
                 TextField(
                   minLines: 1,
                   maxLines: 3,
+                  style: TextStyle(
+                    color: HealingDesignSystem.adaptivePrimaryText(context),
+                  ),
                   decoration: _sleepInputDecoration(
+                    context: context,
                     hintText: '例如：一直做夢，感覺好像沒睡覺，起床精神很差',
                     prefixIcon: const Icon(Icons.edit_note),
                   ),
@@ -1264,7 +1322,7 @@ class SleepPage extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: HealingDesignSystem.softBlue.withOpacity(0.25),
+              color: HealingDesignSystem.adaptiveFill(context),
               borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
               border: Border.all(color: HealingDesignSystem.lineColor),
             ),
@@ -1279,8 +1337,13 @@ class SleepPage extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('紀錄小撇步',
-                          style: HealingDesignSystem.titleSmall),
+                      Text(
+                        '紀錄小撇步',
+                        style: HealingDesignSystem.titleSmall.copyWith(
+                          color:
+                              HealingDesignSystem.adaptivePrimaryText(context),
+                        ),
+                      ),
                       const SizedBox(height: 4),
                       Text(
                         '半夜醒來或剛睡醒時不想開 App？\n試試「手機截圖」！起床後再看相簿時間回填即可，減少看螢幕的焦慮。',
@@ -1301,11 +1364,20 @@ class SleepPage extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('中途與甦醒', style: HealingDesignSystem.titleSmall),
+                Text(
+                  '中途與甦醒',
+                  style: HealingDesignSystem.titleSmall.copyWith(
+                    color: HealingDesignSystem.adaptivePrimaryText(context),
+                  ),
+                ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: midWakeCtrl,
+                  style: TextStyle(
+                    color: HealingDesignSystem.adaptivePrimaryText(context),
+                  ),
                   decoration: _sleepInputDecoration(
+                    context: context,
                     labelText: '半夜醒來時間 (可留白)',
                     hintText: '例：03:15, 05:40 (看截圖時間)',
                     prefixIcon: const Icon(Icons.access_time_outlined),
@@ -1350,7 +1422,12 @@ class SleepPage extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
-        const Text('小睡（可新增多筆)', style: HealingDesignSystem.titleSmall),
+        Text(
+          '小睡（可新增多筆)',
+          style: HealingDesignSystem.titleSmall.copyWith(
+            color: HealingDesignSystem.adaptivePrimaryText(context),
+          ),
+        ),
         const SizedBox(height: 8),
         ...List.generate(naps.length, (i) {
           final n = naps[i];

@@ -681,7 +681,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
     final bool isLocked = _isHistoryLocked(isPro);
 
     return Container(
-      color: HealingDesignSystem.softBlue,
+      color: HealingDesignSystem.adaptiveBackground(context),
       child: Column(
         children: [
           // ─────────────────────
@@ -702,12 +702,9 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             child: Container(
               padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-              decoration: BoxDecoration(
-                color: HealingDesignSystem.cardBg,
-                borderRadius:
-                    BorderRadius.circular(HealingDesignSystem.radiusM),
-                border: Border.all(color: HealingDesignSystem.lineColor),
-                boxShadow: [HealingDesignSystem.shadowLight()],
+              decoration: HealingDesignSystem.adaptiveCardDecoration(
+                context,
+                radius: HealingDesignSystem.radiusM,
               ),
               child: Column(
                 children: [
@@ -789,15 +786,10 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
                                   }
                                 },
                                 child: Ink(
-                                  decoration: BoxDecoration(
-                                    color: HealingDesignSystem.cardBg,
-                                    borderRadius: BorderRadius.circular(
-                                        HealingDesignSystem.radiusM),
-                                    border: Border.all(
-                                        color: HealingDesignSystem.lineColor),
-                                    boxShadow: [
-                                      HealingDesignSystem.shadowLight()
-                                    ],
+                                  decoration: HealingDesignSystem
+                                      .adaptiveCardDecoration(
+                                    context,
+                                    radius: HealingDesignSystem.radiusM,
                                   ),
                                   child: Padding(
                                     padding: const EdgeInsets.symmetric(
@@ -810,7 +802,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
                                           width: 40,
                                           height: 40,
                                           decoration: BoxDecoration(
-                                            color: HealingDesignSystem.softBlue,
+                                            color: HealingDesignSystem
+                                                .adaptiveFill(context),
                                             borderRadius:
                                                 BorderRadius.circular(12),
                                           ),
@@ -829,9 +822,10 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
                                             children: [
                                               Text(
                                                 DateHelper.toDisplay(r.date),
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   color: HealingDesignSystem
-                                                      .deepText,
+                                                      .adaptivePrimaryText(
+                                                          context),
                                                   fontSize: 15,
                                                   fontWeight: FontWeight.w700,
                                                 ),
@@ -851,9 +845,10 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
                                                 const SizedBox(height: 3),
                                                 Text(
                                                   '睡眠：$sleepText',
-                                                  style: const TextStyle(
+                                                  style: TextStyle(
                                                     color: HealingDesignSystem
-                                                        .mutedText,
+                                                        .adaptiveSecondaryText(
+                                                            context),
                                                     fontSize: 12,
                                                   ),
                                                 ),
@@ -995,10 +990,10 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
                 const SizedBox(height: 12),
                 Text(
                   useMA ? '$activeEmotion： 7 日移動平均' : '$activeEmotion：每日分數',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
-                    color: Colors.grey,
+                    color: HealingDesignSystem.adaptiveSecondaryText(context),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -1052,8 +1047,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
           Expanded(
             child: Text(
               message,
-              style: const TextStyle(
-                color: HealingDesignSystem.deepText,
+              style: TextStyle(
+                color: HealingDesignSystem.adaptivePrimaryText(context),
                 fontSize: 12,
                 height: 1.45,
               ),
@@ -1145,10 +1140,10 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
           const Icon(Icons.calendar_view_week,
               size: 18, color: HealingDesignSystem.primaryBlue),
           const SizedBox(width: 8),
-          const Text(
+          Text(
             '週開始',
             style: TextStyle(
-              color: HealingDesignSystem.deepText,
+              color: HealingDesignSystem.adaptivePrimaryText(context),
               fontSize: 13,
               fontWeight: FontWeight.w500,
             ),
@@ -1157,11 +1152,11 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
           DropdownButtonHideUnderline(
             child: DropdownButton<int>(
               value: _historyWeekStartDay,
-              style: const TextStyle(
-                color: HealingDesignSystem.deepText,
+              style: TextStyle(
+                color: HealingDesignSystem.adaptivePrimaryText(context),
                 fontSize: 13,
               ),
-              dropdownColor: HealingDesignSystem.cardBg,
+              dropdownColor: HealingDesignSystem.adaptiveSurface(context),
               icon: const Icon(Icons.arrow_drop_down,
                   color: HealingDesignSystem.primaryBlue),
               onChanged: (value) {

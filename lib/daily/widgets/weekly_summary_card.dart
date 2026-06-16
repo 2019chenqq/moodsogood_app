@@ -101,12 +101,7 @@ class WeeklySummaryCard extends StatelessWidget {
     final progress = recordedDays / totalDays;
 
     return Container(
-      decoration: BoxDecoration(
-        gradient: HealingDesignSystem.softBlueGradient(),
-        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
-        border: Border.all(color: HealingDesignSystem.lineColor),
-        boxShadow: [HealingDesignSystem.shadowMedium()],
-      ),
+      decoration: HealingDesignSystem.adaptiveCardDecoration(context),
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -131,18 +126,18 @@ class WeeklySummaryCard extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     '這週小結',
                     style: TextStyle(
-                      color: HealingDesignSystem.deepText,
+                      color: HealingDesignSystem.adaptivePrimaryText(context),
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                   Text(
                     '${start.month}/${start.day} – ${end.month}/${end.day}',
-                    style: const TextStyle(
-                      color: HealingDesignSystem.mutedText,
+                    style: TextStyle(
+                      color: HealingDesignSystem.adaptiveSecondaryText(context),
                       fontSize: 12,
                     ),
                   ),
@@ -155,10 +150,10 @@ class WeeklySummaryCard extends StatelessWidget {
           // Progress bar
           Row(
             children: [
-              const Text(
+              Text(
                 '紀錄天數',
                 style: TextStyle(
-                  color: HealingDesignSystem.mutedText,
+                  color: HealingDesignSystem.adaptiveSecondaryText(context),
                   fontSize: 12,
                 ),
               ),
@@ -179,7 +174,7 @@ class WeeklySummaryCard extends StatelessWidget {
             child: LinearProgressIndicator(
               value: progress,
               minHeight: 8,
-              backgroundColor: HealingDesignSystem.lineColor,
+              backgroundColor: HealingDesignSystem.adaptiveCardBorder(context),
               valueColor: const AlwaysStoppedAnimation<Color>(
                   HealingDesignSystem.primaryBlue),
             ),
@@ -215,14 +210,16 @@ class WeeklySummaryCard extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
             decoration: BoxDecoration(
-              color: HealingDesignSystem.cardBg,
+              color: HealingDesignSystem.adaptiveFill(context),
               borderRadius: BorderRadius.circular(HealingDesignSystem.radiusS),
-              border: Border.all(color: HealingDesignSystem.lineColor),
+              border: Border.all(
+                color: HealingDesignSystem.adaptiveCardBorder(context),
+              ),
             ),
             child: Text(
               message,
-              style: const TextStyle(
-                color: HealingDesignSystem.deepText,
+              style: TextStyle(
+                color: HealingDesignSystem.adaptivePrimaryText(context),
                 fontSize: 13,
                 fontStyle: FontStyle.italic,
                 height: 1.5,
@@ -251,9 +248,11 @@ class _WeekStatItem extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: HealingDesignSystem.cardBg,
+        color: HealingDesignSystem.adaptiveFill(context),
         borderRadius: BorderRadius.circular(HealingDesignSystem.radiusS),
-        border: Border.all(color: HealingDesignSystem.lineColor),
+        border: Border.all(
+          color: HealingDesignSystem.adaptiveCardBorder(context),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -265,8 +264,8 @@ class _WeekStatItem extends StatelessWidget {
               Expanded(
                 child: Text(
                   label,
-                  style: const TextStyle(
-                    color: HealingDesignSystem.mutedText,
+                  style: TextStyle(
+                    color: HealingDesignSystem.adaptiveSecondaryText(context),
                     fontSize: 11,
                   ),
                   overflow: TextOverflow.ellipsis,
@@ -277,8 +276,8 @@ class _WeekStatItem extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             value,
-            style: const TextStyle(
-              color: HealingDesignSystem.deepText,
+            style: TextStyle(
+              color: HealingDesignSystem.adaptivePrimaryText(context),
               fontSize: 14,
               fontWeight: FontWeight.w700,
             ),
