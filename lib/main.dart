@@ -683,7 +683,7 @@ class _EncryptionGateState extends State<EncryptionGate> {
     // 使用 uid 綁定本機 E2E 快取：只有「切換帳號」才清理，避免每次登入都被網路卡住。
     final currentUid = user.uid;
     final ownerUid = prefs.getString(_e2eOwnerUidKey);
-    if (currentUid != null && ownerUid != currentUid) {
+    if (ownerUid != currentUid) {
       await SecureStorageService.deleteKey();
       await SecureStorageService.deletePin();
       await prefs.remove('e2eConfigured');
