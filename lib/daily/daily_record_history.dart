@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -32,7 +33,7 @@ const Map<String, String> ksleepFlagMap = {
   'initInsomnia': '入睡困難',
   'interrupted': '睡眠中斷',
 };
-const bool kDemoUnlockPro = false;
+const bool kDemoUnlockPro = kDebugMode;
 
 class DailyRecordHistory extends StatefulWidget {
   const DailyRecordHistory({super.key, this.initialTab = 0});
@@ -607,28 +608,25 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
     }
 
     try {
+      final startId = DateHelper.toId(startDate);
+      final endId = DateHelper.toId(endDate);
       final snapshot = await FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
           .collection('diary')
-          .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
-          .orderBy('date', descending: true)
+          .orderBy(FieldPath.documentId)
+          .startAt([startId])
+          .endAt([endId])
           .get();
 
       for (final doc in snapshot.docs) {
         final data = doc.data();
-        final rawDate = data['date'];
-        DateTime? date;
-        if (rawDate is Timestamp) {
-          date = rawDate.toDate();
-        } else if (rawDate is String) {
-          date = DateTime.tryParse(rawDate);
-        }
-        date ??= DateTime.tryParse(doc.id);
+        final date = DateTime.tryParse(doc.id);
+        if (date == null) continue;
 
         final score = (data['overallMood'] as num?)?.toDouble() ??
             (data['moodScore'] as num?)?.toDouble();
-        if (date == null || score == null) continue;
+        if (score == null) continue;
         scores[_dateOnly(date)] = score;
       }
     } catch (e, st) {
@@ -905,7 +903,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
         }
 
         if (chartEmotionNames.isNotEmpty &&
-            !chartEmotionNames.contains(_selectedEmotion)) {
+            _selectedEmotion.isEmpty) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
               setState(() => _selectedEmotion = chartEmotionNames.first);
@@ -913,11 +911,10 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
           });
         }
 
-        final activeEmotion = chartEmotionNames.isEmpty
-            ? ''
-            : (chartEmotionNames.contains(_selectedEmotion)
-                ? _selectedEmotion
-                : chartEmotionNames.first);
+        final activeEmotion = _selectedEmotion.isNotEmpty &&
+                chartEmotionNames.contains(_selectedEmotion)
+            ? _selectedEmotion
+            : (chartEmotionNames.isNotEmpty ? chartEmotionNames.first : '');
 
         return Padding(
           padding: const EdgeInsets.all(16.0),
