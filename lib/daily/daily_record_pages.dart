@@ -488,7 +488,6 @@ class SymptomPage extends StatelessWidget {
                         !presetSymptoms.contains(e.value.name))
                     .map((e) => _buildCustomSymptomTag(
                           symptomName: e.value.name,
-                          onEdit: () => onRename(e.key),
                           onDelete: () => onDelete(e.key),
                         ))
                     .toList(),
@@ -632,7 +631,7 @@ class SymptomPage extends StatelessWidget {
   /// 自訂症狀標籤
   static Widget _buildCustomSymptomTag({
     required String symptomName,
-    required VoidCallback onEdit,
+    VoidCallback? onEdit,
     required VoidCallback onDelete,
   }) {
     return Builder(
@@ -655,16 +654,6 @@ class SymptomPage extends StatelessWidget {
             Text(
               symptomName,
               style: HealingDesignSystem.bodySmall,
-            ),
-            SizedBox(
-              width: 24,
-              height: 24,
-              child: IconButton(
-                icon: const Icon(Icons.edit, size: 14),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                onPressed: onEdit,
-              ),
             ),
             SizedBox(
               width: 24,

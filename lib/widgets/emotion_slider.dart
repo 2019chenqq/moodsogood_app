@@ -58,8 +58,8 @@ class EmotionSlider extends StatelessWidget {
                     child: Slider(
                       value: value.toDouble(),
                       min: 1,
-                      max: 10,
-                      divisions: 9,
+                      max: 5,
+                      divisions: 4,
                       onChanged: (v) => onChanged(v.round()),
                     ),
                   ),

@@ -1055,7 +1055,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     final lastValue = _lastSuicidalValue ?? 0;
     _lastSuicidalValue = suicidal ?? 0;
 
-    if (suicidal != null && suicidal >= 7 && lastValue < 7) {
+    if (suicidal != null && suicidal >= 4 && lastValue < 4) {
       showDialog<void>(
         context: context,
         barrierDismissible: true,
@@ -1106,7 +1106,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
                 onToggleChecked: (i, checked) {
                   setState(() {
                     _emotions[i] = _emotions[i].copyWith(
-                      value: checked ? (_emotions[i].value ?? 5) : null,
+                      value: checked ? (_emotions[i].value ?? 3) : null,
                     );
                   });
                   _maybeShowEmergencyAlert();
