@@ -11,7 +11,8 @@ import 'record_detail_screen.dart'; // 確保引用正確
 import '../models/period_cycle.dart';
 import '../widgets/main_drawer.dart';
 import 'daily_record_repository.dart';
-import 'emotion_page_checkbox.dart';
+import 'widgets/emotion_balance_chart_widget.dart';
+import 'widgets/emotion_page_checkbox.dart';
 import 'widgets/history_chart_widget.dart';
 import 'widgets/pro_locked_view.dart';
 import 'widgets/weekly_summary_card.dart';
@@ -468,6 +469,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
       overallMood: overallMood,
       symptoms: _parseBodySymptoms(record['bodySymptoms']),
       sleep: sleep,
+      moodScale: (record['moodScale'] as num?)?.toInt() ?? 10,
       isPeriod: (record['periodData'] as Map?)?['isPeriod'] == true,
     );
   }
@@ -615,9 +617,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
           .doc(uid)
           .collection('diary')
           .orderBy(FieldPath.documentId)
-          .startAt([startId])
-          .endAt([endId])
-          .get();
+          .startAt([startId]).endAt([endId]).get();
 
       for (final doc in snapshot.docs) {
         final data = doc.data();
@@ -875,6 +875,22 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
     );
   }
 
+  /// 依照 moodScale 將紀錄分成 5 點與 10 點兩個群組
+  List<DailyRecord> _recordsWithScale(List<DailyRecord> records, int scale) {
+    return records.where((r) => r.moodScale == scale).toList();
+  }
+
+  /// 將 diaryMoodScores 也依照對應的 daily record 分組
+  Map<DateTime, double> _filterDiaryScoresByScale(
+    Map<DateTime, double> scores,
+    List<DailyRecord> scaleRecords,
+  ) {
+    final scaleDates = scaleRecords.map((r) => _dateOnly(r.date)).toSet();
+    return Map.fromEntries(
+      scores.entries.where((e) => scaleDates.contains(_dateOnly(e.key))),
+    );
+  }
+
   // --- 分頁 2: 圖表 UI (重點修改) ---
   Widget _buildProChartContent(
     BuildContext context,
@@ -888,22 +904,33 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
     final bool isLocked = _isHistoryLocked(isPro);
     final uid = FirebaseAuth.instance.currentUser?.uid;
 
+    // 按 moodScale 分組
+    final records5 = _recordsWithScale(filteredRecords, 5);
+    final records10 = _recordsWithScale(filteredRecords, 10);
+    final has5 = records5.isNotEmpty;
+    final has10 = records10.isNotEmpty;
+
     return FutureBuilder<Map<DateTime, double>>(
       future: uid == null
           ? Future.value(const <DateTime, double>{})
           : _loadDiaryMoodScores(uid),
       builder: (context, diarySnapshot) {
-        final diaryMoodScores = _applyDiaryMoodDateFilter(
+        final allDiaryScores = _applyDiaryMoodDateFilter(
           diarySnapshot.data ?? const <DateTime, double>{},
         );
-        final chartEmotionNames = _extractEmotionNames(filteredRecords);
-        if (diaryMoodScores.isNotEmpty &&
+
+        // 合併 emotions：從 5 分和 10 分 records 中萃取
+        final mergedChartEmotionNames = <String>{
+          ..._extractEmotionNames(records5),
+          ..._extractEmotionNames(records10),
+        };
+        final chartEmotionNames = mergedChartEmotionNames.toList()..sort();
+        if (allDiaryScores.isNotEmpty &&
             !chartEmotionNames.contains(_overallMoodLabel)) {
           chartEmotionNames.insert(0, _overallMoodLabel);
         }
 
-        if (chartEmotionNames.isNotEmpty &&
-            _selectedEmotion.isEmpty) {
+        if (chartEmotionNames.isNotEmpty && _selectedEmotion.isEmpty) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
               setState(() => _selectedEmotion = chartEmotionNames.first);
@@ -915,6 +942,21 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
                 chartEmotionNames.contains(_selectedEmotion)
             ? _selectedEmotion
             : (chartEmotionNames.isNotEmpty ? chartEmotionNames.first : '');
+
+        // 將 diaryScores 也依 moodScale 分組
+        final diary5 = _filterDiaryScoresByScale(allDiaryScores, records5);
+        final diary10 = _filterDiaryScoresByScale(allDiaryScores, records10);
+
+        // 檢查各量表是否有該情緒的資料
+        bool hasChartData(
+            List<DailyRecord> recs, Map<DateTime, double> diScores) {
+          if (activeEmotion == _overallMoodLabel) return diScores.isNotEmpty;
+          return recs
+              .any((r) => r.emotions.any((e) => e.name == activeEmotion));
+        }
+
+        final has5Data = hasChartData(records5, diary5);
+        final has10Data = hasChartData(records10, diary10);
 
         return Padding(
           padding: const EdgeInsets.all(16.0),
@@ -942,6 +984,69 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
                   ),
                 )
               else ...[
+                Text(
+                  '正向 / 負向感受趨勢圖',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: HealingDesignSystem.adaptivePrimaryText(context),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '協助觀察這段時間裡，正向感受與負向感受各自的起伏。未分類的自訂情緒暫不納入平均。',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.4,
+                    color: HealingDesignSystem.adaptiveSecondaryText(context),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (has5) ...[
+                  Text(
+                    '5 點量表',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: HealingDesignSystem.adaptiveAccent(context),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  SizedBox(
+                    height: 210,
+                    width: double.infinity,
+                    child: EmotionBalanceChartWidget(
+                      records: records5,
+                      fullRecords: records5,
+                      useMovingAverage: useMA,
+                      forceMonthlyAverage: _shouldUseMonthlyChart(),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+                if (has10) ...[
+                  Text(
+                    '10 點量表',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: HealingDesignSystem.adaptiveAccent(context),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  SizedBox(
+                    height: 210,
+                    width: double.infinity,
+                    child: EmotionBalanceChartWidget(
+                      records: records10,
+                      fullRecords: records10,
+                      useMovingAverage: useMA,
+                      forceMonthlyAverage: _shouldUseMonthlyChart(),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+                const Divider(height: 24),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
@@ -985,28 +1090,68 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
                   ),
                 ),
                 const SizedBox(height: 12),
-                Text(
-                  useMA ? '$activeEmotion： 7 日移動平均' : '$activeEmotion：每日分數',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: HealingDesignSystem.adaptiveSecondaryText(context),
+                // 5 點量表圖表（如有資料）
+                if (has5Data) ...[
+                  Text(
+                    '新版情緒趨勢｜5 點量表',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.teal,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 215,
-                  width: double.infinity,
-                  child: HistoryChartWidget(
-                    records: filteredRecords,
-                    fullRecords: allRecords,
-                    targetEmotion: activeEmotion,
-                    useMovingAverage: useMA,
-                    forceMonthlyAverage: _shouldUseMonthlyChart(),
-                    diaryMoodScores: diaryMoodScores,
-                    overallMoodLabel: _overallMoodLabel,
+                  const SizedBox(height: 4),
+                  SizedBox(
+                    height: 180,
+                    width: double.infinity,
+                    child: HistoryChartWidget(
+                      records: records5,
+                      fullRecords: records5,
+                      targetEmotion: activeEmotion,
+                      useMovingAverage: useMA,
+                      forceMonthlyAverage: _shouldUseMonthlyChart(),
+                      diaryMoodScores: diary5,
+                      overallMoodLabel: _overallMoodLabel,
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 16),
+                ],
+                // 10 點量表圖表（如有資料）
+                if (has10Data) ...[
+                  Text(
+                    '過去紀錄｜10 點量表',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  SizedBox(
+                    height: 180,
+                    width: double.infinity,
+                    child: HistoryChartWidget(
+                      records: records10,
+                      fullRecords: records10,
+                      targetEmotion: activeEmotion,
+                      useMovingAverage: useMA,
+                      forceMonthlyAverage: _shouldUseMonthlyChart(),
+                      diaryMoodScores: diary10,
+                      overallMoodLabel: _overallMoodLabel,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                if (!has5Data && !has10Data)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.only(top: 32),
+                      child: Text(
+                        '所選時間範圍內沒有此情緒的資料',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    ),
+                  ),
               ],
             ],
           ),

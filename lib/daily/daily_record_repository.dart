@@ -39,6 +39,7 @@ class DailyRecordRepository {
     Map<String, dynamic>? dailyActivities,
     List<Map<String, dynamic>>? medicines,
     Map<String, dynamic>? periodData,
+    int moodScale = 10,
   }) async {
     final day = DateTime(date.year, date.month, date.day);
     await _records(userId).doc(id).set({
@@ -49,6 +50,7 @@ class DailyRecordRepository {
       'dailyActivities': dailyActivities,
       'medicines': medicines,
       'periodData': periodData,
+      'moodScale': moodScale,
       'updatedAt': FieldValue.serverTimestamp(),
       'createdAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));

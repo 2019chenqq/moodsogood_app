@@ -16,7 +16,7 @@ import 'daily_record_helpers.dart';
 import 'daily_record_dialogs.dart';
 import 'daily_record_widgets.dart';
 import 'daily_record_pages.dart';
-import 'emotion_page_checkbox.dart';
+import 'widgets/emotion_page_checkbox.dart';
 import '../analytics_service.dart';
 
 /// Main Screen
@@ -38,7 +38,6 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       DateTime(DateTime.now().year, DateTime.now().month, 1);
   int _periodCycleLength = 28;
   bool _isUpdatingPeriodCalendar = false;
-  bool _useNewEmotionPage = true; // 可切換新舊情緒頁
   int? _lastSuicidalValue;
 
   // ——— 目前紀錄日期與時間（給頁首顯示；docId 只吃日期） ———
@@ -84,7 +83,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
 
     final intervals = <int>[];
     for (int i = 1; i < starts.length; i++) {
-      final diff = _dateOnly(starts[i]).difference(_dateOnly(starts[i - 1])).inDays;
+      final diff =
+          _dateOnly(starts[i]).difference(_dateOnly(starts[i - 1])).inDays;
       if (diff >= 15 && diff <= 60) {
         intervals.add(diff);
       }
@@ -127,7 +127,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         _periodCycleLength = savedCycle;
       }
 
-      final savedDays = prefs.getStringList('period_selected_dates') ?? const [];
+      final savedDays =
+          prefs.getStringList('period_selected_dates') ?? const [];
       for (final id in savedDays) {
         final d = DateTime.tryParse(id);
         if (d != null) selected.add(_dateOnly(d));
@@ -208,8 +209,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   Future<void> _persistPeriodDatesToPrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final ids = _periodSelectedDates.toList()
-        ..sort();
+      final ids = _periodSelectedDates.toList()..sort();
       await prefs.setStringList(
         'period_selected_dates',
         ids.map(DateHelper.toId).toList(),
@@ -340,7 +340,9 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
 
       if (isStartOfRun) {
         final removedDays = _periodSelectedDates
-            .where((d) => !d.isBefore(day) && d.isBefore(day.add(const Duration(days: 7))))
+            .where((d) =>
+                !d.isBefore(day) &&
+                d.isBefore(day.add(const Duration(days: 7))))
             .toSet();
 
         if (removedDays.isNotEmpty) {
@@ -355,7 +357,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
 
     final hasAdjacentSelected =
         _periodSelectedDates.contains(day.subtract(const Duration(days: 1))) ||
-        _periodSelectedDates.contains(day.add(const Duration(days: 1)));
+            _periodSelectedDates.contains(day.add(const Duration(days: 1)));
 
     if (hasAdjacentSelected) {
       await _applyPeriodDaysUpdate(days: {day}, isPeriod: true, startId: null);
@@ -469,7 +471,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
               curve: Curves.easeOut,
               margin: const EdgeInsets.symmetric(horizontal: 2),
               decoration: BoxDecoration(
-                gradient: isSelected ? HealingDesignSystem.primaryGradient() : null,
+                gradient:
+                    isSelected ? HealingDesignSystem.primaryGradient() : null,
                 color: isSelected ? null : Colors.transparent,
                 borderRadius: BorderRadius.circular(16),
               ),
@@ -479,7 +482,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
                   borderRadius: BorderRadius.circular(16),
                   onTap: () => setState(() => _index = i),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -776,8 +780,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
           ),
         );
 
-        // 生理期狀態（月曆資料優先）
-        _isPeriod =
+      // 生理期狀態（月曆資料優先）
+      _isPeriod =
           _periodSelectedDates.contains(_dateOnly(date)) || record.isPeriod;
     });
   }
@@ -920,9 +924,9 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         payload['periodStartId'] = oldStartId;
       }
 
-        payload['periodNextExpectedStart'] =
+      payload['periodNextExpectedStart'] =
           _predictedNextPeriodStart()?.toIso8601String();
-        payload['periodArrivalDeltaDays'] = _arrivalDeltaDays();
+      payload['periodArrivalDeltaDays'] = _arrivalDeltaDays();
 
       // Only sync to Firebase if enabled
       if (FirebaseSyncConfig.shouldSync()) {
@@ -964,6 +968,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
           date: _recordDate,
           emotions: emotionsToSave,
           bodySymptoms: symptomsToSave,
+          moodScale: 5,
           sleep: {
             'sleepTime':
                 sleepTime != null ? DateHelper.formatTime(sleepTime!) : null,
@@ -992,8 +997,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
             'periodStartId': _isPeriod ? (oldStartId ?? docId) : oldStartId,
             'periodEndId': !_isPeriod && oldIsPeriod ? docId : null,
             'cycleLength': _periodCycleLength,
-            'nextExpectedStart':
-                _predictedNextPeriodStart()?.toIso8601String(),
+            'nextExpectedStart': _predictedNextPeriodStart()?.toIso8601String(),
             'arrivalDeltaDays': _arrivalDeltaDays(),
           },
         );
@@ -1055,14 +1059,15 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     final lastValue = _lastSuicidalValue ?? 0;
     _lastSuicidalValue = suicidal ?? 0;
 
-    if (suicidal != null && suicidal >= 4 && lastValue < 4) {
+    // 只要有自殺意念（value != null），就立即顯示求救管道
+    if (suicidal != null && lastValue == 0) {
       showDialog<void>(
         context: context,
         barrierDismissible: true,
         builder: (context) => AlertDialog(
           title: const Text('緊急提醒'),
           content: const Text(
-            '自殺意念分數偏高，請立刻聯絡緊急求助專線或馬上前往急診。\n\n'
+            '如果你正在經歷強烈痛苦或有自傷/自殺念頭，請優先尋求即時協助。\n\n'
             '【立即危險】\n'
             '📞 撥打 119（救護車／急診）\n\n'
             '【有人可以陪你】\n'
@@ -1097,39 +1102,26 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     final pages = [
       // 情緒頁
       _pageWrapper(
-        _useNewEmotionPage
-            ? EmotionPageCheckbox(
-                items: _emotions,
-                onAdd: _addEmotion,
-                onRename: _renameEmotion,
-                onDelete: _deleteEmotion,
-                onToggleChecked: (i, checked) {
-                  setState(() {
-                    _emotions[i] = _emotions[i].copyWith(
-                      value: checked ? (_emotions[i].value ?? 3) : null,
-                    );
-                  });
-                  _maybeShowEmergencyAlert();
-                },
-                onChangeValue: (i, v) {
-                  setState(() {
-                    _emotions[i] = _emotions[i].copyWith(value: v);
-                  });
-                  _maybeShowEmergencyAlert();
-                },
-              )
-            : EmotionPage(
-                items: _emotions,
-                onAdd: _addEmotion,
-                onRename: _renameEmotion,
-                onDelete: _deleteEmotion,
-                onChangeValue: (i, v) {
-                  setState(() {
-                    _emotions[i] = _emotions[i].copyWith(value: v);
-                  });
-                  _maybeShowEmergencyAlert();
-                },
-              ),
+        EmotionPageCheckbox(
+          items: _emotions,
+          onAdd: _addEmotion,
+          onRename: _renameEmotion,
+          onDelete: _deleteEmotion,
+          onToggleChecked: (i, checked) {
+            setState(() {
+              _emotions[i] = _emotions[i].copyWith(
+                value: checked ? (_emotions[i].value ?? 3) : null,
+              );
+            });
+            _maybeShowEmergencyAlert();
+          },
+          onChangeValue: (i, v) {
+            setState(() {
+              _emotions[i] = _emotions[i].copyWith(value: v);
+            });
+            _maybeShowEmergencyAlert();
+          },
+        ),
       ),
       _pageWrapper(SymptomPage(
         items: _symptoms,
@@ -1296,8 +1288,9 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       appBar: AppBar(
         toolbarHeight: 60,
         elevation: 0,
-        backgroundColor:
-            isDark ? Theme.of(context).colorScheme.surface : HealingDesignSystem.softBlue,
+        backgroundColor: isDark
+            ? Theme.of(context).colorScheme.surface
+            : HealingDesignSystem.softBlue,
         surfaceTintColor: Colors.transparent,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),

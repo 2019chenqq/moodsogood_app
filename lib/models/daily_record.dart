@@ -152,6 +152,9 @@ class DailyRecord {
 
   final double? overallMood;
 
+  /// 情緒量表版本：5 = 新版 5 點量表，10 = 舊版 10 點量表（預設）
+  final int moodScale;
+
   final bool isPeriod;        // 是否是生理期的一天
   final String? periodStartId; // 若這一天是經期「開始」，存這一天的 docId
   final String? periodEndId;   // 若這一天是經期「結束」，存這一天的 docId
@@ -165,6 +168,7 @@ class DailyRecord {
     this.symptoms = const [],
     this.sleep = const SleepData(),
     this.overallMood,
+    this.moodScale = 10, // 預設 10 點量表（相容舊資料）
     this.isPeriod = false,
     this.periodStartId,
     this.periodEndId,
@@ -199,6 +203,7 @@ class DailyRecord {
           (data['symptoms'] as List?)?.map((e) => e.toString()).toList() ?? [],
       sleep: SleepData.fromMap(data['sleep'] as Map<String, dynamic>?),
       overallMood: (data['overallMood'] as num?)?.toDouble(),
+      moodScale: (data['moodScale'] as num?)?.toInt() ?? 10,
       isPeriod: data['isPeriod'] == true,
       periodStartId: data['periodStartId'] as String?,
       periodEndId: data['periodEndId'] as String?,
