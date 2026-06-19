@@ -79,7 +79,7 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
           final value = double.tryParse(raw);
           if (value == null || value < 0) return;
 
-          picked = value.clamp(0, 300);
+          picked = value.clamp(0, 1000);
           FocusScope.of(dialogContext).unfocus();
           Navigator.of(dialogContext).pop(); // ✅ 用 dialogContext 關掉 dialog
         }

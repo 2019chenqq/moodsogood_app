@@ -123,6 +123,10 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
     _overallMoodScore = (data['overallMood'] as num?)?.toInt() ?? 5;
     _overallHealthScore = (data['overallHealth'] as num?)?.toInt() ?? 5;
     _overallSleepScore = (data['overallSleepQuality'] as num?)?.toInt() ?? 5;
+    _imageUrls = (data['imageUrls'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        [];
     _isHydrating = false;
     setState(() {}); // 更新字數
   }
@@ -1155,7 +1159,7 @@ class _OverallSlidersCard extends m.StatelessWidget {
               value: overallMoodScore,
               onChanged: onMoodChanged,
               leftIcon: 'assets/emotion/default.png',
-              rightIcon: 'assets/emotion/overall.png',
+              rightIcon: 'assets/emotion/default.png',
               gradientColors: const [
                 m.Color(0xFF9AD0EC),
                 m.Color(0xFFFFE08A),
@@ -1171,7 +1175,7 @@ class _OverallSlidersCard extends m.StatelessWidget {
               value: overallHealthScore,
               onChanged: onHealthChanged,
               leftIcon: 'assets/emotion/default.png',
-              rightIcon: 'assets/emotion/energy.png',
+              rightIcon: 'assets/emotion/default.png',
               gradientColors: const [
                 m.Color(0xFF9AD0EC),
                 m.Color(0xFFFFE08A),
@@ -1184,7 +1188,7 @@ class _OverallSlidersCard extends m.StatelessWidget {
               value: overallSleepScore,
               onChanged: onSleepChanged,
               leftIcon: 'assets/emotion/tired.png',
-              rightIcon: 'assets/emotion/happy.png',
+              rightIcon: 'assets/emotion/default.png',
               gradientColors: const [
                 m.Color(0xFF9AD0EC),
                 m.Color(0xFFFFE08A),

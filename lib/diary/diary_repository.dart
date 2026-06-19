@@ -18,6 +18,7 @@ class DiaryEntry {
   final String? metaphor;
   final String? proudOf;
   final String? selfCare;
+  final List<String> imageUrls;
 
   DiaryEntry({
     this.id,
@@ -31,6 +32,7 @@ class DiaryEntry {
     this.metaphor,
     this.proudOf,
     this.selfCare,
+    this.imageUrls = const [],
     DateTime? createdAt,
     DateTime? updatedAt,
   })  : createdAt = createdAt ?? DateTime.now(),
@@ -50,6 +52,7 @@ class DiaryEntry {
     String? metaphor,
     String? proudOf,
     String? selfCare,
+    List<String>? imageUrls,
   }) {
     return DiaryEntry(
       id: id ?? this.id,
@@ -65,6 +68,7 @@ class DiaryEntry {
       metaphor: metaphor ?? this.metaphor,
       proudOf: proudOf ?? this.proudOf,
       selfCare: selfCare ?? this.selfCare,
+      imageUrls: imageUrls ?? this.imageUrls,
     );
   }
 
@@ -82,6 +86,7 @@ class DiaryEntry {
         'metaphor': metaphor,
         'proudOf': proudOf,
         'selfCare': selfCare,
+        'imageUrls': imageUrls,
       };
 }
 
@@ -142,6 +147,7 @@ class DiaryRepository {
       'metaphor': encryption.encryptData(entry.metaphor ?? ''),
       'proudOf': encryption.encryptData(entry.proudOf ?? ''),
       'selfCare': encryption.encryptData(entry.selfCare ?? ''),
+      'imageUrls': entry.imageUrls,
       'overallMood': entry.moodScore,
       'updatedAt': FieldValue.serverTimestamp(),
       'isEncrypted': true,
@@ -182,6 +188,10 @@ class DiaryRepository {
         metaphor: text('metaphor'),
         proudOf: text('proudOf'),
         selfCare: text('selfCare'),
+        imageUrls: (data['imageUrls'] as List<dynamic>?)
+                ?.map((e) => e.toString())
+                .toList() ??
+            [],
         moodScore: (data['overallMood'] as num?)?.toDouble(),
         createdAt: _asDate(data['createdAt']),
         updatedAt: _asDate(data['updatedAt']),
