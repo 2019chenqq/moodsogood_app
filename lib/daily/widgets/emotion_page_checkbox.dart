@@ -4,55 +4,8 @@ import '../../constants/healing_design_system.dart';
 import '../../widgets/emotion_slider.dart';
 import '../../analytics_service.dart';
 
-/// 情緒圖示映射表（右側圖示）
-const Map<String, String> emotionRightIconMap = {
-  '整體情緒': 'assets/emotion/overall.png',
-  '焦慮程度': 'assets/emotion/anxious.png',
-  '憂鬱程度': 'assets/emotion/depression.png',
-  '空虛程度': 'assets/emotion/absence.png',
-  '無聊程度': 'assets/emotion/boring.png',
-  '難過程度': 'assets/emotion/sad.png',
-  '開心程度': 'assets/emotion/happy.png',
-  '無望感': 'assets/emotion/despair.png',
-  '孤獨感': 'assets/emotion/loneliness.png',
-  '動力': 'assets/emotion/power.png',
-  '自殺意念': 'assets/emotion/自殺意念.png',
-  '食慾': 'assets/emotion/食慾.png',
-  '能量': 'assets/emotion/energy.png',
-  '活動量': 'assets/emotion/活動量.png',
-  '疲倦程度': 'assets/emotion/tired.png',
-  '平靜': 'assets/emotion/default.png',
-  '開心': 'assets/emotion/happy.png',
-  '有力量': 'assets/emotion/power.png',
-  '疲憊': 'assets/emotion/tired.png',
-  '沒動力': 'assets/emotion/boring.png',
-  '焦慮': 'assets/emotion/anxious.png',
-  '緊張': 'assets/emotion/anxious.png',
-  '壓力大': 'assets/emotion/anxious.png',
-  '煩躁': 'assets/emotion/anxious.png',
-  '生氣': 'assets/emotion/anxious.png',
-  '難過': 'assets/emotion/sad.png',
-  '憂鬱': 'assets/emotion/depression.png',
-  '無助': 'assets/emotion/despair.png',
-  '崩潰感': 'assets/emotion/despair.png',
-};
-
 const Map<String, List<String>> kEmotionCheckboxCategories = {
-  '喜悅': [
-    '快樂',
-    '興奮',
-    '愉悅',
-    '滿足',
-    '自在',
-    '平靜',
-    '放鬆',
-    '安心',
-    '期待',
-    '自信',
-    '感恩',
-    '幸福',
-    '有希望'
-  ],
+  '喜悅': ['快樂', '興奮', '愉悅', '滿足', '自在', '平靜', '放鬆', '安心', '期待', '自信', '感恩', '幸福', '有希望'],
   '厭惡': ['厭倦', '無聊', '反感', '煩悶', '排斥', '討厭'],
   '悲傷': ['低落', '憂鬱', '孤單', '絕望', '沮喪', '難過', '失落', '空虛', '無助', '麻木'],
   '恐懼': ['緊張', '擔心', '惶恐', '焦慮', '害怕', '警覺', '恐懼', '忐忑不安'],
