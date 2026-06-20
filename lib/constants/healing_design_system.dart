@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 /// 療癒系設計系統 - 統一配色、間距、陰影、邊框等所有視覺元素
 /// 用於: 藥物時間線、每日紀錄、情緒、症狀、睡眠等所有主要UI頁面
 class HealingDesignSystem {
+  static const String fontFamily = 'Iansui';
+
   // ========================================
   // 🎨 色彩系統
   // ========================================
@@ -196,6 +198,7 @@ class HealingDesignSystem {
 
   /// 標題樣式 - 大標題（如頁面主標題）
   static const TextStyle titleLarge = TextStyle(
+    fontFamily: fontFamily,
     fontSize: 24,
     fontWeight: FontWeight.w700,
     color: deepText,
@@ -204,6 +207,7 @@ class HealingDesignSystem {
 
   /// 標題樣式 - 中標題（如卡片標題）
   static const TextStyle titleMedium = TextStyle(
+    fontFamily: fontFamily,
     fontSize: 18,
     fontWeight: FontWeight.w600,
     color: deepText,
@@ -212,6 +216,7 @@ class HealingDesignSystem {
 
   /// 標題樣式 - 小標題（如分類標題）
   static const TextStyle titleSmall = TextStyle(
+    fontFamily: fontFamily,
     fontSize: 14,
     fontWeight: FontWeight.w600,
     color: deepText,
@@ -220,6 +225,7 @@ class HealingDesignSystem {
 
   /// 本文樣式 - 大（主要內容）
   static const TextStyle bodyLarge = TextStyle(
+    fontFamily: fontFamily,
     fontSize: 16,
     fontWeight: FontWeight.w400,
     color: deepText,
@@ -228,6 +234,7 @@ class HealingDesignSystem {
 
   /// 本文樣式 - 中（次要內容）
   static const TextStyle bodyMedium = TextStyle(
+    fontFamily: fontFamily,
     fontSize: 14,
     fontWeight: FontWeight.w400,
     color: deepText,
@@ -236,6 +243,7 @@ class HealingDesignSystem {
 
   /// 本文樣式 - 小（輔助文字）
   static const TextStyle bodySmall = TextStyle(
+    fontFamily: fontFamily,
     fontSize: 12,
     fontWeight: FontWeight.w400,
     color: mutedText,
@@ -244,6 +252,7 @@ class HealingDesignSystem {
 
   /// 標籤樣式（Chip、Badge）
   static const TextStyle labelMedium = TextStyle(
+    fontFamily: fontFamily,
     fontSize: 12,
     fontWeight: FontWeight.w500,
     color: deepText,
@@ -251,6 +260,7 @@ class HealingDesignSystem {
   );
 
   static const TextStyle labelSmall = TextStyle(
+    fontFamily: fontFamily,
     fontSize: 11,
     fontWeight: FontWeight.w400,
     color: mutedText,
@@ -261,81 +271,81 @@ class HealingDesignSystem {
 // 🌓 主題自適應工具
 // ========================================
 
-static bool isDark(BuildContext context) {
-  return Theme.of(context).brightness == Brightness.dark;
-}
+  static bool isDark(BuildContext context) {
+    return Theme.of(context).brightness == Brightness.dark;
+  }
 
-static Color adaptiveBackground(BuildContext context) {
-  return isDark(context) ? const Color(0xFF0F1720) : softBlue;
-}
+  static Color adaptiveBackground(BuildContext context) {
+    return isDark(context) ? const Color(0xFF0F1720) : softBlue;
+  }
 
-static Color adaptiveAppBarBackground(BuildContext context) {
-  return isDark(context) ? const Color(0xFF16222D) : primaryBlue;
-}
+  static Color adaptiveAppBarBackground(BuildContext context) {
+    return isDark(context) ? const Color(0xFF16222D) : primaryBlue;
+  }
 
-static Color adaptiveAppBarForeground(BuildContext context) {
-  return isDark(context) ? const Color(0xFFF4FAFF) : Colors.white;
-}
+  static Color adaptiveAppBarForeground(BuildContext context) {
+    return isDark(context) ? const Color(0xFFF4FAFF) : Colors.white;
+  }
 
-static Color adaptiveSurface(BuildContext context) {
-  return isDark(context) ? const Color(0xFF1A2632) : cardBg;
-}
+  static Color adaptiveSurface(BuildContext context) {
+    return isDark(context) ? const Color(0xFF1A2632) : cardBg;
+  }
 
-static Color adaptiveCardBorder(BuildContext context) {
-  return isDark(context)
-      ? const Color(0xFF324657)
-      : lineColor.withOpacity(0.8);
-}
+  static Color adaptiveCardBorder(BuildContext context) {
+    return isDark(context)
+        ? const Color(0xFF324657)
+        : lineColor.withOpacity(0.8);
+  }
 
-static Color adaptiveAccent(BuildContext context) {
-  return isDark(context) ? const Color(0xFF8FC7E6) : primaryBlue;
-}
+  static Color adaptiveAccent(BuildContext context) {
+    return isDark(context) ? const Color(0xFF8FC7E6) : primaryBlue;
+  }
 
-static Color adaptivePrimaryText(BuildContext context) {
-  return isDark(context) ? const Color(0xFFF2F7FA) : deepText;
-}
+  static Color adaptivePrimaryText(BuildContext context) {
+    return isDark(context) ? const Color(0xFFF2F7FA) : deepText;
+  }
 
-static Color adaptiveSecondaryText(BuildContext context) {
-  return isDark(context) ? const Color(0xFFB8C7D3) : mutedText;
-}
+  static Color adaptiveSecondaryText(BuildContext context) {
+    return isDark(context) ? const Color(0xFFB8C7D3) : mutedText;
+  }
 
-static Color adaptiveMutedText(BuildContext context) {
-  return isDark(context) ? const Color(0xFF93A4B2) : mutedText;
-}
+  static Color adaptiveMutedText(BuildContext context) {
+    return isDark(context) ? const Color(0xFF93A4B2) : mutedText;
+  }
 
-static Color adaptiveFill(BuildContext context) {
-  return isDark(context)
-      ? const Color(0xFF243443)
-      : softBlue.withOpacity(0.35);
-}
+  static Color adaptiveFill(BuildContext context) {
+    return isDark(context)
+        ? const Color(0xFF243443)
+        : softBlue.withOpacity(0.35);
+  }
 
-static BoxDecoration adaptiveCardDecoration(
-  BuildContext context, {
-  Color? bgColor,
-  Color? shadowColor,
-  double? radius,
-  List<BoxShadow>? shadows,
-}) {
-  final dark = isDark(context);
+  static BoxDecoration adaptiveCardDecoration(
+    BuildContext context, {
+    Color? bgColor,
+    Color? shadowColor,
+    double? radius,
+    List<BoxShadow>? shadows,
+  }) {
+    final dark = isDark(context);
 
-  return BoxDecoration(
-    color: bgColor ?? adaptiveSurface(context),
-    borderRadius: BorderRadius.circular(radius ?? radiusL),
-    border: Border.all(
-      color: adaptiveCardBorder(context),
-      width: dark ? 1.1 : 1,
-    ),
-    boxShadow: dark
-        ? [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.22),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
-            ),
-          ]
-        : shadows ?? [shadowMedium(color: shadowColor)],
-  );
-}
+    return BoxDecoration(
+      color: bgColor ?? adaptiveSurface(context),
+      borderRadius: BorderRadius.circular(radius ?? radiusL),
+      border: Border.all(
+        color: adaptiveCardBorder(context),
+        width: dark ? 1.1 : 1,
+      ),
+      boxShadow: dark
+          ? [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.22),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ]
+          : shadows ?? [shadowMedium(color: shadowColor)],
+    );
+  }
 
   // Additional methods or classes can be added here if needed.
 }

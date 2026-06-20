@@ -132,28 +132,45 @@ class _SettingsPageState extends State<SettingsPage> {
             _sectionHeader('外觀'),
             Consumer<ThemeProvider>(
               builder: (context, themeProvider, child) {
-                return _sectionCard(
-                  child: SegmentedButton<ThemeMode>(
-                    segments: const [
-                      ButtonSegment(
-                        value: ThemeMode.system,
-                        label: Text('跟隨系統'),
-                      ),
-                      ButtonSegment(
-                        value: ThemeMode.light,
-                        label: Text('淺色模式'),
-                      ),
-                      ButtonSegment(
-                        value: ThemeMode.dark,
-                        label: Text('深色模式 🌙'),
-                      ),
-                    ],
-                    selected: {themeProvider.themeMode},
-                    onSelectionChanged: (selection) {
-                      final mode = selection.first;
-                      themeProvider.setTheme(mode);
-                    },
+                return SegmentedButton<ThemeMode>(
+                  style: ButtonStyle(
+                    backgroundColor: WidgetStateProperty.resolveWith((states) {
+                      if (states.contains(WidgetState.selected)) {
+                        return HealingDesignSystem.adaptiveFill(context);
+                      }
+                      return Colors.transparent;
+                    }),
+                    foregroundColor: WidgetStateProperty.resolveWith((states) {
+                      if (states.contains(WidgetState.selected)) {
+                        return HealingDesignSystem.adaptivePrimaryText(context);
+                      }
+                      return HealingDesignSystem.adaptiveSecondaryText(context);
+                    }),
+                    side: WidgetStateProperty.all(BorderSide.none),
+                    overlayColor: WidgetStateProperty.all(
+                      HealingDesignSystem.adaptiveAccent(context)
+                          .withOpacity(0.08),
+                    ),
                   ),
+                  segments: const [
+                    ButtonSegment(
+                      value: ThemeMode.system,
+                      label: Text('跟隨系統'),
+                    ),
+                    ButtonSegment(
+                      value: ThemeMode.light,
+                      label: Text('淺色模式'),
+                    ),
+                    ButtonSegment(
+                      value: ThemeMode.dark,
+                      label: Text('深色模式 🌙'),
+                    ),
+                  ],
+                  selected: {themeProvider.themeMode},
+                  onSelectionChanged: (selection) {
+                    final mode = selection.first;
+                    themeProvider.setTheme(mode);
+                  },
                 );
               },
             ),
@@ -232,7 +249,8 @@ class _SettingsPageState extends State<SettingsPage> {
                   title: const Text('產生測試情緒資料'),
                   subtitle: const Text('Debug 模式專用，產生 120 天測試資料'),
                   trailing: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: Colors.orange.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(8),
@@ -257,155 +275,155 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ],
 
-          // Padding(
-          //   padding: const EdgeInsets.all(16.0),
-          //   child: Text(
-          //     '頁面導覽',
-          //     style: Theme.of(context).textTheme.titleSmall?.copyWith(
-          //       color: Colors.grey[600],
-          //       fontWeight: FontWeight.bold,
-          //     ),
-          //   ),
-          // ),
+            // Padding(
+            //   padding: const EdgeInsets.all(16.0),
+            //   child: Text(
+            //     '頁面導覽',
+            //     style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            //       color: Colors.grey[600],
+            //       fontWeight: FontWeight.bold,
+            //     ),
+            //   ),
+            // ),
 
-          // ListTile(
-          //   leading: const Icon(Icons.note_add),
-          //   title: const Text('每日紀錄頁面導覽'),
-          //   subtitle: const Text('了解每日紀錄頁面上的各個按鈕和功能'),
-          //   onTap: () {
-          //     _launchPageTutorial(
-          //       context,
-          //       '每日紀錄',
-          //       DailyRecordPageTutorial.generateSteps(),
-          //     );
-          //   },
-          // ),
+            // ListTile(
+            //   leading: const Icon(Icons.note_add),
+            //   title: const Text('每日紀錄頁面導覽'),
+            //   subtitle: const Text('了解每日紀錄頁面上的各個按鈕和功能'),
+            //   onTap: () {
+            //     _launchPageTutorial(
+            //       context,
+            //       '每日紀錄',
+            //       DailyRecordPageTutorial.generateSteps(),
+            //     );
+            //   },
+            // ),
 
-          // ListTile(
-          //   leading: const Icon(Icons.book),
-          //   title: const Text('日記頁面導覽'),
-          //   subtitle: const Text('了解如何使用日記功能'),
-          //   onTap: () {
-          //     _launchPageTutorial(
-          //       context,
-          //       '日記',
-          //       DiaryPageTutorial.generateSteps(),
-          //     );
-          //   },
-          // ),
+            // ListTile(
+            //   leading: const Icon(Icons.book),
+            //   title: const Text('日記頁面導覽'),
+            //   subtitle: const Text('了解如何使用日記功能'),
+            //   onTap: () {
+            //     _launchPageTutorial(
+            //       context,
+            //       '日記',
+            //       DiaryPageTutorial.generateSteps(),
+            //     );
+            //   },
+            // ),
 
-          // ListTile(
-          //   leading: const Icon(Icons.bar_chart),
-          //   title: const Text('統計頁面導覽'),
-          //   subtitle: const Text('了解如何查看和分析您的數據'),
-          //   onTap: () {
-          //     _launchPageTutorial(
-          //       context,
-          //       '統計分析',
-          //       StatisticsPageTutorial.generateSteps(),
-          //     );
-          //   },
-          // ),
+            // ListTile(
+            //   leading: const Icon(Icons.bar_chart),
+            //   title: const Text('統計頁面導覽'),
+            //   subtitle: const Text('了解如何查看和分析您的數據'),
+            //   onTap: () {
+            //     _launchPageTutorial(
+            //       context,
+            //       '統計分析',
+            //       StatisticsPageTutorial.generateSteps(),
+            //     );
+            //   },
+            // ),
 
-          // const Divider(),
+            // const Divider(),
 
-          // Padding(
-          //   padding: const EdgeInsets.all(16.0),
-          //   child: Text(
-          //     '詳細教學',
-          //     style: Theme.of(context).textTheme.titleSmall?.copyWith(
-          //       color: Colors.grey[600],
-          //       fontWeight: FontWeight.bold,
-          //     ),
-          //   ),
-          // ),
+            // Padding(
+            //   padding: const EdgeInsets.all(16.0),
+            //   child: Text(
+            //     '詳細教學',
+            //     style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            //       color: Colors.grey[600],
+            //       fontWeight: FontWeight.bold,
+            //     ),
+            //   ),
+            // ),
 
-          // ListTile(
-          //   leading: const Icon(Icons.note_add),
-          //   title: const Text('每日紀錄詳細教學'),
-          //   subtitle: const Text('學習如何使用每日紀錄功能'),
-          //   onTap: () async {
-          //     await Navigator.of(context).push<bool>(
-          //       MaterialPageRoute(
-          //         builder: (context) => const DailyRecordTutorialPage(),
-          //       ),
-          //     );
-          //   },
-          // ),
+            // ListTile(
+            //   leading: const Icon(Icons.note_add),
+            //   title: const Text('每日紀錄詳細教學'),
+            //   subtitle: const Text('學習如何使用每日紀錄功能'),
+            //   onTap: () async {
+            //     await Navigator.of(context).push<bool>(
+            //       MaterialPageRoute(
+            //         builder: (context) => const DailyRecordTutorialPage(),
+            //       ),
+            //     );
+            //   },
+            // ),
 
-          // ListTile(
-          //   leading: const Icon(Icons.book),
-          //   title: const Text('日記詳細教學'),
-          //   subtitle: const Text('學習如何使用日記功能'),
-          //   onTap: () async {
-          //     await Navigator.of(context).push<bool>(
-          //       MaterialPageRoute(
-          //         builder: (context) => const DiaryTutorialPage(),
-          //       ),
-          //     );
-          //   },
-          // ),
+            // ListTile(
+            //   leading: const Icon(Icons.book),
+            //   title: const Text('日記詳細教學'),
+            //   subtitle: const Text('學習如何使用日記功能'),
+            //   onTap: () async {
+            //     await Navigator.of(context).push<bool>(
+            //       MaterialPageRoute(
+            //         builder: (context) => const DiaryTutorialPage(),
+            //       ),
+            //     );
+            //   },
+            // ),
 
-          // ListTile(
-          //   leading: const Icon(Icons.bar_chart),
-          //   title: const Text('統計分析教學'),
-          //   subtitle: const Text('學習如何查看和分析數據'),
-          //   onTap: () async {
-          //     await Navigator.of(context).push<bool>(
-          //       MaterialPageRoute(
-          //         builder: (context) => const StatisticsTutorialPage(),
-          //       ),
-          //     );
-          //   },
-          // ),
+            // ListTile(
+            //   leading: const Icon(Icons.bar_chart),
+            //   title: const Text('統計分析教學'),
+            //   subtitle: const Text('學習如何查看和分析數據'),
+            //   onTap: () async {
+            //     await Navigator.of(context).push<bool>(
+            //       MaterialPageRoute(
+            //         builder: (context) => const StatisticsTutorialPage(),
+            //       ),
+            //     );
+            //   },
+            // ),
 
-          // const Divider(),
+            // const Divider(),
 
-          // Padding(
-          //   padding: const EdgeInsets.all(16.0),
-          //   child: Text(
-          //     '數據診斷',
-          //     style: Theme.of(context).textTheme.titleSmall?.copyWith(
-          //       color: Colors.grey[600],
-          //       fontWeight: FontWeight.bold,
-          //     ),
-          //   ),
-          // ),
+            // Padding(
+            //   padding: const EdgeInsets.all(16.0),
+            //   child: Text(
+            //     '數據診斷',
+            //     style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            //       color: Colors.grey[600],
+            //       fontWeight: FontWeight.bold,
+            //     ),
+            //   ),
+            // ),
 
-          // ListTile(
-          //   leading: const Icon(Icons.analytics),
-          //   title: const Text('檢查數據同步狀態'),
-          //   subtitle: const Text('檢查本地和雲端數據是否一致'),
-          //   onTap: () => _showSyncDiagnostics(context),
-          // ),
+            // ListTile(
+            //   leading: const Icon(Icons.analytics),
+            //   title: const Text('檢查數據同步狀態'),
+            //   subtitle: const Text('檢查本地和雲端數據是否一致'),
+            //   onTap: () => _showSyncDiagnostics(context),
+            // ),
 
-          // if (kDebugMode)
-          //   ListTile(
-          //     leading: const Icon(Icons.cloud_sync),
-          //     title: const Text('Firebase 同步狀態'),
-          //     subtitle: Text(
-          //       FirebaseSyncConfig.shouldSync()
-          //           ? '✅ 已啟用'
-          //           : '❌ 已禁用',
-          //       style: TextStyle(
-          //         color: FirebaseSyncConfig.shouldSync()
-          //             ? Colors.green
-          //             : Colors.red,
-          //       ),
-          //     ),
-          //     onTap: () {
-          //       ScaffoldMessenger.of(context).showSnackBar(
-          //         SnackBar(
-          //           content: Text(
-          //             'Firebase 同步: ${FirebaseSyncConfig.shouldSync() ? "已啟用（生產環境）" : "已禁用（測試環境）"}\n'
-          //             '位置: lib/utils/firebase_sync_config.dart\n'
-          //             '修改 kEnableFirebaseSync 以切換',
-          //           ),
-          //           duration: const Duration(seconds: 4),
-          //         ),
-          //       );
-          //     },
-          //   ),
+            // if (kDebugMode)
+            //   ListTile(
+            //     leading: const Icon(Icons.cloud_sync),
+            //     title: const Text('Firebase 同步狀態'),
+            //     subtitle: Text(
+            //       FirebaseSyncConfig.shouldSync()
+            //           ? '✅ 已啟用'
+            //           : '❌ 已禁用',
+            //       style: TextStyle(
+            //         color: FirebaseSyncConfig.shouldSync()
+            //             ? Colors.green
+            //             : Colors.red,
+            //       ),
+            //     ),
+            //     onTap: () {
+            //       ScaffoldMessenger.of(context).showSnackBar(
+            //         SnackBar(
+            //           content: Text(
+            //             'Firebase 同步: ${FirebaseSyncConfig.shouldSync() ? "已啟用（生產環境）" : "已禁用（測試環境）"}\n'
+            //             '位置: lib/utils/firebase_sync_config.dart\n'
+            //             '修改 kEnableFirebaseSync 以切換',
+            //           ),
+            //           duration: const Duration(seconds: 4),
+            //         ),
+            //       );
+            //     },
+            //   ),
           ],
         ),
       ),
@@ -781,7 +799,8 @@ class _SettingsPageState extends State<SettingsPage> {
             return AlertDialog(
               backgroundColor: HealingDesignSystem.adaptiveSurface(context),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
+                borderRadius:
+                    BorderRadius.circular(HealingDesignSystem.radiusL),
               ),
               title: Text(
                 '設定解鎖密碼',
@@ -905,7 +924,8 @@ class _SettingsPageState extends State<SettingsPage> {
             return AlertDialog(
               backgroundColor: HealingDesignSystem.adaptiveSurface(context),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
+                borderRadius:
+                    BorderRadius.circular(HealingDesignSystem.radiusL),
               ),
               title: Text(
                 '變更解鎖密碼',
@@ -1056,7 +1076,8 @@ class _SettingsPageState extends State<SettingsPage> {
       decoration: BoxDecoration(
         color: HealingDesignSystem.dangerRed.withOpacity(0.10),
         borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
-        border: Border.all(color: HealingDesignSystem.dangerRed.withOpacity(0.18)),
+        border:
+            Border.all(color: HealingDesignSystem.dangerRed.withOpacity(0.18)),
       ),
       child: ListTile(
         leading: const Icon(
@@ -1099,7 +1120,8 @@ class _SettingsPageState extends State<SettingsPage> {
                     child: Text(
                       '取消',
                       style: TextStyle(
-                        color: HealingDesignSystem.adaptiveSecondaryText(context),
+                        color:
+                            HealingDesignSystem.adaptiveSecondaryText(context),
                       ),
                     ),
                     onPressed: () => Navigator.of(ctx).pop(),

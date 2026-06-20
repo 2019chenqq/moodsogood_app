@@ -4,24 +4,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'main.dart'; // 替換成你的 AuthGate 所在路徑
 import 'analytics_service.dart';
- 
+
 class RecoveryKeyDisplayScreen extends StatefulWidget {
   /// 備援金鑰字串，格式為 12 個單字以破折號串接
   /// 例如："MOON-FIRE-TREE-BLUE-JAZZ-WIND-ROSE-GOLD-LAKE-STAR-DAWN-RAIN"
   final String recoveryKey;
- 
+
   const RecoveryKeyDisplayScreen({
     super.key,
     required this.recoveryKey,
   });
- 
+
   @override
   State<RecoveryKeyDisplayScreen> createState() =>
       _RecoveryKeyDisplayScreenState();
 }
- 
-class _RecoveryKeyDisplayScreenState extends State<RecoveryKeyDisplayScreen> {
 
+class _RecoveryKeyDisplayScreenState extends State<RecoveryKeyDisplayScreen> {
   @override
   void initState() {
     super.initState();
@@ -31,9 +30,9 @@ class _RecoveryKeyDisplayScreenState extends State<RecoveryKeyDisplayScreen> {
   bool _savedConfirmed = false;
   bool _riskConfirmed = false;
   bool _copied = false;
- 
+
   List<String> get _words => widget.recoveryKey.split('-');
- 
+
   Future<void> _copyToClipboard() async {
     await Clipboard.setData(ClipboardData(text: widget.recoveryKey));
     setState(() => _copied = true);
@@ -41,18 +40,18 @@ class _RecoveryKeyDisplayScreenState extends State<RecoveryKeyDisplayScreen> {
       if (mounted) setState(() => _copied = false);
     });
   }
- 
+
   void _proceed() {
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const AuthGate()),
       (route) => false,
     );
   }
- 
+
   @override
   Widget build(BuildContext context) {
     final canProceed = _savedConfirmed && _riskConfirmed;
- 
+
     return Scaffold(
       body: Stack(
         children: [
@@ -66,12 +65,14 @@ class _RecoveryKeyDisplayScreenState extends State<RecoveryKeyDisplayScreen> {
               ),
             ),
           ),
- 
+
           // ── 背景裝飾圓形 ──
           Positioned(
-            top: -90, left: -40,
+            top: -90,
+            left: -40,
             child: Container(
-              width: 220, height: 220,
+              width: 220,
+              height: 220,
               decoration: const BoxDecoration(
                 shape: BoxShape.circle,
                 color: Color(0x223D9CC1),
@@ -79,16 +80,18 @@ class _RecoveryKeyDisplayScreenState extends State<RecoveryKeyDisplayScreen> {
             ),
           ),
           Positioned(
-            bottom: -100, right: -30,
+            bottom: -100,
+            right: -30,
             child: Container(
-              width: 260, height: 260,
+              width: 260,
+              height: 260,
               decoration: const BoxDecoration(
                 shape: BoxShape.circle,
                 color: Color(0x224A7B9C),
               ),
             ),
           ),
- 
+
           // ── 主內容 ──
           SafeArea(
             child: SingleChildScrollView(
@@ -131,7 +134,8 @@ class _RecoveryKeyDisplayScreenState extends State<RecoveryKeyDisplayScreen> {
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 200),
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 6,
+                                  horizontal: 12,
+                                  vertical: 6,
                                 ),
                                 decoration: BoxDecoration(
                                   color: _copied
@@ -174,7 +178,7 @@ class _RecoveryKeyDisplayScreenState extends State<RecoveryKeyDisplayScreen> {
                           ],
                         ),
                         const SizedBox(height: 14),
- 
+
                         // ── 說明文字 ──
                         Text(
                           '請將以下 12 個單字依序抄寫在紙上，或截圖保存到安全的地方。',
@@ -185,11 +189,12 @@ class _RecoveryKeyDisplayScreenState extends State<RecoveryKeyDisplayScreen> {
                           ),
                         ),
                         const SizedBox(height: 16),
- 
+
                         // ── 警告方塊 ──
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 12,
+                            horizontal: 14,
+                            vertical: 12,
                           ),
                           decoration: BoxDecoration(
                             color: const Color(0x22FF6B6B),
@@ -218,7 +223,7 @@ class _RecoveryKeyDisplayScreenState extends State<RecoveryKeyDisplayScreen> {
                           ),
                         ),
                         const SizedBox(height: 20),
- 
+
                         // ── 12 個單字格子 ──
                         GridView.builder(
                           shrinkWrap: true,
@@ -241,16 +246,18 @@ class _RecoveryKeyDisplayScreenState extends State<RecoveryKeyDisplayScreen> {
                                 ),
                               ),
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 8,
+                                horizontal: 12,
+                                vertical: 8,
                               ),
                               child: Row(
                                 children: [
                                   Text(
                                     '${i + 1}.',
                                     style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.45),
+                                      color:
+                                          Colors.white.withValues(alpha: 0.45),
                                       fontSize: 11,
-                                      fontFamily: 'monospace',
+                                      fontFamily: 'Iansui',
                                     ),
                                   ),
                                   const SizedBox(width: 6),
@@ -260,7 +267,7 @@ class _RecoveryKeyDisplayScreenState extends State<RecoveryKeyDisplayScreen> {
                                       color: Color(0xFF9BD7EA),
                                       fontSize: 13,
                                       fontWeight: FontWeight.w700,
-                                      fontFamily: 'monospace',
+                                      fontFamily: 'Iansui',
                                       letterSpacing: 0.8,
                                     ),
                                   ),
@@ -270,7 +277,7 @@ class _RecoveryKeyDisplayScreenState extends State<RecoveryKeyDisplayScreen> {
                           },
                         ),
                         const SizedBox(height: 24),
- 
+
                         // ── 確認 Checkbox 1：我已抄好 ──
                         Container(
                           decoration: BoxDecoration(
@@ -298,7 +305,7 @@ class _RecoveryKeyDisplayScreenState extends State<RecoveryKeyDisplayScreen> {
                           ),
                         ),
                         const SizedBox(height: 10),
- 
+
                         // ── 確認 Checkbox 2：了解風險 ──
                         Container(
                           decoration: BoxDecoration(
@@ -326,7 +333,7 @@ class _RecoveryKeyDisplayScreenState extends State<RecoveryKeyDisplayScreen> {
                           ),
                         ),
                         const SizedBox(height: 24),
- 
+
                         // ── 完成按鈕 ──
                         SizedBox(
                           width: double.infinity,

@@ -94,7 +94,8 @@ class _MainDrawerState extends State<MainDrawer> {
       }
 
       if (!mounted) return;
-      Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
+      Navigator.of(context, rootNavigator: true)
+          .popUntil((route) => route.isFirst);
     } catch (e) {
       debugPrint('登出失敗: $e');
       if (!mounted) return;
@@ -150,7 +151,8 @@ class _MainDrawerState extends State<MainDrawer> {
                     backgroundImage:
                         photoUrl != null ? NetworkImage(photoUrl) : null,
                     child: photoUrl == null
-                        ? Icon(Icons.person, size: 40, color: HealingDesignSystem.mutedText)
+                        ? Icon(Icons.person,
+                            size: 40, color: HealingDesignSystem.mutedText)
                         : null,
                   ),
                   if (_isUploading)
@@ -194,7 +196,8 @@ class _MainDrawerState extends State<MainDrawer> {
           ),
           // 主要分區
           ListTile(
-            leading: Icon(Icons.edit_note, color: HealingDesignSystem.primaryBlue),
+            leading:
+                Icon(Icons.edit_note, color: HealingDesignSystem.primaryBlue),
             title: Text('紀錄系統', style: HealingDesignSystem.bodyLarge),
             onTap: () {
               Navigator.pop(context);
@@ -205,7 +208,8 @@ class _MainDrawerState extends State<MainDrawer> {
             },
           ),
           ListTile(
-            leading: Icon(Icons.calendar_month, color: HealingDesignSystem.primaryBlue),
+            leading: Icon(Icons.calendar_month,
+                color: HealingDesignSystem.primaryBlue),
             title: Text('生活軌跡', style: HealingDesignSystem.bodyLarge),
             onTap: () {
               Navigator.pop(context);
@@ -215,9 +219,11 @@ class _MainDrawerState extends State<MainDrawer> {
               );
             },
           ),
-          Divider(color: HealingDesignSystem.lineColor, thickness: 1, height: 24),
+          Divider(
+              color: HealingDesignSystem.lineColor, thickness: 1, height: 24),
           ListTile(
-            leading: Icon(Icons.person_outline, color: HealingDesignSystem.primaryBlue),
+            leading: Icon(Icons.person_outline,
+                color: HealingDesignSystem.primaryBlue),
             title: Text('個人資料', style: HealingDesignSystem.bodyLarge),
             onTap: () {
               Navigator.pop(context);
@@ -229,7 +235,8 @@ class _MainDrawerState extends State<MainDrawer> {
           ),
 
           ListTile(
-            leading: Icon(Icons.tune_rounded, color: HealingDesignSystem.primaryBlue),
+            leading: Icon(Icons.tune_rounded,
+                color: HealingDesignSystem.primaryBlue),
             title: Text('設定', style: HealingDesignSystem.bodyLarge),
             onTap: () {
               Navigator.pop(context);
@@ -240,7 +247,8 @@ class _MainDrawerState extends State<MainDrawer> {
             },
           ),
           ListTile(
-            leading: Icon(Icons.help_outline, color: HealingDesignSystem.primaryBlue),
+            leading: Icon(Icons.help_outline,
+                color: HealingDesignSystem.primaryBlue),
             title: Text('幫助與回饋', style: HealingDesignSystem.bodyLarge),
             onTap: () {
               Navigator.pop(context);
@@ -251,7 +259,8 @@ class _MainDrawerState extends State<MainDrawer> {
             },
           ),
           ListTile(
-            leading: Icon(Icons.menu_book_outlined, color: HealingDesignSystem.primaryBlue),
+            leading: Icon(Icons.menu_book_outlined,
+                color: HealingDesignSystem.primaryBlue),
             title: Text('使用指南', style: HealingDesignSystem.bodyLarge),
             onTap: () {
               Navigator.pop(context);
@@ -260,7 +269,9 @@ class _MainDrawerState extends State<MainDrawer> {
           ),
           ListTile(
             leading: Icon(Icons.logout, color: HealingDesignSystem.dangerRed),
-            title: Text('登出', style: HealingDesignSystem.bodyLarge.copyWith(color: HealingDesignSystem.dangerRed)),
+            title: Text('登出',
+                style: HealingDesignSystem.bodyLarge
+                    .copyWith(color: HealingDesignSystem.dangerRed)),
             onTap: () async {
               await _signOut();
             },
