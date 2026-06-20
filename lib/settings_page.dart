@@ -10,6 +10,7 @@ import 'providers/theme_provider.dart';
 import 'onboarding_page.dart';
 import 'utils/data_sync_diagnostics.dart';
 import 'analytics_service.dart';
+import 'test_pages/test_data_management_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -217,6 +218,44 @@ class _SettingsPageState extends State<SettingsPage> {
                 },
               ),
             ),
+
+            // ── Debug 模式：測試資料產生器 ──
+            if (kDebugMode) ...[
+              const SizedBox(height: 14),
+              _sectionHeader('開發者工具'),
+              _sectionCard(
+                child: ListTile(
+                  leading: const Icon(
+                    Icons.science,
+                    color: Colors.orange,
+                  ),
+                  title: const Text('產生測試情緒資料'),
+                  subtitle: const Text('Debug 模式專用，產生 120 天測試資料'),
+                  trailing: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      'DEBUG',
+                      style: TextStyle(
+                        color: Colors.orange,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const TestDataManagementPage(),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
 
           // Padding(
           //   padding: const EdgeInsets.all(16.0),
