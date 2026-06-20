@@ -12,6 +12,8 @@ int? _wholeNumberX(double value) {
   return (value - rounded).abs() < 0.001 ? rounded : null;
 }
 
+String _formatChartNumber(double value) => value.toStringAsFixed(1);
+
 ({double minY, double maxY}) _yBounds(
   List<LineChartBarData> bars, {
   required double minScaleY,
@@ -166,11 +168,15 @@ class EmotionBalanceChartWidget extends StatelessWidget {
           .toList();
     }
 
-    return List.generate(totalDays, (index) {
-      final date = startDate.add(Duration(days: index));
-      final value = source[_norm(date)];
-      return value == null ? FlSpot.nullSpot : FlSpot(index.toDouble(), value);
-    });
+    final dates = source.keys.toList()..sort();
+    return dates
+        .map(
+          (date) => FlSpot(
+            date.difference(startDate).inDays.toDouble(),
+            source[date]!,
+          ),
+        )
+        .toList();
   }
 
   Widget _legendDot(Color color) {
@@ -262,7 +268,7 @@ class EmotionBalanceChartWidget extends StatelessWidget {
     // X 軸標籤：依資料範圍動態決定顯示頻率，避免重疊
     final labelPositions = <int>{};
     if (sortedDates.isNotEmpty) {
-      final maxLabels = totalDays <= 30 ? 5 : 7;
+      final maxLabels = totalDays <= 30 ? 4 : 3;
       final step = ((sortedDates.length - 1) / (maxLabels - 1))
           .ceil()
           .clamp(1, sortedDates.length);
@@ -324,7 +330,7 @@ class EmotionBalanceChartWidget extends StatelessWidget {
                           return const SizedBox.shrink();
                         }
                         return Text(
-                          value.toInt().toString(),
+                          _formatChartNumber(value),
                           style: TextStyle(
                             color: HealingDesignSystem.adaptiveSecondaryText(
                                 context),
@@ -372,6 +378,22 @@ class EmotionBalanceChartWidget extends StatelessWidget {
                         );
                       },
                     ),
+                  ),
+                ),
+                lineTouchData: LineTouchData(
+                  touchTooltipData: LineTouchTooltipData(
+                    getTooltipItems: (spots) {
+                      return spots.map((spot) {
+                        final label = spot.barIndex == 0 ? '正向' : '負向';
+                        return LineTooltipItem(
+                          '$label ${_formatChartNumber(spot.y)}',
+                          const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        );
+                      }).toList();
+                    },
                   ),
                 ),
                 lineBarsData: lineBars,
@@ -539,11 +561,15 @@ class EmotionBalanceTrendChartWidget extends StatelessWidget {
           .toList();
     }
 
-    return List.generate(totalDays, (index) {
-      final date = startDate.add(Duration(days: index));
-      final value = source[_norm(date)];
-      return value == null ? FlSpot.nullSpot : FlSpot(index.toDouble(), value);
-    });
+    final dates = source.keys.toList()..sort();
+    return dates
+        .map(
+          (date) => FlSpot(
+            date.difference(startDate).inDays.toDouble(),
+            source[date]!,
+          ),
+        )
+        .toList();
   }
 
   @override
@@ -597,14 +623,14 @@ class EmotionBalanceTrendChartWidget extends StatelessWidget {
     final xBounds = _xBounds(lineBars);
     final yBounds = _yBounds(
       lineBars,
-      minScaleY: -10,
-      maxScaleY: 10,
+      minScaleY: -5,
+      maxScaleY: 5,
     );
 
     // X 軸標籤：依資料範圍動態決定顯示頻率，避免重疊
     final labelPositions = <int>{};
     if (sortedDates.isNotEmpty) {
-      final maxLabels = totalDays <= 30 ? 5 : 7;
+      final maxLabels = totalDays <= 30 ? 4 : 3;
       final step = ((sortedDates.length - 1) / (maxLabels - 1))
           .ceil()
           .clamp(1, sortedDates.length);
@@ -648,7 +674,7 @@ class EmotionBalanceTrendChartWidget extends StatelessWidget {
                 ),
                 gridData: const FlGridData(
                   show: true,
-                  horizontalInterval: 5,
+                  horizontalInterval: 2.5,
                   drawVerticalLine: false,
                 ),
                 borderData: FlBorderData(show: false),
@@ -662,14 +688,14 @@ class EmotionBalanceTrendChartWidget extends StatelessWidget {
                   leftTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
-                      interval: 5,
+                      interval: 2.5,
                       reservedSize: 34,
                       getTitlesWidget: (value, meta) {
-                        if (value < -10 || value > 10) {
+                        if (value < -5 || value > 5) {
                           return const SizedBox.shrink();
                         }
                         return Text(
-                          value.toInt().toString(),
+                          _formatChartNumber(value),
                           style: TextStyle(
                             color: HealingDesignSystem.adaptiveSecondaryText(
                                 context),
@@ -717,6 +743,23 @@ class EmotionBalanceTrendChartWidget extends StatelessWidget {
                         );
                       },
                     ),
+                  ),
+                ),
+                lineTouchData: LineTouchData(
+                  touchTooltipData: LineTouchTooltipData(
+                    getTooltipItems: (spots) {
+                      return spots
+                          .map(
+                            (spot) => LineTooltipItem(
+                              '平衡 ${_formatChartNumber(spot.y)}',
+                              const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          )
+                          .toList();
+                    },
                   ),
                 ),
                 lineBarsData: lineBars,
