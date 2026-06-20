@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart'; // 用於 kDebugMode
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart'; // 🔥 存照片用
 import 'package:image_picker/image_picker.dart'; // 🔥 選照片用
@@ -12,7 +11,6 @@ import '../pages/feesback_page.dart';
 import '../pages/hub_pages.dart';
 import '../pages/life_overview_page.dart';
 import '../pages/profile_page.dart';
-import '../Sign_in_page.dart';
 import '../constants/healing_design_system.dart';
 
 class MainDrawer extends StatefulWidget {
@@ -122,161 +120,182 @@ class _MainDrawerState extends State<MainDrawer> {
     final String? photoUrl = user?.photoURL;
     final displayName = (user?.displayName ?? '').trim();
     final accountName = displayName.isEmpty ? '使用者' : displayName;
+    final baseTheme = Theme.of(context);
+    final drawerTextTheme =
+        baseTheme.textTheme.apply(fontFamily: HealingDesignSystem.fontFamily);
+    final drawerPrimaryTextTheme = baseTheme.primaryTextTheme
+        .apply(fontFamily: HealingDesignSystem.fontFamily);
+    final drawerTitleStyle = HealingDesignSystem.bodyLarge.copyWith(
+      fontFamily: HealingDesignSystem.fontFamily,
+      color: HealingDesignSystem.deepText,
+    );
+    final drawerDangerStyle = drawerTitleStyle.copyWith(
+      color: HealingDesignSystem.dangerRed,
+    );
 
-    return Drawer(
-      backgroundColor: HealingDesignSystem.softBlue,
-      child: ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          UserAccountsDrawerHeader(
-            accountName: Text(
-              accountName,
-              style: HealingDesignSystem.titleMedium.copyWith(
-                color: HealingDesignSystem.primaryBlue,
+    return Theme(
+      data: baseTheme.copyWith(
+        textTheme: drawerTextTheme,
+        primaryTextTheme: drawerPrimaryTextTheme,
+        listTileTheme: baseTheme.listTileTheme.copyWith(
+          titleTextStyle: drawerTitleStyle,
+        ),
+      ),
+      child: Drawer(
+        backgroundColor: HealingDesignSystem.softBlue,
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            UserAccountsDrawerHeader(
+              accountName: Text(
+                accountName,
+                style: HealingDesignSystem.titleMedium.copyWith(
+                  fontFamily: HealingDesignSystem.fontFamily,
+                  color: HealingDesignSystem.primaryBlue,
+                ),
               ),
-            ),
-            accountEmail: Text(
-              user?.email ?? '',
-              style: HealingDesignSystem.bodySmall.copyWith(
-                color: HealingDesignSystem.mutedText,
+              accountEmail: Text(
+                user?.email ?? '',
+                style: HealingDesignSystem.bodySmall.copyWith(
+                  fontFamily: HealingDesignSystem.fontFamily,
+                  color: HealingDesignSystem.mutedText,
+                ),
               ),
-            ),
-            currentAccountPicture: GestureDetector(
-              onTap: _isUploading ? null : _pickAndUploadImage,
-              child: Stack(
-                children: [
-                  CircleAvatar(
-                    radius: 40,
-                    backgroundColor: HealingDesignSystem.cardBg,
-                    backgroundImage:
-                        photoUrl != null ? NetworkImage(photoUrl) : null,
-                    child: photoUrl == null
-                        ? Icon(Icons.person,
-                            size: 40, color: HealingDesignSystem.mutedText)
-                        : null,
-                  ),
-                  if (_isUploading)
-                    const Positioned.fill(
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: HealingDesignSystem.primaryBlue,
-                      ),
+              currentAccountPicture: GestureDetector(
+                onTap: _isUploading ? null : _pickAndUploadImage,
+                child: Stack(
+                  children: [
+                    CircleAvatar(
+                      radius: 40,
+                      backgroundColor: HealingDesignSystem.cardBg,
+                      backgroundImage:
+                          photoUrl != null ? NetworkImage(photoUrl) : null,
+                      child: photoUrl == null
+                          ? Icon(Icons.person,
+                              size: 40, color: HealingDesignSystem.mutedText)
+                          : null,
                     ),
-                  if (!_isUploading)
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: HealingDesignSystem.cardBg,
-                          shape: BoxShape.circle,
-                          boxShadow: [HealingDesignSystem.shadowLight()],
-                        ),
-                        child: Icon(
-                          Icons.camera_alt,
-                          size: 14,
+                    if (_isUploading)
+                      const Positioned.fill(
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
                           color: HealingDesignSystem.primaryBlue,
                         ),
                       ),
-                    ),
+                    if (!_isUploading)
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: HealingDesignSystem.cardBg,
+                            shape: BoxShape.circle,
+                            boxShadow: [HealingDesignSystem.shadowLight()],
+                          ),
+                          child: Icon(
+                            Icons.camera_alt,
+                            size: 14,
+                            color: HealingDesignSystem.primaryBlue,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              decoration: const BoxDecoration(
+                color: HealingDesignSystem.softBlue,
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0x1A7DB7D8),
+                    blurRadius: 12,
+                    offset: Offset(0, 2),
+                  ),
                 ],
               ),
             ),
-            decoration: const BoxDecoration(
-              color: HealingDesignSystem.softBlue,
-              boxShadow: [
-                BoxShadow(
-                  color: Color(0x1A7DB7D8),
-                  blurRadius: 12,
-                  offset: Offset(0, 2),
-                ),
-              ],
+            // 主要分區
+            ListTile(
+              leading:
+                  Icon(Icons.edit_note, color: HealingDesignSystem.primaryBlue),
+              title: Text('紀錄系統', style: drawerTitleStyle),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => const RecordHubPage()),
+                );
+              },
             ),
-          ),
-          // 主要分區
-          ListTile(
-            leading:
-                Icon(Icons.edit_note, color: HealingDesignSystem.primaryBlue),
-            title: Text('紀錄系統', style: HealingDesignSystem.bodyLarge),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (_) => const RecordHubPage()),
-              );
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.calendar_month,
-                color: HealingDesignSystem.primaryBlue),
-            title: Text('生活軌跡', style: HealingDesignSystem.bodyLarge),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const LifeOverviewPage()),
-              );
-            },
-          ),
-          Divider(
-              color: HealingDesignSystem.lineColor, thickness: 1, height: 24),
-          ListTile(
-            leading: Icon(Icons.person_outline,
-                color: HealingDesignSystem.primaryBlue),
-            title: Text('個人資料', style: HealingDesignSystem.bodyLarge),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ProfilePage()),
-              );
-            },
-          ),
+            ListTile(
+              leading: Icon(Icons.calendar_month,
+                  color: HealingDesignSystem.primaryBlue),
+              title: Text('生活軌跡', style: drawerTitleStyle),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LifeOverviewPage()),
+                );
+              },
+            ),
+            Divider(
+                color: HealingDesignSystem.lineColor, thickness: 1, height: 24),
+            ListTile(
+              leading: Icon(Icons.person_outline,
+                  color: HealingDesignSystem.primaryBlue),
+              title: Text('個人資料', style: drawerTitleStyle),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ProfilePage()),
+                );
+              },
+            ),
 
-          ListTile(
-            leading: Icon(Icons.tune_rounded,
-                color: HealingDesignSystem.primaryBlue),
-            title: Text('設定', style: HealingDesignSystem.bodyLarge),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SettingsPage()),
-              );
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.help_outline,
-                color: HealingDesignSystem.primaryBlue),
-            title: Text('幫助與回饋', style: HealingDesignSystem.bodyLarge),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const FeedbackPage()),
-              );
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.menu_book_outlined,
-                color: HealingDesignSystem.primaryBlue),
-            title: Text('使用指南', style: HealingDesignSystem.bodyLarge),
-            onTap: () {
-              Navigator.pop(context);
-              _openUserGuide();
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.logout, color: HealingDesignSystem.dangerRed),
-            title: Text('登出',
-                style: HealingDesignSystem.bodyLarge
-                    .copyWith(color: HealingDesignSystem.dangerRed)),
-            onTap: () async {
-              await _signOut();
-            },
-          ),
-        ],
+            ListTile(
+              leading: Icon(Icons.tune_rounded,
+                  color: HealingDesignSystem.primaryBlue),
+              title: Text('設定', style: drawerTitleStyle),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SettingsPage()),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.help_outline,
+                  color: HealingDesignSystem.primaryBlue),
+              title: Text('幫助與回饋', style: drawerTitleStyle),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const FeedbackPage()),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.menu_book_outlined,
+                  color: HealingDesignSystem.primaryBlue),
+              title: Text('使用指南', style: drawerTitleStyle),
+              onTap: () {
+                Navigator.pop(context);
+                _openUserGuide();
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.logout, color: HealingDesignSystem.dangerRed),
+              title: Text('登出', style: drawerDangerStyle),
+              onTap: () async {
+                await _signOut();
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
