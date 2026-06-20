@@ -876,7 +876,14 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
   }
 
   /// 依照 moodScale 將紀錄分成 5 點與 10 點兩個群組
+  bool _isFivePointScaleRecord(DailyRecord record) {
+    return record.moodScale == 5;
+  }
+
   List<DailyRecord> _recordsWithScale(List<DailyRecord> records, int scale) {
+    if (scale == 5) {
+      return records.where(_isFivePointScaleRecord).toList();
+    }
     return records.where((r) => r.moodScale == scale).toList();
   }
 
@@ -908,7 +915,6 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
     final records5 = _recordsWithScale(filteredRecords, 5);
     final records10 = _recordsWithScale(filteredRecords, 10);
     final has5 = records5.isNotEmpty;
-    final has10 = records10.isNotEmpty;
 
     return FutureBuilder<Map<DateTime, double>>(
       future: uid == null
@@ -983,176 +989,209 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
                     description: '查看近 90 天、全部與自訂日期區間的情緒趨勢，需要升級 Pro。',
                   ),
                 )
-              else ...[
-                Text(
-                  '正向 / 負向感受趨勢圖',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: HealingDesignSystem.adaptivePrimaryText(context),
+              else
+                Expanded(
+                  child: ListView(
+                    children: [
+                      Text(
+                        '情緒平衡趨勢圖',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color:
+                              HealingDesignSystem.adaptivePrimaryText(context),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '以正向感受平均減去負向感受平均，協助觀察整體感受傾向的變化。',
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.4,
+                          color: HealingDesignSystem.adaptiveSecondaryText(
+                              context),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (has5) ...[
+                        Text(
+                          '5 點量表',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: HealingDesignSystem.adaptiveAccent(context),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        SizedBox(
+                          height: 210,
+                          width: double.infinity,
+                          child: EmotionBalanceTrendChartWidget(
+                            records: records5,
+                            fullRecords: records5,
+                            useMovingAverage: useMA,
+                            forceMonthlyAverage: _shouldUseMonthlyChart(),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                      ],
+                      const Divider(height: 24),
+                      Text(
+                        '正向 / 負向感受趨勢圖',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color:
+                              HealingDesignSystem.adaptivePrimaryText(context),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '分別呈現正向感受與負向感受的平均起伏。未分類的自訂情緒暫不納入平均。',
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.4,
+                          color: HealingDesignSystem.adaptiveSecondaryText(
+                              context),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (has5) ...[
+                        Text(
+                          '5 點量表',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: HealingDesignSystem.adaptiveAccent(context),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        SizedBox(
+                          height: 210,
+                          width: double.infinity,
+                          child: EmotionBalanceChartWidget(
+                            records: records5,
+                            fullRecords: records5,
+                            useMovingAverage: useMA,
+                            forceMonthlyAverage: _shouldUseMonthlyChart(),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                      ],
+                      const Divider(height: 24),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                                  .inputDecorationTheme
+                                  .fillColor ??
+                              Theme.of(context).cardColor,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: chartEmotionNames.isEmpty
+                                ? null
+                                : activeEmotion,
+                            isExpanded: true,
+                            dropdownColor: Theme.of(context).cardColor,
+                            icon: Icon(
+                              Icons.arrow_drop_down,
+                              color: Theme.of(context).iconTheme.color,
+                            ),
+                            items: chartEmotionNames.isEmpty
+                                ? [
+                                    const DropdownMenuItem(
+                                      value: null,
+                                      child: Text('尚無情緒資料'),
+                                    )
+                                  ]
+                                : chartEmotionNames
+                                    .map(
+                                      (e) => DropdownMenuItem(
+                                        value: e,
+                                        child: Text(e),
+                                      ),
+                                    )
+                                    .toList(),
+                            style: TextStyle(
+                              color:
+                                  Theme.of(context).textTheme.bodyLarge?.color,
+                            ),
+                            onChanged: (val) {
+                              if (val != null) {
+                                setState(() => _selectedEmotion = val);
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      // 5 點量表圖表（如有資料）
+                      if (has5Data) ...[
+                        Text(
+                          '新版情緒趨勢｜5 點量表',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.teal,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        SizedBox(
+                          height: 180,
+                          width: double.infinity,
+                          child: HistoryChartWidget(
+                            records: records5,
+                            fullRecords: records5,
+                            targetEmotion: activeEmotion,
+                            useMovingAverage: useMA,
+                            forceMonthlyAverage: _shouldUseMonthlyChart(),
+                            diaryMoodScores: diary5,
+                            overallMoodLabel: _overallMoodLabel,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                      // 10 點量表圖表（如有資料）
+                      if (has10Data) ...[
+                        Text(
+                          '過去紀錄｜10 點量表',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.orange,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        SizedBox(
+                          height: 180,
+                          width: double.infinity,
+                          child: HistoryChartWidget(
+                            records: records10,
+                            fullRecords: records10,
+                            targetEmotion: activeEmotion,
+                            useMovingAverage: useMA,
+                            forceMonthlyAverage: _shouldUseMonthlyChart(),
+                            diaryMoodScores: diary10,
+                            overallMoodLabel: _overallMoodLabel,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                      if (!has5Data && !has10Data)
+                        const Center(
+                          child: Padding(
+                            padding: EdgeInsets.only(top: 32),
+                            child: Text(
+                              '所選時間範圍內沒有此情緒的資料',
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  '協助觀察這段時間裡，正向感受與負向感受各自的起伏。未分類的自訂情緒暫不納入平均。',
-                  style: TextStyle(
-                    fontSize: 12,
-                    height: 1.4,
-                    color: HealingDesignSystem.adaptiveSecondaryText(context),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                if (has5) ...[
-                  Text(
-                    '5 點量表',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: HealingDesignSystem.adaptiveAccent(context),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  SizedBox(
-                    height: 210,
-                    width: double.infinity,
-                    child: EmotionBalanceChartWidget(
-                      records: records5,
-                      fullRecords: records5,
-                      useMovingAverage: useMA,
-                      forceMonthlyAverage: _shouldUseMonthlyChart(),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                ],
-                if (has10) ...[
-                  Text(
-                    '10 點量表',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: HealingDesignSystem.adaptiveAccent(context),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  SizedBox(
-                    height: 210,
-                    width: double.infinity,
-                    child: EmotionBalanceChartWidget(
-                      records: records10,
-                      fullRecords: records10,
-                      useMovingAverage: useMA,
-                      forceMonthlyAverage: _shouldUseMonthlyChart(),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                ],
-                const Divider(height: 24),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).inputDecorationTheme.fillColor ??
-                        Theme.of(context).cardColor,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: chartEmotionNames.isEmpty ? null : activeEmotion,
-                      isExpanded: true,
-                      dropdownColor: Theme.of(context).cardColor,
-                      icon: Icon(
-                        Icons.arrow_drop_down,
-                        color: Theme.of(context).iconTheme.color,
-                      ),
-                      items: chartEmotionNames.isEmpty
-                          ? [
-                              const DropdownMenuItem(
-                                value: null,
-                                child: Text('尚無情緒資料'),
-                              )
-                            ]
-                          : chartEmotionNames
-                              .map(
-                                (e) => DropdownMenuItem(
-                                  value: e,
-                                  child: Text(e),
-                                ),
-                              )
-                              .toList(),
-                      style: TextStyle(
-                        color: Theme.of(context).textTheme.bodyLarge?.color,
-                      ),
-                      onChanged: (val) {
-                        if (val != null) {
-                          setState(() => _selectedEmotion = val);
-                        }
-                      },
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                // 5 點量表圖表（如有資料）
-                if (has5Data) ...[
-                  Text(
-                    '新版情緒趨勢｜5 點量表',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.teal,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  SizedBox(
-                    height: 180,
-                    width: double.infinity,
-                    child: HistoryChartWidget(
-                      records: records5,
-                      fullRecords: records5,
-                      targetEmotion: activeEmotion,
-                      useMovingAverage: useMA,
-                      forceMonthlyAverage: _shouldUseMonthlyChart(),
-                      diaryMoodScores: diary5,
-                      overallMoodLabel: _overallMoodLabel,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-                // 10 點量表圖表（如有資料）
-                if (has10Data) ...[
-                  Text(
-                    '過去紀錄｜10 點量表',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.orange,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  SizedBox(
-                    height: 180,
-                    width: double.infinity,
-                    child: HistoryChartWidget(
-                      records: records10,
-                      fullRecords: records10,
-                      targetEmotion: activeEmotion,
-                      useMovingAverage: useMA,
-                      forceMonthlyAverage: _shouldUseMonthlyChart(),
-                      diaryMoodScores: diary10,
-                      overallMoodLabel: _overallMoodLabel,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-                if (!has5Data && !has10Data)
-                  const Center(
-                    child: Padding(
-                      padding: EdgeInsets.only(top: 32),
-                      child: Text(
-                        '所選時間範圍內沒有此情緒的資料',
-                        style: TextStyle(color: Colors.grey),
-                      ),
-                    ),
-                  ),
-              ],
             ],
           ),
         );

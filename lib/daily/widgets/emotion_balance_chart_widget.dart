@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
@@ -101,6 +103,25 @@ class EmotionBalanceChartWidget extends StatelessWidget {
       result[monthKeys[i]] = values.reduce((a, b) => a + b) / values.length;
     }
     return result;
+  }
+
+  ({double minX, double maxX}) _xBounds(List<LineChartBarData> bars) {
+    final allSpots = bars
+        .expand((bar) => bar.spots)
+        .where((spot) => spot.isNotNull())
+        .toList();
+
+    if (allSpots.isEmpty) {
+      return (minX: -0.5, maxX: 1.0);
+    }
+
+    final minSpotX = allSpots.map((s) => s.x).reduce(min);
+    final maxSpotX = allSpots.map((s) => s.x).reduce(max);
+
+    return (
+      minX: minSpotX - 0.5,
+      maxX: maxSpotX + 1.0,
+    );
   }
 
   List<FlSpot> _spots({
@@ -209,87 +230,112 @@ class EmotionBalanceChartWidget extends StatelessWidget {
           ),
         ),
     ];
+    final xBounds = _xBounds(lineBars);
 
+    // X 軸標籤：依資料範圍動態決定顯示頻率，避免重疊
     final labelPositions = <int>{};
-    final step =
-        ((sortedDates.length - 1) / 6).ceil().clamp(1, sortedDates.length);
-    for (var i = 0; i < sortedDates.length; i += step) {
-      labelPositions.add(forceMonthlyAverage
-          ? i
-          : sortedDates[i].difference(startDate).inDays);
+    if (sortedDates.isNotEmpty) {
+      final maxLabels = totalDays <= 30 ? 5 : 7;
+      final step = ((sortedDates.length - 1) / (maxLabels - 1))
+          .ceil()
+          .clamp(1, sortedDates.length);
+      for (var i = 0; i < sortedDates.length; i += step) {
+        labelPositions.add(forceMonthlyAverage
+            ? i
+            : sortedDates[i].difference(startDate).inDays);
+      }
+      // 確保最後一筆日期有標籤
+      final lastPos = forceMonthlyAverage
+          ? sortedDates.length - 1
+          : sortedDates.last.difference(startDate).inDays;
+      if (!labelPositions.contains(lastPos)) {
+        labelPositions.add(lastPos);
+      }
     }
-    labelPositions.add(forceMonthlyAverage
-        ? sortedDates.length - 1
-        : sortedDates.last.difference(startDate).inDays);
+
+    // 判斷量表範圍
+    final maxScale = records.any((r) => r.moodScale == 10) ? 10 : 5;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          child: LineChart(
-            LineChartData(
-              minY: 0,
-              maxY: 10,
-              minX: 0,
-              maxX: (totalDays - 1).toDouble(),
-              gridData: const FlGridData(
-                show: true,
-                horizontalInterval: 2,
-                drawVerticalLine: false,
-              ),
-              borderData: FlBorderData(show: false),
-              titlesData: FlTitlesData(
-                topTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: false),
+          child: Padding(
+            padding: const EdgeInsets.only(right: 18, bottom: 8),
+            child: LineChart(
+              LineChartData(
+                clipData: const FlClipData.none(),
+                minY: 0,
+                maxY: maxScale.toDouble(),
+                minX: xBounds.minX,
+                maxX: xBounds.maxX,
+                gridData: const FlGridData(
+                  show: true,
+                  horizontalInterval: 2,
+                  drawVerticalLine: false,
                 ),
-                rightTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: false),
-                ),
-                leftTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    interval: 2,
-                    reservedSize: 30,
-                    getTitlesWidget: (value, meta) => Text(
-                      value.toInt().toString(),
-                      style: TextStyle(
-                        color:
-                            HealingDesignSystem.adaptiveSecondaryText(context),
-                        fontSize: 11,
+                borderData: FlBorderData(show: false),
+                titlesData: FlTitlesData(
+                  topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  rightTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      interval: 2,
+                      reservedSize: 34,
+                      getTitlesWidget: (value, meta) => Text(
+                        value.toInt().toString(),
+                        style: TextStyle(
+                          color: HealingDesignSystem.adaptiveSecondaryText(
+                              context),
+                          fontSize: 11,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                bottomTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    interval: 1,
-                    getTitlesWidget: (value, meta) {
-                      final index = value.toInt();
-                      if (!labelPositions.contains(index)) {
-                        return const SizedBox.shrink();
-                      }
-                      final date = forceMonthlyAverage
-                          ? sortedDates[index]
-                          : startDate.add(Duration(days: index));
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          forceMonthlyAverage
-                              ? '${date.year}/${date.month.toString().padLeft(2, '0')}'
-                              : '${date.month}/${date.day}',
-                          style: TextStyle(
-                            color: HealingDesignSystem.adaptiveSecondaryText(
-                                context),
-                            fontSize: 10,
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      interval: 1,
+                      reservedSize: 36,
+                      getTitlesWidget: (value, meta) {
+                        final index = value.toInt();
+                        if (!labelPositions.contains(index)) {
+                          return const SizedBox.shrink();
+                        }
+                        if (index < 0 ||
+                            index >=
+                                (forceMonthlyAverage
+                                    ? sortedDates.length
+                                    : totalDays)) {
+                          return const SizedBox.shrink();
+                        }
+                        final date = forceMonthlyAverage
+                            ? sortedDates[index]
+                            : startDate.add(Duration(days: index));
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            forceMonthlyAverage
+                                ? '${date.year}/${date.month.toString().padLeft(2, '0')}'
+                                : '${date.month}/${date.day}',
+                            style: TextStyle(
+                              color: HealingDesignSystem.adaptiveSecondaryText(
+                                  context),
+                              fontSize: 10,
+                            ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
                 ),
+                lineBarsData: lineBars,
               ),
-              lineBarsData: lineBars,
             ),
           ),
         ),
@@ -327,6 +373,312 @@ class EmotionBalanceChartWidget extends StatelessWidget {
               ],
             ),
           ],
+        ),
+      ],
+    );
+  }
+}
+
+class EmotionBalanceTrendChartWidget extends StatelessWidget {
+  const EmotionBalanceTrendChartWidget({
+    super.key,
+    required this.records,
+    required this.fullRecords,
+    required this.useMovingAverage,
+    this.forceMonthlyAverage = false,
+  });
+
+  final List<DailyRecord> records;
+  final List<DailyRecord> fullRecords;
+  final bool useMovingAverage;
+  final bool forceMonthlyAverage;
+
+  DateTime _norm(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  Map<DateTime, DailyEmotionTrendPoint> _pointMap(List<DailyRecord> source) {
+    final points = EmotionTrendCalculator.calculate(source);
+    return {
+      for (final point in points)
+        if (point.emotionBalance != null) _norm(point.date): point,
+    };
+  }
+
+  double? _movingAverageFor(
+    DateTime targetDate,
+    Map<DateTime, DailyEmotionTrendPoint> source,
+  ) {
+    final end = _norm(targetDate);
+    final start = end.subtract(const Duration(days: 6));
+    var total = 0.0;
+    var count = 0;
+
+    source.forEach((date, point) {
+      if (date.isBefore(start) || date.isAfter(end)) return;
+      final value = point.emotionBalance;
+      if (value == null) return;
+      total += value;
+      count++;
+    });
+
+    if (count == 0) return null;
+    return total / count;
+  }
+
+  Map<DateTime, double> _dailySeries(
+    Map<DateTime, DailyEmotionTrendPoint> visibleSource,
+    Map<DateTime, DailyEmotionTrendPoint> fullSource,
+  ) {
+    final result = <DateTime, double>{};
+    final dates = visibleSource.keys.toList()..sort();
+
+    for (final date in dates) {
+      final value = useMovingAverage
+          ? _movingAverageFor(date, fullSource)
+          : visibleSource[date]?.emotionBalance;
+      if (value != null) {
+        result[date] = value;
+      }
+    }
+
+    return result;
+  }
+
+  Map<DateTime, double> _monthlyMovingAverage(Map<DateTime, double> source) {
+    final buckets = <DateTime, List<double>>{};
+    source.forEach((date, value) {
+      (buckets[DateTime(date.year, date.month, 1)] ??= <double>[]).add(value);
+    });
+
+    final monthKeys = buckets.keys.toList()..sort();
+    final monthlyAverage = <DateTime, double>{};
+    for (final month in monthKeys) {
+      final values = buckets[month]!;
+      monthlyAverage[month] = values.reduce((a, b) => a + b) / values.length;
+    }
+
+    final result = <DateTime, double>{};
+    for (var i = 0; i < monthKeys.length; i++) {
+      final start = (i - 2).clamp(0, i);
+      final window = monthKeys.sublist(start, i + 1);
+      final values = window.map((month) => monthlyAverage[month]!).toList();
+      result[monthKeys[i]] = values.reduce((a, b) => a + b) / values.length;
+    }
+    return result;
+  }
+
+  ({double minX, double maxX}) _xBounds(List<LineChartBarData> bars) {
+    final allSpots = bars
+        .expand((bar) => bar.spots)
+        .where((spot) => spot.isNotNull())
+        .toList();
+
+    if (allSpots.isEmpty) {
+      return (minX: -0.5, maxX: 1.0);
+    }
+
+    final minSpotX = allSpots.map((s) => s.x).reduce(min);
+    final maxSpotX = allSpots.map((s) => s.x).reduce(max);
+
+    return (
+      minX: minSpotX - 0.5,
+      maxX: maxSpotX + 1.0,
+    );
+  }
+
+  List<FlSpot> _spots({
+    required Map<DateTime, double> source,
+    required DateTime startDate,
+    required int totalDays,
+    required List<DateTime> sortedDates,
+  }) {
+    if (forceMonthlyAverage) {
+      return sortedDates
+          .where(source.containsKey)
+          .map((date) =>
+              FlSpot(sortedDates.indexOf(date).toDouble(), source[date]!))
+          .toList();
+    }
+
+    return List.generate(totalDays, (index) {
+      final date = startDate.add(Duration(days: index));
+      final value = source[_norm(date)];
+      return value == null ? FlSpot.nullSpot : FlSpot(index.toDouble(), value);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleSource = _pointMap(records);
+    final fullSource = _pointMap(fullRecords);
+
+    var series = _dailySeries(visibleSource, fullSource);
+    if (forceMonthlyAverage) {
+      series = _monthlyMovingAverage(series);
+    }
+
+    final sortedDates = series.keys.toList()..sort();
+    if (sortedDates.isEmpty) {
+      return Center(
+        child: Text(
+          '這段時間還沒有足夠的情緒平衡資料',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: HealingDesignSystem.adaptiveSecondaryText(context),
+            fontSize: 13,
+          ),
+        ),
+      );
+    }
+
+    final startDate = sortedDates.first;
+    final endDate = sortedDates.last;
+    final totalDays = forceMonthlyAverage
+        ? sortedDates.length
+        : endDate.difference(startDate).inDays + 1;
+    final lineColor = HealingDesignSystem.adaptiveAccent(context);
+    final lineBars = [
+      LineChartBarData(
+        spots: _spots(
+          source: series,
+          startDate: startDate,
+          totalDays: totalDays,
+          sortedDates: sortedDates,
+        ),
+        isCurved: true,
+        color: lineColor,
+        barWidth: 3,
+        dotData: const FlDotData(show: true),
+        belowBarData: BarAreaData(
+          show: true,
+          color: lineColor.withValues(alpha: 0.08),
+        ),
+      ),
+    ];
+    final xBounds = _xBounds(lineBars);
+
+    // X 軸標籤：依資料範圍動態決定顯示頻率，避免重疊
+    final labelPositions = <int>{};
+    if (sortedDates.isNotEmpty) {
+      final maxLabels = totalDays <= 30 ? 5 : 7;
+      final step = ((sortedDates.length - 1) / (maxLabels - 1))
+          .ceil()
+          .clamp(1, sortedDates.length);
+      for (var i = 0; i < sortedDates.length; i += step) {
+        labelPositions.add(forceMonthlyAverage
+            ? i
+            : sortedDates[i].difference(startDate).inDays);
+      }
+      // 確保最後一筆日期有標籤
+      final lastPos = forceMonthlyAverage
+          ? sortedDates.length - 1
+          : sortedDates.last.difference(startDate).inDays;
+      if (!labelPositions.contains(lastPos)) {
+        labelPositions.add(lastPos);
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(right: 18, bottom: 8),
+            child: LineChart(
+              LineChartData(
+                clipData: const FlClipData.none(),
+                minY: -10,
+                maxY: 10,
+                minX: xBounds.minX,
+                maxX: xBounds.maxX,
+                extraLinesData: ExtraLinesData(
+                  horizontalLines: [
+                    HorizontalLine(
+                      y: 0,
+                      color: HealingDesignSystem.adaptiveSecondaryText(context)
+                          .withValues(alpha: 0.35),
+                      strokeWidth: 1,
+                      dashArray: [4, 4],
+                    ),
+                  ],
+                ),
+                gridData: const FlGridData(
+                  show: true,
+                  horizontalInterval: 5,
+                  drawVerticalLine: false,
+                ),
+                borderData: FlBorderData(show: false),
+                titlesData: FlTitlesData(
+                  topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  rightTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      interval: 5,
+                      reservedSize: 34,
+                      getTitlesWidget: (value, meta) => Text(
+                        value.toInt().toString(),
+                        style: TextStyle(
+                          color: HealingDesignSystem.adaptiveSecondaryText(
+                              context),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      interval: 1,
+                      reservedSize: 36,
+                      getTitlesWidget: (value, meta) {
+                        final index = value.toInt();
+                        if (!labelPositions.contains(index)) {
+                          return const SizedBox.shrink();
+                        }
+                        if (index < 0 ||
+                            index >=
+                                (forceMonthlyAverage
+                                    ? sortedDates.length
+                                    : totalDays)) {
+                          return const SizedBox.shrink();
+                        }
+                        final date = forceMonthlyAverage
+                            ? sortedDates[index]
+                            : startDate.add(Duration(days: index));
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            forceMonthlyAverage
+                                ? '${date.year}/${date.month.toString().padLeft(2, '0')}'
+                                : '${date.month}/${date.day}',
+                            style: TextStyle(
+                              color: HealingDesignSystem.adaptiveSecondaryText(
+                                  context),
+                              fontSize: 10,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                lineBarsData: lineBars,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '0 以上代表這段時間正向感受平均較高；0 以下代表負向感受平均較高。',
+          style: TextStyle(
+            color: HealingDesignSystem.adaptiveSecondaryText(context),
+            fontSize: 12,
+            height: 1.35,
+          ),
         ),
       ],
     );

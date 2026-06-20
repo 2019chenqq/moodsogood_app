@@ -23,8 +23,10 @@ class NapItem {
 
   factory NapItem.fromMap(Map<String, dynamic> map) {
     return NapItem(
-      start: DateHelper.parseTime(map['start']) ?? const TimeOfDay(hour: 0, minute: 0),
-      end: DateHelper.parseTime(map['end']) ?? const TimeOfDay(hour: 0, minute: 0),
+      start: DateHelper.parseTime(map['start']) ??
+          const TimeOfDay(hour: 0, minute: 0),
+      end: DateHelper.parseTime(map['end']) ??
+          const TimeOfDay(hour: 0, minute: 0),
     );
   }
 
@@ -37,9 +39,9 @@ class NapItem {
 /// ------------------------------------------------------
 class SleepData {
   final TimeOfDay? sleepTime; // 準備睡覺
-  final TimeOfDay? wakeTime;  // 離床活動
+  final TimeOfDay? wakeTime; // 離床活動
   final TimeOfDay? finalWakeTime; // 🔥 新增：甦醒時刻 (睜開眼)
-  final String? midWakeList;      // 🔥 新增：半夜醒來時間 (文字)
+  final String? midWakeList; // 🔥 新增：半夜醒來時間 (文字)
   final int? quality;
   final bool tookHypnotic;
   final String? hypnoticName;
@@ -52,7 +54,7 @@ class SleepData {
     this.sleepTime,
     this.wakeTime,
     this.finalWakeTime, // 🔥 新增
-    this.midWakeList,   // 🔥 新增
+    this.midWakeList, // 🔥 新增
     this.quality,
     this.tookHypnotic = false,
     this.hypnoticName,
@@ -60,7 +62,7 @@ class SleepData {
     this.flags = const [],
     this.note,
     this.naps = const [],
-  }); 
+  });
   // ⬆️ 注意：這裡只有 ); 結束建構子，不要加 } 結束 Class
 
   factory SleepData.empty() => const SleepData();
@@ -72,7 +74,8 @@ class SleepData {
     if (sleepTime == null || end == null) return null;
     final mins = DateHelper.calcDurationMinutes(sleepTime!, end);
     final result = double.parse((mins / 60).toStringAsFixed(1));
-    debugPrint('🛏️ durationHours 計算：sleepTime=$sleepTime, wakeTime=$end, mins=$mins, result=$result');
+    debugPrint(
+        '🛏️ durationHours 計算：sleepTime=$sleepTime, wakeTime=$end, mins=$mins, result=$result');
     return result;
   }
 
@@ -83,8 +86,10 @@ class SleepData {
     return {
       'sleepTime': sleepTime != null ? DateHelper.formatTime(sleepTime) : null,
       'wakeTime': wakeTime != null ? DateHelper.formatTime(wakeTime) : null,
-      'finalWakeTime': finalWakeTime != null ? DateHelper.formatTime(finalWakeTime) : null, // 🔥
-      'midWakeList': midWakeList ?? '',                      // 🔥
+      'finalWakeTime': finalWakeTime != null
+          ? DateHelper.formatTime(finalWakeTime)
+          : null, // 🔥
+      'midWakeList': midWakeList ?? '', // 🔥
       'quality': quality,
       'tookHypnotic': tookHypnotic,
       'hypnoticName': hypnoticName ?? '',
@@ -100,12 +105,13 @@ class SleepData {
     final sleepTimeStr = map['sleepTime'];
     final wakeTimeStr = map['wakeTime'];
     final finalWakeTimeStr = map['finalWakeTime'];
-    debugPrint('🛏️ SleepData.fromMap: sleepTime=$sleepTimeStr, wakeTime=$wakeTimeStr, finalWakeTime=$finalWakeTimeStr');
+    debugPrint(
+        '🛏️ SleepData.fromMap: sleepTime=$sleepTimeStr, wakeTime=$wakeTimeStr, finalWakeTime=$finalWakeTimeStr');
     return SleepData(
       sleepTime: DateHelper.parseTime(sleepTimeStr),
       wakeTime: DateHelper.parseTime(wakeTimeStr),
       finalWakeTime: DateHelper.parseTime(finalWakeTimeStr), // 🔥
-      midWakeList: map['midWakeList'] as String?,                // 🔥
+      midWakeList: map['midWakeList'] as String?, // 🔥
       quality: map['quality'] as int?,
       tookHypnotic: map['tookHypnotic'] == true,
       hypnoticName: map['hypnoticName'] as String?,
@@ -132,9 +138,10 @@ class Emotion {
   Map<String, dynamic> toMap() => {'name': name, 'value': value};
 
   factory Emotion.fromMap(Map<String, dynamic> map) {
+    final rawValue = map['value'];
     return Emotion(
-      name: map['name'] ?? '',
-      value: map['value'] as int?,
+      name: (map['name'] ?? '').toString(),
+      value: rawValue is num ? rawValue.toInt() : null,
     );
   }
 }
@@ -155,9 +162,9 @@ class DailyRecord {
   /// 情緒量表版本：5 = 新版 5 點量表，10 = 舊版 10 點量表（預設）
   final int moodScale;
 
-  final bool isPeriod;        // 是否是生理期的一天
+  final bool isPeriod; // 是否是生理期的一天
   final String? periodStartId; // 若這一天是經期「開始」，存這一天的 docId
-  final String? periodEndId;   // 若這一天是經期「結束」，存這一天的 docId
+  final String? periodEndId; // 若這一天是經期「結束」，存這一天的 docId
 
   final DateTime? updatedAt;
 
@@ -177,10 +184,12 @@ class DailyRecord {
 
   Map<String, dynamic> toFirestore() {
     return {
+      'date': Timestamp.fromDate(DateTime(date.year, date.month, date.day)),
       'emotions': emotions.map((e) => e.toMap()).toList(),
       'symptoms': symptoms,
       'sleep': sleep.toMap(),
       'overallMood': overallMood,
+      'moodScale': moodScale,
       'isPeriod': isPeriod,
       'periodStartId': periodStartId,
       'periodEndId': periodEndId,
@@ -191,23 +200,66 @@ class DailyRecord {
   factory DailyRecord.fromFirestore(
       DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data() ?? {};
+    final emotions = _parseEmotions(data['emotions']);
 
     return DailyRecord(
       id: doc.id,
-      date: DateTime.tryParse(doc.id) ?? DateTime.now(),
-      emotions: (data['emotions'] as List?)
-              ?.map((e) => Emotion.fromMap(e as Map<String, dynamic>))
-              .toList() ??
-          [],
+      date:
+          _asDate(data['date']) ?? DateTime.tryParse(doc.id) ?? DateTime.now(),
+      emotions: emotions,
       symptoms:
           (data['symptoms'] as List?)?.map((e) => e.toString()).toList() ?? [],
       sleep: SleepData.fromMap(data['sleep'] as Map<String, dynamic>?),
-      overallMood: (data['overallMood'] as num?)?.toDouble(),
+      overallMood: _parseOverallMood(data['overallMood'], emotions),
       moodScale: (data['moodScale'] as num?)?.toInt() ?? 10,
       isPeriod: data['isPeriod'] == true,
       periodStartId: data['periodStartId'] as String?,
       periodEndId: data['periodEndId'] as String?,
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
     );
+  }
+
+  static List<Emotion> _parseEmotions(dynamic raw) {
+    if (raw is List) {
+      return raw
+          .whereType<Map>()
+          .map((e) => Emotion.fromMap(e.cast<String, dynamic>()))
+          .where((e) => e.name.trim().isNotEmpty)
+          .toList();
+    }
+
+    if (raw is Map) {
+      return raw.entries
+          .where((e) => e.key.toString() != '整體情緒')
+          .map((e) {
+            final value = e.value;
+            return Emotion(
+              name: e.key.toString(),
+              value: value is num ? value.toInt() : null,
+            );
+          })
+          .where((e) => e.name.trim().isNotEmpty)
+          .toList();
+    }
+
+    return const [];
+  }
+
+  static double? _parseOverallMood(dynamic raw, List<Emotion> emotions) {
+    if (raw is num) return raw.toDouble();
+    final values = emotions
+        .map((e) => e.value)
+        .whereType<int>()
+        .where((value) => value > 0)
+        .toList();
+    if (values.isEmpty) return null;
+    return values.reduce((a, b) => a + b) / values.length;
+  }
+
+  static DateTime? _asDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+    return null;
   }
 }

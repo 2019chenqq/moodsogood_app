@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
@@ -26,25 +28,46 @@ class HistoryChartWidget extends StatelessWidget {
   /// 正規化日期（去除時間部分）
   DateTime _norm(DateTime d) => DateTime(d.year, d.month, d.day);
 
+  ({double minX, double maxX}) _xBounds(List<LineChartBarData> bars) {
+    final allSpots = bars
+        .expand((bar) => bar.spots)
+        .where((spot) => spot.isNotNull())
+        .toList();
+
+    if (allSpots.isEmpty) {
+      return (minX: -0.5, maxX: 1.0);
+    }
+
+    final minSpotX = allSpots.map((s) => s.x).reduce(min);
+    final maxSpotX = allSpots.map((s) => s.x).reduce(max);
+
+    return (
+      minX: minSpotX - 0.5,
+      maxX: maxSpotX + 1.0,
+    );
+  }
+
   /// 建立經期粉紅區塊（依照日期距離 startDate 的天數作為 x 座標，並限制在 minX/maxX 內）
   List<VerticalRangeAnnotation> _buildPeriodRanges(
-      List<DailyRecord> sorted, DateTime startDate,
-      {int minX = 0, int? maxX}) {
+    List<DailyRecord> sorted, {
+    required double Function(DateTime date) xForDate,
+    required double minX,
+    required double maxX,
+  }) {
     final List<VerticalRangeAnnotation> list = [];
-    int? periodStartDay;
+    double? periodStartX;
 
     for (var r in sorted) {
-      final dayD = _norm(r.date).difference(startDate).inDays;
+      final dayX = xForDate(r.date);
       if (r.isPeriod) {
-        periodStartDay ??= dayD;
-      } else if (periodStartDay != null) {
-        double x1 = periodStartDay.toDouble() - 0.5;
-        double x2 = (dayD - 1).toDouble() + 0.5;
+        periodStartX ??= dayX;
+      } else if (periodStartX != null) {
+        double x1 = periodStartX - 0.5;
+        double x2 =
+            xForDate(_norm(r.date).subtract(const Duration(days: 1))) + 0.5;
         // 限制區塊在 minX/maxX 內
-        if (maxX != null) {
-          x1 = x1.clamp(minX.toDouble(), maxX.toDouble());
-          x2 = x2.clamp(minX.toDouble(), maxX.toDouble());
-        }
+        x1 = x1.clamp(minX, maxX);
+        x2 = x2.clamp(minX, maxX);
         if (x2 >= x1) {
           list.add(VerticalRangeAnnotation(
             x1: x1,
@@ -52,18 +75,16 @@ class HistoryChartWidget extends StatelessWidget {
             color: Colors.pink.withValues(alpha: 0.15),
           ));
         }
-        periodStartDay = null;
+        periodStartX = null;
       }
     }
     // 若最後一筆仍為經期
-    if (periodStartDay != null && sorted.isNotEmpty) {
-      final lastDay = _norm(sorted.last.date).difference(startDate).inDays;
-      double x1 = periodStartDay.toDouble() - 0.5;
-      double x2 = lastDay.toDouble() + 0.5;
-      if (maxX != null) {
-        x1 = x1.clamp(minX.toDouble(), maxX.toDouble());
-        x2 = x2.clamp(minX.toDouble(), maxX.toDouble());
-      }
+    if (periodStartX != null && sorted.isNotEmpty) {
+      final lastX = xForDate(sorted.last.date);
+      double x1 = periodStartX - 0.5;
+      double x2 = lastX + 0.5;
+      x1 = x1.clamp(minX, maxX);
+      x2 = x2.clamp(minX, maxX);
       if (x2 >= x1) {
         list.add(VerticalRangeAnnotation(
           x1: x1,
@@ -107,7 +128,7 @@ class HistoryChartWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final isOverallMood = targetEmotion == overallMoodLabel;
     if (records.isEmpty && (!isOverallMood || diaryMoodScores.isEmpty)) {
-      return const Center(child: Text('鞈?銝雲嚗瘜＊蝷箄隅?Ｗ?'));
+      return const Center(child: Text('此情緒目前沒有數據'));
     }
 
     // ===== 1儭 ?渡?鞈?嚗??交???嚗遣蝡?????詨潦??扯” =====
@@ -253,10 +274,19 @@ class HistoryChartWidget extends StatelessWidget {
       // 📈 折線模式（≥ 3 天）
       // 實線：在有資料的位置連線，缺漏天插入 nullSpot 使線段斷開
       final solidSpots = <FlSpot>[];
-      for (int d = 0; d < totalDays; d++) {
-        final date = startDate.add(Duration(days: d));
-        final v = effectiveValueMap[_norm(date)];
-        solidSpots.add(v != null ? FlSpot(d.toDouble(), v) : FlSpot.nullSpot);
+      if (forceMonthlyAverage) {
+        for (final date in sortedDates) {
+          final v = effectiveValueMap[_norm(date)];
+          solidSpots.add(
+            v != null ? FlSpot(dayIdx(date).toDouble(), v) : FlSpot.nullSpot,
+          );
+        }
+      } else {
+        for (int d = 0; d < totalDays; d++) {
+          final date = startDate.add(Duration(days: d));
+          final v = effectiveValueMap[_norm(date)];
+          solidSpots.add(v != null ? FlSpot(d.toDouble(), v) : FlSpot.nullSpot);
+        }
       }
       barDatas.add(LineChartBarData(
         spots: solidSpots,
@@ -330,32 +360,65 @@ class HistoryChartWidget extends StatelessWidget {
       }
     }
 
+    final xBounds = _xBounds(barDatas);
+
+    double xForDate(DateTime date) {
+      if (forceMonthlyAverage) {
+        final month = DateTime(date.year, date.month, 1);
+        final index = sortedDates.indexOf(month);
+        if (index >= 0) return index.toDouble();
+
+        final insertionIndex = sortedDates.indexWhere((d) => d.isAfter(month));
+        if (insertionIndex >= 0) return insertionIndex.toDouble();
+        return (sortedDates.length - 1).toDouble();
+      }
+
+      return _norm(date).difference(startDate).inDays.toDouble();
+    }
+
     // ===== 4️⃣ 經期粉紅區塊 =====
     final periodRanges = _buildPeriodRanges(
       sorted,
-      startDate,
-      minX: 0,
-      maxX: totalDays > 0 ? totalDays - 1 : 0,
+      xForDate: xForDate,
+      minX: xBounds.minX,
+      maxX: xBounds.maxX,
     );
 
-    // ===== 5️⃣ X 軸標籤：只在有紀錄的位置顯示，最多 7 個 =====
+    // ===== 5️⃣ 判斷量表範圍：5 點量表 max=5，10 點量表 max=10 =====
+    final maxScale = records.any((r) => r.moodScale == 10) ? 10 : 5;
+
+    // ===== 6️⃣ X 軸標籤：依資料點間距動態決定顯示頻率，避免重疊 =====
     final labelPositions = <int>{};
     if (sortedDates.isNotEmpty) {
-      final step =
-          ((sortedDates.length - 1) / 6).ceil().clamp(1, sortedDates.length);
+      // 根據資料範圍長度決定顯示多少標籤
+      final maxLabels = totalDays <= 30 ? 5 : 7;
+      final step = ((sortedDates.length - 1) / (maxLabels - 1))
+          .ceil()
+          .clamp(1, sortedDates.length);
       for (int i = 0; i < sortedDates.length; i += step) {
         labelPositions.add(dayIdx(sortedDates[i]));
       }
-      labelPositions.add(dayIdx(sortedDates.last));
+      // 確保最後一筆日期有標籤
+      if (!labelPositions.contains(dayIdx(sortedDates.last))) {
+        labelPositions.add(dayIdx(sortedDates.last));
+      }
     }
 
-    // ===== 6️⃣ 繪製折線圖 =====
+    DateTime dateForX(int x) {
+      if (forceMonthlyAverage) {
+        return sortedDates[x.clamp(0, sortedDates.length - 1)];
+      }
+      return startDate.add(Duration(days: x));
+    }
+
+    // ===== 7️⃣ 繪製折線圖 =====
     final chart = LineChart(
       LineChartData(
+        clipData: const FlClipData.none(),
         minY: 0,
-        maxY: 10,
-        minX: 0,
-        maxX: (totalDays - 1).toDouble(),
+        maxY: maxScale.toDouble(),
+        minX: xBounds.minX,
+        maxX: xBounds.maxX,
         rangeAnnotations: RangeAnnotations(
           verticalRangeAnnotations: periodRanges,
         ),
@@ -373,7 +436,7 @@ class HistoryChartWidget extends StatelessWidget {
             sideTitles: SideTitles(
               showTitles: true,
               interval: 2,
-              reservedSize: 30,
+              reservedSize: 34,
               getTitlesWidget: (v, m) => Text(v.toInt().toString()),
             ),
           ),
@@ -381,10 +444,18 @@ class HistoryChartWidget extends StatelessWidget {
             sideTitles: SideTitles(
               showTitles: true,
               interval: 1,
+              reservedSize: 36,
               getTitlesWidget: (val, meta) {
                 final d = val.toInt();
                 if (!labelPositions.contains(d)) return const SizedBox.shrink();
-                final date = startDate.add(Duration(days: d));
+                if (d < 0 ||
+                    d >=
+                        (forceMonthlyAverage
+                            ? sortedDates.length
+                            : totalDays)) {
+                  return const SizedBox.shrink();
+                }
+                final date = dateForX(d);
                 return Padding(
                   padding: const EdgeInsets.only(top: 8),
                   child: Text(
@@ -407,7 +478,12 @@ class HistoryChartWidget extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(child: chart),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(right: 18, bottom: 6),
+            child: chart,
+          ),
+        ),
         if (hasDashedSegments)
           Padding(
             padding: const EdgeInsets.only(top: 6, left: 36),
