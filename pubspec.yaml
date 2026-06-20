@@ -131,14 +131,6 @@ flutter:
       fonts:
         - asset: assets/font/Iansui/Iansui-Regular.ttf
           weight: 400
-    - family: LXGWWenKai
-      fonts:
-        - asset: assets/font/Wenkai/LXGWWenKai-Light.ttf
-          weight: 300
-        - asset: assets/font/Wenkai/LXGWWenKai-Regular.ttf
-          weight: 400
-        - asset: assets/font/Wenkai/LXGWWenKai-Medium.ttf
-          weight: 500
   # fonts:
   #   - family: Schyler
   #     fonts:
