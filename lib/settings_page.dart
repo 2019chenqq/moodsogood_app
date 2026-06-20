@@ -211,10 +211,11 @@ class _SettingsPageState extends State<SettingsPage> {
                       enabled: _appLockEnabled,
                       onTap: _appLockEnabled ? _showChangePinDialog : null,
                     ),
-                  _buildDeleteAccountButton(context),
                 ],
               ),
             ),
+            const SizedBox(height: 10),
+            _buildDeleteAccountButton(context),
 
             const SizedBox(height: 14),
             _sectionHeader('說明'),
@@ -1072,7 +1073,6 @@ class _SettingsPageState extends State<SettingsPage> {
   // 放在設定頁面 BuildContext 中
   Widget _buildDeleteAccountButton(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(top: 8),
       decoration: BoxDecoration(
         color: HealingDesignSystem.dangerRed.withOpacity(0.10),
         borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
