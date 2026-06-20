@@ -49,6 +49,7 @@ dependencies:
   flutter_markdown: ^0.7.3
   url_launcher: ^6.3.0
   webview_flutter: ^4.7.0
+  video_player: ^2.9.2
   flutter_local_notifications: ^19.5.0
   timezone: ^0.10.1
   shared_preferences: ^2.5.3
@@ -59,7 +60,6 @@ dependencies:
   package_info_plus: ^4.0.4
   workmanager: ^0.9.0
   flutter_tts: ^4.0.0
-  video_player: ^2.10.1
   home_widget: ^0.8.1
   
 
