@@ -36,6 +36,16 @@ const Map<String, String> ksleepFlagMap = {
 };
 const bool kDemoUnlockPro = kDebugMode;
 
+class _DiaryMoodScore {
+  const _DiaryMoodScore({
+    required this.score,
+    required this.scale,
+  });
+
+  final double score;
+  final int scale;
+}
+
 class DailyRecordHistory extends StatefulWidget {
   const DailyRecordHistory({super.key, this.initialTab = 0});
 
@@ -587,12 +597,14 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
     return [];
   }
 
-  Future<Map<DateTime, double>> _loadDiaryMoodScores(String uid) async {
+  Future<Map<DateTime, _DiaryMoodScore>> _loadDiaryMoodScores(
+    String uid,
+  ) async {
     final endDate = DateTime.now();
     final startDate = kDemoUnlockPro
         ? DateTime(2020, 1, 1)
         : endDate.subtract(const Duration(days: 730));
-    final scores = <DateTime, double>{};
+    final scores = <DateTime, _DiaryMoodScore>{};
 
     try {
       final entries = await DiaryRepository().list(limit: 5000);
@@ -603,7 +615,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
         if (score == null) continue;
         final date = _dateOnly(entry.date);
         if (date.isBefore(start) || date.isAfter(end)) continue;
-        scores[date] = score;
+        scores[date] = _DiaryMoodScore(score: score, scale: 10);
       }
     } catch (e) {
       debugPrint('Diary local mood load failed: $e');
@@ -627,7 +639,11 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
         final score = (data['overallMood'] as num?)?.toDouble() ??
             (data['moodScore'] as num?)?.toDouble();
         if (score == null) continue;
-        scores[_dateOnly(date)] = score;
+        final scale = (data['diaryMoodScale'] as num?)?.toInt();
+        scores[_dateOnly(date)] = _DiaryMoodScore(
+          score: score,
+          scale: scale == 5 ? 5 : 10,
+        );
       }
     } catch (e, st) {
       debugPrint('Diary Firebase mood load failed: $e\nStacktrace: $st');
@@ -636,8 +652,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
     return scores;
   }
 
-  Map<DateTime, double> _applyDiaryMoodDateFilter(
-    Map<DateTime, double> input,
+  Map<DateTime, _DiaryMoodScore> _applyDiaryMoodDateFilter(
+    Map<DateTime, _DiaryMoodScore> input,
   ) {
     if (_selectedDateRange != null) {
       final start = _dateOnly(_selectedDateRange!.start);
@@ -889,12 +905,13 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
 
   /// 將 diaryMoodScores 也依照對應的 daily record 分組
   Map<DateTime, double> _filterDiaryScoresByScale(
-    Map<DateTime, double> scores,
-    List<DailyRecord> scaleRecords,
+    Map<DateTime, _DiaryMoodScore> scores,
+    int scale,
   ) {
-    final scaleDates = scaleRecords.map((r) => _dateOnly(r.date)).toSet();
     return Map.fromEntries(
-      scores.entries.where((e) => scaleDates.contains(_dateOnly(e.key))),
+      scores.entries
+          .where((e) => e.value.scale == scale)
+          .map((e) => MapEntry(e.key, e.value.score)),
     );
   }
 
@@ -916,13 +933,13 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
     final records10 = _recordsWithScale(filteredRecords, 10);
     final has5 = records5.isNotEmpty;
 
-    return FutureBuilder<Map<DateTime, double>>(
+    return FutureBuilder<Map<DateTime, _DiaryMoodScore>>(
       future: uid == null
-          ? Future.value(const <DateTime, double>{})
+          ? Future.value(const <DateTime, _DiaryMoodScore>{})
           : _loadDiaryMoodScores(uid),
       builder: (context, diarySnapshot) {
         final allDiaryScores = _applyDiaryMoodDateFilter(
-          diarySnapshot.data ?? const <DateTime, double>{},
+          diarySnapshot.data ?? const <DateTime, _DiaryMoodScore>{},
         );
 
         // 合併 emotions：從 5 分和 10 分 records 中萃取
@@ -950,8 +967,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
             : (chartEmotionNames.isNotEmpty ? chartEmotionNames.first : '');
 
         // 將 diaryScores 也依 moodScale 分組
-        final diary5 = _filterDiaryScoresByScale(allDiaryScores, records5);
-        final diary10 = _filterDiaryScoresByScale(allDiaryScores, records10);
+        final diary5 = _filterDiaryScoresByScale(allDiaryScores, 5);
+        final diary10 = _filterDiaryScoresByScale(allDiaryScores, 10);
 
         // 檢查各量表是否有該情緒的資料
         bool hasChartData(

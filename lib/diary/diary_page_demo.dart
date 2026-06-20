@@ -25,6 +25,7 @@ import '../test_pages/pro_preview_page.dart';
 import '../analytics_service.dart';
 
 const int kDiaryMaxImageCount = 10;
+const int kCurrentDiaryMoodScale = 5;
 
 class DiaryPageDemo extends m.StatefulWidget {
   final DateTime date;
@@ -49,6 +50,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   int _overallMoodScore = 5;
   int _overallHealthScore = 5;
   int _overallSleepScore = 5;
+  int _diaryMoodScale = kCurrentDiaryMoodScale;
 
   // ---------------- 自動儲存 ----------------
   Timer? _debouncer;
@@ -120,15 +122,32 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
     _conceitedCtrl.text = (data['conceited'] ?? '') as String;
     _proudOfCtrl.text = (data['proudOf'] ?? '') as String;
     _selfCareCtrl.text = (data['selfCare'] ?? '') as String;
-    _overallMoodScore = (data['overallMood'] as num?)?.toInt() ?? 5;
-    _overallHealthScore = (data['overallHealth'] as num?)?.toInt() ?? 5;
-    _overallSleepScore = (data['overallSleepQuality'] as num?)?.toInt() ?? 5;
+    _diaryMoodScale = _resolveDiaryMoodScale(data);
+    _overallMoodScore =
+        _normalizeScaleScore(data['overallMood'], _diaryMoodScale);
+    _overallHealthScore =
+        _normalizeScaleScore(data['overallHealth'], _diaryMoodScale);
+    _overallSleepScore =
+        _normalizeScaleScore(data['overallSleepQuality'], _diaryMoodScale);
     _imageUrls = (data['imageUrls'] as List<dynamic>?)
             ?.map((e) => e.toString())
             .toList() ??
         [];
     _isHydrating = false;
     setState(() {}); // 更新字數
+  }
+
+  int _normalizeScaleScore(dynamic raw, int moodScale) {
+    final maxScore = moodScale == 10 ? 10 : 5;
+    final value = raw is num ? raw.round() : 5;
+    return value.clamp(1, maxScore);
+  }
+
+  int _resolveDiaryMoodScale(Map<String, dynamic> data) {
+    final scale = (data['diaryMoodScale'] as num?)?.toInt();
+    if (scale == 5) return 5;
+    if (scale == 10) return 10;
+    return 10;
   }
 
   // 從本地 SQLite + Firebase 加載日記
@@ -573,6 +592,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
             'overallMood': _overallMoodScore,
             'overallHealth': _overallHealthScore,
             'overallSleepQuality': _overallSleepScore,
+            'diaryMoodScale': _diaryMoodScale,
             'updatedAt': FieldValue.serverTimestamp(),
             'isEncrypted': true,
           }, SetOptions(merge: true));
@@ -641,7 +661,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
               m.Container(
                 padding: const m.EdgeInsets.all(14),
                 decoration: m.BoxDecoration(
-                  color: m.Colors.teal.withOpacity(0.08),
+                  color: m.Colors.teal.withValues(alpha: 0.08),
                   borderRadius: m.BorderRadius.circular(18),
                 ),
                 child: const m.Text(
@@ -884,6 +904,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
               overallMoodScore: _overallMoodScore,
               overallHealthScore: _overallHealthScore,
               overallSleepScore: _overallSleepScore,
+              maxScore: _diaryMoodScale,
               onMoodChanged: (v) {
                 setState(() => _overallMoodScore = v);
                 _onAnyFieldChanged();
@@ -1116,6 +1137,7 @@ class _OverallSlidersCard extends m.StatelessWidget {
   final int overallMoodScore;
   final int overallHealthScore;
   final int overallSleepScore;
+  final int maxScore;
   final m.ValueChanged<int> onMoodChanged;
   final m.ValueChanged<int> onHealthChanged;
   final m.ValueChanged<int> onSleepChanged;
@@ -1124,6 +1146,7 @@ class _OverallSlidersCard extends m.StatelessWidget {
     required this.overallMoodScore,
     required this.overallHealthScore,
     required this.overallSleepScore,
+    required this.maxScore,
     required this.onMoodChanged,
     required this.onHealthChanged,
     required this.onSleepChanged,
@@ -1157,6 +1180,7 @@ class _OverallSlidersCard extends m.StatelessWidget {
             EmotionSlider(
               label: '今天的整體情緒如何？',
               value: overallMoodScore,
+              maxScore: maxScore,
               onChanged: onMoodChanged,
               leftIcon: 'assets/emotion/default.png',
               rightIcon: 'assets/emotion/default.png',
@@ -1173,6 +1197,7 @@ class _OverallSlidersCard extends m.StatelessWidget {
             EmotionSlider(
               label: '今天的健康狀況如何？',
               value: overallHealthScore,
+              maxScore: maxScore,
               onChanged: onHealthChanged,
               leftIcon: 'assets/emotion/default.png',
               rightIcon: 'assets/emotion/default.png',
@@ -1186,6 +1211,7 @@ class _OverallSlidersCard extends m.StatelessWidget {
             EmotionSlider(
               label: '整體睡眠品質',
               value: overallSleepScore,
+              maxScore: maxScore,
               onChanged: onSleepChanged,
               leftIcon: 'assets/emotion/tired.png',
               rightIcon: 'assets/emotion/default.png',
@@ -1346,7 +1372,7 @@ class _AiEntryCard extends m.StatelessWidget {
         borderRadius: m.BorderRadius.circular(24),
         boxShadow: [
           m.BoxShadow(
-            color: m.Colors.black.withOpacity(0.05),
+            color: m.Colors.black.withValues(alpha: 0.05),
             blurRadius: 16,
             offset: const m.Offset(0, 6),
           ),
@@ -1434,13 +1460,13 @@ class _AiSmallButton extends m.StatelessWidget {
         padding: const m.EdgeInsets.all(14),
         decoration: m.BoxDecoration(
           color: isPro
-              ? color.primaryContainer.withOpacity(0.65)
-              : color.surfaceContainerHighest.withOpacity(0.65),
+              ? color.primaryContainer.withValues(alpha: 0.65)
+              : color.surfaceContainerHighest.withValues(alpha: 0.65),
           borderRadius: m.BorderRadius.circular(18),
           border: m.Border.all(
             color: isPro
-                ? color.primary.withOpacity(0.35)
-                : color.outlineVariant.withOpacity(0.6),
+                ? color.primary.withValues(alpha: 0.35)
+                : color.outlineVariant.withValues(alpha: 0.6),
           ),
         ),
         child: m.Column(

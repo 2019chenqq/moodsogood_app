@@ -7,6 +7,34 @@ import '../../constants/healing_design_system.dart';
 import '../emotion_trend_calculator.dart';
 import '../../models/daily_record.dart';
 
+int? _wholeNumberX(double value) {
+  final rounded = value.round();
+  return (value - rounded).abs() < 0.001 ? rounded : null;
+}
+
+({double minY, double maxY}) _yBounds(
+  List<LineChartBarData> bars, {
+  required double minScaleY,
+  required double maxScaleY,
+}) {
+  final allSpots = bars
+      .expand((bar) => bar.spots)
+      .where((spot) => spot.isNotNull())
+      .toList();
+
+  if (allSpots.isEmpty) {
+    return (minY: minScaleY, maxY: maxScaleY);
+  }
+
+  final minSpotY = allSpots.map((s) => s.y).reduce(min);
+  final maxSpotY = allSpots.map((s) => s.y).reduce(max);
+  final bottom = min(minScaleY, minSpotY);
+  final top = max(maxScaleY, maxSpotY);
+  final padding = max((top - bottom).abs() * 0.08, 0.5);
+
+  return (minY: bottom - padding, maxY: top + padding);
+}
+
 class EmotionBalanceChartWidget extends StatelessWidget {
   const EmotionBalanceChartWidget({
     super.key,
@@ -120,7 +148,7 @@ class EmotionBalanceChartWidget extends StatelessWidget {
 
     return (
       minX: minSpotX - 0.5,
-      maxX: maxSpotX + 1.0,
+      maxX: maxSpotX + 1.5,
     );
   }
 
@@ -231,7 +259,6 @@ class EmotionBalanceChartWidget extends StatelessWidget {
         ),
     ];
     final xBounds = _xBounds(lineBars);
-
     // X 軸標籤：依資料範圍動態決定顯示頻率，避免重疊
     final labelPositions = <int>{};
     if (sortedDates.isNotEmpty) {
@@ -255,6 +282,11 @@ class EmotionBalanceChartWidget extends StatelessWidget {
 
     // 判斷量表範圍
     final maxScale = records.any((r) => r.moodScale == 10) ? 10 : 5;
+    final yBounds = _yBounds(
+      lineBars,
+      minScaleY: 0,
+      maxScaleY: maxScale.toDouble(),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -265,8 +297,8 @@ class EmotionBalanceChartWidget extends StatelessWidget {
             child: LineChart(
               LineChartData(
                 clipData: const FlClipData.none(),
-                minY: 0,
-                maxY: maxScale.toDouble(),
+                minY: yBounds.minY,
+                maxY: yBounds.maxY,
                 minX: xBounds.minX,
                 maxX: xBounds.maxX,
                 gridData: const FlGridData(
@@ -287,14 +319,19 @@ class EmotionBalanceChartWidget extends StatelessWidget {
                       showTitles: true,
                       interval: 2,
                       reservedSize: 34,
-                      getTitlesWidget: (value, meta) => Text(
-                        value.toInt().toString(),
-                        style: TextStyle(
-                          color: HealingDesignSystem.adaptiveSecondaryText(
-                              context),
-                          fontSize: 11,
-                        ),
-                      ),
+                      getTitlesWidget: (value, meta) {
+                        if (value < 0 || value > maxScale) {
+                          return const SizedBox.shrink();
+                        }
+                        return Text(
+                          value.toInt().toString(),
+                          style: TextStyle(
+                            color: HealingDesignSystem.adaptiveSecondaryText(
+                                context),
+                            fontSize: 11,
+                          ),
+                        );
+                      },
                     ),
                   ),
                   bottomTitles: AxisTitles(
@@ -303,7 +340,10 @@ class EmotionBalanceChartWidget extends StatelessWidget {
                       interval: 1,
                       reservedSize: 36,
                       getTitlesWidget: (value, meta) {
-                        final index = value.toInt();
+                        final index = _wholeNumberX(value);
+                        if (index == null) {
+                          return const SizedBox.shrink();
+                        }
                         if (!labelPositions.contains(index)) {
                           return const SizedBox.shrink();
                         }
@@ -481,7 +521,7 @@ class EmotionBalanceTrendChartWidget extends StatelessWidget {
 
     return (
       minX: minSpotX - 0.5,
-      maxX: maxSpotX + 1.0,
+      maxX: maxSpotX + 1.5,
     );
   }
 
@@ -555,6 +595,11 @@ class EmotionBalanceTrendChartWidget extends StatelessWidget {
       ),
     ];
     final xBounds = _xBounds(lineBars);
+    final yBounds = _yBounds(
+      lineBars,
+      minScaleY: -10,
+      maxScaleY: 10,
+    );
 
     // X 軸標籤：依資料範圍動態決定顯示頻率，避免重疊
     final labelPositions = <int>{};
@@ -586,8 +631,8 @@ class EmotionBalanceTrendChartWidget extends StatelessWidget {
             child: LineChart(
               LineChartData(
                 clipData: const FlClipData.none(),
-                minY: -10,
-                maxY: 10,
+                minY: yBounds.minY,
+                maxY: yBounds.maxY,
                 minX: xBounds.minX,
                 maxX: xBounds.maxX,
                 extraLinesData: ExtraLinesData(
@@ -619,14 +664,19 @@ class EmotionBalanceTrendChartWidget extends StatelessWidget {
                       showTitles: true,
                       interval: 5,
                       reservedSize: 34,
-                      getTitlesWidget: (value, meta) => Text(
-                        value.toInt().toString(),
-                        style: TextStyle(
-                          color: HealingDesignSystem.adaptiveSecondaryText(
-                              context),
-                          fontSize: 11,
-                        ),
-                      ),
+                      getTitlesWidget: (value, meta) {
+                        if (value < -10 || value > 10) {
+                          return const SizedBox.shrink();
+                        }
+                        return Text(
+                          value.toInt().toString(),
+                          style: TextStyle(
+                            color: HealingDesignSystem.adaptiveSecondaryText(
+                                context),
+                            fontSize: 11,
+                          ),
+                        );
+                      },
                     ),
                   ),
                   bottomTitles: AxisTitles(
@@ -635,7 +685,10 @@ class EmotionBalanceTrendChartWidget extends StatelessWidget {
                       interval: 1,
                       reservedSize: 36,
                       getTitlesWidget: (value, meta) {
-                        final index = value.toInt();
+                        final index = _wholeNumberX(value);
+                        if (index == null) {
+                          return const SizedBox.shrink();
+                        }
                         if (!labelPositions.contains(index)) {
                           return const SizedBox.shrink();
                         }

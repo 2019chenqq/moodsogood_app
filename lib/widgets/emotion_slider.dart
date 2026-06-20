@@ -8,6 +8,7 @@ class EmotionSlider extends StatelessWidget {
   final String rightIcon;
   final List<Color> gradientColors;
   final Color? thumbBadgeColor;
+  final int maxScore;
 
   const EmotionSlider({
     super.key,
@@ -18,10 +19,13 @@ class EmotionSlider extends StatelessWidget {
     required this.rightIcon,
     required this.gradientColors,
     this.thumbBadgeColor,
+    this.maxScore = 5,
   });
 
   @override
   Widget build(BuildContext context) {
+    final safeMax = maxScore.clamp(1, 10);
+    final safeValue = value.clamp(1, safeMax);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -31,7 +35,6 @@ class EmotionSlider extends StatelessWidget {
         Row(
           children: [
             Image.asset(leftIcon, width: 36),
-
             Expanded(
               child: Stack(
                 alignment: Alignment.center,
@@ -53,20 +56,19 @@ class EmotionSlider extends StatelessWidget {
                       inactiveTrackColor: Colors.transparent,
                       thumbColor: const Color.fromARGB(255, 108, 234, 234),
                       overlayColor: Colors.transparent,
-                      thumbShape: NumberThumbShape(value),
+                      thumbShape: NumberThumbShape(safeValue),
                     ),
                     child: Slider(
-                      value: value.toDouble(),
+                      value: safeValue.toDouble(),
                       min: 1,
-                      max: 5,
-                      divisions: 4,
+                      max: safeMax.toDouble(),
+                      divisions: safeMax - 1,
                       onChanged: (v) => onChanged(v.round()),
                     ),
                   ),
                 ],
               ),
             ),
-
             Image.asset(rightIcon, width: 36),
           ],
         ),
@@ -76,8 +78,8 @@ class EmotionSlider extends StatelessWidget {
 }
 
 class NumberThumbShape extends SliderComponentShape {
-  final int displayValue; 
-    NumberThumbShape(this.displayValue);
+  final int displayValue;
+  NumberThumbShape(this.displayValue);
 
   @override
   Size getPreferredSize(bool isEnabled, bool isDiscrete) {

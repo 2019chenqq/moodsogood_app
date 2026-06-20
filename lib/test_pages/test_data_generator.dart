@@ -18,6 +18,7 @@ class TestDataGenerator {
   /// 所有測試資料都會加上這個標記
   static const String kTestSource = 'dev_seed';
   static const String kTestFlagField = 'isTestData';
+  static const String kTestOwnedField = 'isDevSeedOwned';
 
   // ============================================================
   // 內建情緒定義
@@ -442,6 +443,26 @@ class TestDataGenerator {
       final moodScale = record['moodScale'] as int;
 
       try {
+        final ref = FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId)
+            .collection('dailyRecords')
+            .doc(docId);
+        final cloudDoc = await ref.get();
+        final cloudData = cloudDoc.data();
+        final isOwnedTestRecord =
+            cloudData != null && _isOwnedTestRecord(cloudData);
+        final localData = await repo.getDailyRecord(userId: userId, date: date);
+
+        if ((cloudDoc.exists || localData != null) && !isOwnedTestRecord) {
+          debugPrint('⏭️ Skip existing real record: $docId');
+          written++;
+          if (progressCallback != null) {
+            progressCallback(written / total);
+          }
+          continue;
+        }
+
         final emotionsMap = <String, dynamic>{};
         for (final e in emotions) {
           emotionsMap[e['name'] as String] = e['value'] as int;
@@ -455,13 +476,9 @@ class TestDataGenerator {
           moodScale: moodScale,
         );
 
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(userId)
-            .collection('dailyRecords')
-            .doc(docId)
-            .set({
+        await ref.set({
           kTestFlagField: true,
+          kTestOwnedField: true,
           'source': kTestSource,
           'testGeneratedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
@@ -477,6 +494,12 @@ class TestDataGenerator {
 
     debugPrint('✅ Test data generation complete: $written records written');
     return written;
+  }
+
+  static bool _isOwnedTestRecord(Map<String, dynamic> data) {
+    return data[kTestFlagField] == true &&
+        data[kTestOwnedField] == true &&
+        data['source'] == kTestSource;
   }
 
   static DailyRecord _toDailyRecord(Map<String, dynamic> record) {
@@ -500,7 +523,7 @@ class TestDataGenerator {
   // ============================================================
   // 刪除測試資料
   // ============================================================
-  /// 刪除所有 isTestData == true 的紀錄
+  /// 只刪除由新版測試資料產生器建立、明確標記為 owned 的紀錄。
   static Future<int> deleteTestData({
     required String userId,
     void Function(double progress)? progressCallback,
@@ -513,7 +536,7 @@ class TestDataGenerator {
           .collection('users')
           .doc(userId)
           .collection('dailyRecords')
-          .where('isTestData', isEqualTo: true)
+          .where(kTestOwnedField, isEqualTo: true)
           .get();
 
       final total = snapshot.docs.length;
@@ -556,7 +579,7 @@ class TestDataGenerator {
 
         for (final doc in snapshot.docs) {
           final data = doc.data();
-          if (data['isTestData'] == true || data['source'] == kTestSource) {
+          if (_isOwnedTestRecord(data)) {
             try {
               await doc.reference.delete();
               deleted++;
@@ -594,7 +617,7 @@ class TestDataGenerator {
           .collection('users')
           .doc(userId)
           .collection('dailyRecords')
-          .where('isTestData', isEqualTo: true)
+          .where(kTestOwnedField, isEqualTo: true)
           .limit(1)
           .get();
       return snapshot.docs.isNotEmpty;
@@ -621,7 +644,7 @@ class TestDataGenerator {
           .collection('users')
           .doc(userId)
           .collection('dailyRecords')
-          .where('isTestData', isEqualTo: true)
+          .where(kTestOwnedField, isEqualTo: true)
           .orderBy('date', descending: true)
           .get();
 

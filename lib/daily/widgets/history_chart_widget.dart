@@ -43,8 +43,36 @@ class HistoryChartWidget extends StatelessWidget {
 
     return (
       minX: minSpotX - 0.5,
-      maxX: maxSpotX + 1.0,
+      maxX: maxSpotX + 1.5,
     );
+  }
+
+  int? _wholeNumberX(double value) {
+    final rounded = value.round();
+    return (value - rounded).abs() < 0.001 ? rounded : null;
+  }
+
+  ({double minY, double maxY}) _yBounds(
+    List<LineChartBarData> bars, {
+    required double minScaleY,
+    required double maxScaleY,
+  }) {
+    final allSpots = bars
+        .expand((bar) => bar.spots)
+        .where((spot) => spot.isNotNull())
+        .toList();
+
+    if (allSpots.isEmpty) {
+      return (minY: minScaleY, maxY: maxScaleY);
+    }
+
+    final minSpotY = allSpots.map((s) => s.y).reduce(min);
+    final maxSpotY = allSpots.map((s) => s.y).reduce(max);
+    final bottom = min(minScaleY, minSpotY);
+    final top = max(maxScaleY, maxSpotY);
+    final padding = max((top - bottom).abs() * 0.08, 0.5);
+
+    return (minY: bottom - padding, maxY: top + padding);
   }
 
   /// 建立經期粉紅區塊（依照日期距離 startDate 的天數作為 x 座標，並限制在 minX/maxX 內）
@@ -412,11 +440,17 @@ class HistoryChartWidget extends StatelessWidget {
     }
 
     // ===== 7️⃣ 繪製折線圖 =====
+    final yBounds = _yBounds(
+      barDatas,
+      minScaleY: 0,
+      maxScaleY: maxScale.toDouble(),
+    );
+
     final chart = LineChart(
       LineChartData(
         clipData: const FlClipData.none(),
-        minY: 0,
-        maxY: maxScale.toDouble(),
+        minY: yBounds.minY,
+        maxY: yBounds.maxY,
         minX: xBounds.minX,
         maxX: xBounds.maxX,
         rangeAnnotations: RangeAnnotations(
@@ -437,7 +471,10 @@ class HistoryChartWidget extends StatelessWidget {
               showTitles: true,
               interval: 2,
               reservedSize: 34,
-              getTitlesWidget: (v, m) => Text(v.toInt().toString()),
+              getTitlesWidget: (v, m) {
+                if (v < 0 || v > maxScale) return const SizedBox.shrink();
+                return Text(v.toInt().toString());
+              },
             ),
           ),
           bottomTitles: AxisTitles(
@@ -446,7 +483,8 @@ class HistoryChartWidget extends StatelessWidget {
               interval: 1,
               reservedSize: 36,
               getTitlesWidget: (val, meta) {
-                final d = val.toInt();
+                final d = _wholeNumberX(val);
+                if (d == null) return const SizedBox.shrink();
                 if (!labelPositions.contains(d)) return const SizedBox.shrink();
                 if (d < 0 ||
                     d >=

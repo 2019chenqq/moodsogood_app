@@ -92,7 +92,8 @@ class _TestDataManagementPageState extends State<TestDataManagementPage> {
           '• 5 分制與 10 分制相容\n'
           '• 故意保留缺漏日\n'
           '• 極少量自殺意念（僅 2 筆）\n\n'
-          '⚠️ 所有資料都會標記為 isTestData = true\n'
+          '⚠️ 遇到既有真實紀錄的日期會自動跳過，不會覆蓋\n'
+          '⚠️ 新測試資料會標記為 isDevSeedOwned = true\n'
           '⚠️ 此操作不可復原，但可透過「刪除測試資料」移除',
       confirmText: '確認產生',
       isDangerous: false,
@@ -167,7 +168,7 @@ class _TestDataManagementPageState extends State<TestDataManagementPage> {
     final confirmed = await _showConfirmDialog(
       title: '刪除測試資料',
       message: '確定要刪除所有測試資料嗎？\n\n'
-          '只會刪除標記為 isTestData = true 的資料，\n'
+          '只會刪除新版產生器標記為 isDevSeedOwned = true 的資料，\n'
           '不會影響您的真實紀錄。',
       confirmText: '確認刪除',
       isDangerous: true,
@@ -571,7 +572,7 @@ class _TestDataManagementPageState extends State<TestDataManagementPage> {
             _buildActionButton(
               icon: Icons.delete_sweep,
               label: '刪除測試資料',
-              subtitle: '只刪除 isTestData = true 的資料',
+              subtitle: '只刪除 isDevSeedOwned = true 的資料',
               color: HealingDesignSystem.dangerRed,
               onTap: (_isLoading || !_hasTestData) ? null : _deleteTestData,
             ),
