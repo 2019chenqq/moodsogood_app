@@ -23,7 +23,7 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> {
   static const _primaryColor = Color.fromARGB(255, 6, 213, 192);
-  static const List<String> _sexOptions = ['女性', '男性', '雙性', '間性', '其他'];
+  static const List<String> _sexOptions = ['女性', '男性', '間性'];
   static const List<String> _genderIdentityOptions = [
     '女性',
     '男性',

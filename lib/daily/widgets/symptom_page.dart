@@ -23,6 +23,7 @@ class SymptomPage extends StatelessWidget {
   final DateTime? nextExpectedStart;
   final int? arrivalDeltaDays;
   final bool periodBusy;
+  final bool showPeriodCalendar;
 
   const SymptomPage({
     super.key,
@@ -41,6 +42,7 @@ class SymptomPage extends StatelessWidget {
     required this.nextExpectedStart,
     required this.arrivalDeltaDays,
     this.periodBusy = false,
+    this.showPeriodCalendar = true,
   });
 
   @override
@@ -58,19 +60,20 @@ class SymptomPage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _PeriodCalendarCard(
-          markedDays: periodMarkedDays,
-          focusedMonth: periodFocusedMonth,
-          isTodayPeriod: isPeriod,
-          onTapDate: onTapPeriodDate,
-          onChangeMonth: onChangePeriodMonth,
-          cycleLength: periodCycleLength,
-          nextExpectedStart: nextExpectedStart,
-          arrivalDeltaDays: arrivalDeltaDays,
-          busy: periodBusy,
-        ),
-
-        const SizedBox(height: 16),
+        if (showPeriodCalendar) ...[
+          _PeriodCalendarCard(
+            markedDays: periodMarkedDays,
+            focusedMonth: periodFocusedMonth,
+            isTodayPeriod: isPeriod,
+            onTapDate: onTapPeriodDate,
+            onChangeMonth: onChangePeriodMonth,
+            cycleLength: periodCycleLength,
+            nextExpectedStart: nextExpectedStart,
+            arrivalDeltaDays: arrivalDeltaDays,
+            busy: periodBusy,
+          ),
+          const SizedBox(height: 16),
+        ],
 
         // 2. 症狀列表
         Container(

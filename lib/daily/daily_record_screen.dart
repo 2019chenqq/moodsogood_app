@@ -39,6 +39,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       DateTime(DateTime.now().year, DateTime.now().month, 1);
   int _periodCycleLength = 28;
   bool _isUpdatingPeriodCalendar = false;
+  bool _showsPeriodCalendar = false;
   int? _lastSuicidalValue;
 
   // ——— 目前紀錄日期與時間（給頁首顯示；docId 只吃日期） ———
@@ -50,7 +51,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     super.initState();
     _index = widget.initialTab.clamp(0, 2);
     _pageController = PageController(initialPage: _index);
-    _loadPeriodCalendarState();
+    _loadPeriodVisibilityAndCalendarState();
     _loadExistingData(_recordDate);
     AnalyticsService.logPage('daily_record_page'); // 一進來就載入今天的紀錄（含生理期狀態）
   }
@@ -62,6 +63,35 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   }
 
   DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  Future<void> _loadPeriodVisibilityAndCalendarState() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    var showsPeriodCalendar = false;
+    try {
+      final profile = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get();
+      final sex = (profile.data()?['sexAssignedAtBirth'] as String?)?.trim();
+      showsPeriodCalendar = sex == null || sex.isEmpty || sex == '女性';
+    } catch (e) {
+      debugPrint('讀取生理性別失敗: $e');
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _showsPeriodCalendar = showsPeriodCalendar;
+      if (!showsPeriodCalendar) {
+        _isPeriod = false;
+      }
+    });
+
+    if (showsPeriodCalendar) {
+      await _loadPeriodCalendarState();
+    }
+  }
 
   List<DateTime> _periodStarts() {
     final sorted = _periodSelectedDates.toList()..sort();
@@ -339,6 +369,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   }
 
   Future<void> _onTapPeriodDate(DateTime date) async {
+    if (!_showsPeriodCalendar) return;
+
     final day = _dateOnly(date);
     if (_periodSelectedDates.contains(day)) {
       final isStartOfRun = !_periodSelectedDates.contains(
@@ -871,6 +903,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       String? oldStartId;
       bool oldIsPeriod = false;
       var cloudSyncFailed = false;
+      final effectiveIsPeriod = _showsPeriodCalendar && _isPeriod;
 
       // 離線時這一步可能失敗，不能影響本地儲存。
       if (FirebaseSyncConfig.shouldSync()) {
@@ -925,7 +958,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         payload['overallMood'] = (sum / selectedEmotions.length);
       }
 
-      if (_isPeriod == true) {
+      if (effectiveIsPeriod == true) {
         payload['isPeriod'] = true;
         payload['periodStartId'] = oldStartId ?? docId;
         payload['periodEndId'] = null;
@@ -1006,9 +1039,10 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
                 .toList(),
           },
           periodData: {
-            'isPeriod': _isPeriod,
-            'periodStartId': _isPeriod ? (oldStartId ?? docId) : oldStartId,
-            'periodEndId': !_isPeriod && oldIsPeriod ? docId : null,
+            'isPeriod': effectiveIsPeriod,
+            'periodStartId':
+                effectiveIsPeriod ? (oldStartId ?? docId) : oldStartId,
+            'periodEndId': !effectiveIsPeriod && oldIsPeriod ? docId : null,
             'cycleLength': _periodCycleLength,
             'nextExpectedStart':
                 _predictedNextPeriodStart()?.toIso8601String(),
@@ -1167,6 +1201,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
             }
           });
         },
+        showPeriodCalendar: _showsPeriodCalendar,
         isPeriod: _isPeriod,
         onTogglePeriod: (v) => setState(() => _isPeriod = v),
         periodMarkedDays: _periodSelectedDates,
