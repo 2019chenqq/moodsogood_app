@@ -2,103 +2,40 @@ import 'package:flutter/material.dart';
 
 import '../../constants/healing_design_system.dart';
 import '../../models/daily_record.dart';
-import '../../utils/date_helper.dart';
 
 class WeeklySummaryCard extends StatelessWidget {
-  final List<DailyRecord> allRecords;
-  final int weekStartDay;
+  final List<DailyRecord> records;
+  final String title;
+  final String subtitle;
+  final int? totalDays;
 
   const WeeklySummaryCard({
     super.key,
-    required this.allRecords,
-    required this.weekStartDay,
+    required this.records,
+    required this.title,
+    required this.subtitle,
+    required this.totalDays,
   });
-
-  DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
-
-  int? _nightSleepMinutes(DailyRecord record) {
-    final end = record.sleep.finalWakeTime ?? record.sleep.wakeTime;
-    if (record.sleep.sleepTime == null || end == null) return null;
-    final minutes =
-        DateHelper.calcDurationMinutes(record.sleep.sleepTime!, end);
-    return minutes > 0 ? minutes : null;
-  }
-
-  DateTimeRange _weekWindow() {
-    final today = _dateOnly(DateTime.now());
-    final normalizedWeekStart =
-        (weekStartDay >= DateTime.monday && weekStartDay <= DateTime.sunday)
-            ? weekStartDay
-            : DateTime.monday;
-    final delta = (today.weekday - normalizedWeekStart + 7) % 7;
-    final start = today.subtract(Duration(days: delta));
-    final end = start.add(const Duration(days: 6));
-    return DateTimeRange(start: start, end: end);
-  }
 
   @override
   Widget build(BuildContext context) {
-    final range = _weekWindow();
-    final start = _dateOnly(range.start);
-    final end = _dateOnly(range.end);
-
-    // 篩選出本週 7 天區間的紀錄
-    final weekRecords = allRecords.where((r) {
-      final date = _dateOnly(r.date);
-      return !date.isBefore(start) && !date.isAfter(end);
-    }).toList();
-
-    const totalDays = 7;
-    final recordedDays = weekRecords.length;
-
-    final nightSleepMinutesList = <int>[];
-    final dailyTotalMinutesList = <int>[];
-
-    for (final record in allRecords) {
-      final nightMinutes = _nightSleepMinutes(record);
-      if (nightMinutes != null) {
-        nightSleepMinutesList.add(nightMinutes);
-      }
-
-      final napMinutes = record.sleep.naps
-          .fold<int>(0, (sum, nap) => sum + nap.durationMinutes);
-      final totalMinutes = (nightMinutes ?? 0) + napMinutes;
-      if (totalMinutes > 0) {
-        dailyTotalMinutesList.add(totalMinutes);
-      }
-    }
-
-    final avgNightSleepMinutes = nightSleepMinutesList.isEmpty
-        ? null
-        : nightSleepMinutesList.reduce((a, b) => a + b) /
-            nightSleepMinutesList.length;
-
-    final avgDailySleepMinutes = dailyTotalMinutesList.isEmpty
-        ? null
-        : dailyTotalMinutesList.reduce((a, b) => a + b) /
-            dailyTotalMinutesList.length;
-
-    final nightAvgText = avgNightSleepMinutes == null
-        ? '-'
-        : DateHelper.formatDurationText(avgNightSleepMinutes.round());
-    final dailyAvgText = avgDailySleepMinutes == null
-        ? '-'
-        : DateHelper.formatDurationText(avgDailySleepMinutes.round());
+    final recordedDays = records.length;
 
     // 鼓勵語句
     final String message;
     if (recordedDays == 0) {
-      message = '這週還沒有開始記錄，沒關係，可以從今天慢慢來。';
+      message = '這段期間還沒有開始記錄，沒關係，可以從今天慢慢來。';
     } else if (recordedDays <= 3) {
-      message = '這週已經有 $recordedDays 天留下紀錄了，願意給自己這些時間，很不容易。';
-    } else if (recordedDays < 7) {
-      message = '這週大部分的日子你都有努力關心自己，已經很棒了。';
+      message = '這段期間已經有 $recordedDays 天留下紀錄了，願意給自己這些時間，很不容易。';
+    } else if (totalDays != null && recordedDays < totalDays!) {
+      message = '這段期間有一些日子你有停下來關心自己，已經很棒了。';
     } else {
-      message = '這週每天都有陪自己走一下，謝謝你這麼努力地活著。';
+      message = '這段期間你持續陪自己走了一段路，謝謝你這麼努力地活著。';
     }
 
     // 紀錄天數進度條比例
-    final progress = recordedDays / totalDays;
+    final progress =
+        totalDays == null ? null : (recordedDays / totalDays!).clamp(0.0, 1.0);
 
     return Container(
       decoration: HealingDesignSystem.adaptiveCardDecoration(context),
@@ -127,7 +64,7 @@ class WeeklySummaryCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '這週小結',
+                    title,
                     style: TextStyle(
                       color: HealingDesignSystem.adaptivePrimaryText(context),
                       fontSize: 15,
@@ -135,7 +72,7 @@ class WeeklySummaryCard extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    '${start.month}/${start.day} – ${end.month}/${end.day}',
+                    subtitle,
                     style: TextStyle(
                       color: HealingDesignSystem.adaptiveSecondaryText(context),
                       fontSize: 12,
@@ -159,7 +96,9 @@ class WeeklySummaryCard extends StatelessWidget {
               ),
               const Spacer(),
               Text(
-                '$recordedDays / $totalDays 天',
+                totalDays == null
+                    ? '$recordedDays 天'
+                    : '$recordedDays / $totalDays 天',
                 style: const TextStyle(
                   color: HealingDesignSystem.primaryBlue,
                   fontSize: 13,
@@ -168,40 +107,20 @@ class WeeklySummaryCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(99),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 8,
-              backgroundColor: HealingDesignSystem.adaptiveCardBorder(context),
-              valueColor: const AlwaysStoppedAnimation<Color>(
-                  HealingDesignSystem.primaryBlue),
+          if (progress != null) ...[
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(99),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 8,
+                backgroundColor:
+                    HealingDesignSystem.adaptiveCardBorder(context),
+                valueColor: const AlwaysStoppedAnimation<Color>(
+                    HealingDesignSystem.primaryBlue),
+              ),
             ),
-          ),
-
-          const SizedBox(height: 14),
-
-          // Stats row
-          Row(
-            children: [
-              Expanded(
-                child: _WeekStatItem(
-                  icon: Icons.nightlight_round,
-                  label: '夜眠（累積均）',
-                  value: nightAvgText,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _WeekStatItem(
-                  icon: Icons.bedtime_outlined,
-                  label: '全日睡眠（均）',
-                  value: dailyAvgText,
-                ),
-              ),
-            ],
-          ),
+          ],
 
           const SizedBox(height: 14),
 
@@ -224,62 +143,6 @@ class WeeklySummaryCard extends StatelessWidget {
                 fontStyle: FontStyle.italic,
                 height: 1.5,
               ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _WeekStatItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-
-  const _WeekStatItem({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: HealingDesignSystem.adaptiveFill(context),
-        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusS),
-        border: Border.all(
-          color: HealingDesignSystem.adaptiveCardBorder(context),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 14, color: HealingDesignSystem.primaryBlue),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: HealingDesignSystem.adaptiveSecondaryText(context),
-                    fontSize: 11,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              color: HealingDesignSystem.adaptivePrimaryText(context),
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
             ),
           ),
         ],

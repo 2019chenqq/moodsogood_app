@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -19,7 +18,6 @@ import 'widgets/weekly_summary_card.dart';
 import '../utils/firebase_sync_config.dart';
 import '../widgets/trend_range_selector.dart';
 import '../constants/healing_design_system.dart';
-import '../test_pages/pro_preview_page.dart';
 import '../analytics_service.dart';
 
 const Map<String, String> ksleepFlagMap = {
@@ -34,7 +32,7 @@ const Map<String, String> ksleepFlagMap = {
   'initInsomnia': '入睡困難',
   'interrupted': '睡眠中斷',
 };
-const bool kDemoUnlockPro = kDebugMode;
+const bool kDemoUnlockPro = true;
 
 class _DiaryMoodScore {
   const _DiaryMoodScore({
@@ -83,9 +81,9 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
   @override
   void initState() {
     super.initState();
-    final safeIndex = widget.initialTab.clamp(0, 1).toInt(); // ✅ 修正型別
+    final safeIndex = widget.initialTab.clamp(0, 2).toInt(); // ✅ 修正型別
     _tabController =
-        TabController(length: 2, vsync: this, initialIndex: safeIndex);
+        TabController(length: 3, vsync: this, initialIndex: safeIndex);
     _loadHistoryWeekStartDay();
     AnalyticsService.logPage('record_history_page');
   }
@@ -124,14 +122,6 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
 
   DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
-  DateTimeRange _currentWeekWindow() {
-    final today = _dateOnly(DateTime.now());
-    final delta = (today.weekday - _historyWeekStartDay + 7) % 7;
-    final start = today.subtract(Duration(days: delta));
-    final end = start.add(const Duration(days: 6));
-    return DateTimeRange(start: start, end: end);
-  }
-
   String _weekdayText(int weekday) {
     const labels = {
       DateTime.monday: '星期一',
@@ -143,11 +133,6 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
       DateTime.sunday: '星期日',
     };
     return labels[weekday] ?? '星期一';
-  }
-
-  String _dateText(DateTime d) {
-    final date = _dateOnly(d);
-    return '${date.month}/${date.day}';
   }
 
   bool _hasSleepContent(SleepData s) {
@@ -221,17 +206,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
     }
   }
 
-  Future<void> _pickDateRange(bool isPro) async {
-    if (!isPro) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => const ProPreviewPage(),
-        ),
-      );
-      return;
-    }
-
+  Future<void> _pickDateRange() async {
     final now = DateTime.now();
     final picked = await showDateRangePicker(
       context: context,
@@ -264,6 +239,26 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
             .difference(_selectedDateRange!.start)
             .inDays +
         1;
+  }
+
+  int? get _selectedSummaryTotalDays {
+    if (_selectedDateRange != null) return _selectedSpanDays;
+    return _selectedRangeDays;
+  }
+
+  String get _selectedSummarySubtitle {
+    if (_selectedDateRange != null) {
+      final start = _selectedDateRange!.start;
+      final end = _selectedDateRange!.end;
+      return '${start.month}/${start.day} – ${end.month}/${end.day}';
+    }
+
+    final days = _selectedRangeDays;
+    if (days == null) return '全部紀錄';
+
+    final today = _dateOnly(DateTime.now());
+    final start = today.subtract(Duration(days: days - 1));
+    return '近 $days 天（${start.month}/${start.day} – ${today.month}/${today.day}）';
   }
 
   bool _shouldUseMonthlyChart() {
@@ -327,7 +322,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
           indicatorColor: HealingDesignSystem.adaptiveAccent(context),
           indicatorSize: TabBarIndicatorSize.tab,
           tabs: const [
-            Tab(text: '列表與週報'),
+            Tab(text: '列表小結'),
+            Tab(text: '睡眠摘要'),
             Tab(text: '情緒趨勢圖'),
           ],
         ),
@@ -371,7 +367,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
               return TabBarView(
                 controller: _tabController,
                 children: [
-                  _buildListPage(listRecords, dailyRecords, isPro),
+                  _buildListPage(listRecords, isPro),
+                  _buildSleepAnalysisPage(listRecords, isPro),
                   _buildProChartContent(
                       context, dailyRecords, availableEmotions, cycles, isPro),
                 ],
@@ -560,8 +557,24 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
       hypnoticDose: map['hypnoticDose'],
       flags: (map['flags'] as List?)?.cast<String>() ?? const [],
       note: map['note'],
-      naps: const [],
+      naps: _parseNapsFromLocal(map['naps']),
     );
+  }
+
+  List<NapItem> _parseNapsFromLocal(dynamic napsData) {
+    if (napsData is String) {
+      try {
+        napsData = jsonDecode(napsData);
+      } catch (_) {
+        return const [];
+      }
+    }
+    if (napsData is! List) return const [];
+
+    return napsData
+        .whereType<Map>()
+        .map((e) => NapItem.fromMap(e.cast<String, dynamic>()))
+        .toList();
   }
 
   /// 解析時間字符串（格式 HH:MM）
@@ -689,7 +702,6 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
 
   Widget _buildListPage(
     List<DailyRecord> records,
-    List<DailyRecord> allRecordsForSummary,
     bool isPro,
   ) {
     final bool isLocked = _isHistoryLocked(isPro);
@@ -699,13 +711,15 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
       child: Column(
         children: [
           // ─────────────────────
-          // 簡易週報卡片（永遠顯示）
+          // 範圍摘要卡片（永遠顯示）
           // ─────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: WeeklySummaryCard(
-              allRecords: allRecordsForSummary,
-              weekStartDay: _historyWeekStartDay,
+              records: records,
+              title: '狀態小結',
+              subtitle: _selectedSummarySubtitle,
+              totalDays: _selectedSummaryTotalDays,
             ),
           ),
 
@@ -722,9 +736,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
               ),
               child: Column(
                 children: [
-                  _buildDateRangeDropdown(isPro: isPro),
-                  const SizedBox(height: 8),
-                  _buildWeekStartSelector(),
+                  _buildDateRangeDropdown(),
                 ],
               ),
             ),
@@ -891,6 +903,345 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
     );
   }
 
+  double? _averageInt(List<int> values) {
+    if (values.isEmpty) return null;
+    return values.reduce((a, b) => a + b) / values.length;
+  }
+
+  String _durationText(double? minutes) {
+    if (minutes == null) return '-';
+    return DateHelper.formatDurationText(minutes.round());
+  }
+
+  String _topSleepFlagsText(List<DailyRecord> records) {
+    final counts = <String, int>{};
+    for (final record in records) {
+      for (final flag in record.sleep.flags) {
+        counts[flag] = (counts[flag] ?? 0) + 1;
+      }
+    }
+
+    if (counts.isEmpty) return '尚無標籤';
+
+    final entries = counts.entries.toList()
+      ..sort((a, b) {
+        final countCompare = b.value.compareTo(a.value);
+        if (countCompare != 0) return countCompare;
+        return a.key.compareTo(b.key);
+      });
+
+    return entries
+        .take(3)
+        .map((e) => '${ksleepFlagMap[e.key] ?? e.key} ${e.value}天')
+        .join('・');
+  }
+
+  Widget _sleepMetricTile({
+    required IconData icon,
+    required String label,
+    required String value,
+    String? caption,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: HealingDesignSystem.adaptiveFill(context),
+        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+        border: Border.all(
+          color: HealingDesignSystem.adaptiveCardBorder(context),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: HealingDesignSystem.primaryBlue),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: HealingDesignSystem.adaptiveSecondaryText(context),
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(
+              color: HealingDesignSystem.adaptivePrimaryText(context),
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          if (caption != null) ...[
+            const SizedBox(height: 3),
+            Text(
+              caption,
+              style: TextStyle(
+                color: HealingDesignSystem.adaptiveSecondaryText(context),
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSleepAnalysisPage(List<DailyRecord> records, bool isPro) {
+    final bool isLocked = _isHistoryLocked(isPro);
+    final sleepRecords =
+        records.where((r) => _hasSleepContent(r.sleep)).toList();
+
+    final nightMinutesList = <int>[];
+    final dailyTotalMinutesList = <int>[];
+    final qualityList = <int>[];
+    var napDays = 0;
+    var napCount = 0;
+    var napMinutesTotal = 0;
+    var hypnoticDays = 0;
+
+    for (final record in sleepRecords) {
+      final nightMinutes = _nightSleepMinutes(record.sleep);
+      if (nightMinutes != null) {
+        nightMinutesList.add(nightMinutes);
+      }
+
+      final napMinutes = record.sleep.naps
+          .fold<int>(0, (total, nap) => total + nap.durationMinutes);
+      if (record.sleep.naps.isNotEmpty) {
+        napDays += 1;
+        napCount += record.sleep.naps.length;
+        napMinutesTotal += napMinutes;
+      }
+
+      final totalMinutes = (nightMinutes ?? 0) + napMinutes;
+      if (totalMinutes > 0) {
+        dailyTotalMinutesList.add(totalMinutes);
+      }
+
+      final quality = record.sleep.quality;
+      if (quality != null) qualityList.add(quality);
+      if (record.sleep.tookHypnotic) hypnoticDays += 1;
+    }
+
+    final avgNight = _averageInt(nightMinutesList);
+    final avgDaily = _averageInt(dailyTotalMinutesList);
+    final avgQuality = qualityList.isEmpty
+        ? null
+        : qualityList.reduce((a, b) => a + b) / qualityList.length;
+    final shortestNight = nightMinutesList.isEmpty
+        ? null
+        : nightMinutesList.reduce((a, b) => a < b ? a : b);
+    final longestNight = nightMinutesList.isEmpty
+        ? null
+        : nightMinutesList.reduce((a, b) => a > b ? a : b);
+    final avgNap = napCount == 0 ? null : napMinutesTotal / napCount;
+
+    return Container(
+      color: HealingDesignSystem.adaptiveBackground(context),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            decoration: HealingDesignSystem.adaptiveCardDecoration(
+              context,
+              radius: HealingDesignSystem.radiusM,
+            ),
+            child: _buildDateRangeDropdown(),
+          ),
+          const SizedBox(height: 12),
+          if (isLocked)
+            buildProLockedView(
+              context: context,
+              title: '進階睡眠摘要',
+              description: '查看近 90 天、全部紀錄與自訂日期區間，需要升級 Pro。',
+            )
+          else
+            Container(
+              decoration: HealingDesignSystem.adaptiveCardDecoration(context),
+              padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color:
+                              HealingDesignSystem.primaryBlue.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.nightlight_round,
+                          color: HealingDesignSystem.primaryBlue,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '睡眠摘要',
+                            style: TextStyle(
+                              color: HealingDesignSystem.adaptivePrimaryText(
+                                  context),
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            _selectedSummarySubtitle,
+                            style: TextStyle(
+                              color: HealingDesignSystem.adaptiveSecondaryText(
+                                  context),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  GridView.count(
+                    crossAxisCount: 2,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 10,
+                    childAspectRatio: 2.15,
+                    children: [
+                      _sleepMetricTile(
+                        icon: Icons.bedtime_outlined,
+                        label: '平均夜眠',
+                        value: _durationText(avgNight),
+                        caption: '${nightMinutesList.length} 天有夜眠時間',
+                      ),
+                      _sleepMetricTile(
+                        icon: Icons.dark_mode_outlined,
+                        label: '平均全日睡眠',
+                        value: _durationText(avgDaily),
+                        caption: '夜眠 + 小睡',
+                      ),
+                      _sleepMetricTile(
+                        icon: Icons.star_border_rounded,
+                        label: '平均睡眠品質',
+                        value: avgQuality == null
+                            ? '-'
+                            : avgQuality.toStringAsFixed(1),
+                        caption: '${qualityList.length} 天有品質分數',
+                      ),
+                      _sleepMetricTile(
+                        icon: Icons.event_available_outlined,
+                        label: '睡眠紀錄天數',
+                        value: '${sleepRecords.length} 天',
+                        caption: _selectedSummaryTotalDays == null
+                            ? null
+                            : '共 $_selectedSummaryTotalDays 天',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: HealingDesignSystem.adaptiveFill(context),
+                      borderRadius:
+                          BorderRadius.circular(HealingDesignSystem.radiusM),
+                      border: Border.all(
+                        color: HealingDesignSystem.adaptiveCardBorder(context),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '睡眠狀況',
+                          style: TextStyle(
+                            color: HealingDesignSystem.adaptivePrimaryText(
+                                context),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _topSleepFlagsText(sleepRecords),
+                          style: TextStyle(
+                            color: HealingDesignSystem.adaptiveSecondaryText(
+                                context),
+                            fontSize: 13,
+                            height: 1.45,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _sleepMetricTile(
+                          icon: Icons.compress_rounded,
+                          label: '最短夜眠',
+                          value: shortestNight == null
+                              ? '-'
+                              : DateHelper.formatDurationText(shortestNight),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _sleepMetricTile(
+                          icon: Icons.expand_rounded,
+                          label: '最長夜眠',
+                          value: longestNight == null
+                              ? '-'
+                              : DateHelper.formatDurationText(longestNight),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _sleepMetricTile(
+                          icon: Icons.airline_seat_individual_suite_outlined,
+                          label: '小睡',
+                          value: napCount == 0 ? '-' : '$napCount 次',
+                          caption: napCount == 0
+                              ? null
+                              : '$napDays 天，平均 ${_durationText(avgNap)}',
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _sleepMetricTile(
+                          icon: Icons.medication_outlined,
+                          label: '安眠藥紀錄',
+                          value: hypnoticDays == 0 ? '-' : '$hypnoticDays 天',
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   /// 依照 moodScale 將紀錄分成 5 點與 10 點兩個群組
   bool _isFivePointScaleRecord(DailyRecord record) {
     return record.moodScale == 5;
@@ -989,7 +1340,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
               Row(
                 children: [
                   Expanded(
-                    child: _buildDateRangeDropdown(isPro: isPro, compact: true),
+                    child: _buildDateRangeDropdown(compact: true),
                   ),
                 ],
               ),
@@ -1219,62 +1570,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
   // --- 輔助方法 ---
   // --- 輔助方法 ---
 
-  Widget _buildFutureProNotice({
-    required BuildContext context,
-    required String message,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: HealingDesignSystem.primaryBlue.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
-        border: Border.all(
-          color: HealingDesignSystem.primaryBlue.withOpacity(0.22),
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(
-            Icons.workspace_premium_outlined,
-            size: 18,
-            color: HealingDesignSystem.primaryBlue,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              message,
-              style: TextStyle(
-                color: HealingDesignSystem.adaptivePrimaryText(context),
-                fontSize: 12,
-                height: 1.45,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const ProPreviewPage(),
-                ),
-              );
-            },
-            style: TextButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              minimumSize: const Size(0, 32),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: const Text('了解'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDateRangeDropdown({required bool isPro, bool compact = false}) {
+  Widget _buildDateRangeDropdown({bool compact = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1297,16 +1593,6 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
               return;
             }
 
-            if (!isPro) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const ProPreviewPage(),
-                ),
-              );
-              return;
-            }
-
             setState(() {
               _selectedRangeDays = value;
               _selectedDateRange = null;
@@ -1315,7 +1601,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
         ),
         const SizedBox(height: 8),
         OutlinedButton.icon(
-          onPressed: () => _pickDateRange(isPro),
+          onPressed: _pickDateRange,
           icon: const Icon(Icons.calendar_month),
           label: Text(
             _selectedDateRange == null
