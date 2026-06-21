@@ -31,6 +31,7 @@ class DailyRecordScreen extends StatefulWidget {
 
 class _DailyRecordScreenState extends State<DailyRecordScreen> {
   int _index = 0;
+  late final PageController _pageController;
   bool _isSaving = false;
   bool _isPeriod = false;
   final Set<DateTime> _periodSelectedDates = <DateTime>{};
@@ -48,9 +49,16 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   void initState() {
     super.initState();
     _index = widget.initialTab.clamp(0, 2);
+    _pageController = PageController(initialPage: _index);
     _loadPeriodCalendarState();
     _loadExistingData(_recordDate);
     AnalyticsService.logPage('daily_record_page'); // 一進來就載入今天的紀錄（含生理期狀態）
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
   }
 
   DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
@@ -476,7 +484,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
                 color: Colors.transparent,
                 child: InkWell(
                   borderRadius: BorderRadius.circular(16),
-                  onTap: () => setState(() => _index = i),
+                  onTap: () => _selectTab(i),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
                     child: Row(
@@ -509,6 +517,16 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
           );
         }),
       ),
+    );
+  }
+
+  void _selectTab(int index) {
+    if (_index == index) return;
+    setState(() => _index = index);
+    _pageController.animateToPage(
+      index,
+      duration: HealingDesignSystem.animationFast,
+      curve: Curves.easeOut,
     );
   }
 
@@ -1276,8 +1294,6 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         onDeleteNap: (i) => setState(() => _naps.removeAt(i)),
       )),
     ];
-    final currentIndex = _index >= pages.length ? 0 : _index;
-
     return Scaffold(
       backgroundColor: scaffoldBg,
       drawer: const MainDrawer(),
@@ -1328,7 +1344,17 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
           child: Column(
             children: [
               _buildTopTabBar(),
-              Expanded(child: pages[currentIndex]),
+              Expanded(
+                child: PageView(
+                  controller: _pageController,
+                  onPageChanged: (index) {
+                    if (_index != index) {
+                      setState(() => _index = index);
+                    }
+                  },
+                  children: pages,
+                ),
+              ),
               SafeArea(
                 top: false,
                 child: Padding(
