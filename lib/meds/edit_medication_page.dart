@@ -1313,10 +1313,9 @@ class _UnitPicker extends StatelessWidget {
       value: value,
       items: const [
         DropdownMenuItem(value: 'mg', child: Text('mg')),
+        DropdownMenuItem(value: 'g', child: Text('g')),
         DropdownMenuItem(value: 'mL', child: Text('mL')),
-        DropdownMenuItem(value: '顆', child: Text('顆')),
-        DropdownMenuItem(value: '錠', child: Text('錠')),
-        DropdownMenuItem(value: '包', child: Text('包')),
+        DropdownMenuItem(value: 'IU', child: Text('IU')),
       ],
       onChanged: (v) {
         if (v != null) onChanged(v);
