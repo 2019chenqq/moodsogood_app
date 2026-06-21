@@ -255,40 +255,6 @@ class _DiaryHomePageState extends m.State<DiaryHomePage> {
     return count;
   }
 
-  int get _weeklyPositiveIndex {
-    final now = DateTime.now();
-    final weekAgo = now.subtract(const Duration(days: 7));
-    final scores = _recentEntries
-        .where((e) => e.moodScore != null && e.date.isAfter(weekAgo))
-        .map((e) => e.moodScore!)
-        .toList();
-    if (scores.isEmpty) return 68;
-
-    final avg = scores.reduce((a, b) => a + b) / scores.length;
-    final scale = avg <= 5 ? 20.0 : 10.0;
-    return (avg * scale).clamp(0, 100).round();
-  }
-
-  int get _todayGratitudeCount {
-    final todayKey = _dateKey(DateTime.now());
-    DiaryEntry? today;
-    for (final e in _recentEntries) {
-      if (_dateKey(e.date) == todayKey) {
-        today = e;
-        break;
-      }
-    }
-    if (today == null) return 0;
-    final raw = today.selfCare?.trim() ?? '';
-    if (raw.isEmpty) return 0;
-
-    return raw
-        .split(RegExp(r'[\n,，、;；]+'))
-        .map((s) => s.trim())
-        .where((s) => s.isNotEmpty)
-        .length;
-  }
-
   // greeting 文字
   String get _greeting {
     final h = DateTime.now().hour;
@@ -328,15 +294,13 @@ class _DiaryHomePageState extends m.State<DiaryHomePage> {
                 m.SliverToBoxAdapter(
                   child: m.Padding(
                     padding: const m.EdgeInsets.fromLTRB(16, 12, 16, 0),
-                    child: _HeroCard(
+                child: _HeroCard(
                       greeting: _greeting,
                       name: _displayName,
                       weather: _weather,
                       weatherLoaded: _weatherLoaded,
                       totalRecordDays: _entryDays.length,
                       streakDays: _streakDays,
-                      weeklyPositiveIndex: _weeklyPositiveIndex,
-                      gratitudeCount: _todayGratitudeCount,
                     ),
                   ),
                 ),
@@ -381,8 +345,6 @@ class _HeroCard extends m.StatelessWidget {
   final bool weatherLoaded;
   final int totalRecordDays;
   final int streakDays;
-  final int weeklyPositiveIndex;
-  final int gratitudeCount;
 
   const _HeroCard({
     required this.greeting,
@@ -391,8 +353,6 @@ class _HeroCard extends m.StatelessWidget {
     required this.weatherLoaded,
     required this.totalRecordDays,
     required this.streakDays,
-    required this.weeklyPositiveIndex,
-    required this.gratitudeCount,
   });
 
   @override
@@ -478,50 +438,22 @@ class _HeroCard extends m.StatelessWidget {
             ],
           ),
           const m.SizedBox(height: 16),
-          m.LayoutBuilder(
-            builder: (context, constraints) {
-              final isNarrow = constraints.maxWidth < 560;
-              final columns = isNarrow ? 2 : 4;
-              final spacing = 10.0;
-              final cardWidth =
-                  (constraints.maxWidth - (columns - 1) * spacing) / columns;
-
-              return m.Wrap(
-                alignment: m.WrapAlignment.spaceBetween,
-                spacing: spacing,
-                runSpacing: spacing,
-                children: [
-                  m.SizedBox(
-                    width: cardWidth,
-                    child: _StatusMetricCard(
-                      value: '$totalRecordDays',
-                      label: '總紀錄天數',
-                    ),
-                  ),
-                  m.SizedBox(
-                    width: cardWidth,
-                    child: _StatusMetricCard(
-                      value: '$streakDays',
-                      label: '連續記錄天數',
-                    ),
-                  ),
-                  m.SizedBox(
-                    width: cardWidth,
-                    child: _StatusMetricCard(
-                      value: '$weeklyPositiveIndex%',
-                      label: '本週正向指數',
-                    ),
-                  ),
-                  m.SizedBox(
-                    width: cardWidth,
-                    child: _StatusMetricCard(
-                      value: '$gratitudeCount',
-                      label: '今日感恩事項',
-                    ),
-                  ),
-                ],
-              );
-            },
+          m.Row(
+            children: [
+              m.Expanded(
+                child: _StatusMetricCard(
+                  value: '$totalRecordDays',
+                  label: '總紀錄天數',
+                ),
+              ),
+              const m.SizedBox(width: 10),
+              m.Expanded(
+                child: _StatusMetricCard(
+                  value: '$streakDays',
+                  label: '連續記錄天數',
+                ),
+              ),
+            ],
           ),
         ],
       ),
