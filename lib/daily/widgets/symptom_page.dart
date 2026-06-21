@@ -46,38 +46,13 @@ class SymptomPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const presetSymptoms = <String>{
-      '心悸',
-      '胸悶',
-      '胸痛',
-      '呼吸困難',
-      '過度換氣',
-      '胃食道逆流',
-      '胃痛',
-      '腹痛',
-      '腹瀉',
-      '便秘',
-      '噁心反胃',
-      '嘔吐',
-      '脹氣',
-      '食慾不振',
-      '頭暈',
-      '頭痛',
-      '頭脹',
-      '眼睛乾澀',
-      '眼睛疲勞',
-      '視力模糊',
-      '不斷流淚',
-      '耳鳴',
-      '口乾舌燥',
-      '失去味覺',
-      '口腔苦澀',
-      '咽喉異物感',
-      '顫抖',
-      '發麻',
-      '手汗變多',
-      '肌肉緊繃',
-      '肌肉抽蓄',
-      '四肢無力',
+      '心悸', '胸悶', '胸痛', '呼吸困難', '過度換氣',
+      '胃食道逆流', '胃痛', '腹痛', '腹瀉', '便秘', '噁心反胃', '嘔吐', '脹氣', '食慾不振',
+      '頭暈', '頭痛', '頭脹',
+      '眼睛乾澀', '眼睛疲勞', '視力模糊', '不斷流淚', '耳鳴',
+      '口乾舌燥', '味覺失調', '口腔苦澀', '咽喉異物感',
+      '顫抖', '發麻', '手汗變多', '肌肉緊繃', '肌肉抽蓄', '四肢無力','頭重腳輕', '肌肉不自主抽動',
+      '疲倦', '睏倦', '嗜睡',
     };
 
     return ListView(
@@ -170,16 +145,7 @@ class SymptomPage extends StatelessWidget {
         const SizedBox(height: HealingDesignSystem.paddingS),
         _buildSymptomChips(
           symptoms: [
-            '胃食道逆流',
-            '胃痛',
-            '腹痛',
-            '腹瀉',
-            '便秘',
-            '噁心反胃',
-            '嘔吐',
-            '脹氣',
-            '食慾不振'
-          ],
+            '胃食道逆流', '胃痛', '腹痛', '腹瀉', '便秘', '噁心反胃', '嘔吐', '脹氣', '食慾不振'],
           items: items,
           onTogglePreset: onTogglePreset,
         ),
@@ -227,7 +193,7 @@ class SymptomPage extends StatelessWidget {
         ),
         const SizedBox(height: HealingDesignSystem.paddingS),
         _buildSymptomChips(
-          symptoms: ['口乾舌燥', '失去味覺', '口腔苦澀', '咽喉異物感'],
+          symptoms: ['口乾舌燥', '味覺失調', '口腔苦澀', '咽喉異物感'],
           items: items,
           onTogglePreset: onTogglePreset,
         ),
@@ -243,7 +209,23 @@ class SymptomPage extends StatelessWidget {
         ),
         const SizedBox(height: HealingDesignSystem.paddingS),
         _buildSymptomChips(
-          symptoms: ['顫抖', '發麻', '手汗變多', '肌肉緊繃', '肌肉抽蓄', '四肢無力'],
+          symptoms: ['顫抖', '發麻', '手汗變多', '肌肉緊繃', '肌肉抽蓄', '四肢無力', '頭重腳輕', '肌肉不自主抽動'],
+          items: items,
+          onTogglePreset: onTogglePreset,
+        ),
+
+const SizedBox(height: HealingDesignSystem.paddingL),
+
+ // 7. 能量（勾選）
+        Text(
+          '能量',
+          style: HealingDesignSystem.titleSmall.copyWith(
+            color: HealingDesignSystem.adaptivePrimaryText(context),
+          ),
+        ),
+        const SizedBox(height: HealingDesignSystem.paddingS),
+        _buildSymptomChips(
+          symptoms: ['疲倦', '睏倦', '嗜睡'],
           items: items,
           onTogglePreset: onTogglePreset,
         ),
