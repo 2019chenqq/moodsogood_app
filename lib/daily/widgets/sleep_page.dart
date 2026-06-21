@@ -211,8 +211,7 @@ class SleepPage extends StatelessWidget {
               Icons.nightlight_outlined,
               color: HealingDesignSystem.primaryBlue,
             ),
-            title: const Text('夜間睡眠狀況',
-                style: TextStyle(fontWeight: FontWeight.w600)),
+            title: const Text('夜間睡眠狀況'),
             subtitle: Text(
               flags.isEmpty ? '未選擇' : '已選 ${flags.length} 項',
               style: const TextStyle(
