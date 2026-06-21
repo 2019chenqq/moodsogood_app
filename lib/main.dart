@@ -7,7 +7,6 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
-import 'package:purchases_flutter/purchases_flutter.dart';
 
 // Firebase + Google Sign-In
 import 'package:firebase_core/firebase_core.dart';
@@ -44,25 +43,6 @@ import 'pages/profile_page.dart';
 bool _firebaseReady = false;
 String? _startupIssueMessage;
 
-Future<void> _configureSDK() async {
-  String apiKey;
-
-  if (Platform.isIOS) {
-    // 貼上你 App Store 的那個 API Key
-    apiKey = 'appl_ixKmvQvQMnrhkqjDhTuaHcHHXXG';
-  } else if (Platform.isAndroid) {
-    // 貼上你 Play Store 的那個 API Key
-    apiKey = 'goog_XQOPKtoNIDcbyNCNCqDADwSfPKW';
-  } else {
-    return;
-  }
-
-  await Purchases.configure(PurchasesConfiguration(apiKey));
-
-  // 開發期間留著這行，可以看到連線狀況
-  await Purchases.setLogLevel(LogLevel.debug);
-}
-
 /* =========================== main =========================== */
 class App {
   static final FirebaseAnalytics analytics = FirebaseAnalytics.instance;
@@ -74,14 +54,6 @@ Future<void> main() async {
   debugPrint('🚀 App startup starting...');
 
   WidgetsFlutterBinding.ensureInitialized();
-
-  // --- RevenueCat 初始化 ---
-  try {
-    await _configureSDK();
-    debugPrint('✅ RevenueCat 初始化成功');
-  } catch (error) {
-    debugPrint('⚠️ RevenueCat 初始化失敗: $error');
-  }
 
   if (Platform.isAndroid) {
     try {

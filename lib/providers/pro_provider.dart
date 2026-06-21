@@ -44,19 +44,6 @@ class ProProvider extends ChangeNotifier {
     _loading = true;
     notifyListeners();
 
-    await refreshFromRevenueCat();
-
-    Purchases.addCustomerInfoUpdateListener((customerInfo) async {
-      final wasPro = _remoteIsPro;
-      _remoteIsPro = _isEntitlementActive(customerInfo);
-      await _syncProStatusToFirestore(_remoteIsPro);
-      notifyListeners();
-
-      if (!wasPro && _remoteIsPro && _onUpgradeCallback != null) {
-        await _onUpgradeCallback!();
-      }
-    });
-
     _loading = false;
     notifyListeners();
   }
