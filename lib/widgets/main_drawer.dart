@@ -7,7 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'dart:io';
 import '../settings_page.dart';
-import '../pages/feesback_page.dart';
+import '../pages/feedback_page.dart';
 import '../pages/hub_pages.dart';
 import '../pages/life_overview_page.dart';
 import '../pages/profile_page.dart';
