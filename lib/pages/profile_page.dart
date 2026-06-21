@@ -191,7 +191,10 @@ class _ProfilePageState extends State<ProfilePage> {
           .child('user_photos')
           .child(user.uid)
           .child('profile.jpg');
-      await ref.putFile(File(picked.path));
+      await ref.putData(
+        await picked.readAsBytes(),
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
       final url = await ref.getDownloadURL();
       await user.updatePhotoURL(url);
       await _loadUserData();

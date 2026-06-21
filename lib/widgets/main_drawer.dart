@@ -5,7 +5,6 @@ import 'package:image_picker/image_picker.dart'; // 🔥 選照片用
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'dart:io';
 import '../settings_page.dart';
 import '../pages/feedback_page.dart';
 import '../pages/hub_pages.dart';
@@ -52,7 +51,10 @@ class _MainDrawerState extends State<MainDrawer> {
           .child('${user.uid}.jpg');
 
       // 3. 上傳檔案
-      await storageRef.putFile(File(image.path));
+      await storageRef.putData(
+        await image.readAsBytes(),
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
 
       // 4. 取得照片的網路連結 (URL)
       final String downloadUrl = await storageRef.getDownloadURL();
