@@ -18,6 +18,7 @@ class DiaryEntry {
   final String? metaphor;
   final String? proudOf;
   final String? selfCare;
+  final String? gratitude;
   final List<String> imageUrls;
 
   DiaryEntry({
@@ -32,6 +33,7 @@ class DiaryEntry {
     this.metaphor,
     this.proudOf,
     this.selfCare,
+    this.gratitude,
     this.imageUrls = const [],
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -52,6 +54,7 @@ class DiaryEntry {
     String? metaphor,
     String? proudOf,
     String? selfCare,
+    String? gratitude,
     List<String>? imageUrls,
   }) {
     return DiaryEntry(
@@ -68,6 +71,7 @@ class DiaryEntry {
       metaphor: metaphor ?? this.metaphor,
       proudOf: proudOf ?? this.proudOf,
       selfCare: selfCare ?? this.selfCare,
+      gratitude: gratitude ?? this.gratitude,
       imageUrls: imageUrls ?? this.imageUrls,
     );
   }
@@ -86,6 +90,7 @@ class DiaryEntry {
         'metaphor': metaphor,
         'proudOf': proudOf,
         'selfCare': selfCare,
+        'gratitude': gratitude,
         'imageUrls': imageUrls,
       };
 }
@@ -147,6 +152,7 @@ class DiaryRepository {
       'metaphor': encryption.encryptData(entry.metaphor ?? ''),
       'proudOf': encryption.encryptData(entry.proudOf ?? ''),
       'selfCare': encryption.encryptData(entry.selfCare ?? ''),
+      'gratitude': encryption.encryptData(entry.gratitude ?? ''),
       'imageUrls': entry.imageUrls,
       'overallMood': entry.moodScore,
       'updatedAt': FieldValue.serverTimestamp(),
@@ -188,6 +194,7 @@ class DiaryRepository {
         metaphor: text('metaphor'),
         proudOf: text('proudOf'),
         selfCare: text('selfCare'),
+        gratitude: text('gratitude'),
         imageUrls: (data['imageUrls'] as List<dynamic>?)
                 ?.map((e) => e.toString())
                 .toList() ??
