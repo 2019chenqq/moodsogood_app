@@ -14,6 +14,8 @@ int? _wholeNumberX(double value) {
 
 String _formatChartNumber(double value) => value.toStringAsFixed(1);
 
+const double _lineTooltipTouchThreshold = double.infinity;
+
 ({double minY, double maxY}) _yBounds(
   List<LineChartBarData> bars, {
   required double minScaleY,
@@ -240,7 +242,7 @@ class EmotionBalanceChartWidget extends StatelessWidget {
           isCurved: false,
           color: positiveColor,
           barWidth: 3,
-          dotData: const FlDotData(show: true),
+          dotData: const FlDotData(show: false),
           belowBarData: BarAreaData(
             show: true,
             color: positiveColor.withValues(alpha: 0.08),
@@ -257,7 +259,7 @@ class EmotionBalanceChartWidget extends StatelessWidget {
           isCurved: false,
           color: negativeColor,
           barWidth: 3,
-          dotData: const FlDotData(show: true),
+          dotData: const FlDotData(show: false),
           belowBarData: BarAreaData(
             show: true,
             color: negativeColor.withValues(alpha: 0.08),
@@ -288,11 +290,9 @@ class EmotionBalanceChartWidget extends StatelessWidget {
 
     // 判斷量表範圍
     final maxScale = records.any((r) => r.moodScale == 10) ? 10 : 5;
-    final yBounds = _yBounds(
-      lineBars,
-      minScaleY: 0,
-      maxScaleY: maxScale.toDouble(),
-    );
+    final yMin = 0.0;
+    final yMax = maxScale.toDouble();
+    final yInterval = maxScale == 5 ? 1.0 : 2.0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -303,13 +303,13 @@ class EmotionBalanceChartWidget extends StatelessWidget {
             child: LineChart(
               LineChartData(
                 clipData: const FlClipData.none(),
-                minY: yBounds.minY,
-                maxY: yBounds.maxY,
+                minY: yMin,
+                maxY: yMax,
                 minX: xBounds.minX,
                 maxX: xBounds.maxX,
-                gridData: const FlGridData(
+                gridData: FlGridData(
                   show: true,
-                  horizontalInterval: 2,
+                  horizontalInterval: yInterval,
                   drawVerticalLine: false,
                 ),
                 borderData: FlBorderData(show: false),
@@ -323,7 +323,7 @@ class EmotionBalanceChartWidget extends StatelessWidget {
                   leftTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
-                      interval: 2,
+                      interval: yInterval,
                       reservedSize: 34,
                       getTitlesWidget: (value, meta) {
                         if (value < 0 || value > maxScale) {
@@ -381,6 +381,8 @@ class EmotionBalanceChartWidget extends StatelessWidget {
                   ),
                 ),
                 lineTouchData: LineTouchData(
+                  touchSpotThreshold: _lineTooltipTouchThreshold,
+                  handleBuiltInTouches: true,
                   touchTooltipData: LineTouchTooltipData(
                     getTooltipItems: (spots) {
                       return spots.map((spot) {
@@ -613,7 +615,7 @@ class EmotionBalanceTrendChartWidget extends StatelessWidget {
         isCurved: false,
         color: lineColor,
         barWidth: 3,
-        dotData: const FlDotData(show: true),
+        dotData: const FlDotData(show: false),
         belowBarData: BarAreaData(
           show: true,
           color: lineColor.withValues(alpha: 0.08),
@@ -746,6 +748,8 @@ class EmotionBalanceTrendChartWidget extends StatelessWidget {
                   ),
                 ),
                 lineTouchData: LineTouchData(
+                  touchSpotThreshold: _lineTooltipTouchThreshold,
+                  handleBuiltInTouches: true,
                   touchTooltipData: LineTouchTooltipData(
                     getTooltipItems: (spots) {
                       return spots

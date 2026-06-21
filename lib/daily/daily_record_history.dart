@@ -261,20 +261,10 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
     return '近 $days 天（${start.month}/${start.day} – ${today.month}/${today.day}）';
   }
 
-  bool _shouldUseMonthlyChart() {
-    if (_selectedDateRange != null) {
-      final days =
-          _selectedDateRange!.end.difference(_selectedDateRange!.start).inDays;
-      return days > 365;
-    }
-
-    if (_selectedRangeDays == null) return true;
-
-    if (_selectedRangeDays != null && _selectedRangeDays! > 365) {
-      return true;
-    }
-
-    return false;
+  bool _shouldUseMonthlyChartForRecords(List<DailyRecord> records) {
+    if (records.length < 2) return false;
+    final dates = records.map((r) => _dateOnly(r.date)).toList()..sort();
+    return dates.last.difference(dates.first).inDays > 365;
   }
 
   @override
@@ -1398,7 +1388,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
                             records: records5,
                             fullRecords: records5,
                             useMovingAverage: useMA,
-                            forceMonthlyAverage: _shouldUseMonthlyChart(),
+                            forceMonthlyAverage:
+                                _shouldUseMonthlyChartForRecords(records5),
                           ),
                         ),
                         const SizedBox(height: 14),
@@ -1441,7 +1432,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
                             records: records5,
                             fullRecords: records5,
                             useMovingAverage: useMA,
-                            forceMonthlyAverage: _shouldUseMonthlyChart(),
+                            forceMonthlyAverage:
+                                _shouldUseMonthlyChartForRecords(records5),
                           ),
                         ),
                         const SizedBox(height: 14),
@@ -1514,7 +1506,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
                             fullRecords: records5,
                             targetEmotion: activeEmotion,
                             useMovingAverage: useMA,
-                            forceMonthlyAverage: _shouldUseMonthlyChart(),
+                            forceMonthlyAverage:
+                                _shouldUseMonthlyChartForRecords(records5),
                             diaryMoodScores: diary5,
                             overallMoodLabel: _overallMoodLabel,
                           ),
@@ -1540,7 +1533,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
                             fullRecords: records10,
                             targetEmotion: activeEmotion,
                             useMovingAverage: useMA,
-                            forceMonthlyAverage: _shouldUseMonthlyChart(),
+                            forceMonthlyAverage:
+                                _shouldUseMonthlyChartForRecords(records10),
                             diaryMoodScores: diary10,
                             overallMoodLabel: _overallMoodLabel,
                           ),
