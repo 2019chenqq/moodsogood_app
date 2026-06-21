@@ -45,11 +45,11 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   final _conceitedCtrl = m.TextEditingController(); // 為自己感到驕傲的是
   final _proudOfCtrl = m.TextEditingController(); // 我做得不錯的地方
   final _selfCareCtrl = m.TextEditingController(); // 我還能多照顧自己一點
+  final _gratitudeCtrl = m.TextEditingController(); // 今日感恩事項
   List<String> _imageUrls = [];
   bool _uploadingImage = false;
   int _overallMoodScore = 5;
   int _overallHealthScore = 5;
-  int _overallSleepScore = 5;
   int _diaryMoodScale = kCurrentDiaryMoodScale;
 
   // ---------------- 自動儲存 ----------------
@@ -107,6 +107,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
     _conceitedCtrl.dispose();
     _proudOfCtrl.dispose();
     _selfCareCtrl.dispose();
+    _gratitudeCtrl.dispose();
     super.dispose();
   }
 
@@ -122,13 +123,12 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
     _conceitedCtrl.text = (data['conceited'] ?? '') as String;
     _proudOfCtrl.text = (data['proudOf'] ?? '') as String;
     _selfCareCtrl.text = (data['selfCare'] ?? '') as String;
+    _gratitudeCtrl.text = (data['gratitude'] ?? '') as String;
     _diaryMoodScale = _resolveDiaryMoodScale(data);
     _overallMoodScore =
         _normalizeScaleScore(data['overallMood'], _diaryMoodScale);
     _overallHealthScore =
         _normalizeScaleScore(data['overallHealth'], _diaryMoodScale);
-    _overallSleepScore =
-        _normalizeScaleScore(data['overallSleepQuality'], _diaryMoodScale);
     _imageUrls = (data['imageUrls'] as List<dynamic>?)
             ?.map((e) => e.toString())
             .toList() ??
@@ -138,16 +138,13 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   }
 
   int _normalizeScaleScore(dynamic raw, int moodScale) {
-    final maxScore = moodScale == 10 ? 10 : 5;
-    final value = raw is num ? raw.round() : 5;
+    final maxScore = 5;
+    final value = raw is num ? raw.round() : 3;
     return value.clamp(1, maxScore);
   }
 
   int _resolveDiaryMoodScale(Map<String, dynamic> data) {
-    final scale = (data['diaryMoodScale'] as num?)?.toInt();
-    if (scale == 5) return 5;
-    if (scale == 10) return 10;
-    return 10;
+    return 5;
   }
 
   // 從本地 SQLite + Firebase 加載日記
@@ -179,6 +176,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
             'conceited': _conceitedCtrl.text,
             'proudOf': _proudOfCtrl.text,
             'selfCare': _selfCareCtrl.text,
+            'gratitude': _gratitudeCtrl.text,
           };
 
           // 🔓 建立一個輔助函數來解密文字
@@ -220,6 +218,8 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
                 'proudOf', data['proudOf'], fallbackValues['proudOf'] ?? ''),
             'selfCare': decrypt(
                 'selfCare', data['selfCare'], fallbackValues['selfCare'] ?? ''),
+            'gratitude': decrypt(
+                'gratitude', data['gratitude'], fallbackValues['gratitude'] ?? ''),
           };
 
           _updateUIFromData(decryptedData);
@@ -255,6 +255,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
       _conceitedCtrl,
       _proudOfCtrl,
       _selfCareCtrl,
+      _gratitudeCtrl,
     ]) {
       c.removeListener(_onAnyFieldChanged);
       c.addListener(_onAnyFieldChanged);
@@ -588,10 +589,10 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
             'conceited': encService.encryptData(_conceitedCtrl.text.trim()),
             'proudOf': encService.encryptData(_proudOfCtrl.text.trim()),
             'selfCare': encService.encryptData(_selfCareCtrl.text.trim()),
+            'gratitude': encService.encryptData(_gratitudeCtrl.text.trim()),
             'imageUrls': _imageUrls,
             'overallMood': _overallMoodScore,
             'overallHealth': _overallHealthScore,
-            'overallSleepQuality': _overallSleepScore,
             'diaryMoodScale': _diaryMoodScale,
             'updatedAt': FieldValue.serverTimestamp(),
             'isEncrypted': true,
@@ -876,11 +877,11 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
           children: [
             _DateHeaderCard(date: d),
             const m.SizedBox(height: 12),
-            _AiEntryCard(
-              onBasicTap: _openBasicAiFeedback,
-              onDeepTap: _openDeepAiPreview,
-            ),
-            const m.SizedBox(height: 12),
+            // _AiEntryCard(
+            //   onBasicTap: _openBasicAiFeedback,
+            //   onDeepTap: _openDeepAiPreview,
+            // ),
+            // const m.SizedBox(height: 12),
             if (_needsLegacyRepair) ...[
               m.Text(
                 '此紀錄需要使用舊安全碼修復',
@@ -903,7 +904,6 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
             _OverallSlidersCard(
               overallMoodScore: _overallMoodScore,
               overallHealthScore: _overallHealthScore,
-              overallSleepScore: _overallSleepScore,
               maxScore: _diaryMoodScale,
               onMoodChanged: (v) {
                 setState(() => _overallMoodScore = v);
@@ -911,10 +911,6 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
               },
               onHealthChanged: (v) {
                 setState(() => _overallHealthScore = v);
-                _onAnyFieldChanged();
-              },
-              onSleepChanged: (v) {
-                setState(() => _overallSleepScore = v);
                 _onAnyFieldChanged();
               },
             ),
@@ -1062,6 +1058,17 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
               maxLines: 10,
               onAnyChanged: _onAnyFieldChanged,
             ),
+            const m.SizedBox(height: 12),
+
+            CountTextField(
+              controller: _gratitudeCtrl,
+              icon: m.Icons.favorite_border,
+              label: '今日感恩事項',
+              hint: '今天感恩的事情有哪些？',
+              minLines: 3,
+              maxLines: 10,
+              onAnyChanged: _onAnyFieldChanged,
+              ),
           ],
         ),
       ),
@@ -1136,20 +1143,16 @@ class _DateHeaderCard extends m.StatelessWidget {
 class _OverallSlidersCard extends m.StatelessWidget {
   final int overallMoodScore;
   final int overallHealthScore;
-  final int overallSleepScore;
   final int maxScore;
   final m.ValueChanged<int> onMoodChanged;
   final m.ValueChanged<int> onHealthChanged;
-  final m.ValueChanged<int> onSleepChanged;
 
   const _OverallSlidersCard({
     required this.overallMoodScore,
     required this.overallHealthScore,
-    required this.overallSleepScore,
     required this.maxScore,
     required this.onMoodChanged,
     required this.onHealthChanged,
-    required this.onSleepChanged,
   });
 
   @override
@@ -1200,20 +1203,6 @@ class _OverallSlidersCard extends m.StatelessWidget {
               maxScore: maxScore,
               onChanged: onHealthChanged,
               leftIcon: 'assets/emotion/default.png',
-              rightIcon: 'assets/emotion/default.png',
-              gradientColors: const [
-                m.Color(0xFF9AD0EC),
-                m.Color(0xFFFFE08A),
-              ],
-            ),
-            const m.SizedBox(height: 6),
-            m.Text('整體睡眠品質', style: HealingDesignSystem.bodySmall),
-            EmotionSlider(
-              label: '整體睡眠品質',
-              value: overallSleepScore,
-              maxScore: maxScore,
-              onChanged: onSleepChanged,
-              leftIcon: 'assets/emotion/tired.png',
               rightIcon: 'assets/emotion/default.png',
               gradientColors: const [
                 m.Color(0xFF9AD0EC),

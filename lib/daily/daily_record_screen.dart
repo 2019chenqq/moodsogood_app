@@ -1246,7 +1246,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
             context: context,
             initial: sleepQuality ?? 1,
             min: 1,
-            max: 10,
+            max: 5,
             title: '選擇睡眠品質',
           );
           if (v != null) setState(() => sleepQuality = v);

@@ -334,7 +334,7 @@ class SleepPage extends StatelessWidget {
           ),
         ),
         _sleepCard(
-          margin: const EdgeInsets.fromLTRB(0, 2, 0, 10),
+          margin: const EdgeInsets.fromLTRB(0, 2, 0, 5),
           child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
