@@ -247,7 +247,7 @@ class HistoryChartWidget extends StatelessWidget {
     final lineColor = useMovingAverage ? Colors.orange : Colors.teal;
 
     // ≥ 3 天才畫折線；否則只顯示圓點
-    final showLine = recordedCount >= 3;
+    final showLine = recordedCount >= 2;
 
     // ===== 3️⃣ 建立 LineChartBarData =====
     final List<LineChartBarData> barDatas = [];
