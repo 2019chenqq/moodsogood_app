@@ -933,7 +933,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
     String? caption,
   }) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      constraints: const BoxConstraints(minHeight: 118),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
       decoration: BoxDecoration(
         color: HealingDesignSystem.adaptiveFill(context),
         borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
@@ -942,6 +943,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
         ),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -951,9 +953,12 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
               Expanded(
                 child: Text(
                   label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: HealingDesignSystem.adaptiveSecondaryText(context),
                     fontSize: 12,
+                    height: 1.2,
                   ),
                 ),
               ),
@@ -985,6 +990,9 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
 
   Widget _buildSleepAnalysisPage(List<DailyRecord> records, bool isPro) {
     final bool isLocked = _isHistoryLocked(isPro);
+    final textScale = MediaQuery.textScalerOf(context).scale(1.0);
+    final metricCardExtent =
+        120.0 + ((textScale > 1.0 ? textScale - 1.0 : 0.0) * 36.0);
     final sleepRecords =
         records.where((r) => _hasSleepContent(r.sleep)).toList();
 
@@ -1102,13 +1110,15 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
                     ],
                   ),
                   const SizedBox(height: 14),
-                  GridView.count(
-                    crossAxisCount: 2,
+                  GridView(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    crossAxisSpacing: 10,
-                    mainAxisSpacing: 10,
-                    childAspectRatio: 2.15,
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 10,
+                      mainAxisSpacing: 10,
+                      mainAxisExtent: metricCardExtent,
+                    ),
                     children: [
                       _sleepMetricTile(
                         icon: Icons.bedtime_outlined,
