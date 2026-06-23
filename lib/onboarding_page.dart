@@ -237,7 +237,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
           
           // 標題
           Text(
-            '每日紀錄',
+            '每日狀態紀錄',
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
               fontWeight: FontWeight.bold,
             ),
@@ -296,15 +296,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
             description: '記錄睡眠時間、質量和夜間醒來次數，'
                 '了解您的睡眠模式。',
           ),
-          
-          const SizedBox(height: 20),
-          
-          _buildFeatureItem(
-            icon: Icons.notes,
-            title: '備註說明',
-            description: '添加詳細的筆記來描述您的情況或任何特殊事件。',
-          ),
-          
+
           const SizedBox(height: 40),
         ],
       ),
@@ -322,7 +314,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
           
           // 標題
           Text(
-            '日記本',
+            '日記',
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
               fontWeight: FontWeight.bold,
             ),
@@ -537,7 +529,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                _buildTipItem('每天至少記錄一次您的心情'),
+                _buildTipItem('每天至少記錄一次您的情緒、身體狀態和睡眠狀態'),
                 const SizedBox(height: 8),
                 _buildTipItem('定期查看統計數據以識別模式'),
                 const SizedBox(height: 8),
