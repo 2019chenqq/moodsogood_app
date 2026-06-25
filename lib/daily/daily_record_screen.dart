@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tutorial_coach_mark/tutorial_coach_mark.dart';
 import 'dart:convert';
 
 import '../constants/healing_design_system.dart';
@@ -13,17 +14,22 @@ import 'daily_record_repository.dart';
 
 // Import refactored modules
 import 'daily_record_helpers.dart';
-import 'daily_record_dialogs.dart';
 import 'daily_record_widgets.dart';
 import 'daily_record_pages.dart';
 import 'widgets/emotion_page_checkbox.dart';
 import '../analytics_service.dart';
+import '../tutorial/app_tutorial_service.dart';
 
 /// Main Screen
 class DailyRecordScreen extends StatefulWidget {
-  const DailyRecordScreen({super.key, this.initialTab = 0});
+  const DailyRecordScreen({
+    super.key,
+    this.initialTab = 0,
+    this.startTutorial = false,
+  });
 
   final int initialTab;
+  final bool startTutorial;
 
   @override
   State<DailyRecordScreen> createState() => _DailyRecordScreenState();
@@ -41,6 +47,16 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   bool _isUpdatingPeriodCalendar = false;
   bool _showsPeriodCalendar = false;
   int? _lastSuicidalValue;
+  final GlobalKey _emotionTabKey = GlobalKey();
+  final GlobalKey _firstEmotionItemKey = GlobalKey();
+  final GlobalKey _emotionScoreKey = GlobalKey();
+  final GlobalKey _tutorialSliderKey = GlobalKey();
+  final GlobalKey _saveButtonKey = GlobalKey();
+  final ScrollController _emotionScrollController = ScrollController();
+  TutorialCoachMark? _dailyTutorial;
+  bool _didStartTutorial = false;
+  bool _isDisposingTutorial = false;
+  bool _showTutorialScorePreview = false;
 
   // ——— 目前紀錄日期與時間（給頁首顯示；docId 只吃日期） ———
   DateTime _recordDate = DateTime.now();
@@ -53,11 +69,22 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     _pageController = PageController(initialPage: _index);
     _loadPeriodVisibilityAndCalendarState();
     _loadExistingData(_recordDate);
+    if (widget.startTutorial) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        if (!mounted) return;
+        await _startDailyRecordTutorial();
+      });
+    }
     AnalyticsService.logPage('daily_record_page'); // 一進來就載入今天的紀錄（含生理期狀態）
   }
 
   @override
   void dispose() {
+    _isDisposingTutorial = true;
+    _dailyTutorial?.finish();
+    _dailyTutorial = null;
+    _emotionScrollController.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -70,10 +97,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
 
     var showsPeriodCalendar = false;
     try {
-      final profile = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .get();
+      final profile =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
       final sex = (profile.data()?['sexAssignedAtBirth'] as String?)?.trim();
       showsPeriodCalendar = sex == null || sex.isEmpty || sex == '女性';
     } catch (e) {
@@ -121,7 +146,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
 
     final intervals = <int>[];
     for (int i = 1; i < starts.length; i++) {
-      final diff = _dateOnly(starts[i]).difference(_dateOnly(starts[i - 1])).inDays;
+      final diff =
+          _dateOnly(starts[i]).difference(_dateOnly(starts[i - 1])).inDays;
       if (diff >= 15 && diff <= 60) {
         intervals.add(diff);
       }
@@ -164,7 +190,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         _periodCycleLength = savedCycle;
       }
 
-      final savedDays = prefs.getStringList('period_selected_dates') ?? const [];
+      final savedDays =
+          prefs.getStringList('period_selected_dates') ?? const [];
       for (final id in savedDays) {
         final d = DateTime.tryParse(id);
         if (d != null) selected.add(_dateOnly(d));
@@ -245,8 +272,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   Future<void> _persistPeriodDatesToPrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final ids = _periodSelectedDates.toList()
-        ..sort();
+      final ids = _periodSelectedDates.toList()..sort();
       await prefs.setStringList(
         'period_selected_dates',
         ids.map(DateHelper.toId).toList(),
@@ -379,7 +405,9 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
 
       if (isStartOfRun) {
         final removedDays = _periodSelectedDates
-            .where((d) => !d.isBefore(day) && d.isBefore(day.add(const Duration(days: 7))))
+            .where((d) =>
+                !d.isBefore(day) &&
+                d.isBefore(day.add(const Duration(days: 7))))
             .toSet();
 
         if (removedDays.isNotEmpty) {
@@ -394,7 +422,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
 
     final hasAdjacentSelected =
         _periodSelectedDates.contains(day.subtract(const Duration(days: 1))) ||
-        _periodSelectedDates.contains(day.add(const Duration(days: 1)));
+            _periodSelectedDates.contains(day.add(const Duration(days: 1)));
 
     if (hasAdjacentSelected) {
       await _applyPeriodDaysUpdate(days: {day}, isPeriod: true, startId: null);
@@ -483,6 +511,311 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     );
   }
 
+  Future<void> _startDailyRecordTutorial() async {
+    if (_didStartTutorial) return;
+    _didStartTutorial = true;
+
+    if (_index != 0) {
+      setState(() => _index = 0);
+      _pageController.jumpToPage(0);
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+    }
+
+    if (!mounted) return;
+
+    await _showDailyTutorialSegment(
+      targets: [
+        _buildTargetIfVisible(
+          key: _emotionTabKey,
+          identify: 'emotion_tab',
+          text: '先從情緒開始，記錄今天主要的感受。',
+          radius: 16,
+        ),
+        _buildTargetIfVisible(
+          key: _firstEmotionItemKey,
+          identify: 'first_emotion_item',
+          text: '點選情緒項目，可以設定今天的情緒強度。',
+        ),
+      ],
+      onFinish: _showEmotionScoreTutorialWithBubble,
+    );
+  }
+
+  Future<void> _showEmotionScoreTutorialWithBubble() async {
+    if (!mounted) return;
+
+    if (!_emotions.any((emotion) => emotion.value != null) &&
+        !_showTutorialScorePreview) {
+      setState(() => _showTutorialScorePreview = true);
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      if (!mounted) return;
+    }
+
+    final scoreContext = _tutorialSliderKey.currentContext;
+    if (scoreContext != null && scoreContext.mounted) {
+      await Scrollable.ensureVisible(
+        scoreContext,
+        duration: const Duration(milliseconds: 450),
+        curve: Curves.easeInOut,
+        alignment: 0.35,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+    }
+
+    if (!mounted) return;
+
+    final scoreTarget = _buildTargetIfVisible(
+      key: _tutorialSliderKey,
+      identify: 'emotion_score',
+      text: '滑動以調整分數',
+    );
+
+    final effectiveScoreTarget = _buildSliderTargetIfVisible() ?? scoreTarget;
+
+    if (effectiveScoreTarget == null) {
+      await _showSaveTutorial();
+      return;
+    }
+
+    await _showDailyTutorialSegment(
+      targets: [effectiveScoreTarget],
+      onFinish: _showSaveTutorial,
+    );
+  }
+
+  Future<void> _showSaveTutorial() async {
+    if (!mounted) return;
+
+    await _showDailyTutorialSegment(
+      targets: [
+        _buildTargetIfVisible(
+          key: _saveButtonKey,
+          identify: 'save_button',
+          text: '完成後記得儲存，資料才會出現在紀錄歷程與趨勢圖。',
+          primaryText: '我知道了',
+        ),
+      ],
+      onFinish: _markDailyRecordTutorialSeen,
+    );
+  }
+
+  TargetFocus? _buildSliderTargetIfVisible() {
+    if (_tutorialSliderKey.currentContext == null) return null;
+
+    return TargetFocus(
+      identify: 'emotion_score',
+      keyTarget: _tutorialSliderKey,
+      shape: ShapeLightFocus.RRect,
+      radius: 16,
+      contents: [
+        TargetContent(
+          align: ContentAlign.top,
+          builder: (context, controller) => _DailyTutorialBubble(
+            text: '滑動以調整分數',
+            primaryText: '下一步',
+            onPrimary: controller.next,
+            onSkip: controller.skip,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ignore: unused_element
+  Future<void> _showEmotionScoreTutorial() async {
+    if (!mounted) return;
+
+    if (!_emotions.any((emotion) => emotion.value != null) &&
+        !_showTutorialScorePreview) {
+      setState(() => _showTutorialScorePreview = true);
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      if (!mounted) return;
+    }
+
+    final scoreContext = _emotionScoreKey.currentContext;
+    if (scoreContext != null && scoreContext.mounted) {
+      await Scrollable.ensureVisible(
+        scoreContext,
+        duration: const Duration(milliseconds: 450),
+        curve: Curves.easeInOut,
+        alignment: 0.35,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+    }
+
+    if (!mounted) return;
+
+    await _showDailyTutorialSegment(
+      targets: [
+        _buildTargetIfVisible(
+          key: _emotionScoreKey,
+          identify: 'emotion_score',
+          text: '用分數記錄強度，之後就能在趨勢圖看到變化。',
+        ),
+        _buildTargetIfVisible(
+          key: _saveButtonKey,
+          identify: 'save_button',
+          text: '完成後記得儲存，資料才會出現在紀錄歷程與趨勢圖。',
+          primaryText: '我知道了',
+        ),
+      ],
+      onFinish: _markDailyRecordTutorialSeen,
+    );
+  }
+
+  Future<void> _showDailyTutorialSegment({
+    required List<TargetFocus?> targets,
+    required Future<void> Function() onFinish,
+  }) async {
+    final visibleTargets = targets.whereType<TargetFocus>().toList();
+    if (visibleTargets.isEmpty) {
+      await onFinish();
+      return;
+    }
+
+    _dailyTutorial?.finish();
+    _dailyTutorial = null;
+
+    _dailyTutorial = TutorialCoachMark(
+      targets: visibleTargets,
+      colorShadow: Colors.black,
+      opacityShadow: 0.48,
+      paddingFocus: 8,
+      textSkip: '跳過',
+      onFinish: () async {
+        _dailyTutorial = null;
+        if (_isDisposingTutorial) return;
+        await onFinish();
+      },
+      onSkip: () {
+        _dailyTutorial = null;
+        if (_isDisposingTutorial) return true;
+        _markDailyRecordTutorialSeen();
+        return true;
+      },
+    )..show(context: context);
+  }
+
+  TargetFocus? _buildTargetIfVisible({
+    required GlobalKey key,
+    required String identify,
+    required String text,
+    ShapeLightFocus shape = ShapeLightFocus.RRect,
+    double radius = 20,
+    ContentAlign contentAlign = ContentAlign.bottom,
+    String primaryText = '下一步',
+  }) {
+    if (key.currentContext == null) return null;
+
+    return TargetFocus(
+      identify: identify,
+      keyTarget: key,
+      shape: shape,
+      radius: radius,
+      contents: [
+        TargetContent(
+          align: contentAlign,
+          builder: (context, controller) => _DailyTutorialBubble(
+            text: text,
+            primaryText: primaryText,
+            onPrimary: controller.next,
+            onSkip: controller.skip,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ignore: unused_element
+  Future<void> _maybeShowDailyRecordTutorial() async {
+    if (_didStartTutorial) return;
+    _didStartTutorial = true;
+
+    if (_index != 0) {
+      setState(() => _index = 0);
+      _pageController.jumpToPage(0);
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+    }
+
+    if (!mounted) return;
+
+    final targets = <TargetFocus?>[
+      _buildTutorialTarget(
+        key: _emotionTabKey,
+        identify: 'emotion_tab',
+        text: '先從情緒開始，記錄今天主要的感受。',
+      ),
+      _buildTutorialTarget(
+        key: _firstEmotionItemKey,
+        identify: 'first_emotion_item',
+        text: '點選情緒項目，可以設定今天的情緒強度。',
+      ),
+      _buildTutorialTarget(
+        key: _emotionScoreKey.currentContext == null
+            ? _firstEmotionItemKey
+            : _emotionScoreKey,
+        identify: 'emotion_score',
+        text: '用分數記錄強度，之後就能在趨勢圖看到變化。',
+      ),
+      _buildTutorialTarget(
+        key: _saveButtonKey,
+        identify: 'save_button',
+        text: '完成後記得儲存，資料才會出現在紀錄歷程與趨勢圖。',
+        primaryText: '我知道了',
+      ),
+    ].whereType<TargetFocus>().toList();
+
+    if (targets.isEmpty) return;
+
+    TutorialCoachMark(
+      targets: targets,
+      colorShadow: Colors.black,
+      opacityShadow: 0.48,
+      paddingFocus: 8,
+      textSkip: '跳過',
+      onFinish: _markDailyRecordTutorialSeen,
+      onSkip: () {
+        _markDailyRecordTutorialSeen();
+        return true;
+      },
+    ).show(context: context);
+  }
+
+  // ignore: unused_element
+  TargetFocus? _buildTutorialTarget({
+    required GlobalKey key,
+    required String identify,
+    required String text,
+    String primaryText = '下一步',
+  }) {
+    if (key.currentContext == null) return null;
+
+    return TargetFocus(
+      identify: identify,
+      keyTarget: key,
+      shape: ShapeLightFocus.RRect,
+      radius: 18,
+      contents: [
+        TargetContent(
+          align: ContentAlign.bottom,
+          builder: (context, controller) => _DailyTutorialBubble(
+            text: text,
+            primaryText: primaryText,
+            onPrimary: controller.next,
+            onSkip: controller.skip,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _markDailyRecordTutorialSeen() async {
+    if (mounted && _showTutorialScorePreview) {
+      setState(() => _showTutorialScorePreview = false);
+    }
+    await AppTutorialService.markDailyRecordTutorialSeen();
+  }
+
   Widget _buildTopTabBar() {
     const tabs = [
       (icon: Icons.sentiment_satisfied, label: '情緒'),
@@ -508,17 +841,20 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
               curve: Curves.easeOut,
               margin: const EdgeInsets.symmetric(horizontal: 2),
               decoration: BoxDecoration(
-                gradient: isSelected ? HealingDesignSystem.primaryGradient() : null,
+                gradient:
+                    isSelected ? HealingDesignSystem.primaryGradient() : null,
                 color: isSelected ? null : Colors.transparent,
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Material(
                 color: Colors.transparent,
                 child: InkWell(
+                  key: i == 0 ? _emotionTabKey : null,
                   borderRadius: BorderRadius.circular(16),
                   onTap: () => _selectTab(i),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -825,8 +1161,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
           ),
         );
 
-        // 生理期狀態（月曆資料優先）
-        _isPeriod =
+      // 生理期狀態（月曆資料優先）
+      _isPeriod =
           _periodSelectedDates.contains(_dateOnly(date)) || record.isPeriod;
     });
   }
@@ -970,9 +1306,9 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         payload['periodStartId'] = oldStartId;
       }
 
-        payload['periodNextExpectedStart'] =
+      payload['periodNextExpectedStart'] =
           _predictedNextPeriodStart()?.toIso8601String();
-        payload['periodArrivalDeltaDays'] = _arrivalDeltaDays();
+      payload['periodArrivalDeltaDays'] = _arrivalDeltaDays();
 
       // Only sync to Firebase if enabled
       if (FirebaseSyncConfig.shouldSync()) {
@@ -1044,8 +1380,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
                 effectiveIsPeriod ? (oldStartId ?? docId) : oldStartId,
             'periodEndId': !effectiveIsPeriod && oldIsPeriod ? docId : null,
             'cycleLength': _periodCycleLength,
-            'nextExpectedStart':
-                _predictedNextPeriodStart()?.toIso8601String(),
+            'nextExpectedStart': _predictedNextPeriodStart()?.toIso8601String(),
             'arrivalDeltaDays': _arrivalDeltaDays(),
           },
         );
@@ -1080,15 +1415,39 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   }
 
   Future<void> _addEmotion() async {
-    final name = await showTextDialog(context, '新增情緒項目', '項目名稱');
+    final c = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('新增情緒項目'),
+        content: TextField(controller: c, decoration: const InputDecoration(hintText: '項目名稱')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(context, c.text), child: const Text('確定')),
+        ],
+      ),
+    );
+    c.dispose();
     if (name != null && name.trim().isNotEmpty) {
       setState(() => _emotions.add(EmotionItem(name.trim())));
     }
   }
 
   Future<void> _renameEmotion(int i) async {
-    final name = await showTextDialog(context, '重新命名', _emotions[i].name);
     if (i == 0) return;
+    final c = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('重新命名'),
+        content: TextField(controller: c, decoration: InputDecoration(hintText: _emotions[i].name)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(context, c.text), child: const Text('確定')),
+        ],
+      ),
+    );
+    c.dispose();
     if (name != null && name.trim().isNotEmpty) {
       setState(() => _emotions[i] = _emotions[i].copyWith(name: name.trim()));
     }
@@ -1169,18 +1528,47 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
             });
             _maybeShowEmergencyAlert();
           },
+          firstEmotionItemKey: _firstEmotionItemKey,
+          emotionScoreKey: _emotionScoreKey,
+          tutorialSliderKey: _tutorialSliderKey,
+          scrollController: _emotionScrollController,
+          showTutorialScorePreview: _showTutorialScorePreview,
         ),
       ),
       _pageWrapper(SymptomPage(
         items: _symptoms,
         onAdd: () async {
-          final name = await showTextDialog(context, '新增症狀', '症狀名稱');
+          final c = TextEditingController();
+          final name = await showDialog<String>(
+            context: context,
+            builder: (_) => AlertDialog(
+              title: const Text('新增症狀'),
+              content: TextField(controller: c, decoration: const InputDecoration(hintText: '症狀名稱')),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+                FilledButton(onPressed: () => Navigator.pop(context, c.text), child: const Text('確定')),
+              ],
+            ),
+          );
+          c.dispose();
           if (name != null && name.trim().isNotEmpty) {
             setState(() => _symptoms.add(SymptomItem(name: name.trim())));
           }
         },
         onRename: (i) async {
-          final name = await showTextDialog(context, '重新命名', _symptoms[i].name);
+          final c = TextEditingController();
+          final name = await showDialog<String>(
+            context: context,
+            builder: (_) => AlertDialog(
+              title: const Text('重新命名'),
+              content: TextField(controller: c, decoration: InputDecoration(hintText: _symptoms[i].name)),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+                FilledButton(onPressed: () => Navigator.pop(context, c.text), child: const Text('確定')),
+              ],
+            ),
+          );
+          c.dispose();
           if (name != null && name.trim().isNotEmpty) {
             setState(
                 () => _symptoms[i] = _symptoms[i].copyWith(name: name.trim()));
@@ -1242,12 +1630,44 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         onChangeNote: (v) => setState(() => sleepNote = v),
         sleepQuality: sleepQuality,
         onPickValue: () async {
-          final v = await showSliderPicker(
+          int tempValue = sleepQuality ?? 1;
+          final v = await showDialog<int>(
             context: context,
-            initial: sleepQuality ?? 1,
-            min: 1,
-            max: 5,
-            title: '選擇睡眠品質',
+            builder: (context) {
+              return AlertDialog(
+                title: const Text('選擇睡眠品質'),
+                content: StatefulBuilder(
+                  builder: (context, setState) {
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Slider(
+                          value: tempValue.toDouble(),
+                          min: 1,
+                          max: 5,
+                          divisions: 4,
+                          label: tempValue.toString(),
+                          onChanged: (v) {
+                            setState(() => tempValue = v.round());
+                          },
+                        ),
+                        Text('$tempValue / 5'),
+                      ],
+                    );
+                  },
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('取消'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context, tempValue),
+                    child: const Text('確定'),
+                  ),
+                ],
+              );
+            },
           );
           if (v != null) setState(() => sleepQuality = v);
         },
@@ -1335,8 +1755,9 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       appBar: AppBar(
         toolbarHeight: 60,
         elevation: 0,
-        backgroundColor:
-            isDark ? Theme.of(context).colorScheme.surface : HealingDesignSystem.softBlue,
+        backgroundColor: isDark
+            ? Theme.of(context).colorScheme.surface
+            : HealingDesignSystem.softBlue,
         surfaceTintColor: Colors.transparent,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -1397,6 +1818,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
                   child: SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
+                      key: _saveButtonKey,
                       onPressed: _isSaving ? null : _saveAll,
                       icon: const Icon(Icons.save),
                       label: Text(_isSaving ? '儲存中…' : '儲存全部'),
@@ -1407,6 +1829,70 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _DailyTutorialBubble extends StatelessWidget {
+  const _DailyTutorialBubble({
+    required this.text,
+    required this.primaryText,
+    required this.onPrimary,
+    required this.onSkip,
+  });
+
+  final String text;
+  final String primaryText;
+  final VoidCallback onPrimary;
+  final VoidCallback onSkip;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(horizontal: 18),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FCFF),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            text,
+            style: const TextStyle(
+              color: Color(0xFF2F4858),
+              fontSize: 16,
+              height: 1.55,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: onSkip,
+                child: const Text('跳過'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: onPrimary,
+                child: Text(primaryText),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
