@@ -3,12 +3,13 @@ import 'package:flutter/material.dart';
 class EmotionSlider extends StatelessWidget {
   final String label;
   final int value;
-  final ValueChanged<int> onChanged;
+  final ValueChanged<int>? onChanged;
   final String leftIcon;
   final String rightIcon;
   final List<Color> gradientColors;
   final Color? thumbBadgeColor;
   final int maxScore;
+  final Key? sliderKey;
 
   const EmotionSlider({
     super.key,
@@ -20,12 +21,14 @@ class EmotionSlider extends StatelessWidget {
     required this.gradientColors,
     this.thumbBadgeColor,
     this.maxScore = 5,
+    this.sliderKey,
   });
 
   @override
   Widget build(BuildContext context) {
     final safeMax = maxScore.clamp(1, 10);
     final safeValue = value.clamp(1, safeMax);
+    final handleChanged = onChanged;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -33,6 +36,7 @@ class EmotionSlider extends StatelessWidget {
         const SizedBox(height: 12),
 
         Row(
+          key: sliderKey,
           children: [
             Image.asset(leftIcon, width: 36),
             Expanded(
@@ -63,7 +67,9 @@ class EmotionSlider extends StatelessWidget {
                       min: 1,
                       max: safeMax.toDouble(),
                       divisions: safeMax - 1,
-                      onChanged: (v) => onChanged(v.round()),
+                      onChanged: handleChanged == null
+                          ? null
+                          : (v) => handleChanged(v.round()),
                     ),
                   ),
                 ],
