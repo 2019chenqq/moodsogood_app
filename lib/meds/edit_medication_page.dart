@@ -35,15 +35,16 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
   double _pillCount = 1.0; // 每次幾顆
   String _unit = 'mg';
   String _medType = 'tablet'; // tablet / injection / drops
-int _intervalDays = 28;     // 長效針用：每幾天一次（例如 28、30）
+  int _intervalDays = 28; // 長效針用：每幾天一次（例如 28、30）
   double _dropMg = 10.0;
   double _dropMlBase = 1.0;
   double _intakeMl = 1.0;
-Timer? _drugDebounce;
-bool _isSearchingDrug = false;
+  Timer? _drugDebounce;
+  bool _isSearchingDrug = false;
+  String? _lastAutoNameEn;
 
 // 候選結果：[{id, zh, en}]
-List<Map<String, String>> _drugSuggestions = [];
+  List<Map<String, String>> _drugSuggestions = [];
   final Map<String, bool> _timeSlots = {
     '早上': false,
     '中午': false,
@@ -72,7 +73,7 @@ List<Map<String, String>> _drugSuggestions = [];
   void initState() {
     super.initState();
     _hydrateFromInitial(widget.initialData);
-     AnalyticsService.logPage('edit_medication_page');
+    AnalyticsService.logPage('edit_medication_page');
   }
 
   void _hydrateFromInitial(Map<String, dynamic> d) {
@@ -80,19 +81,22 @@ List<Map<String, String>> _drugSuggestions = [];
     _nameEnCtrl.text = (d['nameEn'] as String?) ?? '';
     _noteCtrl.text = (d['note'] as String?) ?? '';
 // ✅ 藥物形式：口服 / 長效針
-_medType = (d['type'] as String?) ?? 'tablet';
+    _medType = (d['type'] as String?) ?? 'tablet';
 // ✅ 注射間隔（天）
-final iv = d['intervalDays'];
-if (iv is int) _intervalDays = iv;
-else if (iv is double) _intervalDays = iv.round();
-else _intervalDays = 28;
+    final iv = d['intervalDays'];
+    if (iv is int)
+      _intervalDays = iv;
+    else if (iv is double)
+      _intervalDays = iv.round();
+    else
+      _intervalDays = 28;
 
 // 若是長效針：通常不需要 times（避免混進早上/睡前）
     if (_medType == 'injection') {
-  for (final k in _timeSlots.keys) {
-    _timeSlots[k] = false;
-  }
-}
+      for (final k in _timeSlots.keys) {
+        _timeSlots[k] = false;
+      }
+    }
     final cMg = d['concentrationMg'];
     final cMl = d['concentrationMl'];
     final iMl = d['intakeMl'];
@@ -114,25 +118,32 @@ else _intervalDays = 28;
     }
 
     final pillVal = d['pillCount'];
-    if (pillVal is int) _pillCount = pillVal.toDouble();
-    else if (pillVal is double) _pillCount = pillVal;
-    else _pillCount = 1.0;
+    if (pillVal is int)
+      _pillCount = pillVal.toDouble();
+    else if (pillVal is double)
+      _pillCount = pillVal;
+    else
+      _pillCount = 1.0;
 
     _unit = (d['unit'] as String?) ?? 'mg';
 
-    final times = (d['times'] as List?)?.whereType<String>().toSet() ?? <String>{};
+    final times =
+        (d['times'] as List?)?.whereType<String>().toSet() ?? <String>{};
     for (final k in _timeSlots.keys) {
       _timeSlots[k] = times.contains(k);
     }
 
-    final purposes = (d['purposes'] as List?)?.whereType<String>().toSet() ?? <String>{};
+    final purposes =
+        (d['purposes'] as List?)?.whereType<String>().toSet() ?? <String>{};
     for (final k in _purposes.keys) {
       _purposes[k] = purposes.contains(k);
     }
 
     // 自訂用途、身體症狀
     _purposeOtherCtrl.text = (d['purposeOther'] as String?) ?? '';
-    final bodySymptoms = (d['bodySymptoms'] as List?)?.whereType<String>().toList() ?? <String>[];
+    final bodySymptoms =
+        (d['bodySymptoms'] as List?)?.whereType<String>().toList() ??
+            <String>[];
     _bodySymptomCtrl.text = bodySymptoms.join('、');
 
     // startDate
@@ -156,8 +167,8 @@ else _intervalDays = 28;
   @override
   void dispose() {
     _drugDebounce?.cancel();
-  _nameCtrl.dispose();
-  _nameEnCtrl.dispose();
+    _nameCtrl.dispose();
+    _nameEnCtrl.dispose();
     _noteCtrl.dispose();
     _purposeOtherCtrl.dispose();
     _bodySymptomCtrl.dispose();
@@ -187,87 +198,99 @@ else _intervalDays = 28;
               const SizedBox(height: 14),
 
               _SectionCard(
-  title: '藥物名稱（中文）',
-  icon: Icons.medication_outlined,
-  child: Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      TextFormField(
-        controller: _nameCtrl,
-        textInputAction: TextInputAction.next,
-        decoration: _inputDeco('例如：克癲平、思樂康…')
-            .copyWith(suffixIcon: _isSearchingDrug
-                ? const Padding(
-                    padding: EdgeInsets.all(12),
-                    child: SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                title: '藥物名稱（中文）',
+                icon: Icons.medication_outlined,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextFormField(
+                      controller: _nameCtrl,
+                      textInputAction: TextInputAction.next,
+                      decoration: _inputDeco('例如：克癲平、思樂康…').copyWith(
+                        suffixIcon: _isSearchingDrug
+                            ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              )
+                            : null,
+                      ),
+                      onChanged: (value) {
+                        _onDrugNameChanged(value);
+                      },
+                      validator: (v) {
+                        final t = (v ?? '').trim();
+                        if (t.isEmpty) return '請輸入藥物名稱';
+                        if (t.length < 2) return '名稱太短了';
+                        return null;
+                      },
                     ),
-                  )
-                : null,
-            ),
-        onChanged: (value) {
-  // 🔕 暫時關閉藥物中英對照字典搜尋
-},
-validator: (v) {
-  final t = (v ?? '').trim();
-  if (t.isEmpty) return '請輸入藥物名稱';
-  if (t.length < 2) return '名稱太短了';
-  return null;
-},
-      ),
 
-      // ✅ 候選清單
-      if (_drugSuggestions.isNotEmpty) ...[
-        const SizedBox(height: 10),
-        Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: Theme.of(context).dividerColor.withOpacity(0.6),
-            ),
-          ),
-          // child: ListView.separated(
-          //   shrinkWrap: true,
-          //   physics: const NeverScrollableScrollPhysics(),
-          //   itemCount: _drugSuggestions.length,
-          //   separatorBuilder: (_, __) => Divider(
-          //     height: 1,
-          //     color: Theme.of(context).dividerColor.withOpacity(0.6),
-          //   ),
-          //   itemBuilder: (context, i) {
-          //     final s = _drugSuggestions[i];
-          //     final zh = s['zh'] ?? '';
-          //     final en = s['en'] ?? '';
-          //     return ListTile(
-          //       dense: true,
-          //       title: Text(zh.isEmpty ? en : zh),
-          //       subtitle: (zh.isNotEmpty && en.isNotEmpty) ? Text(en) : null,
-          //       onTap: () => _applyDrugSuggestion(s),
-          //     );
-          //   },
-          // ),
-        ),
-      ],
-      // 若沒有候選，提供新增到字典的選項
-      // if (!_isSearchingDrug && _drugSuggestions.isEmpty && _nameCtrl.text.trim().isNotEmpty) ...[
-      //   const SizedBox(height: 8),
-      //   ListTile(
-      //     contentPadding: EdgeInsets.zero,
-      //     leading: const Icon(Icons.add_box_outlined),
-      //     title: const Text('找不到這個藥，新增到字典？'),
-      //     subtitle: Text(_nameCtrl.text.trim()),
-      //     trailing: TextButton(
-      //       onPressed: () => _showAddDrugDialog(_nameCtrl.text.trim()),
-      //       child: const Text('新增'),
-      //     ),
-      //   ),
-      // ],
-    ],
-  ),
-),
+                    // ✅ 候選清單
+                    if (_drugSuggestions.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surface,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color:
+                                Theme.of(context).dividerColor.withOpacity(0.6),
+                          ),
+                        ),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: _drugSuggestions.length,
+                          separatorBuilder: (_, __) => Divider(
+                            height: 1,
+                            color:
+                                Theme.of(context).dividerColor.withOpacity(0.6),
+                          ),
+                          itemBuilder: (context, i) {
+                            final s = _drugSuggestions[i];
+                            final zh = s['zh'] ?? '';
+                            final en = s['en'] ?? '';
+                            final dose = s['dose'] ?? '';
+                            final form = s['form'] ?? '';
+                            final meta = <String>[dose, form]
+                                .where((v) => v.trim().isNotEmpty)
+                                .join(' · ');
+                            return ListTile(
+                              dense: true,
+                              title: Text(zh.isEmpty ? en : zh),
+                              subtitle: meta.isNotEmpty
+                                  ? Text(meta)
+                                  : ((zh.isNotEmpty && en.isNotEmpty)
+                                      ? Text(en)
+                                      : null),
+                              onTap: () => _applyDrugSuggestion(s),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                    // 若沒有候選，提供新增到字典的選項
+                    // if (!_isSearchingDrug && _drugSuggestions.isEmpty && _nameCtrl.text.trim().isNotEmpty) ...[
+                    //   const SizedBox(height: 8),
+                    //   ListTile(
+                    //     contentPadding: EdgeInsets.zero,
+                    //     leading: const Icon(Icons.add_box_outlined),
+                    //     title: const Text('找不到這個藥，新增到字典？'),
+                    //     subtitle: Text(_nameCtrl.text.trim()),
+                    //     trailing: TextButton(
+                    //       onPressed: () => _showAddDrugDialog(_nameCtrl.text.trim()),
+                    //       child: const Text('新增'),
+                    //     ),
+                    //   ),
+                    // ],
+                  ],
+                ),
+              ),
 
 // const SizedBox(height: 12),
 
@@ -281,7 +304,18 @@ validator: (v) {
 //   ),
 // ),
 
-const SizedBox(height: 12),
+              _SectionCard(
+                title: '英文成分',
+                icon: Icons.translate_outlined,
+                child: TextFormField(
+                  controller: _nameEnCtrl,
+                  textInputAction: TextInputAction.next,
+                  decoration: _inputDeco('例如：DONEPEZIL HCL'),
+                  onChanged: (_) => _lastAutoNameEn = null,
+                ),
+              ),
+
+              const SizedBox(height: 12),
 
               _SectionCard(
                 title: '劑量',
@@ -289,112 +323,139 @@ const SizedBox(height: 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (_medType != 'drops') Row(
-                      children: [
-                        // 可點擊手動輸入
-                        InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: _editDoseManually,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  _doseLabel(_dose),
-                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                ),
-                                const SizedBox(width: 6),
-                                Icon(Icons.edit, size: 16, color: cs.onSurfaceVariant),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const Spacer(),
-                        _UnitPicker(
-                          value: _unit,
-                          onChanged: (v) => setState(() => _unit = v),
-                        ),
-                      ],
-                    ),
-                    if (_medType != 'drops') const SizedBox(height: 6),
-
-                    // 0.5 mg 刻度（你可改成 0.25 -> divisions: 1200）
-                    if (_medType != 'drops') Slider(
-                      value: _dose.clamp(0, 1000),
-                      min: 0,
-                      max: 1000,
-                      divisions: 10000,
-                      label: _doseLabel(_dose),
-                      onChanged: (v) => setState(() => _dose = v),
-                    ),
-
-                    if (_medType != 'drops') Row(
-                      children: [
-                        _SmallGhostButton(
-                          text: '−',
-                          onTap: () => setState(() => _dose = (_dose - 0.1).clamp(0, 1000)),
-                        ),
-                        const SizedBox(width: 8),
-                        _SmallGhostButton(
-                          text: '+',
-                          onTap: () => setState(() => _dose = (_dose + 0.1).clamp(0, 1000)),
-                        ),
-                        const Spacer(),
-                        Text(
-                          '可先填常用劑量，之後調整再記錄',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-                        ),
-                      ],
-                    ),
-                    if (_medType != 'drops') const SizedBox(height: 10),
-                    if (_medType != 'drops') Row(
-                      children: [
-                        Expanded(
-                          child: InkWell(
+                    if (_medType != 'drops')
+                      Row(
+                        children: [
+                          // 可點擊手動輸入
+                          InkWell(
                             borderRadius: BorderRadius.circular(12),
-                            onTap: _editPillCountManually,
+                            onTap: _editDoseManually,
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 4),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
-                                    '${_fmt1(_pillCount)} 顆',
-                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    _doseLabel(_dose),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(
                                           fontWeight: FontWeight.w600,
                                         ),
                                   ),
                                   const SizedBox(width: 6),
-                                  Icon(Icons.edit, size: 16, color: cs.onSurfaceVariant),
+                                  Icon(Icons.edit,
+                                      size: 16, color: cs.onSurfaceVariant),
                                 ],
                               ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    if (_medType != 'drops') Slider(
-                      value: _pillCount.clamp(0.1, 10),
-                      min: 0.1,
-                      max: 10,
-                      divisions: 99,
-                      label: '${_fmt1(_pillCount)} 顆',
-                      onChanged: (v) => setState(() => _pillCount = v),
-                    ),
-                    if (_medType != 'drops') Text(
-                      '每次總量：${_fmt1(_dose)} $_unit × ${_fmt1(_pillCount)} 顆 = ${_fmt1(_dose * _pillCount)} $_unit',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-                    ),
+                          const Spacer(),
+                          _UnitPicker(
+                            value: _unit,
+                            onChanged: (v) => setState(() => _unit = v),
+                          ),
+                        ],
+                      ),
+                    if (_medType != 'drops') const SizedBox(height: 6),
+
+                    // 0.5 mg 刻度（你可改成 0.25 -> divisions: 1200）
+                    if (_medType != 'drops')
+                      Slider(
+                        value: _dose.clamp(0, 100000),
+                        min: 0,
+                        max: 100000,
+                        divisions: 10000,
+                        label: _doseLabel(_dose),
+                        onChanged: (v) => setState(() => _dose = v),
+                      ),
+
+                    if (_medType != 'drops')
+                      Row(
+                        children: [
+                          _SmallGhostButton(
+                            text: '−',
+                            onTap: () => setState(
+                                () => _dose = (_dose - 0.1).clamp(0, 100000)),
+                          ),
+                          const SizedBox(width: 8),
+                          _SmallGhostButton(
+                            text: '+',
+                            onTap: () => setState(
+                                () => _dose = (_dose + 0.1).clamp(0, 100000)),
+                          ),
+                          const Spacer(),
+                          Text(
+                            '可先填常用劑量，之後調整再記錄',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: cs.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    if (_medType != 'drops') const SizedBox(height: 10),
+                    if (_medType != 'drops')
+                      Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: _editPillCountManually,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 4),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      '${_fmt1(_pillCount)} 顆',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Icon(Icons.edit,
+                                        size: 16, color: cs.onSurfaceVariant),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    if (_medType != 'drops')
+                      Slider(
+                        value: _pillCount.clamp(0.1, 10),
+                        min: 0.1,
+                        max: 10,
+                        divisions: 99,
+                        label: '${_fmt1(_pillCount)} 顆',
+                        onChanged: (v) => setState(() => _pillCount = v),
+                      ),
+                    if (_medType != 'drops')
+                      Text(
+                        '每次總量：${_fmt1(_dose)} $_unit × ${_fmt1(_pillCount)} 顆 = ${_fmt1(_dose * _pillCount)} $_unit',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: cs.onSurfaceVariant),
+                      ),
                     if (_medType == 'drops') ...[
                       Row(
                         children: [
                           Expanded(
                             child: Text(
                               '濃度：${_fmt1(_dropMg)} mg / ${_fmt1(_dropMlBase)} mL',
-                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(
                                     fontWeight: FontWeight.w600,
                                   ),
                             ),
@@ -421,9 +482,10 @@ const SizedBox(height: 12),
                       const SizedBox(height: 6),
                       Text(
                         '每次服用：${_fmt1(_intakeMl)} mL',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
                       ),
                       Slider(
                         value: _intakeMl,
@@ -435,95 +497,103 @@ const SizedBox(height: 12),
                       ),
                       Text(
                         '每次總量：(${_fmt1(_dropMg)}mg/${_fmt1(_dropMlBase)}mL) × ${_fmt1(_intakeMl)}mL = ${_fmt1((_dropMg / _dropMlBase) * _intakeMl)} mg',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: cs.onSurfaceVariant),
                       ),
                     ],
                   ],
                 ),
               ),
-_SectionCard(
-  title: '藥物形式',
-  icon: Icons.medical_services_outlined,
-  child: Wrap(
-    alignment: WrapAlignment.spaceBetween,
-    spacing: 8,
-    runSpacing: 8,
-    children: [
-      ChoiceChip(
-        label: const Text('口服藥'),
-        selected: _medType == 'tablet',
-        onSelected: (_) => setState(() => _medType = 'tablet'),
-      ),
-      ChoiceChip(
-        label: const Text('長效針'),
-        selected: _medType == 'injection',
-        onSelected: (_) => setState(() {
-          _medType = 'injection';
-          // 切到長效針時，清掉服用時間，避免混入早/晚分類
-          for (final k in _timeSlots.keys) {
-            _timeSlots[k] = false;
-          }
-        }),
-      ),
-      ChoiceChip(
-        label: const Text('滴劑'),
-        selected: _medType == 'drops',
-        onSelected: (_) => setState(() {
-          _medType = 'drops';
-          _unit = 'mg';
-        }),
-      ),
-    ],
-  ),
-),
-const SizedBox(height: 12),
+              _SectionCard(
+                title: '藥物形式',
+                icon: Icons.medical_services_outlined,
+                child: Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('口服藥'),
+                      selected: _medType == 'tablet',
+                      onSelected: (_) => setState(() => _medType = 'tablet'),
+                    ),
+                    ChoiceChip(
+                      label: const Text('長效針'),
+                      selected: _medType == 'injection',
+                      onSelected: (_) => setState(() {
+                        _medType = 'injection';
+                        // 切到長效針時，清掉服用時間，避免混入早/晚分類
+                        for (final k in _timeSlots.keys) {
+                          _timeSlots[k] = false;
+                        }
+                      }),
+                    ),
+                    ChoiceChip(
+                      label: const Text('滴劑'),
+                      selected: _medType == 'drops',
+                      onSelected: (_) => setState(() {
+                        _medType = 'drops';
+                        _unit = 'mg';
+                      }),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
 
-if (_medType == 'injection') ...[
-  _SectionCard(
-    title: '注射間隔（天）',
-    icon: Icons.calendar_today_outlined,
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('每 $_intervalDays 天一次', style: Theme.of(context).textTheme.titleSmall),
-        const SizedBox(height: 8),
-        Slider(
-          min: 7,
-          max: 60,
-          divisions: 46,
-          value: _intervalDays.toDouble(),
-          label: '$_intervalDays 天',
-          onChanged: (v) => setState(() => _intervalDays = v.round()),
-        ),
-        Text(
-          '提示：長效針通常不需要設定早/中/晚服用時間；每次施打請在「紀錄調整」記錄事件。',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-        ),
-      ],
-    ),
-  ),
-  const SizedBox(height: 12),
-],
+              if (_medType == 'injection') ...[
+                _SectionCard(
+                  title: '注射間隔（天）',
+                  icon: Icons.calendar_today_outlined,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('每 $_intervalDays 天一次',
+                          style: Theme.of(context).textTheme.titleSmall),
+                      const SizedBox(height: 8),
+                      Slider(
+                        min: 7,
+                        max: 60,
+                        divisions: 46,
+                        value: _intervalDays.toDouble(),
+                        label: '$_intervalDays 天',
+                        onChanged: (v) =>
+                            setState(() => _intervalDays = v.round()),
+                      ),
+                      Text(
+                        '提示：長效針通常不需要設定早/中/晚服用時間；每次施打請在「紀錄調整」記錄事件。',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: cs.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
 
               if (_medType != 'injection') ...[
-  _SectionCard(
-    title: '服用時間',
-    icon: Icons.schedule,
-    child: Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: _timeSlots.keys.map((k) {
-        final selected = _timeSlots[k] ?? false;
-        return FilterChip(
-          selected: selected,
-          label: Text(k),
-          onSelected: (s) => setState(() => _timeSlots[k] = s),
-        );
-      }).toList(),
-    ),
-  ),
-  const SizedBox(height: 12),
-],
+                _SectionCard(
+                  title: '服用時間',
+                  icon: Icons.schedule,
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _timeSlots.keys.map((k) {
+                      final selected = _timeSlots[k] ?? false;
+                      return FilterChip(
+                        selected: selected,
+                        label: Text(k),
+                        onSelected: (s) => setState(() => _timeSlots[k] = s),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
 
               const SizedBox(height: 12),
 
@@ -551,17 +621,16 @@ if (_medType == 'injection') ...[
                         );
                       }).toList(),
                     ),
-
                     if (bodySelected) ...[
                       const SizedBox(height: 12),
-                      Text('身體症狀（可填多項）', style: Theme.of(context).textTheme.bodySmall),
+                      Text('身體症狀（可填多項）',
+                          style: Theme.of(context).textTheme.bodySmall),
                       const SizedBox(height: 6),
                       TextField(
                         controller: _bodySymptomCtrl,
                         decoration: _inputDeco('例如：頭痛、噁心、心悸、手抖（可用逗號/頓號分隔）'),
                       ),
                     ],
-
                     if (otherSelected) ...[
                       const SizedBox(height: 12),
                       TextField(
@@ -618,10 +687,14 @@ if (_medType == 'injection') ...[
                 onPressed: _saving ? null : _save,
                 style: FilledButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
                 ),
                 child: _saving
-                    ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2))
                     : const Text('儲存'),
               ),
             ],
@@ -635,7 +708,10 @@ if (_medType == 'injection') ...[
     return InputDecoration(
       hintText: hint,
       filled: true,
-      fillColor: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.55),
+      fillColor: Theme.of(context)
+          .colorScheme
+          .surfaceContainerHighest
+          .withOpacity(0.55),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide.none,
@@ -672,10 +748,13 @@ if (_medType == 'injection') ...[
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('取消')),
             FilledButton(
               onPressed: () {
-                final value = double.tryParse(ctrl.text.trim().replaceAll(',', '.'));
+                final value =
+                    double.tryParse(ctrl.text.trim().replaceAll(',', '.'));
                 if (value == null || value < 0) return;
                 Navigator.pop(context, value);
               },
@@ -687,7 +766,7 @@ if (_medType == 'injection') ...[
     );
 
     if (result != null) {
-      setState(() => _dose = result.clamp(0, 1000));
+      setState(() => _dose = result.clamp(0, 100000));
     }
   }
 
@@ -709,10 +788,13 @@ if (_medType == 'injection') ...[
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('取消')),
             FilledButton(
               onPressed: () {
-                final value = double.tryParse(ctrl.text.trim().replaceAll(',', '.'));
+                final value =
+                    double.tryParse(ctrl.text.trim().replaceAll(',', '.'));
                 if (value == null || value <= 0) return;
                 Navigator.pop(context, value);
               },
@@ -744,7 +826,8 @@ if (_medType == 'injection') ...[
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('請先登入帳號')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('請先登入帳號')));
       return;
     }
 
@@ -763,7 +846,8 @@ if (_medType == 'injection') ...[
     final times = (_medType == 'injection')
         ? <String>[]
         : _timeSlots.entries.where((e) => e.value).map((e) => e.key).toList();
-    final purposes = _purposes.entries.where((e) => e.value).map((e) => e.key).toList();
+    final purposes =
+        _purposes.entries.where((e) => e.value).map((e) => e.key).toList();
 
     final purposeOther = _purposeOtherCtrl.text.trim();
     final bodyText = _bodySymptomCtrl.text.trim();
@@ -780,10 +864,11 @@ if (_medType == 'injection') ...[
     try {
       final now = DateTime.now();
 
-      final dosePerUnit = _medType == 'drops'
-          ? _round1(_dropMg / _dropMlBase)
-          : _round1(_dose);
-      final pillCount = _medType == 'injection' || _medType == 'drops' ? 1.0 : _round1(_pillCount);
+      final dosePerUnit =
+          _medType == 'drops' ? _round1(_dropMg / _dropMlBase) : _round1(_dose);
+      final pillCount = _medType == 'injection' || _medType == 'drops'
+          ? 1.0
+          : _round1(_pillCount);
       final concentrationMg = _medType == 'drops' ? _round1(_dropMg) : null;
       final concentrationMl = _medType == 'drops' ? _round1(_dropMlBase) : null;
       final intakeMl = _medType == 'drops' ? _round1(_intakeMl) : null;
@@ -807,7 +892,8 @@ if (_medType == 'injection') ...[
         'times': times,
         'purposes': purposes,
         'note': _noteCtrl.text.trim(),
-        'startDate': DateTime(_startDate.year, _startDate.month, _startDate.day).toString(),
+        'startDate': DateTime(_startDate.year, _startDate.month, _startDate.day)
+            .toString(),
         'isActive': _isActive,
         'bodySymptoms': bodySymptoms,
         'purposeOther': purposeOther.isEmpty ? null : purposeOther,
@@ -830,7 +916,8 @@ if (_medType == 'injection') ...[
       debugPrint('💊 [SAVE] 藥物編輯：type=$_medType, intervalDays=$_intervalDays');
 
       // 1️⃣ 先更新本地端（一定要更新）
-      await MedicationLocalDB().updateMedication(uid, widget.docId, medicationData);
+      await MedicationLocalDB()
+          .updateMedication(uid, widget.docId, medicationData);
       if (timelineItems.isNotEmpty) {
         await MedicationLocalDB().addAdjustmentRecord(uid, timelineId, {
           'date': _fmtYmd(now),
@@ -844,31 +931,29 @@ if (_medType == 'injection') ...[
       // 2️⃣ 再更新 Firebase（如果啟用同步）
       if (FirebaseSyncConfig.shouldSync()) {
         final userRef = FirebaseFirestore.instance.collection('users').doc(uid);
-        await userRef
-            .collection('medications')
-            .doc(widget.docId)
-            .set({
-              'name': name,
-              if (nameEn.isNotEmpty) 'nameEn': nameEn,
-              'dose': totalDose,
-              'dosePerUnit': dosePerUnit,
-              'pillCount': pillCount,
-              'concentrationMg': concentrationMg,
-              'concentrationMl': concentrationMl,
-              'intakeMl': intakeMl,
-              'unit': _medType == 'drops' ? 'mg' : _unit,
-              'type': _medType,
-              'intervalDays': _medType == 'injection' ? _intervalDays : null,
-              'times': times,
-              'purposes': purposes,
-              'purposeOther': purposeOther.isEmpty ? null : purposeOther,
-              'bodySymptoms': bodySymptoms,
-              'note': _noteCtrl.text.trim(),
-              'startDate': Timestamp.fromDate(DateTime(_startDate.year, _startDate.month, _startDate.day)),
-              'isActive': _isActive,
-              'lastChangeAt': Timestamp.fromDate(now),
-              'updatedAt': FieldValue.serverTimestamp(),
-            }, SetOptions(merge: true));
+        await userRef.collection('medications').doc(widget.docId).set({
+          'name': name,
+          if (nameEn.isNotEmpty) 'nameEn': nameEn,
+          'dose': totalDose,
+          'dosePerUnit': dosePerUnit,
+          'pillCount': pillCount,
+          'concentrationMg': concentrationMg,
+          'concentrationMl': concentrationMl,
+          'intakeMl': intakeMl,
+          'unit': _medType == 'drops' ? 'mg' : _unit,
+          'type': _medType,
+          'intervalDays': _medType == 'injection' ? _intervalDays : null,
+          'times': times,
+          'purposes': purposes,
+          'purposeOther': purposeOther.isEmpty ? null : purposeOther,
+          'bodySymptoms': bodySymptoms,
+          'note': _noteCtrl.text.trim(),
+          'startDate': Timestamp.fromDate(
+              DateTime(_startDate.year, _startDate.month, _startDate.day)),
+          'isActive': _isActive,
+          'lastChangeAt': Timestamp.fromDate(now),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
 
         if (timelineItems.isNotEmpty) {
           await userRef.collection('medAdjustments').doc(timelineId).set({
@@ -882,15 +967,18 @@ if (_medType == 'injection') ...[
         debugPrint('🔥 Firebase 已同步: ${widget.docId}');
       }
 
-      final reminderCount = await MedicationReminderService.syncDailyRemindersForActiveMeds();
+      final reminderCount =
+          await MedicationReminderService.syncDailyRemindersForActiveMeds();
       debugPrint('🔔 服藥提醒已重建：$reminderCount 個時段');
 
       if (!mounted) return;
       Navigator.pop(context, true);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已更新藥物')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('已更新藥物')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('儲存失敗：$e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('儲存失敗：$e')));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -1027,201 +1115,217 @@ if (_medType == 'injection') ...[
     final d = dt.day.toString().padLeft(2, '0');
     return '$y/$m/$d';
   }
+
   Future<void> _searchDrugDict(String input) async {
-  final q = input.trim().toLowerCase();
-  if (q.length < 1) {
-    setState(() {
-      _drugSuggestions = [];
-      _isSearchingDrug = false;
-    });
-    return;
-  }
-
-  setState(() => _isSearchingDrug = true);
-
-  try {
-    // 你需要在 drug_dictionary 文件中建立 keywords 陣列（含前綴字）
-    final snap = await FirebaseFirestore.instance
-        .collection('drug_dictionary')
-        .where('keywords', arrayContains: q.length > 12 ? q.substring(0, 12) : q)
-        .limit(8)
-        .get();
-
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    debugPrint('auth uid=$uid');
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('drug_dict query "${q.length > 12 ? q.substring(0, 12) : q}" -> ${snap.size} (uid:${uid ?? 'null'})'),
-        duration: const Duration(seconds: 2),
-      ));
+    final query = input.trim();
+    if (query.isEmpty) {
+      setState(() {
+        _drugSuggestions = [];
+        _isSearchingDrug = false;
+      });
+      return;
     }
 
-    final list = snap.docs.map((d) {
-      final data = d.data();
+    setState(() => _isSearchingDrug = true);
+    try {
+      final suggestions = await DrugDictionaryService.instance.suggest(query);
+      final exactInfo =
+          await DrugDictionaryService.instance.findDrugInfo(query);
 
-      // support zh as String or List<String>
-      List<String> zhList = [];
-      final zhRaw = data['zh'];
-      if (zhRaw is String) {
-        zhList = zhRaw
-            .split(RegExp(r'[，,/]'))
-            .map((s) => s.trim())
-            .where((s) => s.isNotEmpty)
-            .toList();
-      } else if (zhRaw is List) {
-        zhList = zhRaw.whereType<String>().map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+      if (!mounted) return;
+      final list = suggestions
+          .map((s) => <String, String>{
+                'zh': s.zh,
+                'en': s.en,
+                'dose': s.dose,
+                'form': s.form,
+              })
+          .toList();
+      setState(() {
+        _drugSuggestions = list;
+        _isSearchingDrug = false;
+      });
+      _applyDrugAutoFill(exactInfo);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isSearchingDrug = false);
+    }
+  }
+
+  void _onDrugNameChanged(String v) {
+    _drugDebounce?.cancel();
+    _drugDebounce = Timer(const Duration(milliseconds: 250), () {
+      _searchDrugDict(v);
+    });
+  }
+
+  void _applyDrugAutoFill(Map<String, String>? info) {
+    if (info == null || !mounted) return;
+
+    final exactEn = info['en']?.trim() ?? '';
+    final doseText = info['dose']?.trim() ?? '';
+    final formText = info['form']?.trim() ?? '';
+    final hasDose = doseText.isNotEmpty;
+    final hasForm = formText.isNotEmpty;
+    final parsedDose = hasDose
+        ? DrugDictionaryService.instance.parseDoseValue(doseText)
+        : null;
+    final parsedUnit =
+        hasDose ? DrugDictionaryService.instance.parseDoseUnit(doseText) : null;
+    final medType = hasForm
+        ? DrugDictionaryService.instance.mapFormToMedType(formText)
+        : null;
+
+    setState(() {
+      if (exactEn.isNotEmpty &&
+          (_nameEnCtrl.text.trim().isEmpty ||
+              _nameEnCtrl.text.trim() == _lastAutoNameEn)) {
+        _nameEnCtrl.text = exactEn;
+        _lastAutoNameEn = exactEn;
       }
 
-      final zhDisplay = zhList.isNotEmpty ? zhList.join(' / ') : ((data['zh'] as String?)?.trim() ?? '');
-      final en = (data['en'] as String?)?.trim() ?? '';
+      if (medType != null) {
+        _medType = medType;
+      }
+      if (medType == 'injection') {
+        for (final key in _timeSlots.keys) {
+          _timeSlots[key] = false;
+        }
+      }
+      if (medType == 'drops') {
+        _unit = 'mg';
+        if (parsedDose != null) {
+          _dropMg = parsedDose;
+          _dose = parsedDose;
+        }
+        if (_dropMlBase <= 0) _dropMlBase = 1.0;
+        if (_intakeMl <= 0) _intakeMl = 1.0;
+      } else if (hasDose) {
+        if (parsedUnit != null) _unit = parsedUnit;
+        if (parsedDose != null) _dose = parsedDose;
+      }
+    });
+  }
 
-      return <String, String>{
-        'id': d.id,
-        'zh': zhDisplay,
-        'en': en,
-        // encode zh list for later matching
-        'zh_list': zhList.join('|'),
-      };
-    }).where((m) => (m['zh']!.isNotEmpty || m['en']!.isNotEmpty)).toList();
+  void _applyDrugSuggestion(Map<String, String> s) {
+    final zh = (s['zh'] ?? '').trim();
+    final en = (s['en'] ?? '').trim();
+    final dose = (s['dose'] ?? '').trim();
+    final form = (s['form'] ?? '').trim();
 
-    if (!mounted) return;
-    final inputLower = input.trim().toLowerCase();
-    setState(() {
-      _drugSuggestions = list;
-      _isSearchingDrug = false;
+    // 點擊候選後，自動填入中英文名稱並關閉建議清單
+    if (zh.isNotEmpty) {
+      _nameCtrl.text = zh;
+      _formKey.currentState?.validate();
+    }
+    if (en.isNotEmpty) {
+      _nameEnCtrl.text = en;
+      _lastAutoNameEn = en;
+    }
+
+    _applyDrugAutoFill({
+      'en': en,
+      'dose': dose,
+      'form': form,
     });
 
-    // If any candidate has a zh alias exactly matching the input, auto-fill its english name.
-    if (_nameEnCtrl.text.trim().isEmpty) {
-      Map<String, String>? match;
-      for (final s in list) {
-        final zhList = (s['zh_list'] ?? '').split('|').where((t) => t.isNotEmpty).toList();
-        final en = (s['en'] ?? '').trim();
-        final zhDisplay = (s['zh'] ?? '').toString();
-        if (zhList.any((z) => z.toLowerCase() == inputLower)) {
-          match = s;
-          break;
-        }
-        if (zhDisplay.toLowerCase() == inputLower) {
-          match = s;
-          break;
-        }
-        if (en.isNotEmpty && en.toLowerCase() == inputLower) {
-          match = s;
-          break;
-        }
-      }
-
-      if (match != null) {
-        final en = (match['en'] ?? '').trim();
-        final zhDisplay = (match['zh'] ?? '').toString();
-        if (en.isNotEmpty) _nameEnCtrl.text = en;
-        if (_nameCtrl.text.trim().isEmpty) _nameCtrl.text = zhDisplay;
-        setState(() => _drugSuggestions = [match!]);
-      }
-    }
-  } catch (_) {
-    if (!mounted) return;
-    setState(() => _isSearchingDrug = false);
+    setState(() => _drugSuggestions = []);
+    FocusScope.of(context).nextFocus(); // 跳到下一個輸入欄
   }
-}
 
-void _onDrugNameChanged(String v) {
-  _drugDebounce?.cancel();
-  _drugDebounce = Timer(const Duration(milliseconds: 250), () {
-    _searchDrugDict(v);
-  });
-}
+  Future<void> _showAddDrugDialog(String input) async {
+    final zhCtrl = TextEditingController(text: input);
+    final enCtrl = TextEditingController();
+    final aliasCtrl = TextEditingController();
 
-// void _applyDrugSuggestion(Map<String, String> s) {
-//   final zh = (s['zh'] ?? '').trim();
-//   final en = (s['en'] ?? '').trim();
-
-//   // 你可以決定：中文欄位顯示 zh，英文欄位顯示 en
-//   // if (zh.isNotEmpty) _nameCtrl.text = zh;
-//   // if (en.isNotEmpty) _nameEnCtrl.text = en;
-
-//   // setState(() => _drugSuggestions = []);
-//   FocusScope.of(context).nextFocus(); // 跳到下一個輸入欄（可改成 unfocus）
-// }
-
-Future<void> _showAddDrugDialog(String input) async {
-  final zhCtrl = TextEditingController(text: input);
-  final enCtrl = TextEditingController();
-  final aliasCtrl = TextEditingController();
-
-  final res = await showDialog<bool>(
-    context: context,
-    builder: (context) {
-      return AlertDialog(
-        title: const Text('新增到藥物字典'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: zhCtrl, decoration: const InputDecoration(labelText: '中文名稱')),
-            const SizedBox(height: 8),
-            TextField(controller: enCtrl, decoration: const InputDecoration(labelText: '英文名稱（選填）')),
-            const SizedBox(height: 8),
-            TextField(controller: aliasCtrl, decoration: const InputDecoration(labelText: '其他別名，逗號分隔（選填）')),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('新增'),
+    final res = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('新增到藥物字典'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                  controller: zhCtrl,
+                  decoration: const InputDecoration(labelText: '中文名稱')),
+              const SizedBox(height: 8),
+              TextField(
+                  controller: enCtrl,
+                  decoration: const InputDecoration(labelText: '英文名稱（選填）')),
+              const SizedBox(height: 8),
+              TextField(
+                  controller: aliasCtrl,
+                  decoration:
+                      const InputDecoration(labelText: '其他別名，逗號分隔（選填）')),
+            ],
           ),
-        ],
-      );
-    },
-  );
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('取消')),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('新增'),
+            ),
+          ],
+        );
+      },
+    );
 
-  if (res != true) return;
+    if (res != true) return;
 
-  final zh = zhCtrl.text.trim();
-  final en = enCtrl.text.trim();
-  final aliases = aliasCtrl.text.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    final zh = zhCtrl.text.trim();
+    final en = enCtrl.text.trim();
+    final aliases = aliasCtrl.text
+        .split(',')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
 
-  try {
-    await _addDrugToDict(zh: zh, en: en, aliases: aliases);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已新增至字典')));
-    // refresh suggestions
-    _searchDrugDict(zh);
-  } catch (e) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('新增失敗：$e')));
-  }
-}
-
-Future<void> _addDrugToDict({required String zh, String? en, List<String>? aliases}) async {
-  final doc = <String, dynamic>{
-    'zh': zh,
-    'en': (en ?? '').trim(),
-    'alias': aliases ?? <String>[],
-  };
-
-  // generate simple keywords (lowercase prefixes up to 12 chars)
-  final kw = <String>{};
-  String addKeywordsFrom(String? s) {
-    if (s == null || s.trim().isEmpty) return '';
-    final t = s.trim().toLowerCase();
-    for (int i = 1; i <= t.length && i <= 12; i++) {
-      kw.add(t.substring(0, i));
+    try {
+      await _addDrugToDict(zh: zh, en: en, aliases: aliases);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('已新增至字典')));
+      // refresh suggestions
+      _searchDrugDict(zh);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('新增失敗：$e')));
     }
-    // also add full token
-    kw.add(t);
-    return t;
   }
 
-  addKeywordsFrom(zh);
-  addKeywordsFrom(en);
-  for (final a in aliases ?? []) addKeywordsFrom(a);
+  Future<void> _addDrugToDict(
+      {required String zh, String? en, List<String>? aliases}) async {
+    final doc = <String, dynamic>{
+      'zh': zh,
+      'en': (en ?? '').trim(),
+      'alias': aliases ?? <String>[],
+    };
 
-  doc['keywords'] = kw.toList();
+    // generate simple keywords (lowercase prefixes up to 12 chars)
+    final kw = <String>{};
+    String addKeywordsFrom(String? s) {
+      if (s == null || s.trim().isEmpty) return '';
+      final t = s.trim().toLowerCase();
+      for (int i = 1; i <= t.length && i <= 12; i++) {
+        kw.add(t.substring(0, i));
+      }
+      // also add full token
+      kw.add(t);
+      return t;
+    }
 
-  await FirebaseFirestore.instance.collection('drug_dictionary').add(doc);
-}
+    addKeywordsFrom(zh);
+    addKeywordsFrom(en);
+    for (final a in aliases ?? []) addKeywordsFrom(a);
+
+    doc['keywords'] = kw.toList();
+
+    await FirebaseFirestore.instance.collection('drug_dictionary').add(doc);
+  }
 }
 
 /* ====== 以下是 UI 小元件（沿用你新增頁同款）====== */
@@ -1266,7 +1370,11 @@ class _SoftHeaderCard extends StatelessWidget {
               children: [
                 Text(title, style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 4),
-                Text(subtitle, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                Text(subtitle,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: cs.onSurfaceVariant)),
               ],
             ),
           ),
@@ -1281,7 +1389,8 @@ class _SectionCard extends StatelessWidget {
   final IconData icon;
   final Widget child;
 
-  const _SectionCard({required this.title, required this.icon, required this.child});
+  const _SectionCard(
+      {required this.title, required this.icon, required this.child});
 
   @override
   Widget build(BuildContext context) {

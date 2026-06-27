@@ -37,23 +37,7 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
   double _intakeMl = 1.0;
   Timer? _drugDebounce;
   bool _isSearchingDrug = false;
-
-  void _applyDrugSuggestion(Map<String, String> s) {
-    final zh = s['zh'] ?? '';
-    final en = s['en'] ?? '';
-
-    // setState(() {
-    //   // if (zh.isNotEmpty) {
-    //   //   _nameCtrl.text = zh;
-    //   // }
-    //   // if (en.isNotEmpty) {
-    //   //   _nameEnCtrl.text = en;
-    //   // }
-    //   _drugSuggestions = []; // 選完就收起建議清單
-    // });
-
-    FocusScope.of(context).unfocus();
-  }
+  String? _lastAutoNameEn;
 
   @override
   void initState() {
@@ -79,7 +63,7 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
           final value = double.tryParse(raw);
           if (value == null || value < 0) return;
 
-          picked = value.clamp(0, 1000);
+          picked = value.clamp(0, 100000);
           FocusScope.of(dialogContext).unfocus();
           Navigator.of(dialogContext).pop(); // ✅ 用 dialogContext 關掉 dialog
         }
@@ -299,7 +283,7 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
                               : null,
                         ),
                         onChanged: (value) {
-                          // 🔕 暫時關閉藥物中英對照字典搜尋
+                          _onDrugNameChanged(value);
                         },
                         validator: (v) {
                           final t = (v ?? '').trim();
@@ -322,26 +306,37 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
                                   .withOpacity(0.6),
                             ),
                           ),
-                          // child: ListView.separated(
-                          //   shrinkWrap: true,
-                          //   physics: const NeverScrollableScrollPhysics(),
-                          //   itemCount: _drugSuggestions.length,
-                          //   separatorBuilder: (_, __) => Divider(
-                          //     height: 1,
-                          //     color: Theme.of(context).dividerColor.withOpacity(0.6),
-                          //   ),
-                          //   itemBuilder: (context, i) {
-                          //     final s = _drugSuggestions[i];
-                          //     final zh = s['zh'] ?? '';
-                          //     final en = s['en'] ?? '';
-                          //     return ListTile(
-                          //       dense: true,
-                          //       title: Text(zh.isEmpty ? en : zh),
-                          //       subtitle: (zh.isNotEmpty && en.isNotEmpty) ? Text(en) : null,
-                          //       onTap: () => _applyDrugSuggestion(s),
-                          //     );
-                          //   },
-                          // ),
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: _drugSuggestions.length,
+                            separatorBuilder: (_, __) => Divider(
+                              height: 1,
+                              color: Theme.of(context)
+                                  .dividerColor
+                                  .withOpacity(0.6),
+                            ),
+                            itemBuilder: (context, i) {
+                              final s = _drugSuggestions[i];
+                              final zh = s['zh'] ?? '';
+                              final en = s['en'] ?? '';
+                              final dose = s['dose'] ?? '';
+                              final form = s['form'] ?? '';
+                              final meta = <String>[dose, form]
+                                  .where((v) => v.trim().isNotEmpty)
+                                  .join(' · ');
+                              return ListTile(
+                                dense: true,
+                                title: Text(zh.isEmpty ? en : zh),
+                                subtitle: meta.isNotEmpty
+                                    ? Text(meta)
+                                    : ((zh.isNotEmpty && en.isNotEmpty)
+                                        ? Text(en)
+                                        : null),
+                                onTap: () => _applyDrugSuggestion(s),
+                              );
+                            },
+                          ),
                         ),
                       ],
                     ],
@@ -359,6 +354,20 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
 //     decoration: _inputDeco('例如：Clonazepam、Quetiapine…（可自動帶入/也可手動改）'),
 //   ),
 // ),
+
+                _SectionCard(
+                  title: '英文成分',
+                  icon: Icons.translate_outlined,
+                  child: TextFormField(
+                    controller: _nameEnCtrl,
+                    textInputAction: TextInputAction.next,
+                    style: TextStyle(
+                      color: HealingDesignSystem.adaptivePrimaryText(context),
+                    ),
+                    decoration: _inputDeco('例如：DONEPEZIL HCL'),
+                    onChanged: (_) => _lastAutoNameEn = null,
+                  ),
+                ),
 
                 const SizedBox(height: 12),
 
@@ -448,7 +457,7 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
                         Slider(
                           value: _dose,
                           min: 0,
-                          max: 1000,
+                          max: 100000,
                           divisions: 10000,
                           label: _doseLabel(_dose),
                           onChanged: (v) => setState(() => _dose = v),
@@ -459,13 +468,13 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
                             _SmallGhostButton(
                               text: '−',
                               onTap: () => setState(
-                                  () => _dose = (_dose - 0.1).clamp(0, 1000)),
+                                  () => _dose = (_dose - 0.1).clamp(0, 100000)),
                             ),
                             const SizedBox(width: 8),
                             _SmallGhostButton(
                               text: '+',
                               onTap: () => setState(
-                                  () => _dose = (_dose + 0.1).clamp(0, 1000)),
+                                  () => _dose = (_dose + 0.1).clamp(0, 100000)),
                             ),
                             const Spacer(),
                             Text(
@@ -1013,8 +1022,8 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
   }
 
   Future<void> _searchDrugDict(String input) async {
-    final q = input.trim().toLowerCase();
-    if (q.length < 1) {
+    final query = input.trim();
+    if (query.isEmpty) {
       setState(() {
         _drugSuggestions = [];
         _isSearchingDrug = false;
@@ -1023,103 +1032,26 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
     }
 
     setState(() => _isSearchingDrug = true);
-
     try {
-      // 你需要在 drug_dictionary 文件中建立 keywords 陣列（含前綴字）
-      final snap = await FirebaseFirestore.instance
-          .collection('drug_dictionary')
-          .where('keywords',
-              arrayContains: q.length > 12 ? q.substring(0, 12) : q)
-          .limit(8)
-          .get();
-
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      debugPrint('auth uid=$uid');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-              'drug_dict query "${q.length > 12 ? q.substring(0, 12) : q}" -> ${snap.size} (uid:${uid ?? 'null'})'),
-          duration: const Duration(seconds: 2),
-        ));
-      }
-
-      final list = snap.docs
-          .map((d) {
-            final data = d.data();
-
-            // support zh as String or List<String>
-            List<String> zhList = [];
-            final zhRaw = data['zh'];
-            if (zhRaw is String) {
-              zhList = zhRaw
-                  .split(RegExp(r'[，,/]'))
-                  .map((s) => s.trim())
-                  .where((s) => s.isNotEmpty)
-                  .toList();
-            } else if (zhRaw is List) {
-              zhList = zhRaw
-                  .whereType<String>()
-                  .map((s) => s.trim())
-                  .where((s) => s.isNotEmpty)
-                  .toList();
-            }
-
-            final zhDisplay = zhList.isNotEmpty
-                ? zhList.join(' / ')
-                : ((data['zh'] as String?)?.trim() ?? '');
-            final en = (data['en'] as String?)?.trim() ?? '';
-
-            return <String, String>{
-              'id': d.id,
-              'zh': zhDisplay,
-              'en': en,
-              // encode zh list for later matching
-              'zh_list': zhList.join('|'),
-            };
-          })
-          .where((m) => (m['zh']!.isNotEmpty || m['en']!.isNotEmpty))
-          .toList();
+      final suggestions = await DrugDictionaryService.instance.suggest(query);
+      final exactInfo =
+          await DrugDictionaryService.instance.findDrugInfo(query);
 
       if (!mounted) return;
-      final inputLower = input.trim().toLowerCase();
+      final list = suggestions
+          .map((s) => <String, String>{
+                'zh': s.zh,
+                'en': s.en,
+                'dose': s.dose,
+                'form': s.form,
+              })
+          .toList();
       setState(() {
         _drugSuggestions = list;
         _isSearchingDrug = false;
       });
 
-      // If any candidate has a zh alias exactly matching the input, auto-fill its english name.
-      if (_nameEnCtrl.text.trim().isEmpty) {
-        Map<String, String>? match;
-        for (final s in list) {
-          final zhList = (s['zh_list'] ?? '')
-              .split('|')
-              .where((t) => t.isNotEmpty)
-              .toList();
-          final en = (s['en'] ?? '').trim();
-          final zhDisplay = (s['zh'] ?? '').toString();
-          if (zhList.any((z) => z.toLowerCase() == inputLower)) {
-            match = s;
-            break;
-          }
-          if (zhDisplay.toLowerCase() == inputLower) {
-            match = s;
-            break;
-          }
-          if (en.isNotEmpty && en.toLowerCase() == inputLower) {
-            match = s;
-            break;
-          }
-        }
-
-        if (match != null) {
-          final en = (match['en'] ?? '').trim();
-          final zhDisplay = (match['zh'] ?? '').toString();
-          if (en.isNotEmpty) _nameEnCtrl.text = en;
-          if (_nameCtrl.text.trim().isEmpty) _nameCtrl.text = zhDisplay;
-          // narrow suggestions to the matched item to make UI clear
-          setState(() => _drugSuggestions = [match!]);
-        }
-      }
+      _applyDrugAutoFill(exactInfo);
     } catch (_) {
       if (!mounted) return;
       setState(() => _isSearchingDrug = false);
@@ -1131,6 +1063,80 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
     _drugDebounce = Timer(const Duration(milliseconds: 250), () {
       _searchDrugDict(v);
     });
+  }
+
+  void _applyDrugAutoFill(Map<String, String>? info) {
+    if (info == null || !mounted) return;
+
+    final exactEn = info['en']?.trim() ?? '';
+    final doseText = info['dose']?.trim() ?? '';
+    final formText = info['form']?.trim() ?? '';
+    final hasDose = doseText.isNotEmpty;
+    final hasForm = formText.isNotEmpty;
+    final parsedDose = hasDose
+        ? DrugDictionaryService.instance.parseDoseValue(doseText)
+        : null;
+    final parsedUnit =
+        hasDose ? DrugDictionaryService.instance.parseDoseUnit(doseText) : null;
+    final medType = hasForm
+        ? DrugDictionaryService.instance.mapFormToMedType(formText)
+        : null;
+
+    setState(() {
+      if (exactEn.isNotEmpty &&
+          (_nameEnCtrl.text.trim().isEmpty ||
+              _nameEnCtrl.text.trim() == _lastAutoNameEn)) {
+        _nameEnCtrl.text = exactEn;
+        _lastAutoNameEn = exactEn;
+      }
+
+      if (medType != null) {
+        _medType = medType;
+      }
+      if (medType == 'injection') {
+        for (final key in _timeSlots.keys) {
+          _timeSlots[key] = false;
+        }
+      }
+      if (medType == 'drops') {
+        _unit = 'mg';
+        if (parsedDose != null) {
+          _dropMg = parsedDose;
+          _dose = parsedDose;
+        }
+        if (_dropMlBase <= 0) _dropMlBase = 1.0;
+        if (_intakeMl <= 0) _intakeMl = 1.0;
+      } else if (hasDose) {
+        if (parsedUnit != null) _unit = parsedUnit;
+        if (parsedDose != null) _dose = parsedDose;
+      }
+    });
+  }
+
+  void _applyDrugSuggestion(Map<String, String> s) {
+    final zh = (s['zh'] ?? '').trim();
+    final en = (s['en'] ?? '').trim();
+    final dose = (s['dose'] ?? '').trim();
+    final form = (s['form'] ?? '').trim();
+
+    // 點擊候選後，自動填入中英文名稱並關閉建議清單
+    if (zh.isNotEmpty) {
+      _nameCtrl.text = zh;
+      _formKey.currentState?.validate();
+    }
+    if (en.isNotEmpty) {
+      _nameEnCtrl.text = en;
+      _lastAutoNameEn = en;
+    }
+
+    _applyDrugAutoFill({
+      'en': en,
+      'dose': dose,
+      'form': form,
+    });
+
+    setState(() => _drugSuggestions = []);
+    FocusScope.of(context).nextFocus(); // 跳到下一個輸入欄
   }
 
   Future<void> _showAddDrugDialog(String input) async {
