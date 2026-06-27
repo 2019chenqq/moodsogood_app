@@ -294,7 +294,7 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 110),
               children: [
                 _SoftHeaderCard(
-                  title: '回診 / 調藥紀錄',
+                  title: '回診 / 調藥記錄',
                   subtitle: '沒有變動就不用改。只把這次有調整的藥標出來，之後可和症狀趨勢做比對。',
                 ),
                 const SizedBox(height: 12),
