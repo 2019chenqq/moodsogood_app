@@ -1,50 +1,79 @@
 import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
+
 import '../utils/firebase_sync_config.dart';
 
-class DrugDictItem {
-  final List<String> zhNames;
-  final String en;
-  final List<String> alias;
-  final String dose;
-  final String form;
+class DrugIngredient {
+  final String name;
+  final String strength;
 
-  DrugDictItem({
+  const DrugIngredient({
+    required this.name,
+    required this.strength,
+  });
+
+  String get label {
+    final parts = [name.trim(), strength.trim()]
+        .where((part) => part.isNotEmpty)
+        .toList(growable: false);
+    return parts.join(' ');
+  }
+}
+
+class DrugDictItem {
+  final String code;
+  final List<String> zhNames;
+  final String productEn;
+  final List<DrugIngredient> ingredients;
+  final String form;
+  final String compoundType;
+  final String packageAmount;
+  final String packageUnit;
+  final String atc;
+
+  const DrugDictItem({
+    required this.code,
     required this.zhNames,
-    required this.en,
-    required this.alias,
-    required this.dose,
+    required this.productEn,
+    required this.ingredients,
     required this.form,
+    required this.compoundType,
+    required this.packageAmount,
+    required this.packageUnit,
+    required this.atc,
   });
 
   String get zh => zhNames.isEmpty ? '' : zhNames.first;
+  String get en => isCompound ? ingredientLines.join(' + ') : ingredientName;
+  String get ingredientName =>
+      ingredients.isEmpty ? '' : ingredients.first.name;
+  String get ingredientStrength =>
+      ingredients.isEmpty ? '' : ingredients.first.strength;
+  String get concentration => hasPackageSpec ? ingredientStrength : '';
+  String get packageDose => _joinAmountUnit(packageAmount, packageUnit);
+  String get dose =>
+      isCompound ? '' : (hasPackageSpec ? packageDose : ingredientStrength);
+  bool get hasPackageSpec =>
+      packageAmount.trim().isNotEmpty && packageUnit.trim().isNotEmpty;
+  bool get isCompound => compoundType.contains('複') || ingredients.length > 1;
+  List<String> get ingredientLines => ingredients
+      .map((ingredient) => ingredient.label)
+      .where((v) => v.isNotEmpty)
+      .toList();
+  List<String> get aliases => [
+        productEn,
+        ...ingredients.map((ingredient) => ingredient.name),
+        ...ingredientLines,
+      ].where((value) => value.trim().isNotEmpty).toList();
 
-  factory DrugDictItem.fromJson(Map<String, dynamic> j) {
-    final zhRaw = j['zh'];
-    final zhNames = zhRaw is List
-        ? zhRaw
-            .map((x) => x.toString().trim())
-            .where((x) => x.isNotEmpty)
-            .toList()
-        : zhRaw is String
-            ? zhRaw
-                .split(RegExp(r'[,/|]'))
-                .map((x) => x.trim())
-                .where((x) => x.isNotEmpty)
-                .toList()
-            : <String>[];
-
-    return DrugDictItem(
-      zhNames: zhNames,
-      en: (j['en'] ?? '').toString(),
-      alias: (j['alias'] is List)
-          ? (j['alias'] as List).map((x) => x.toString()).toList()
-          : const [],
-      dose: (j['dose'] ?? '').toString(),
-      form: (j['form'] ?? '').toString(),
-    );
+  static String _joinAmountUnit(String amount, String unit) {
+    final a = amount.trim();
+    final u = unit.trim();
+    if (a.isEmpty || u.isEmpty) return '';
+    return '$a $u';
   }
 }
 
@@ -53,17 +82,43 @@ class DrugSuggestion {
   final String en;
   final String dose;
   final String form;
-  final String source; // 'seed' or 'user'
+  final String compoundType;
+  final String concentration;
+  final String packageAmount;
+  final String packageUnit;
+  final List<String> ingredientLines;
+  final String source;
   final int score;
 
-  DrugSuggestion({
+  const DrugSuggestion({
     required this.zh,
     required this.en,
     this.dose = '',
     this.form = '',
+    this.compoundType = '',
+    this.concentration = '',
+    this.packageAmount = '',
+    this.packageUnit = '',
+    this.ingredientLines = const [],
     required this.source,
     required this.score,
   });
+
+  Map<String, String> toInfoMap() => {
+        'zh': zh,
+        'en': en,
+        'dose': dose,
+        'form': form,
+        'compoundType': compoundType,
+        'concentration': concentration,
+        'packageAmount': packageAmount,
+        'packageUnit': packageUnit,
+        'ingredientLines': ingredientLines.join('\n'),
+        'isCompound': isCompound ? 'true' : 'false',
+      };
+
+  bool get isCompound =>
+      compoundType.contains('複') || ingredientLines.length > 1;
 }
 
 class DrugDictionaryService {
@@ -73,32 +128,25 @@ class DrugDictionaryService {
 
   bool _loaded = false;
   final List<DrugDictItem> _seed = [];
-
-  // 使用者自訂字典快取：key(normalizedZh) -> en
   final Map<String, String> _userMap = {};
-
-  // ======= Public API =======
 
   Future<void> ensureLoaded() async {
     if (_loaded) return;
 
-    final raw =
-        await rootBundle.loadString('assets/drug_dict/drug_dict_nhi.json');
+    final raw = await rootBundle.loadString('assets/drug_dict/CLEAN_DRUG.json');
     final list = jsonDecode(raw) as List<dynamic>;
     _seed
       ..clear()
-      ..addAll(
-          list.map((e) => DrugDictItem.fromJson(e as Map<String, dynamic>)));
+      ..addAll(_buildItemsFromCleanRows(list.cast<Map<String, dynamic>>()));
 
     try {
       await _loadUserDictionary();
     } catch (_) {
-      // The bundled seed dictionary should still work when Firestore is offline.
+      // Keep the bundled dictionary usable when Firestore is offline.
     }
     _loaded = true;
   }
 
-  /// 輸入中文（或混合），回傳建議列表（越相關越前）
   Future<List<DrugSuggestion>> suggest(String input, {int limit = 8}) async {
     await ensureLoaded();
 
@@ -107,105 +155,72 @@ class DrugDictionaryService {
 
     final results = <DrugSuggestion>[];
 
-    // 1) 使用者自訂字典：優先度最高
     for (final entry in _userMap.entries) {
-      final zhNorm = entry.key;
-      final en = entry.value;
-      final s = _scoreMatch(q, zhNorm);
+      final s = _scoreMatch(q, entry.key);
       if (s > 0) {
         results.add(DrugSuggestion(
-          zh: _denormKey(zhNorm),
-          en: en,
-          dose: '',
-          form: '',
+          zh: _denormKey(entry.key),
+          en: entry.value,
           source: 'user',
-          score: 1000 + s, // 一律壓過 seed
+          score: 1000 + s,
         ));
       }
     }
 
-    // 2) 內建 seed 字典
     for (final item in _seed) {
       final s1 = _scoreAny(q, item.zhNames.map(_norm));
-      final s2 = _scoreAny(q, item.alias.map(_norm));
-      final s = (s1 * 3) + s2; // 中文比 alias 更重要
+      final s2 = _scoreAny(q, item.aliases.map(_norm));
+      final s = (s1 * 3) + s2;
       if (s > 0) {
-        results.add(DrugSuggestion(
-          zh: item.zh,
-          en: item.en,
-          dose: item.dose,
-          form: item.form,
-          source: 'seed',
-          score: s,
-        ));
+        results.add(_suggestionFromItem(item, s));
       }
     }
 
     results.sort((a, b) => b.score.compareTo(a.score));
-    if (results.length > limit) return results.take(limit).toList();
-    return results;
+    return results.length > limit ? results.take(limit).toList() : results;
   }
 
-  /// 使用者確認後，寫入個人字典（中文 -> 英文）
   Future<String?> findEnglishName(String input) async {
-    await ensureLoaded();
-
-    final q = _norm(input);
-    if (q.isEmpty) return null;
-
-    final userMatch = _userMap[q]?.trim();
-    if (userMatch != null && userMatch.isNotEmpty) return userMatch;
-
-    for (final item in _seed) {
-      final matchedZh = item.zhNames.any((name) => _norm(name) == q);
-      final matchedAlias = item.alias.any((name) => _norm(name) == q);
-      if ((matchedZh || matchedAlias) && item.en.trim().isNotEmpty) {
-        return item.en.trim();
-      }
-    }
-
-    final suggestions = await suggest(input, limit: 1);
-    if (suggestions.isEmpty) return null;
-    final best = suggestions.first;
-    return best.score >= 200 && best.en.trim().isNotEmpty
-        ? best.en.trim()
-        : null;
+    final info = await findDrugInfo(input);
+    return info?['en']?.trim().isNotEmpty == true ? info!['en'] : null;
   }
 
-  /// 回傳完整藥物資訊（含劑量、劑型），用於自動填入
   Future<Map<String, String>?> findDrugInfo(String input) async {
     await ensureLoaded();
 
     final q = _norm(input);
     if (q.isEmpty) return null;
 
-    // 先找精確匹配的 seed 項目
-    for (final item in _seed) {
-      final matchedZh = item.zhNames.any((name) => _norm(name) == q);
-      final matchedAlias = item.alias.any((name) => _norm(name) == q);
-      if (matchedZh || matchedAlias) {
-        return {
-          'en': item.en.trim(),
-          'dose': item.dose.trim(),
-          'form': item.form.trim(),
-        };
-      }
+    final userMatch = _userMap[q]?.trim();
+    if (userMatch != null && userMatch.isNotEmpty) {
+      return {
+        'en': userMatch,
+        'dose': '',
+        'form': '',
+        'compoundType': '',
+        'concentration': '',
+        'packageAmount': '',
+        'packageUnit': '',
+        'ingredientLines': '',
+        'isCompound': 'false',
+      };
     }
 
-    // 無精確匹配，回傳 suggest 中最接近的
+    for (final item in _seed) {
+      final matchedZh = item.zhNames.any((name) => _norm(name) == q);
+      final matchedAlias = item.aliases.any((name) => _norm(name) == q);
+      if (matchedZh || matchedAlias)
+        return _suggestionFromItem(item, 1000).toInfoMap();
+    }
+
     final suggestions = await suggest(input, limit: 1);
-    if (suggestions.isEmpty) return null;
-    final best = suggestions.first;
-    if (best.score < 200) return null;
-    return {
-      'en': best.en.trim(),
-      'dose': best.dose.trim(),
-      'form': best.form.trim(),
-    };
+    if (suggestions.isEmpty || suggestions.first.score < 200) return null;
+    return suggestions.first.toInfoMap();
   }
 
   double? parseDoseValue(String input) {
     final raw = input.trim().replaceAll(',', '');
+    if (raw.contains('+')) return null;
     if (raw.isEmpty) return null;
     final match = RegExp(r'([0-9]+(?:\.[0-9]+)?)').firstMatch(raw);
     if (match == null) return null;
@@ -216,17 +231,19 @@ class DrugDictionaryService {
     final raw = input.trim().toUpperCase();
     if (raw.isEmpty) return null;
 
-    final match = RegExp(r'\b(MG|G|ML|IU)\b').firstMatch(raw);
-    if (match == null) return null;
-
-    switch (match.group(1)) {
+    final match = RegExp(r'\b(MCG|MG|GM|G|ML|IU|U)\b').firstMatch(raw);
+    switch (match?.group(1)) {
+      case 'MCG':
+        return 'mcg';
       case 'MG':
         return 'mg';
+      case 'GM':
       case 'G':
         return 'g';
       case 'ML':
         return 'mL';
       case 'IU':
+      case 'U':
         return 'IU';
       default:
         return null;
@@ -236,35 +253,26 @@ class DrugDictionaryService {
   String mapFormToMedType(String form) {
     final raw = form.trim();
     if (raw.isEmpty) return 'tablet';
-
     if (raw.contains('注射')) return 'injection';
 
-    const tabletKeywords = [
-      '錠',
-      '丸',
-      '膠囊',
-      '顆粒',
-      '粉劑',
-      '粉末',
-      '散劑',
-      '糖衣',
-      '膜衣',
-      '緩釋',
-      '持續',
-      '腸溶',
-      '可溶',
-      '口溶',
-      '口含',
-      '口頰',
-      '微粒',
-      '發泡',
+    const liquidOrTopicalKeywords = [
+      '液',
+      '滴',
+      '糖漿',
+      '懸浮',
+      '懸液',
+      '乳膏',
+      '軟膏',
+      '凝膠',
+      '乳劑',
+      '洗劑',
+      '外用',
     ];
-
-    for (final keyword in tabletKeywords) {
-      if (raw.contains(keyword)) return 'tablet';
+    for (final keyword in liquidOrTopicalKeywords) {
+      if (raw.contains(keyword)) return 'drops';
     }
 
-    return 'drops';
+    return 'tablet';
   }
 
   Future<void> saveUserMapping({
@@ -295,13 +303,83 @@ class DrugDictionaryService {
     _userMap[zhNorm] = en;
   }
 
-  /// 重新載入使用者字典（例如登入切換帳號）
   Future<void> reloadUserDictionary() async {
     _userMap.clear();
     await _loadUserDictionary();
   }
 
-  // ======= Internal =======
+  List<DrugDictItem> _buildItemsFromCleanRows(List<Map<String, dynamic>> rows) {
+    final builders = <String, _DrugItemBuilder>{};
+
+    for (final row in rows) {
+      final code = _read(row, '藥品代號');
+      final zh = _read(row, '藥品中文名稱');
+      final productEn = _read(row, '藥品英文名稱');
+      final ingredient = _read(row, '成分');
+      final strength = _read(row, '成分數值單位');
+      final packageAmount = _read(row, '規格量');
+      final packageUnit = _read(row, '規格單位');
+      final compoundType = _read(row, '單複方');
+      final form = _read(row, '劑型');
+      final atc = _read(row, 'ATC代碼');
+      if (zh.isEmpty && productEn.isEmpty) continue;
+
+      final key = code.isNotEmpty ? code : '${_norm(zh)}|${_norm(productEn)}';
+      final builder = builders.putIfAbsent(
+        key,
+        () => _DrugItemBuilder(
+          code: code,
+          productEn: productEn,
+          form: form,
+          compoundType: compoundType,
+          packageAmount: packageAmount,
+          packageUnit: packageUnit,
+          atc: atc,
+        ),
+      );
+      builder.addZh(zh);
+      builder.addIngredient(ingredient, strength);
+    }
+
+    return builders.values.map((builder) => builder.build()).toList();
+  }
+
+  String _read(Map<String, dynamic> row, String key) {
+    final direct = row[key];
+    if (direct != null) return direct.toString().trim();
+
+    // Fallback for any future file that has the same column order but damaged keys.
+    final index = const {
+      '藥品代號': 0,
+      '藥品英文名稱': 1,
+      '藥品中文名稱': 2,
+      '成分': 3,
+      '成分數值單位': 4,
+      '規格量': 5,
+      '規格單位': 6,
+      '單複方': 7,
+      '劑型': 8,
+      'ATC代碼': 9,
+    }[key];
+    if (index == null || index >= row.length) return '';
+    return row.values.elementAt(index).toString().trim();
+  }
+
+  DrugSuggestion _suggestionFromItem(DrugDictItem item, int score) {
+    return DrugSuggestion(
+      zh: item.zh,
+      en: item.en,
+      dose: item.dose,
+      form: item.form,
+      compoundType: item.compoundType,
+      concentration: item.concentration,
+      packageAmount: item.packageAmount,
+      packageUnit: item.packageUnit,
+      ingredientLines: item.ingredientLines,
+      source: 'seed',
+      score: score,
+    );
+  }
 
   Future<void> _loadUserDictionary() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -318,7 +396,7 @@ class DrugDictionaryService {
       final data = d.data();
       final en = (data['en'] ?? '').toString().trim();
       if (en.isEmpty) continue;
-      _userMap[d.id] = en; // docId = normalizedZh
+      _userMap[d.id] = en;
     }
   }
 
@@ -328,34 +406,85 @@ class DrugDictionaryService {
       var code = rune;
       if (code == 0x3000) {
         code = 0x20;
-      } else if (code >= 0xFF01 && code <= 0xFF5E) {
-        code -= 0xFEE0;
+      } else if (code >= 0xff01 && code <= 0xff5e) {
+        code -= 0xfee0;
       }
       buffer.writeCharCode(code);
     }
-
-    final t = buffer.toString().toLowerCase();
-    return t.replaceAll(RegExp(r'[^0-9a-z\u4e00-\u9fff]'), '');
+    return buffer
+        .toString()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^0-9a-z\u4e00-\u9fff]'), '');
   }
 
-  // 只是給 UI 顯示用：對 userMap 的 key 找不到原 zh 時，退回 key 本身
   String _denormKey(String key) => key;
 
   int _scoreMatch(String q, String target) {
     if (q.isEmpty || target.isEmpty) return 0;
     if (target == q) return 1000;
-    if (target.startsWith(q)) return 800;
-    if (q.startsWith(target)) return 700;
-    if (q.length >= 2 && target.contains(q)) return 500;
-    if (target.length >= 2 && q.contains(target)) return 450;
+    if (target.startsWith(q)) return 800 - (target.length - q.length);
+    if (target.contains(q)) return 500 - target.indexOf(q);
     return 0;
   }
 
   int _scoreAny(String q, Iterable<String> targets) {
     var best = 0;
     for (final t in targets) {
-      best = best < _scoreMatch(q, t) ? _scoreMatch(q, t) : best;
+      final s = _scoreMatch(q, t);
+      if (s > best) best = s;
     }
     return best;
+  }
+}
+
+class _DrugItemBuilder {
+  final String code;
+  final String productEn;
+  final String form;
+  final String compoundType;
+  final String packageAmount;
+  final String packageUnit;
+  final String atc;
+  final List<String> zhNames = [];
+  final List<DrugIngredient> ingredients = [];
+
+  _DrugItemBuilder({
+    required this.code,
+    required this.productEn,
+    required this.form,
+    required this.compoundType,
+    required this.packageAmount,
+    required this.packageUnit,
+    required this.atc,
+  });
+
+  void addZh(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isNotEmpty && !zhNames.contains(trimmed)) zhNames.add(trimmed);
+  }
+
+  void addIngredient(String name, String strength) {
+    final ingredient =
+        DrugIngredient(name: name.trim(), strength: strength.trim());
+    if (ingredient.name.isEmpty && ingredient.strength.isEmpty) return;
+    final exists = ingredients.any(
+      (item) =>
+          item.name == ingredient.name && item.strength == ingredient.strength,
+    );
+    if (!exists) ingredients.add(ingredient);
+  }
+
+  DrugDictItem build() {
+    return DrugDictItem(
+      code: code,
+      zhNames: zhNames,
+      productEn: productEn,
+      ingredients: ingredients,
+      form: form,
+      compoundType: compoundType,
+      packageAmount: packageAmount,
+      packageUnit: packageUnit,
+      atc: atc,
+    );
   }
 }

@@ -108,7 +108,7 @@ flutter:
     - assets/legal/心域_服務條款_zh-TW.md
     - assets/legal/心域_隱私權政策_zh-TW.md
     - assets/emotion/  # 包含整个 emotion 文件夹的所有图片
-    - assets/drug_dict/drug_dict_nhi.json
+    - assets/drug_dict/CLEAN_DRUG.json
     - assets/UI/  # 添加 UI 资源文件夹
   
   # To add assets to your application, add an assets section, like this:

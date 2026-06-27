@@ -47,6 +47,22 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
   Timer? _drugDebounce;
   bool _isSearchingDrug = false;
   String? _lastAutoNameEn;
+  String _compoundType = '';
+  String _drugConcentration = '';
+  String _drugForm = '';
+  String _packageAmount = '';
+  String _packageUnit = '';
+  List<String> _ingredientLines = [];
+
+  bool get _isCompoundDrug =>
+      _compoundType.contains('複') || _ingredientLines.length > 1;
+  bool get _hasCleanDrugInfo =>
+      _compoundType.isNotEmpty ||
+      _drugConcentration.isNotEmpty ||
+      _drugForm.isNotEmpty ||
+      _packageAmount.isNotEmpty ||
+      _packageUnit.isNotEmpty ||
+      _ingredientLines.isNotEmpty;
 
 // 候選結果：[{id, zh, en}]
   List<Map<String, String>> _drugSuggestions = [];
@@ -85,6 +101,14 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
     _nameCtrl.text = (d['name'] as String?) ?? '';
     _nameEnCtrl.text = (d['nameEn'] as String?) ?? '';
     _noteCtrl.text = (d['note'] as String?) ?? '';
+    _compoundType = (d['compoundType'] as String?) ?? '';
+    _drugConcentration = (d['drugConcentration'] as String?) ?? '';
+    _drugForm = (d['drugForm'] as String?) ?? '';
+    _packageAmount = (d['packageAmount'] as String?) ?? '';
+    _packageUnit = (d['packageUnit'] as String?) ?? '';
+    _ingredientLines =
+        (d['ingredientLines'] as List?)?.whereType<String>().toList() ??
+            const <String>[];
 // ✅ 藥物形式：口服 / 長效針
     _medType = (d['type'] as String?) ?? 'tablet';
 // ✅ 注射間隔（天）
@@ -322,13 +346,18 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
 
               const SizedBox(height: 12),
 
+              if (_hasCleanDrugInfo) ...[
+                _buildCleanDrugInfoSection(),
+                const SizedBox(height: 12),
+              ],
+
               _SectionCard(
                 title: '劑量',
                 icon: Icons.tune,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (_medType != 'drops')
+                    if (_medType != 'drops' && !_isCompoundDrug)
                       Row(
                         children: [
                           // 可點擊手動輸入
@@ -364,10 +393,11 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
                           ),
                         ],
                       ),
-                    if (_medType != 'drops') const SizedBox(height: 6),
+                    if (_medType != 'drops' && !_isCompoundDrug)
+                      const SizedBox(height: 6),
 
                     // 0.5 mg 刻度（你可改成 0.25 -> divisions: 1200）
-                    if (_medType != 'drops')
+                    if (_medType != 'drops' && !_isCompoundDrug)
                       Slider(
                         value: _dose.clamp(0, kMaxDose).toDouble(),
                         min: 0,
@@ -377,7 +407,7 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
                         onChanged: (v) => setState(() => _dose = v),
                       ),
 
-                    if (_medType != 'drops')
+                    if (_medType != 'drops' && !_isCompoundDrug)
                       Row(
                         children: [
                           _SmallGhostButton(
@@ -401,8 +431,9 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
                           ),
                         ],
                       ),
-                    if (_medType != 'drops') const SizedBox(height: 10),
-                    if (_medType != 'drops')
+                    if (_medType != 'drops' && !_isCompoundDrug)
+                      const SizedBox(height: 10),
+                    if (_medType != 'drops' && !_isCompoundDrug)
                       Row(
                         children: [
                           Expanded(
@@ -434,7 +465,7 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
                           ),
                         ],
                       ),
-                    if (_medType != 'drops')
+                    if (_medType != 'drops' && !_isCompoundDrug)
                       Slider(
                         value: _pillCount.clamp(0.1, 10),
                         min: 0.1,
@@ -443,7 +474,7 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
                         label: '${_fmt1(_pillCount)} 顆',
                         onChanged: (v) => setState(() => _pillCount = v),
                       ),
-                    if (_medType != 'drops')
+                    if (_medType != 'drops' && !_isCompoundDrug)
                       Text(
                         '每次總量：${_fmt1(_dose)} $_unit × ${_fmt1(_pillCount)} 顆 = ${_fmt1(_dose * _pillCount)} $_unit',
                         style: Theme.of(context)
@@ -451,7 +482,7 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
                             .bodySmall
                             ?.copyWith(color: cs.onSurfaceVariant),
                       ),
-                    if (_medType == 'drops') ...[
+                    if (_medType == 'drops' && !_isCompoundDrug) ...[
                       Row(
                         children: [
                           Expanded(
@@ -893,6 +924,12 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
         'intakeMl': intakeMl,
         'unit': _medType == 'drops' ? 'mg' : _unit,
         'type': _medType,
+        'drugForm': _drugForm,
+        'compoundType': _compoundType,
+        'drugConcentration': _drugConcentration,
+        'packageAmount': _packageAmount,
+        'packageUnit': _packageUnit,
+        'ingredientLines': _ingredientLines,
         'intervalDays': _medType == 'injection' ? _intervalDays : null,
         'times': times,
         'purposes': purposes,
@@ -947,6 +984,12 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
           'intakeMl': intakeMl,
           'unit': _medType == 'drops' ? 'mg' : _unit,
           'type': _medType,
+          'drugForm': _drugForm,
+          'compoundType': _compoundType,
+          'drugConcentration': _drugConcentration,
+          'packageAmount': _packageAmount,
+          'packageUnit': _packageUnit,
+          'ingredientLines': _ingredientLines,
           'intervalDays': _medType == 'injection' ? _intervalDays : null,
           'times': times,
           'purposes': purposes,
@@ -1121,6 +1164,52 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
     return '$y/$m/$d';
   }
 
+  Widget _buildCleanDrugInfoSection() {
+    final packageDose = [_packageAmount, _packageUnit]
+        .where((value) => value.trim().isNotEmpty)
+        .join(' ');
+    final rows = <Widget>[
+      if (_compoundType.isNotEmpty) _buildInfoRow('單複方', _compoundType),
+      if (_drugForm.isNotEmpty) _buildInfoRow('藥物形式', _drugForm),
+      if (_drugConcentration.isNotEmpty)
+        _buildInfoRow('藥物濃度', _drugConcentration),
+      if (packageDose.isNotEmpty) _buildInfoRow('規格量', packageDose),
+      if (_isCompoundDrug && _ingredientLines.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        Text('複方成分', style: Theme.of(context).textTheme.labelLarge),
+        const SizedBox(height: 6),
+        ..._ingredientLines.map(
+          (line) => Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(line),
+          ),
+        ),
+      ],
+    ];
+
+    return _SectionCard(
+      title: '藥品資料',
+      icon: Icons.info_outline,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: rows,
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 88, child: Text(label)),
+          Expanded(child: Text(value)),
+        ],
+      ),
+    );
+  }
+
   Future<void> _searchDrugDict(String input) async {
     final query = input.trim();
     if (query.isEmpty) {
@@ -1144,6 +1233,12 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
                 'en': s.en,
                 'dose': s.dose,
                 'form': s.form,
+                'compoundType': s.compoundType,
+                'concentration': s.concentration,
+                'packageAmount': s.packageAmount,
+                'packageUnit': s.packageUnit,
+                'ingredientLines': s.ingredientLines.join('\n'),
+                'isCompound': s.isCompound ? 'true' : 'false',
               })
           .toList();
       setState(() {
@@ -1170,6 +1265,15 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
     final exactEn = info['en']?.trim() ?? '';
     final doseText = info['dose']?.trim() ?? '';
     final formText = info['form']?.trim() ?? '';
+    final compoundType = info['compoundType']?.trim() ?? '';
+    final concentration = info['concentration']?.trim() ?? '';
+    final packageAmount = info['packageAmount']?.trim() ?? '';
+    final packageUnit = info['packageUnit']?.trim() ?? '';
+    final ingredientLines = (info['ingredientLines'] ?? '')
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
     final hasDose = doseText.isNotEmpty;
     final hasForm = formText.isNotEmpty;
     final parsedDose = hasDose
@@ -1182,6 +1286,13 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
         : null;
 
     setState(() {
+      _compoundType = compoundType;
+      _drugConcentration = concentration;
+      _drugForm = formText;
+      _packageAmount = packageAmount;
+      _packageUnit = packageUnit;
+      _ingredientLines = ingredientLines;
+
       if (exactEn.isNotEmpty &&
           (_nameEnCtrl.text.trim().isEmpty ||
               _nameEnCtrl.text.trim() == _lastAutoNameEn)) {
@@ -1197,7 +1308,9 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
           _timeSlots[key] = false;
         }
       }
-      if (medType == 'drops') {
+      if (_isCompoundDrug) {
+        _dose = 0;
+      } else if (medType == 'drops') {
         _unit = 'mg';
         if (parsedDose != null) {
           _dropMg = parsedDose.clamp(0, kMaxDose).toDouble();
@@ -1218,6 +1331,11 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
     final en = (s['en'] ?? '').trim();
     final dose = (s['dose'] ?? '').trim();
     final form = (s['form'] ?? '').trim();
+    final compoundType = (s['compoundType'] ?? '').trim();
+    final concentration = (s['concentration'] ?? '').trim();
+    final packageAmount = (s['packageAmount'] ?? '').trim();
+    final packageUnit = (s['packageUnit'] ?? '').trim();
+    final ingredientLines = (s['ingredientLines'] ?? '').trim();
 
     // 點擊候選後，自動填入中英文名稱並關閉建議清單
     if (zh.isNotEmpty) {
@@ -1233,6 +1351,12 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
       'en': en,
       'dose': dose,
       'form': form,
+      'compoundType': compoundType,
+      'concentration': concentration,
+      'packageAmount': packageAmount,
+      'packageUnit': packageUnit,
+      'ingredientLines': ingredientLines,
+      'isCompound': s['isCompound'] ?? '',
     });
 
     setState(() => _drugSuggestions = []);

@@ -505,13 +505,15 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
     required Map<String, dynamic> data,
   }) {
     final isActive = (data['isActive'] as bool?) ?? true;
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
 
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) {
+      builder: (sheetContext) {
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -520,9 +522,9 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
                 leading: const Icon(Icons.edit_outlined),
                 title: const Text('編輯藥物資料'),
                 onTap: () async {
-                  Navigator.pop(context);
-                  final updated = await Navigator.push<bool>(
-                    context,
+                  Navigator.of(sheetContext).pop();
+                  if (!mounted) return;
+                  final updated = await navigator.push<bool>(
                     MaterialPageRoute(
                       builder: (_) => EditMedicationPage(
                         docId: medId,
@@ -530,10 +532,12 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
                       ),
                     ),
                   );
+                  if (!mounted) return;
                   if (updated == true) {
                     // ⏱️ 延遲以確保本地資料庫完全寫入
                     debugPrint('⏳ 編輯完成，等待資料庫同步...');
                     await Future.delayed(const Duration(milliseconds: 800));
+                    if (!mounted) return;
 
                     // 立即刷新本地資料
                     debugPrint('🔄 開始刷新本地資料...');
@@ -543,6 +547,7 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
                     if (_pendingSync != null) {
                       debugPrint('⏳ 等待 Firebase 同步...');
                       await _pendingSync;
+                      if (!mounted) return;
                       debugPrint('✅ Firebase 同步完成');
                     }
                   }
@@ -553,7 +558,8 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
                   leading: const Icon(Icons.pause_circle_outline),
                   title: const Text('停藥（標記為已停用）'),
                   onTap: () async {
-                    Navigator.pop(context);
+                    Navigator.of(sheetContext).pop();
+                    if (!mounted) return;
                     // 本地更新
                     final nowStr = DateTime.now().toString();
                     await MedicationLocalDB().updateMedicationStatus(
@@ -572,7 +578,8 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
                         .doc(medId)
                         .update({'isActive': false});
 
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    if (!mounted) return;
+                    messenger.showSnackBar(
                       const SnackBar(content: Text('已標記為停藥')),
                     );
                     _refresh();
@@ -583,7 +590,8 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
                   leading: const Icon(Icons.play_circle_outline),
                   title: const Text('恢復使用'),
                   onTap: () async {
-                    Navigator.pop(context);
+                    Navigator.of(sheetContext).pop();
+                    if (!mounted) return;
                     final nowStr = DateTime.now().toString();
                     await MedicationLocalDB().updateMedicationStatus(
                       uid,
@@ -614,7 +622,8 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
                       'resumedAt': FieldValue.serverTimestamp(),
                     });
 
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    if (!mounted) return;
+                    messenger.showSnackBar(
                       const SnackBar(content: Text('已恢復使用，恢復日期已標註')),
                     );
                     _refresh();
@@ -627,20 +636,23 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
                   style: TextStyle(color: Colors.red),
                 ),
                 onTap: () async {
-                  Navigator.pop(context);
+                  Navigator.of(sheetContext).pop();
+                  if (!mounted) return;
 
                   final ok = await showDialog<bool>(
                     context: context,
-                    builder: (_) => AlertDialog(
+                    builder: (dialogContext) => AlertDialog(
                       title: const Text('確認刪除'),
                       content: const Text('刪除後將無法復原，確定要刪除嗎？'),
                       actions: [
                         TextButton(
-                          onPressed: () => Navigator.pop(context, false),
+                          onPressed: () =>
+                              Navigator.of(dialogContext).pop(false),
                           child: const Text('取消'),
                         ),
                         TextButton(
-                          onPressed: () => Navigator.pop(context, true),
+                          onPressed: () =>
+                              Navigator.of(dialogContext).pop(true),
                           child: const Text('刪除'),
                         ),
                       ],
@@ -658,7 +670,8 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
                         .doc(medId)
                         .delete();
 
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    if (!mounted) return;
+                    messenger.showSnackBar(
                       const SnackBar(content: Text('藥物已刪除')),
                     );
                     _refresh();
@@ -825,7 +838,22 @@ class _MedicationCard extends StatelessWidget {
       if (v is num) d = v.toDouble();
       if (v is String) d = double.tryParse(v);
       if (d == null) return '';
-      return d.toStringAsFixed(1);
+      final rounded = (d * 10).round() / 10;
+      return rounded % 1 == 0
+          ? rounded.toInt().toString()
+          : rounded.toStringAsFixed(1);
+    }
+
+    bool isCompoundIngredient(String? value) {
+      if (value == null) return false;
+      return RegExp(r'(\s*\+\s*|[;\n\r])').hasMatch(value.trim());
+    }
+
+    bool ingredientContainsDose(String? value) {
+      if (value == null) return false;
+      return RegExp(r'\d+(?:\.\d+)?\s*(MG|MCG|UG|G|ML|IU)\b',
+              caseSensitive: false)
+          .hasMatch(value);
     }
 
     final rawName = data['name'] ?? data['nameZh'] ?? data['nameEn'];
@@ -841,6 +869,8 @@ class _MedicationCard extends StatelessWidget {
     final intakeMl = data['intakeMl'];
     final unit = (data['unit'] as String?) ?? 'mg';
     final type = (data['type'] as String?) ?? 'tablet';
+    final compoundIngredientHasDose = isCompoundIngredient(explicitNameEn) &&
+        ingredientContainsDose(explicitNameEn);
 
     final times = (data['times'] as List?)?.whereType<String>().toList() ??
         const <String>[];
@@ -856,6 +886,11 @@ class _MedicationCard extends StatelessWidget {
               concentrationMl != null &&
               intakeMl != null) {
             return '${fmt1(concentrationMg)}mg/${fmt1(concentrationMl)}mL x ${fmt1(intakeMl)}mL';
+          }
+          if (dosePerUnit != null &&
+              pillCount != null &&
+              compoundIngredientHasDose) {
+            return '每次 ${fmt1(pillCount)} 顆';
           }
           if (dosePerUnit != null && pillCount != null) {
             return '${fmt1(dosePerUnit)} $unit x ${fmt1(pillCount)} 顆';
@@ -982,7 +1017,7 @@ class _EnglishIngredientText extends StatelessWidget {
   Widget build(BuildContext context) {
     final existing = explicitNameEn?.trim();
     if (existing != null && existing.isNotEmpty) {
-      return _buildText(existing);
+      return _buildText(_normalizeIngredientText(existing));
     }
 
     return FutureBuilder<String?>(
@@ -992,9 +1027,17 @@ class _EnglishIngredientText extends StatelessWidget {
         if (value == null || value.isEmpty) {
           return const SizedBox.shrink();
         }
-        return _buildText(value);
+        return _buildText(_normalizeIngredientText(value));
       },
     );
+  }
+
+  String _normalizeIngredientText(String value) {
+    return value
+        .split(RegExp(r'\s*(?:\+|;|\r?\n)\s*'))
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .join(' + ');
   }
 
   Widget _buildText(String value) {
