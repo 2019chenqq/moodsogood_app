@@ -30,6 +30,11 @@ class EmotionPageCheckbox extends StatefulWidget {
     required this.onDelete,
     required this.onToggleChecked,
     required this.onChangeValue,
+    this.firstEmotionItemKey,
+    this.emotionScoreKey,
+    this.tutorialSliderKey,
+    this.scrollController,
+    this.showTutorialScorePreview = false,
   });
 
   final List<EmotionItem> items;
@@ -38,6 +43,11 @@ class EmotionPageCheckbox extends StatefulWidget {
   final void Function(int index) onDelete;
   final void Function(int index, bool checked) onToggleChecked;
   final void Function(int index, int value) onChangeValue;
+  final GlobalKey? firstEmotionItemKey;
+  final GlobalKey? emotionScoreKey;
+  final GlobalKey? tutorialSliderKey;
+  final ScrollController? scrollController;
+  final bool showTutorialScorePreview;
 
   @override
   State<EmotionPageCheckbox> createState() => _EmotionPageCheckboxState();
@@ -71,6 +81,7 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
     }
 
     return SingleChildScrollView(
+      controller: widget.scrollController,
       child: Column(
         children: [
           // ========================================
@@ -221,17 +232,24 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
         // 內容區（展開時顯示）
         if (_isSliderExpanded)
           Container(
+            key: selectedEmotions.isNotEmpty || widget.showTutorialScorePreview
+                ? widget.emotionScoreKey
+                : null,
             color: HealingDesignSystem.adaptiveFill(context).withOpacity(0.3),
-            constraints: const BoxConstraints(maxHeight: 400),
+            constraints: selectedEmotions.isEmpty
+                ? const BoxConstraints()
+                : const BoxConstraints(maxHeight: 400),
             child: selectedEmotions.isEmpty
-                ? Center(
-                    child: Text(
-                      '請從上方選擇情緒',
-                      style: HealingDesignSystem.bodyMedium.copyWith(
-                        color: HealingDesignSystem.mutedText,
-                      ),
-                    ),
-                  )
+                ? widget.showTutorialScorePreview
+                    ? _buildTutorialScorePreview(context)
+                    : Center(
+                        child: Text(
+                          '請從上方選擇情緒',
+                          style: HealingDesignSystem.bodyMedium.copyWith(
+                            color: HealingDesignSystem.mutedText,
+                          ),
+                        ),
+                      )
                 : SingleChildScrollView(
                     child: Padding(
                       padding:
@@ -254,6 +272,41 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
   }
 
   /// 構建單個分類區塊 - 用療癒卡片替代 Chip
+  Widget _buildTutorialScorePreview(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(HealingDesignSystem.paddingL),
+      child: Container(
+        padding: const EdgeInsets.all(HealingDesignSystem.paddingL),
+        decoration: HealingDesignSystem.adaptiveCardDecoration(context),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '情緒強度示範',
+              style: HealingDesignSystem.titleSmall.copyWith(
+                color: HealingDesignSystem.adaptivePrimaryText(context),
+              ),
+            ),
+            const SizedBox(height: HealingDesignSystem.paddingM),
+            EmotionSlider(
+              sliderKey: widget.tutorialSliderKey,
+              label: '平靜',
+              value: 3,
+              maxScore: 5,
+              onChanged: (_) {},
+              leftIcon: 'assets/emotion/default.png',
+              rightIcon: 'assets/emotion/default.png',
+              gradientColors: const [
+                Color(0xFF9AD0EC),
+                Color(0xFFFFE08A),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildCategorySection(
     BuildContext context, {
     required String categoryName,
@@ -285,15 +338,21 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
             final isSelected =
                 index != null && widget.items[index].value != null;
 
-            return _buildEmotionCard(
-              emotionName: emotionName,
-              isSelected: isSelected,
-              onTap: () {
-                if (index == null) {
-                  return;
-                }
-                widget.onToggleChecked(index, !isSelected);
-              },
+            final isFirstEmotion = kEmotionCheckboxNames.isNotEmpty &&
+                emotionName == kEmotionCheckboxNames.first;
+
+            return KeyedSubtree(
+              key: isFirstEmotion ? widget.firstEmotionItemKey : null,
+              child: _buildEmotionCard(
+                emotionName: emotionName,
+                isSelected: isSelected,
+                onTap: () {
+                  if (index == null) {
+                    return;
+                  }
+                  widget.onToggleChecked(index, !isSelected);
+                },
+              ),
             );
           }).toList(),
         ),
