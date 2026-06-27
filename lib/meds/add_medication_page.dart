@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
 import 'dart:async';
 import 'drug_dictionary_service.dart';
 import '../constants/healing_design_system.dart';
@@ -8,6 +9,9 @@ import '../utils/firebase_sync_config.dart';
 import 'medication_local_db.dart';
 import 'medication_reminder_service.dart';
 import '../analytics_service.dart';
+
+const double kMaxDose = 50000;
+const int kDoseSliderDivisions = 5000;
 
 const List<String> kOralTimeSlots = ['早上', '中午', '下午', '晚上', '睡前', '需要時'];
 
@@ -20,6 +24,7 @@ class AddMedicationPage extends StatefulWidget {
 
 class _AddMedicationPageState extends State<AddMedicationPage> {
   final _formKey = GlobalKey<FormState>();
+  final _numberFormat = NumberFormat('#,##0.#');
 
   final _nameCtrl = TextEditingController();
   final _nameEnCtrl = TextEditingController();
@@ -51,7 +56,7 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
 
   Future<void> _editDoseManually() async {
     final ctrl = TextEditingController(
-      text: (_dose % 1 == 0) ? _dose.toInt().toString() : _dose.toString(),
+      text: _fmt1(_dose),
     );
     double? picked;
 
@@ -59,11 +64,11 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
       context: context,
       builder: (dialogContext) {
         void submit() {
-          final raw = ctrl.text.trim().replaceAll(',', '.');
+          final raw = ctrl.text.trim().replaceAll(',', '');
           final value = double.tryParse(raw);
           if (value == null || value < 0) return;
 
-          picked = value.clamp(0, 100000);
+          picked = value.clamp(0, kMaxDose).toDouble();
           FocusScope.of(dialogContext).unfocus();
           Navigator.of(dialogContext).pop(); // ✅ 用 dialogContext 關掉 dialog
         }
@@ -455,10 +460,10 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
                       if (_medType != 'drops') const SizedBox(height: 6),
                       if (_medType != 'drops')
                         Slider(
-                          value: _dose,
+                          value: _dose.clamp(0, kMaxDose).toDouble(),
                           min: 0,
-                          max: 100000,
-                          divisions: 10000,
+                          max: kMaxDose,
+                          divisions: kDoseSliderDivisions,
                           label: _doseLabel(_dose),
                           onChanged: (v) => setState(() => _dose = v),
                         ),
@@ -467,14 +472,14 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
                           children: [
                             _SmallGhostButton(
                               text: '−',
-                              onTap: () => setState(
-                                  () => _dose = (_dose - 0.1).clamp(0, 100000)),
+                              onTap: () => setState(() => _dose =
+                                  (_dose - 0.1).clamp(0, kMaxDose).toDouble()),
                             ),
                             const SizedBox(width: 8),
                             _SmallGhostButton(
                               text: '+',
-                              onTap: () => setState(
-                                  () => _dose = (_dose + 0.1).clamp(0, 100000)),
+                              onTap: () => setState(() => _dose =
+                                  (_dose + 0.1).clamp(0, kMaxDose).toDouble()),
                             ),
                             const Spacer(),
                             Text(
@@ -827,7 +832,7 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
 
   double _round1(double v) => (v * 10).round() / 10;
 
-  String _fmt1(double v) => _round1(v).toStringAsFixed(1);
+  String _fmt1(double v) => _numberFormat.format(_round1(v));
 
   String _doseLabel(double v) {
     return '${_fmt1(v)} $_unit';
@@ -1101,14 +1106,15 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
       if (medType == 'drops') {
         _unit = 'mg';
         if (parsedDose != null) {
-          _dropMg = parsedDose;
-          _dose = parsedDose;
+          _dropMg = parsedDose.clamp(0, kMaxDose).toDouble();
+          _dose = parsedDose.clamp(0, kMaxDose).toDouble();
         }
         if (_dropMlBase <= 0) _dropMlBase = 1.0;
         if (_intakeMl <= 0) _intakeMl = 1.0;
       } else if (hasDose) {
         if (parsedUnit != null) _unit = parsedUnit;
-        if (parsedDose != null) _dose = parsedDose;
+        if (parsedDose != null)
+          _dose = parsedDose.clamp(0, kMaxDose).toDouble();
       }
     });
   }
