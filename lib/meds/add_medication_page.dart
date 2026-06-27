@@ -876,6 +876,9 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
     }
 
     final name = _nameCtrl.text.trim();
+    final nameEn = _nameEnCtrl.text.trim().isNotEmpty
+        ? _nameEnCtrl.text.trim()
+        : (await DrugDictionaryService.instance.findEnglishName(name)) ?? '';
     final times = _medType == 'injection'
         ? <String>[]
         : _timeSlots.entries
@@ -924,6 +927,7 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
       final medicationData = {
         'id': docId,
         'name': name,
+        if (nameEn.isNotEmpty) 'nameEn': nameEn,
         'dose': doseValue,
         'dosePerUnit': dosePerUnit,
         'pillCount': pillCount,
@@ -959,6 +963,7 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
             .doc(docId)
             .set({
           'name': name,
+          if (nameEn.isNotEmpty) 'nameEn': nameEn,
           'dose': doseValue,
           'dosePerUnit': dosePerUnit,
           'pillCount': pillCount,

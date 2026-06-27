@@ -5,15 +5,35 @@ import 'package:flutter/services.dart';
 import '../utils/firebase_sync_config.dart';
 
 class DrugDictItem {
-  final String zh;
+  final List<String> zhNames;
   final String en;
   final List<String> alias;
 
-  DrugDictItem({required this.zh, required this.en, required this.alias});
+  DrugDictItem({
+    required this.zhNames,
+    required this.en,
+    required this.alias,
+  });
+
+  String get zh => zhNames.isEmpty ? '' : zhNames.first;
 
   factory DrugDictItem.fromJson(Map<String, dynamic> j) {
+    final zhRaw = j['zh'];
+    final zhNames = zhRaw is List
+        ? zhRaw
+            .map((x) => x.toString().trim())
+            .where((x) => x.isNotEmpty)
+            .toList()
+        : zhRaw is String
+            ? zhRaw
+                .split(RegExp(r'[,/|]'))
+                .map((x) => x.trim())
+                .where((x) => x.isNotEmpty)
+                .toList()
+            : <String>[];
+
     return DrugDictItem(
-      zh: (j['zh'] ?? '').toString(),
+      zhNames: zhNames,
       en: (j['en'] ?? '').toString(),
       alias: (j['alias'] is List)
           ? (j['alias'] as List).map((x) => x.toString()).toList()
@@ -52,13 +72,19 @@ class DrugDictionaryService {
   Future<void> ensureLoaded() async {
     if (_loaded) return;
 
-    final raw = await rootBundle.loadString('assets/drug_dict/drug_dict_seed.json');
+    final raw =
+        await rootBundle.loadString('assets/drug_dict/drug_dict_seed.json');
     final list = jsonDecode(raw) as List<dynamic>;
     _seed
       ..clear()
-      ..addAll(list.map((e) => DrugDictItem.fromJson(e as Map<String, dynamic>)));
+      ..addAll(
+          list.map((e) => DrugDictItem.fromJson(e as Map<String, dynamic>)));
 
-    await _loadUserDictionary();
+    try {
+      await _loadUserDictionary();
+    } catch (_) {
+      // The bundled seed dictionary should still work when Firestore is offline.
+    }
     _loaded = true;
   }
 
@@ -88,7 +114,7 @@ class DrugDictionaryService {
 
     // 2) 內建 seed 字典
     for (final item in _seed) {
-      final s1 = _scoreMatch(q, _norm(item.zh));
+      final s1 = _scoreAny(q, item.zhNames.map(_norm));
       final s2 = _scoreAny(q, item.alias.map(_norm));
       final s = (s1 * 3) + s2; // 中文比 alias 更重要
       if (s > 0) {
@@ -107,6 +133,31 @@ class DrugDictionaryService {
   }
 
   /// 使用者確認後，寫入個人字典（中文 -> 英文）
+  Future<String?> findEnglishName(String input) async {
+    await ensureLoaded();
+
+    final q = _norm(input);
+    if (q.isEmpty) return null;
+
+    final userMatch = _userMap[q]?.trim();
+    if (userMatch != null && userMatch.isNotEmpty) return userMatch;
+
+    for (final item in _seed) {
+      final matchedZh = item.zhNames.any((name) => _norm(name) == q);
+      final matchedAlias = item.alias.any((name) => _norm(name) == q);
+      if ((matchedZh || matchedAlias) && item.en.trim().isNotEmpty) {
+        return item.en.trim();
+      }
+    }
+
+    final suggestions = await suggest(input, limit: 1);
+    if (suggestions.isEmpty) return null;
+    final best = suggestions.first;
+    return best.score >= 200 && best.en.trim().isNotEmpty
+        ? best.en.trim()
+        : null;
+  }
+
   Future<void> saveUserMapping({
     required String zhName,
     required String enName,

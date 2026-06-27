@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../utils/firebase_sync_config.dart';
+import 'drug_dictionary_service.dart';
 import 'medication_local_db.dart';
 import 'medication_reminder_service.dart';
 import '../analytics_service.dart';
@@ -76,6 +77,7 @@ List<Map<String, String>> _drugSuggestions = [];
 
   void _hydrateFromInitial(Map<String, dynamic> d) {
     _nameCtrl.text = (d['name'] as String?) ?? '';
+    _nameEnCtrl.text = (d['nameEn'] as String?) ?? '';
     _noteCtrl.text = (d['note'] as String?) ?? '';
 // ✅ 藥物形式：口服 / 長效針
 _medType = (d['type'] as String?) ?? 'tablet';
@@ -755,6 +757,9 @@ if (_medType == 'injection') ...[
     }
 
     final name = _nameCtrl.text.trim();
+    final nameEn = _nameEnCtrl.text.trim().isNotEmpty
+        ? _nameEnCtrl.text.trim()
+        : (await DrugDictionaryService.instance.findEnglishName(name)) ?? '';
     final times = (_medType == 'injection')
         ? <String>[]
         : _timeSlots.entries.where((e) => e.value).map((e) => e.key).toList();
@@ -789,6 +794,7 @@ if (_medType == 'injection') ...[
       final medicationData = {
         'id': widget.docId,
         'name': name,
+        if (nameEn.isNotEmpty) 'nameEn': nameEn,
         'dose': totalDose,
         'dosePerUnit': dosePerUnit,
         'pillCount': pillCount,
@@ -843,6 +849,7 @@ if (_medType == 'injection') ...[
             .doc(widget.docId)
             .set({
               'name': name,
+              if (nameEn.isNotEmpty) 'nameEn': nameEn,
               'dose': totalDose,
               'dosePerUnit': dosePerUnit,
               'pillCount': pillCount,

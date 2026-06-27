@@ -10,6 +10,7 @@ import 'record_adjustment_page.dart';
 import 'record_adjustment_history_page.dart';
 import 'med_symptom_compare_page.dart';
 import 'medication_local_db.dart';
+import 'drug_dictionary_service.dart';
 
 const List<String> kTimeOrder = [
   '早上',
@@ -297,6 +298,7 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
         final mapped = {
           'id': doc.id,
           'name': data['name'],
+          'nameEn': data['nameEn'],
           'dose': data['dose'],
           'dosePerUnit': data['dosePerUnit'],
           'pillCount': data['pillCount'],
@@ -830,6 +832,7 @@ class _MedicationCard extends StatelessWidget {
     final name = (rawName as String?)?.trim().isNotEmpty == true
         ? rawName.toString().trim()
         : '未命名藥物';
+    final explicitNameEn = (data['nameEn'] as String?)?.trim();
     final dose = data['dose'];
     final dosePerUnit = data['dosePerUnit'];
     final pillCount = data['pillCount'];
@@ -909,6 +912,10 @@ class _MedicationCard extends StatelessWidget {
                           fontWeight: FontWeight.w700,
                         ),
                       ),
+                      _EnglishIngredientText(
+                        name: name,
+                        explicitNameEn: explicitNameEn,
+                      ),
                       const SizedBox(height: 2),
                       Text(
                         subtitle,
@@ -956,6 +963,50 @@ class _MedicationCard extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EnglishIngredientText extends StatelessWidget {
+  final String name;
+  final String? explicitNameEn;
+
+  const _EnglishIngredientText({
+    required this.name,
+    required this.explicitNameEn,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final existing = explicitNameEn?.trim();
+    if (existing != null && existing.isNotEmpty) {
+      return _buildText(existing);
+    }
+
+    return FutureBuilder<String?>(
+      future: DrugDictionaryService.instance.findEnglishName(name),
+      builder: (context, snapshot) {
+        final value = snapshot.data?.trim();
+        if (value == null || value.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return _buildText(value);
+      },
+    );
+  }
+
+  Widget _buildText(String value) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Text(
+        value,
+        style: const TextStyle(
+          color: HealingDesignSystem.mutedText,
+          fontSize: 12,
+          height: 1.25,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
