@@ -125,6 +125,7 @@ function buildDiaryTextFromFields(fields) {
     ["為自己感到驕傲", fields.conceited],
     ["做得不錯的地方", fields.proudOf],
     ["可多照顧自己的地方", fields.selfCare],
+    ["今日感恩事項", fields.gratitude],
   ]
     .filter(([, value]) => Boolean(value))
     .map(([label, value]) => `${label}: ${value}`);
