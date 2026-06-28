@@ -52,6 +52,7 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
   String _compoundType = '';
   String _drugConcentration = '';
   String _drugForm = '';
+  String _drugDoseText = '';
   String _packageAmount = '';
   String _packageUnit = '';
   List<String> _ingredientLines = [];
@@ -76,6 +77,27 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
         dosageForm: _drugForm,
         manualMedicationType: _medType,
       );
+  bool get _isTabletLikeForm {
+    final form = _drugForm;
+    return form.contains('錠') ||
+        form.contains('膠囊') ||
+        form.contains('口溶') ||
+        form.contains('口崩') ||
+        form.contains('顆粒');
+  }
+
+  bool get _showCleanDrugConcentration =>
+      _drugConcentration.isNotEmpty && (_isCompoundDrug || !_isTabletLikeForm);
+
+  bool get _showCleanDrugPackageDose =>
+      _packageAmount.isNotEmpty &&
+      _packageUnit.isNotEmpty &&
+      (_isCompoundDrug || !_isTabletLikeForm);
+
+  bool get _showCleanDrugDose =>
+      _drugDoseText.isNotEmpty &&
+      !_isCompoundDrug &&
+      !_showCleanDrugPackageDose;
 
 // 候選結果：[{id, zh, en}]
   List<Map<String, String>> _drugSuggestions = [];
@@ -169,6 +191,7 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
       _pillCount = 1.0;
 
     _unit = (d['unit'] as String?) ?? 'mg';
+    _drugDoseText = _dose > 0 ? '${_fmt1(_dose)} $_unit' : '';
 
     final times =
         (d['times'] as List?)?.whereType<String>().toSet() ?? <String>{};
@@ -1200,9 +1223,10 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
     final rows = <Widget>[
       if (_compoundType.isNotEmpty) _buildInfoRow('單複方', _compoundType),
       if (_drugForm.isNotEmpty) _buildInfoRow('藥物形式', _drugForm),
-      if (_drugConcentration.isNotEmpty)
+      if (_showCleanDrugDose) _buildInfoRow('劑量', _drugDoseText),
+      if (_showCleanDrugConcentration)
         _buildInfoRow('藥物濃度', _drugConcentration),
-      if (packageDose.isNotEmpty) _buildInfoRow('規格量', packageDose),
+      if (_showCleanDrugPackageDose) _buildInfoRow('規格量', packageDose),
       if (_isCompoundDrug && _ingredientLines.isNotEmpty) ...[
         const SizedBox(height: 8),
         Text('複方成分', style: Theme.of(context).textTheme.labelLarge),
@@ -1318,6 +1342,7 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
       _compoundType = compoundType;
       _drugConcentration = concentration;
       _drugForm = formText;
+      _drugDoseText = doseText;
       _packageAmount = packageAmount;
       _packageUnit = packageUnit;
       _ingredientLines = ingredientLines;
