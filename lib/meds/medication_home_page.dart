@@ -11,6 +11,7 @@ import 'record_adjustment_history_page.dart';
 import 'med_symptom_compare_page.dart';
 import 'medication_local_db.dart';
 import 'drug_dictionary_service.dart';
+import 'medication_schedule_utils.dart';
 
 const List<String> kTimeOrder = [
   '早上',
@@ -70,6 +71,37 @@ String? _injectionBadgeText({
   }
 
   return '逾期 ${-diff} 天';
+}
+
+String? _injectionBadgeTextV2({
+  required DateTime? startDate,
+  required DateTime? lastChangeAt,
+  required int? intervalValue,
+  required String? intervalUnit,
+  required DateTime today,
+}) {
+  if (startDate == null || intervalValue == null || intervalValue <= 0) {
+    return null;
+  }
+
+  final anchor = lastChangeAt ?? startDate;
+  final dueDate = MedicationScheduleUtils.calculateNextInjectionDate(
+    lastInjectionDate: anchor,
+    intervalValue: intervalValue,
+    intervalUnit: intervalUnit ?? 'day',
+  );
+  final diff = dueDate.difference(today);
+  final abs = diff.abs();
+
+  String formatDiff() {
+    if (abs.inDays >= 365) return '${abs.inDays ~/ 365} 年';
+    if (abs.inDays >= 30) return '${abs.inDays ~/ 30} 月';
+    if (abs.inDays >= 7) return '${abs.inDays ~/ 7} 週';
+    if (abs.inDays >= 1) return '${abs.inDays} 天';
+    return '${abs.inHours} 小時';
+  }
+
+  return diff.isNegative ? '逾期 ${formatDiff()}' : '還有 ${formatDiff()}';
 }
 
 String _fmtMd(DateTime dt) {
@@ -307,6 +339,14 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
           'intakeMl': data['intakeMl'],
           'unit': data['unit'],
           'type': data['type'],
+          'drugForm': data['drugForm'],
+          'compoundType': data['compoundType'],
+          'drugConcentration': data['drugConcentration'],
+          'packageAmount': data['packageAmount'],
+          'packageUnit': data['packageUnit'],
+          'ingredientLines':
+              (data['ingredientLines'] as List?)?.cast<String>() ?? <String>[],
+          ...MedicationScheduleUtils.readInjectionIntervalFields(data),
           'intervalDays': data['intervalDays'],
           'times': (data['times'] as List?)?.cast<String>() ?? <String>[],
           'purposes': (data['purposes'] as List?)?.cast<String>() ?? <String>[],
@@ -359,7 +399,10 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
     final List<Map<String, dynamic>> injectionMeds = [];
 
     for (final med in meds) {
-      final isInjection = (med['type'] as String?) == 'injection';
+      final isInjection = MedicationScheduleUtils.isInjectionMedication(
+        dosageForm: med['drugForm'] as String?,
+        manualMedicationType: med['type'] as String?,
+      );
       if (isInjection) {
         injectionMeds.add(med);
         continue;
@@ -436,18 +479,27 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
             final medId = med['id'] as String? ?? '';
             final startDate = _parseFlexibleDate(med['startDate']);
             final lastChangeAt = _parseFlexibleDate(med['lastChangeAt']);
-            final intervalDays = (med['intervalDays'] is int)
-                ? med['intervalDays'] as int
-                : int.tryParse('${med['intervalDays'] ?? ''}');
-            final badgeText = _injectionBadgeText(
+            final intervalValue =
+                MedicationScheduleUtils.parseInjectionIntervalValue(
+                      med['injectionIntervalValue'],
+                    ) ??
+                    MedicationScheduleUtils.parseInjectionIntervalValue(
+                      med['intervalDays'],
+                    );
+            final intervalUnit =
+                MedicationScheduleUtils.normalizeInjectionIntervalUnit(
+              med['injectionIntervalUnit'] ?? med['intervalUnit'] ?? 'day',
+            );
+            final badgeText = _injectionBadgeTextV2(
               startDate: startDate,
               lastChangeAt: lastChangeAt,
-              intervalDays: intervalDays,
+              intervalValue: intervalValue,
+              intervalUnit: intervalUnit,
               today: DateTime.now(),
             );
 
             debugPrint(
-              '💉 [INJECTION] medId=$medId, start=$startDate, lastChangeAt=$lastChangeAt, intervalDays=$intervalDays, badge=$badgeText',
+              '💉 [INJECTION] medId=$medId, start=$startDate, lastChangeAt=$lastChangeAt, intervalValue=$intervalValue, intervalUnit=$intervalUnit, badge=$badgeText',
             );
 
             return _MedicationCard(

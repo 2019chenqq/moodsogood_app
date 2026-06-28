@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'medication_schedule_utils.dart';
+
 class MedicationLocalDB {
   static final MedicationLocalDB _instance = MedicationLocalDB._internal();
 
@@ -164,9 +166,12 @@ class MedicationLocalDB {
     String id,
     Map<String, dynamic> data,
   ) {
+    final intervalFields =
+        MedicationScheduleUtils.readInjectionIntervalFields(data);
     return {
       'id': id,
       ..._normalizeMap(data),
+      ...intervalFields,
       'times': _asStringList(data['times']),
       'purposes': _asStringList(data['purposes']),
       'bodySymptoms': _asStringList(data['bodySymptoms']),

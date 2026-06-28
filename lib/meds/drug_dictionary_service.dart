@@ -315,8 +315,8 @@ class DrugDictionaryService {
       final code = _read(row, '藥品代號');
       final zh = _read(row, '藥品中文名稱');
       final productEn = _read(row, '藥品英文名稱');
-      final ingredient = _read(row, '成分');
-      final strength = _read(row, '成分數值單位');
+      final ingredient = _read(row, '英文成分');
+      final strength = _read(row, '劑量');
       final packageAmount = _read(row, '規格量');
       final packageUnit = _read(row, '規格單位');
       final compoundType = _read(row, '單複方');
@@ -354,12 +354,13 @@ class DrugDictionaryService {
       '藥品英文名稱': 1,
       '藥品中文名稱': 2,
       '成分': 3,
-      '成分數值單位': 4,
-      '規格量': 5,
-      '規格單位': 6,
-      '單複方': 7,
-      '劑型': 8,
-      'ATC代碼': 9,
+      '英文成分': 4,
+      '劑量': 5,
+      '規格量': 6,
+      '規格單位': 7,
+      '單複方': 8,
+      '劑型': 9,
+      'ATC代碼': 10,
     }[key];
     if (index == null || index >= row.length) return '';
     return row.values.elementAt(index).toString().trim();

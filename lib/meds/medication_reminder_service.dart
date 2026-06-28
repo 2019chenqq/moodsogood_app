@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/notification_helper.dart';
 import 'medication_local_db.dart';
+import 'medication_schedule_utils.dart';
 
 class MedicationReminderService {
   MedicationReminderService._();
@@ -75,7 +76,10 @@ class MedicationReminderService {
     final meds = await MedicationLocalDB().getMedicationsForDisplay(uid);
     final activeOralMeds = meds.where((m) {
       final isActive = (m['isActive'] as bool?) ?? true;
-      final isInjection = (m['type'] as String?) == 'injection';
+      final isInjection = MedicationScheduleUtils.isInjectionMedication(
+        dosageForm: m['drugForm'] as String?,
+        manualMedicationType: m['type'] as String?,
+      );
       return isActive && !isInjection;
     }).toList();
 
@@ -84,8 +88,9 @@ class MedicationReminderService {
     };
 
     for (final med in activeOralMeds) {
-      final name = ((med['name'] ?? med['nameZh'] ?? med['nameEn'] ?? '未命名藥物') as String)
-          .trim();
+      final name =
+          ((med['name'] ?? med['nameZh'] ?? med['nameEn'] ?? '未命名藥物') as String)
+              .trim();
       final times = ((med['times'] as List?) ?? const [])
           .whereType<String>()
           .map((s) => s.trim())

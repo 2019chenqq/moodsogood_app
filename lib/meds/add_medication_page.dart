@@ -8,6 +8,7 @@ import '../constants/healing_design_system.dart';
 import '../utils/firebase_sync_config.dart';
 import 'medication_local_db.dart';
 import 'medication_reminder_service.dart';
+import 'medication_schedule_utils.dart';
 import '../analytics_service.dart';
 
 const double kMaxDose = 50000;
@@ -36,7 +37,8 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
   double _pillCount = 1.0; // 每次幾顆
   String _unit = 'mg';
   String _medType = 'tablet'; // tablet / injection / drops
-  int _intervalDays = 28; // 只給 injection 用
+  int _intervalValue = 28;
+  String _intervalUnit = 'day';
   double _dropMg = 10.0;
   double _dropMlBase = 1.0;
   double _intakeMl = 1.0;
@@ -59,6 +61,17 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
       _packageAmount.isNotEmpty ||
       _packageUnit.isNotEmpty ||
       _ingredientLines.isNotEmpty;
+  bool get _shouldShowManualMedicationType => !_hasCleanDrugInfo;
+  String get _effectiveMedicationType =>
+      MedicationScheduleUtils.resolveMedicationType(
+        dosageForm: _drugForm,
+        manualMedicationType: _medType,
+      );
+  bool get _isInjectionMedication =>
+      MedicationScheduleUtils.isInjectionMedication(
+        dosageForm: _drugForm,
+        manualMedicationType: _medType,
+      );
 
   @override
   void initState() {
@@ -364,20 +377,10 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
                   ),
                 ),
 
-// const SizedBox(height: 12),
-
-// _SectionCard(
-//   title: '藥物成分（英文）',
-//   icon: Icons.translate_outlined,
-//   child: TextFormField(
-//     controller: _nameEnCtrl,
-//     textInputAction: TextInputAction.next,
-//     decoration: _inputDeco('例如：Clonazepam、Quetiapine…（可自動帶入/也可手動改）'),
-//   ),
-// ),
+                const SizedBox(height: 12),
 
                 _SectionCard(
-                  title: '英文成分',
+                  title: '成分',
                   icon: Icons.translate_outlined,
                   child: TextFormField(
                     controller: _nameEnCtrl,
@@ -397,37 +400,39 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
                   const SizedBox(height: 12),
                 ],
 
-                _SectionCard(
-                  title: '藥物形式',
-                  icon: Icons.medical_services_outlined,
-                  child: Wrap(
-                    alignment: WrapAlignment.spaceBetween,
-                    spacing: 8,
-                    children: [
-                      ChoiceChip(
-                        label: const Text('口服藥'),
-                        selected: _medType == 'tablet',
-                        onSelected: (_) => setState(() => _medType = 'tablet'),
-                      ),
-                      ChoiceChip(
-                        label: const Text('長效針'),
-                        selected: _medType == 'injection',
-                        onSelected: (_) =>
-                            setState(() => _medType = 'injection'),
-                      ),
-                      ChoiceChip(
-                        label: const Text('滴劑'),
-                        selected: _medType == 'drops',
-                        onSelected: (_) => setState(() {
-                          _medType = 'drops';
-                          _unit = 'mg';
-                        }),
-                      ),
-                    ],
+                if (_shouldShowManualMedicationType) ...[
+                  _SectionCard(
+                    title: '藥物形式',
+                    icon: Icons.medical_services_outlined,
+                    child: Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      spacing: 8,
+                      children: [
+                        ChoiceChip(
+                          label: const Text('口服藥'),
+                          selected: _medType == 'tablet',
+                          onSelected: (_) =>
+                              setState(() => _medType = 'tablet'),
+                        ),
+                        ChoiceChip(
+                          label: const Text('針劑'),
+                          selected: _medType == 'injection',
+                          onSelected: (_) =>
+                              setState(() => _medType = 'injection'),
+                        ),
+                        ChoiceChip(
+                          label: const Text('滴劑'),
+                          selected: _medType == 'drops',
+                          onSelected: (_) => setState(() {
+                            _medType = 'drops';
+                            _unit = 'mg';
+                          }),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-
-                const SizedBox(height: 12),
+                  const SizedBox(height: 12),
+                ],
 
                 // 2) 劑量
                 _SectionCard(
@@ -628,27 +633,63 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
                 ),
 
                 // 3) 服用時間（像第二張那種分區感）
-                if (_medType == 'injection') ...[
+                if (_isInjectionMedication) ...[
                   _SectionCard(
-                    title: '注射間隔（天）',
+                    title: '施打頻率',
                     icon: Icons.calendar_today_outlined,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('每 $_intervalDays 天一次',
-                            style: Theme.of(context).textTheme.titleSmall),
-                        const SizedBox(height: 8),
-                        Slider(
-                          min: 7,
-                          max: 60,
-                          divisions: 46,
-                          value: _intervalDays.toDouble(),
-                          label: '$_intervalDays 天',
-                          onChanged: (v) =>
-                              setState(() => _intervalDays = v.round()),
+                        Row(
+                          children: [
+                            Expanded(
+                              flex: 3,
+                              child: TextFormField(
+                                initialValue: _intervalValue.toString(),
+                                keyboardType: TextInputType.number,
+                                decoration: _inputDeco('數值').copyWith(
+                                  prefixText: '每 ',
+                                  suffixText: ' ',
+                                ),
+                                onChanged: (value) {
+                                  final parsed = int.tryParse(value.trim());
+                                  if (parsed == null) return;
+                                  setState(() => _intervalValue = parsed);
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              flex: 2,
+                              child: DropdownButtonFormField<String>(
+                                value: MedicationScheduleUtils
+                                    .normalizeInjectionIntervalUnit(
+                                  _intervalUnit,
+                                ),
+                                decoration: _inputDeco('單位'),
+                                items: MedicationScheduleUtils.intervalUnits
+                                    .map(
+                                      (unit) => DropdownMenuItem<String>(
+                                        value: unit.name,
+                                        child: Text(
+                                          MedicationScheduleUtils
+                                              .injectionIntervalUnitLabel(
+                                                  unit.name),
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (value) {
+                                  if (value == null) return;
+                                  setState(() => _intervalUnit = value);
+                                },
+                              ),
+                            ),
+                          ],
                         ),
+                        const SizedBox(height: 8),
                         Text(
-                          '提示：長效針通常不需要設定早/中/晚服用時間；每次施打請在「紀錄調整」記錄事件。',
+                          '提示：若是長效針，請在每次實際施打後更新最近一次施打時間。',
                           style: Theme.of(context)
                               .textTheme
                               .bodySmall
@@ -659,7 +700,7 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
                   ),
                   const SizedBox(height: 12),
                 ],
-                if (_medType != 'injection') ...[
+                if (!_isInjectionMedication) ...[
                   _SectionCard(
                     title: '服用時間',
                     icon: Icons.schedule,
@@ -916,7 +957,8 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
     final nameEn = _nameEnCtrl.text.trim().isNotEmpty
         ? _nameEnCtrl.text.trim()
         : (await DrugDictionaryService.instance.findEnglishName(name)) ?? '';
-    final times = _medType == 'injection'
+    final medType = _effectiveMedicationType;
+    final times = medType == 'injection'
         ? <String>[]
         : _timeSlots.entries
             .where((e) => e.value)
@@ -929,16 +971,20 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
     final purposeOther = _purposeOtherCtrl.text.trim();
     final bodySymptomText = _bodySymptomCtrl.text.trim();
     final dosePerUnit =
-        _medType == 'drops' ? _round1(_dropMg / _dropMlBase) : _round1(_dose);
-    final pillCount = _medType == 'injection' || _medType == 'drops'
+        medType == 'drops' ? _round1(_dropMg / _dropMlBase) : _round1(_dose);
+    final pillCount = medType == 'injection' || medType == 'drops'
         ? 1.0
         : _round1(_pillCount);
-    final concentrationMg = _medType == 'drops' ? _round1(_dropMg) : null;
-    final concentrationMl = _medType == 'drops' ? _round1(_dropMlBase) : null;
-    final intakeMl = _medType == 'drops' ? _round1(_intakeMl) : null;
-    final doseValue = _medType == 'drops'
+    final concentrationMg = medType == 'drops' ? _round1(_dropMg) : null;
+    final concentrationMl = medType == 'drops' ? _round1(_dropMlBase) : null;
+    final intakeMl = medType == 'drops' ? _round1(_intakeMl) : null;
+    final doseValue = medType == 'drops'
         ? _round1((concentrationMg! / concentrationMl!) * intakeMl!)
         : _round1(dosePerUnit * pillCount);
+    final intervalFields = MedicationScheduleUtils.writeInjectionIntervalFields(
+      intervalValue: _isInjectionMedication ? _intervalValue : null,
+      intervalUnit: _intervalUnit,
+    );
 
     final bodySymptoms = bodySymptomText.isEmpty
         ? <String>[]
@@ -959,7 +1005,6 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
           .id; // 生成 ID
 
       final now = DateTime.now();
-      final timestamp = Timestamp.fromDate(now);
 
       final medicationData = {
         'id': docId,
@@ -971,15 +1016,15 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
         'concentrationMg': concentrationMg,
         'concentrationMl': concentrationMl,
         'intakeMl': intakeMl,
-        'unit': _medType == 'drops' ? 'mg' : _unit,
-        'type': _medType,
+        'unit': medType == 'drops' ? 'mg' : _unit,
+        'type': medType,
         'drugForm': _drugForm,
         'compoundType': _compoundType,
         'drugConcentration': _drugConcentration,
         'packageAmount': _packageAmount,
         'packageUnit': _packageUnit,
         'ingredientLines': _ingredientLines,
-        'intervalDays': _medType == 'injection' ? _intervalDays : null,
+        ...intervalFields,
         'times': times,
         'purposes': purposes,
         'note': _noteCtrl.text.trim(),
@@ -1013,15 +1058,15 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
           'concentrationMg': concentrationMg,
           'concentrationMl': concentrationMl,
           'intakeMl': intakeMl,
-          'unit': _medType == 'drops' ? 'mg' : _unit,
-          'type': _medType,
+          'unit': medType == 'drops' ? 'mg' : _unit,
+          'type': medType,
           'drugForm': _drugForm,
           'compoundType': _compoundType,
           'drugConcentration': _drugConcentration,
           'packageAmount': _packageAmount,
           'packageUnit': _packageUnit,
           'ingredientLines': _ingredientLines,
-          'intervalDays': _medType == 'injection' ? _intervalDays : null,
+          ...intervalFields,
           'times': times,
           'purposes': purposes,
           'note': _noteCtrl.text.trim(),
@@ -1173,15 +1218,15 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
         .where((line) => line.isNotEmpty)
         .toList();
     final hasDose = doseText.isNotEmpty;
-    final hasForm = formText.isNotEmpty;
     final parsedDose = hasDose
         ? DrugDictionaryService.instance.parseDoseValue(doseText)
         : null;
     final parsedUnit =
         hasDose ? DrugDictionaryService.instance.parseDoseUnit(doseText) : null;
-    final medType = hasForm
-        ? DrugDictionaryService.instance.mapFormToMedType(formText)
-        : null;
+    final medType = MedicationScheduleUtils.resolveMedicationType(
+      dosageForm: formText,
+      manualMedicationType: _medType,
+    );
 
     setState(() {
       _compoundType = compoundType;
@@ -1198,7 +1243,7 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
         _lastAutoNameEn = exactEn;
       }
 
-      if (medType != null) {
+      if (medType.isNotEmpty) {
         _medType = medType;
       }
       if (medType == 'injection') {

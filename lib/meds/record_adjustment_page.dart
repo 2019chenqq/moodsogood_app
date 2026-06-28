@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../constants/healing_design_system.dart';
 import '../utils/firebase_sync_config.dart';
 import 'medication_local_db.dart';
+import 'medication_schedule_utils.dart';
 import 'medication_reminder_service.dart';
 import '../analytics_service.dart';
 
@@ -111,6 +112,14 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
           'intakeMl': data['intakeMl'],
           'unit': data['unit'],
           'type': data['type'],
+          'drugForm': data['drugForm'],
+          'compoundType': data['compoundType'],
+          'drugConcentration': data['drugConcentration'],
+          'packageAmount': data['packageAmount'],
+          'packageUnit': data['packageUnit'],
+          'ingredientLines':
+              (data['ingredientLines'] as List?)?.cast<String>() ?? <String>[],
+          ...MedicationScheduleUtils.readInjectionIntervalFields(data),
           'intervalDays': data['intervalDays'],
           'times': (data['times'] as List?)?.cast<String>() ?? <String>[],
           'purposes': (data['purposes'] as List?)?.cast<String>() ?? <String>[],

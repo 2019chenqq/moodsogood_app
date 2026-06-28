@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import '../constants/healing_design_system.dart';
 import 'medication_local_db.dart';
+import 'medication_schedule_utils.dart';
 import '../analytics_service.dart';
 
 class MedSymptomComparePage extends StatefulWidget {
@@ -55,7 +56,8 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
         actions: [
           IconButton(
             tooltip: '重新計算',
-            icon: const Icon(Icons.refresh, color: HealingDesignSystem.deepText),
+            icon:
+                const Icon(Icons.refresh, color: HealingDesignSystem.deepText),
             onPressed: uid == null ? null : _runCompare,
           ),
         ],
@@ -71,14 +73,15 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
                 const SizedBox(height: 12),
                 _buildWindowPicker(),
                 const SizedBox(height: 16),
-
                 FilledButton.icon(
-                  onPressed: (_selectedMedId == null || _loading) ? null : _runCompare,
+                  onPressed:
+                      (_selectedMedId == null || _loading) ? null : _runCompare,
                   style: FilledButton.styleFrom(
                     backgroundColor: HealingDesignSystem.primaryBlue,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
                   ),
                   icon: _loading
                       ? const SizedBox(
@@ -86,21 +89,21 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
                           height: 18,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
                         )
                       : const Icon(Icons.analytics_outlined),
                   label: const Text('開始比對'),
                 ),
-
                 if (_error != null) ...[
                   const SizedBox(height: 12),
                   Text(
                     _error!,
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    style:
+                        TextStyle(color: Theme.of(context).colorScheme.error),
                   ),
                 ],
-
                 const SizedBox(height: 20),
                 _buildResultSection(),
               ],
@@ -115,8 +118,8 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
     // Prefer Traditional Chinese if available
     _tts.setLanguage('zh-TW');
     _tts.setSpeechRate(0.45);
-     AnalyticsService.logPage('med_symptom_compare_page');
-    
+    AnalyticsService.logPage('med_symptom_compare_page');
+
     // 初始化時從 Firebase 同步最新藥物到本地
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
@@ -150,13 +153,22 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
           'intakeMl': data['intakeMl'],
           'unit': data['unit'],
           'type': data['type'],
+          'drugForm': data['drugForm'],
+          'compoundType': data['compoundType'],
+          'drugConcentration': data['drugConcentration'],
+          'packageAmount': data['packageAmount'],
+          'packageUnit': data['packageUnit'],
+          'ingredientLines':
+              (data['ingredientLines'] as List?)?.cast<String>() ?? <String>[],
+          ...MedicationScheduleUtils.readInjectionIntervalFields(data),
           'intervalDays': data['intervalDays'],
           'times': (data['times'] as List?)?.cast<String>() ?? <String>[],
           'purposes': (data['purposes'] as List?)?.cast<String>() ?? <String>[],
           'note': data['note'],
           'startDate': startDate?.toString(),
           'isActive': data['isActive'] ?? true,
-          'bodySymptoms': (data['bodySymptoms'] as List?)?.cast<String>() ?? <String>[],
+          'bodySymptoms':
+              (data['bodySymptoms'] as List?)?.cast<String>() ?? <String>[],
           'purposeOther': data['purposeOther'],
           'createdAt': DateTime.now().toString(),
           'updatedAt': DateTime.now().toString(),
@@ -233,15 +245,18 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
               fillColor: HealingDesignSystem.softBlue.withOpacity(0.7),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: HealingDesignSystem.lineColor),
+                borderSide:
+                    const BorderSide(color: HealingDesignSystem.lineColor),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: HealingDesignSystem.lineColor),
+                borderSide:
+                    const BorderSide(color: HealingDesignSystem.lineColor),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: HealingDesignSystem.primaryBlue, width: 1.2),
+                borderSide: const BorderSide(
+                    color: HealingDesignSystem.primaryBlue, width: 1.2),
               ),
               isDense: true,
             ),
@@ -430,8 +445,10 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
         endExclusive: _anchorDate.add(Duration(days: _windowDays)),
       );
 
-      final beforeDocs = await _fetchDailyRecords(uid, beforeRange.$1, beforeRange.$2);
-      final afterDocs = await _fetchDailyRecords(uid, afterRange.$1, afterRange.$2);
+      final beforeDocs =
+          await _fetchDailyRecords(uid, beforeRange.$1, beforeRange.$2);
+      final afterDocs =
+          await _fetchDailyRecords(uid, afterRange.$1, afterRange.$2);
 
       final beforeAgg = _aggregateDailyRecords(beforeDocs);
       final afterAgg = _aggregateDailyRecords(afterDocs);
@@ -452,57 +469,59 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
   }
 
   // 回傳 (startInclusive, endExclusive)
-  (DateTime, DateTime) _dateRange({required DateTime start, required DateTime endExclusive}) {
+  (DateTime, DateTime) _dateRange(
+      {required DateTime start, required DateTime endExclusive}) {
     final s = DateTime(start.year, start.month, start.day);
     final e = DateTime(endExclusive.year, endExclusive.month, endExclusive.day);
     return (s, e);
   }
 
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _fetchDailyRecords(
-  String uid,
-  DateTime startInclusive,
-  DateTime endExclusive,
-) async {
-  if (!startInclusive.isBefore(endExclusive)) {
-    return [];
+    String uid,
+    DateTime startInclusive,
+    DateTime endExclusive,
+  ) async {
+    if (!startInclusive.isBefore(endExclusive)) {
+      return [];
+    }
+
+    String id(DateTime d) => '${d.year.toString().padLeft(4, '0')}-'
+        '${d.month.toString().padLeft(2, '0')}-'
+        '${d.day.toString().padLeft(2, '0')}';
+
+    final recordsRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('dailyRecords');
+
+    final byDate = await recordsRef
+        .where('date',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(startInclusive))
+        .where('date', isLessThan: Timestamp.fromDate(endExclusive))
+        .get();
+
+    final startId = id(startInclusive);
+    // endExclusive 不含，所以用「前一天」作為 endId（含）
+    final endId = id(endExclusive.subtract(const Duration(days: 1)));
+
+    final byDocId = await recordsRef
+        .where(FieldPath.documentId, isGreaterThanOrEqualTo: startId)
+        .where(FieldPath.documentId, isLessThanOrEqualTo: endId)
+        .get();
+
+    final merged = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{
+      for (final d in byDate.docs) d.id: d,
+      for (final d in byDocId.docs) d.id: d,
+    };
+
+    return merged.values.toList();
   }
-
-  String id(DateTime d) =>
-      '${d.year.toString().padLeft(4, '0')}-'
-      '${d.month.toString().padLeft(2, '0')}-'
-      '${d.day.toString().padLeft(2, '0')}';
-
-  final recordsRef = FirebaseFirestore.instance
-      .collection('users')
-      .doc(uid)
-      .collection('dailyRecords');
-
-  final byDate = await recordsRef
-      .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startInclusive))
-      .where('date', isLessThan: Timestamp.fromDate(endExclusive))
-      .get();
-
-  final startId = id(startInclusive);
-  // endExclusive 不含，所以用「前一天」作為 endId（含）
-  final endId = id(endExclusive.subtract(const Duration(days: 1)));
-
-  final byDocId = await recordsRef
-      .where(FieldPath.documentId, isGreaterThanOrEqualTo: startId)
-      .where(FieldPath.documentId, isLessThanOrEqualTo: endId)
-      .get();
-
-  final merged = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{
-    for (final d in byDate.docs) d.id: d,
-    for (final d in byDocId.docs) d.id: d,
-  };
-
-  return merged.values.toList();
-}
 
   // -----------------------------
   // 解析 + 平均計算（你最可能需要微調的地方）
   // -----------------------------
-  _AggResult _aggregateDailyRecords(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+  _AggResult _aggregateDailyRecords(
+      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
     // 累積 sum & count
     final symptomDays = <String, int>{};
     final emotionSum = <String, double>{};
@@ -578,8 +597,9 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
         }
 
         if (item is Map) {
-          final name =
-              (item['name'] ?? item['title'] ?? item['symptom'] ?? '').toString().trim();
+          final name = (item['name'] ?? item['title'] ?? item['symptom'] ?? '')
+              .toString()
+              .trim();
           if (name.isNotEmpty) out.add(name);
         }
       }
@@ -657,21 +677,31 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
       worsenThreshold: 3,
     );
 
-    final symptomItems = symptomDeltas.map((d) => _toCompareItem(d, true)).toList();
-    final emotionItems = emotionDeltas.map((d) => _toCompareItem(d, false)).toList();
+    final symptomItems =
+        symptomDeltas.map((d) => _toCompareItem(d, true)).toList();
+    final emotionItems =
+        emotionDeltas.map((d) => _toCompareItem(d, false)).toList();
 
-    final attentionCount =
-        symptomDeltas.where((x) => x.kind == _DeltaKind.newlyAppeared || x.kind == _DeltaKind.worsened).length +
-        emotionDeltas.where((x) => x.kind == _DeltaKind.newlyAppeared || x.kind == _DeltaKind.worsened).length;
+    final attentionCount = symptomDeltas
+            .where((x) =>
+                x.kind == _DeltaKind.newlyAppeared ||
+                x.kind == _DeltaKind.worsened)
+            .length +
+        emotionDeltas
+            .where((x) =>
+                x.kind == _DeltaKind.newlyAppeared ||
+                x.kind == _DeltaKind.worsened)
+            .length;
     final improvedCount =
         symptomDeltas.where((x) => x.kind == _DeltaKind.improved).length +
-        emotionDeltas.where((x) => x.kind == _DeltaKind.improved).length;
+            emotionDeltas.where((x) => x.kind == _DeltaKind.improved).length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _ResultSummaryCard(
-          medName: (_selectedMedData?['name'] ?? _selectedMedId ?? '').toString(),
+          medName:
+              (_selectedMedData?['name'] ?? _selectedMedId ?? '').toString(),
           windowDays: _windowDays,
           beforeDays: _beforeDaysCount,
           afterDays: _afterDaysCount,
@@ -1050,9 +1080,7 @@ class _CompareTable extends StatelessWidget {
                               ? null
                               : (diff > 0
                                   ? Theme.of(context).colorScheme.error
-                                  : (diff < 0
-                                      ? Colors.green
-                                      : null)),
+                                  : (diff < 0 ? Colors.green : null)),
                         ),
                       ),
                     ),
@@ -1292,7 +1320,9 @@ class _ResultSummaryCard extends StatelessWidget {
     final confShort = confidence.split('（').first;
     final confColor = confShort == '高'
         ? HealingDesignSystem.successGreen
-        : (confShort == '中' ? HealingDesignSystem.warningOrange : HealingDesignSystem.dangerRed);
+        : (confShort == '中'
+            ? HealingDesignSystem.warningOrange
+            : HealingDesignSystem.dangerRed);
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -1320,7 +1350,8 @@ class _ResultSummaryCard extends StatelessWidget {
                   gradient: HealingDesignSystem.primaryGradient(),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.insights_rounded, color: Colors.white, size: 20),
+                child: const Icon(Icons.insights_rounded,
+                    color: Colors.white, size: 20),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -1347,7 +1378,8 @@ class _ResultSummaryCard extends StatelessWidget {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: confColor.withOpacity(0.10),
                   borderRadius: BorderRadius.circular(20),
@@ -1445,12 +1477,14 @@ class _InfoPill extends StatelessWidget {
         children: [
           Text(
             label,
-            style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600),
+            style: TextStyle(
+                color: color, fontSize: 11, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 2),
           Text(
             value,
-            style: TextStyle(color: color, fontSize: 15, fontWeight: FontWeight.w800),
+            style: TextStyle(
+                color: color, fontSize: 15, fontWeight: FontWeight.w800),
           ),
         ],
       ),
@@ -1498,7 +1532,8 @@ class _CountPill extends StatelessWidget {
                 ),
                 Text(
                   label,
-                  style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                      color: color, fontSize: 12, fontWeight: FontWeight.w600),
                 ),
               ],
             ),
@@ -1523,6 +1558,7 @@ class _AggResult {
     required this.emotionAvg,
   });
 }
+
 enum CompareChangeType {
   improved,
   worsened,
@@ -1974,7 +2010,8 @@ class _DisclaimerCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: HealingDesignSystem.warningOrange.withOpacity(0.08),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: HealingDesignSystem.warningOrange.withOpacity(0.30)),
+        border: Border.all(
+            color: HealingDesignSystem.warningOrange.withOpacity(0.30)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
