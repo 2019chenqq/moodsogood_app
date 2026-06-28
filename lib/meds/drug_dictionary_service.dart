@@ -209,8 +209,9 @@ class DrugDictionaryService {
     for (final item in _seed) {
       final matchedZh = item.zhNames.any((name) => _norm(name) == q);
       final matchedAlias = item.aliases.any((name) => _norm(name) == q);
-      if (matchedZh || matchedAlias)
+      if (matchedZh || matchedAlias) {
         return _suggestionFromItem(item, 1000).toInfoMap();
+      }
     }
 
     final suggestions = await suggest(input, limit: 1);
