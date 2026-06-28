@@ -48,7 +48,6 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
   String _compoundType = '';
   String _drugConcentration = '';
   String _drugForm = '';
-  String _drugDoseText = '';
   String _packageAmount = '';
   String _packageUnit = '';
   List<String> _ingredientLines = [];
@@ -89,11 +88,6 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
       _packageAmount.isNotEmpty &&
       _packageUnit.isNotEmpty &&
       (_isCompoundDrug || !_isTabletLikeForm);
-
-  bool get _showCleanDrugDose =>
-      _drugDoseText.isNotEmpty &&
-      !_isCompoundDrug &&
-      !_showCleanDrugPackageDose;
 
   @override
   void initState() {
@@ -1135,7 +1129,6 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
     final rows = <Widget>[
       if (_compoundType.isNotEmpty) _buildInfoRow('單複方', _compoundType),
       if (_drugForm.isNotEmpty) _buildInfoRow('藥物形式', _drugForm),
-      if (_showCleanDrugDose) _buildInfoRow('劑量', _drugDoseText),
       if (_showCleanDrugConcentration)
         _buildInfoRow('藥物濃度', _drugConcentration),
       if (_showCleanDrugPackageDose) _buildInfoRow('規格量', packageDose),
@@ -1255,7 +1248,6 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
       _compoundType = compoundType;
       _drugConcentration = concentration;
       _drugForm = formText;
-      _drugDoseText = doseText;
       _packageAmount = packageAmount;
       _packageUnit = packageUnit;
       _ingredientLines = ingredientLines;

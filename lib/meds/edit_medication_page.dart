@@ -52,7 +52,6 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
   String _compoundType = '';
   String _drugConcentration = '';
   String _drugForm = '';
-  String _drugDoseText = '';
   String _packageAmount = '';
   String _packageUnit = '';
   List<String> _ingredientLines = [];
@@ -93,11 +92,6 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
       _packageAmount.isNotEmpty &&
       _packageUnit.isNotEmpty &&
       (_isCompoundDrug || !_isTabletLikeForm);
-
-  bool get _showCleanDrugDose =>
-      _drugDoseText.isNotEmpty &&
-      !_isCompoundDrug &&
-      !_showCleanDrugPackageDose;
 
 // 候選結果：[{id, zh, en}]
   List<Map<String, String>> _drugSuggestions = [];
@@ -191,8 +185,6 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
       _pillCount = 1.0;
 
     _unit = (d['unit'] as String?) ?? 'mg';
-    _drugDoseText = _dose > 0 ? '${_fmt1(_dose)} $_unit' : '';
-
     final times =
         (d['times'] as List?)?.whereType<String>().toSet() ?? <String>{};
     for (final k in _timeSlots.keys) {
@@ -1223,7 +1215,6 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
     final rows = <Widget>[
       if (_compoundType.isNotEmpty) _buildInfoRow('單複方', _compoundType),
       if (_drugForm.isNotEmpty) _buildInfoRow('藥物形式', _drugForm),
-      if (_showCleanDrugDose) _buildInfoRow('劑量', _drugDoseText),
       if (_showCleanDrugConcentration)
         _buildInfoRow('藥物濃度', _drugConcentration),
       if (_showCleanDrugPackageDose) _buildInfoRow('規格量', packageDose),
@@ -1342,7 +1333,6 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
       _compoundType = compoundType;
       _drugConcentration = concentration;
       _drugForm = formText;
-      _drugDoseText = doseText;
       _packageAmount = packageAmount;
       _packageUnit = packageUnit;
       _ingredientLines = ingredientLines;
