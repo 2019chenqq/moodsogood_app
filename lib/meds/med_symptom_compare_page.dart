@@ -37,31 +37,41 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
+    final appBarForeground =
+        HealingDesignSystem.adaptiveAppBarForeground(context);
 
     return Scaffold(
-      backgroundColor: HealingDesignSystem.softBlue,
+      backgroundColor: HealingDesignSystem.adaptiveBackground(context),
       appBar: AppBar(
-        backgroundColor: HealingDesignSystem.softBlue,
+        backgroundColor: HealingDesignSystem.adaptiveAppBarBackground(context),
+        foregroundColor: appBarForeground,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        iconTheme: const IconThemeData(color: HealingDesignSystem.deepText),
-        title: const Text(
+        iconTheme: IconThemeData(color: appBarForeground),
+        title: Text(
           '症狀交叉比對',
           style: TextStyle(
-            color: HealingDesignSystem.deepText,
+            color: appBarForeground,
             fontWeight: FontWeight.w700,
           ),
         ),
         actions: [
           IconButton(
             tooltip: '重新計算',
-            icon: const Icon(Icons.refresh, color: HealingDesignSystem.deepText),
+            icon: Icon(Icons.refresh, color: appBarForeground),
             onPressed: uid == null ? null : _runCompare,
           ),
         ],
       ),
       body: uid == null
-          ? const Center(child: Text('尚未登入'))
+          ? Center(
+              child: Text(
+                '尚未登入',
+                style: TextStyle(
+                  color: HealingDesignSystem.adaptivePrimaryText(context),
+                ),
+              ),
+            )
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
@@ -71,14 +81,15 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
                 const SizedBox(height: 12),
                 _buildWindowPicker(),
                 const SizedBox(height: 16),
-
                 FilledButton.icon(
-                  onPressed: (_selectedMedId == null || _loading) ? null : _runCompare,
+                  onPressed:
+                      (_selectedMedId == null || _loading) ? null : _runCompare,
                   style: FilledButton.styleFrom(
                     backgroundColor: HealingDesignSystem.primaryBlue,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
                   ),
                   icon: _loading
                       ? const SizedBox(
@@ -86,21 +97,21 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
                           height: 18,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
                         )
                       : const Icon(Icons.analytics_outlined),
                   label: const Text('開始比對'),
                 ),
-
                 if (_error != null) ...[
                   const SizedBox(height: 12),
                   Text(
                     _error!,
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    style:
+                        TextStyle(color: Theme.of(context).colorScheme.error),
                   ),
                 ],
-
                 const SizedBox(height: 20),
                 _buildResultSection(),
               ],
@@ -115,8 +126,8 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
     // Prefer Traditional Chinese if available
     _tts.setLanguage('zh-TW');
     _tts.setSpeechRate(0.45);
-     AnalyticsService.logPage('med_symptom_compare_page');
-    
+    AnalyticsService.logPage('med_symptom_compare_page');
+
     // 初始化時從 Firebase 同步最新藥物到本地
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
@@ -156,7 +167,8 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
           'note': data['note'],
           'startDate': startDate?.toString(),
           'isActive': data['isActive'] ?? true,
-          'bodySymptoms': (data['bodySymptoms'] as List?)?.cast<String>() ?? <String>[],
+          'bodySymptoms':
+              (data['bodySymptoms'] as List?)?.cast<String>() ?? <String>[],
           'purposeOther': data['purposeOther'],
           'createdAt': DateTime.now().toString(),
           'updatedAt': DateTime.now().toString(),
@@ -221,27 +233,43 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
             final display = name.isEmpty ? medId : name;
             return DropdownMenuItem<String>(
               value: medId,
-              child: Text(display),
+              child: Text(
+                display,
+                style: TextStyle(
+                  color: HealingDesignSystem.adaptivePrimaryText(context),
+                ),
+              ),
             );
           }).toList();
 
           return DropdownButtonFormField<String>(
             value: _selectedMedId,
             items: items,
+            dropdownColor: HealingDesignSystem.adaptiveSurface(context),
+            style: TextStyle(
+              color: HealingDesignSystem.adaptivePrimaryText(context),
+            ),
             decoration: InputDecoration(
               filled: true,
-              fillColor: HealingDesignSystem.softBlue.withOpacity(0.7),
+              fillColor: HealingDesignSystem.adaptiveFill(context),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: HealingDesignSystem.lineColor),
+                borderSide: BorderSide(
+                  color: HealingDesignSystem.adaptiveCardBorder(context),
+                ),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: HealingDesignSystem.lineColor),
+                borderSide: BorderSide(
+                  color: HealingDesignSystem.adaptiveCardBorder(context),
+                ),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: HealingDesignSystem.primaryBlue, width: 1.2),
+                borderSide: BorderSide(
+                  color: HealingDesignSystem.adaptiveAccent(context),
+                  width: 1.2,
+                ),
               ),
               isDense: true,
             ),
@@ -331,7 +359,9 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
               '${_anchorDate.year.toString().padLeft(4, '0')}/'
               '${_anchorDate.month.toString().padLeft(2, '0')}/'
               '${_anchorDate.day.toString().padLeft(2, '0')}',
-              style: Theme.of(context).textTheme.titleMedium,
+              style: HealingDesignSystem.titleMedium.copyWith(
+                color: HealingDesignSystem.adaptivePrimaryText(context),
+              ),
             ),
           ),
           TextButton.icon(
@@ -373,13 +403,14 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
                 color: sel
-                    ? HealingDesignSystem.primaryBlue.withOpacity(0.14)
-                    : HealingDesignSystem.softBlue,
+                    ? HealingDesignSystem.adaptiveAccent(context)
+                        .withOpacity(0.18)
+                    : HealingDesignSystem.adaptiveFill(context),
                 borderRadius: BorderRadius.circular(999),
                 border: Border.all(
                   color: sel
-                      ? HealingDesignSystem.primaryBlue
-                      : HealingDesignSystem.lineColor,
+                      ? HealingDesignSystem.adaptiveAccent(context)
+                      : HealingDesignSystem.adaptiveCardBorder(context),
                   width: sel ? 1.5 : 1,
                 ),
               ),
@@ -387,8 +418,8 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
                 '前後各 $days 天',
                 style: TextStyle(
                   color: sel
-                      ? HealingDesignSystem.primaryBlue
-                      : HealingDesignSystem.deepText,
+                      ? HealingDesignSystem.adaptiveAccent(context)
+                      : HealingDesignSystem.adaptivePrimaryText(context),
                   fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
                   fontSize: 13,
                 ),
@@ -430,8 +461,10 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
         endExclusive: _anchorDate.add(Duration(days: _windowDays)),
       );
 
-      final beforeDocs = await _fetchDailyRecords(uid, beforeRange.$1, beforeRange.$2);
-      final afterDocs = await _fetchDailyRecords(uid, afterRange.$1, afterRange.$2);
+      final beforeDocs =
+          await _fetchDailyRecords(uid, beforeRange.$1, beforeRange.$2);
+      final afterDocs =
+          await _fetchDailyRecords(uid, afterRange.$1, afterRange.$2);
 
       final beforeAgg = _aggregateDailyRecords(beforeDocs);
       final afterAgg = _aggregateDailyRecords(afterDocs);
@@ -452,57 +485,59 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
   }
 
   // 回傳 (startInclusive, endExclusive)
-  (DateTime, DateTime) _dateRange({required DateTime start, required DateTime endExclusive}) {
+  (DateTime, DateTime) _dateRange(
+      {required DateTime start, required DateTime endExclusive}) {
     final s = DateTime(start.year, start.month, start.day);
     final e = DateTime(endExclusive.year, endExclusive.month, endExclusive.day);
     return (s, e);
   }
 
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _fetchDailyRecords(
-  String uid,
-  DateTime startInclusive,
-  DateTime endExclusive,
-) async {
-  if (!startInclusive.isBefore(endExclusive)) {
-    return [];
+    String uid,
+    DateTime startInclusive,
+    DateTime endExclusive,
+  ) async {
+    if (!startInclusive.isBefore(endExclusive)) {
+      return [];
+    }
+
+    String id(DateTime d) => '${d.year.toString().padLeft(4, '0')}-'
+        '${d.month.toString().padLeft(2, '0')}-'
+        '${d.day.toString().padLeft(2, '0')}';
+
+    final recordsRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('dailyRecords');
+
+    final byDate = await recordsRef
+        .where('date',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(startInclusive))
+        .where('date', isLessThan: Timestamp.fromDate(endExclusive))
+        .get();
+
+    final startId = id(startInclusive);
+    // endExclusive 不含，所以用「前一天」作為 endId（含）
+    final endId = id(endExclusive.subtract(const Duration(days: 1)));
+
+    final byDocId = await recordsRef
+        .where(FieldPath.documentId, isGreaterThanOrEqualTo: startId)
+        .where(FieldPath.documentId, isLessThanOrEqualTo: endId)
+        .get();
+
+    final merged = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{
+      for (final d in byDate.docs) d.id: d,
+      for (final d in byDocId.docs) d.id: d,
+    };
+
+    return merged.values.toList();
   }
-
-  String id(DateTime d) =>
-      '${d.year.toString().padLeft(4, '0')}-'
-      '${d.month.toString().padLeft(2, '0')}-'
-      '${d.day.toString().padLeft(2, '0')}';
-
-  final recordsRef = FirebaseFirestore.instance
-      .collection('users')
-      .doc(uid)
-      .collection('dailyRecords');
-
-  final byDate = await recordsRef
-      .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startInclusive))
-      .where('date', isLessThan: Timestamp.fromDate(endExclusive))
-      .get();
-
-  final startId = id(startInclusive);
-  // endExclusive 不含，所以用「前一天」作為 endId（含）
-  final endId = id(endExclusive.subtract(const Duration(days: 1)));
-
-  final byDocId = await recordsRef
-      .where(FieldPath.documentId, isGreaterThanOrEqualTo: startId)
-      .where(FieldPath.documentId, isLessThanOrEqualTo: endId)
-      .get();
-
-  final merged = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{
-    for (final d in byDate.docs) d.id: d,
-    for (final d in byDocId.docs) d.id: d,
-  };
-
-  return merged.values.toList();
-}
 
   // -----------------------------
   // 解析 + 平均計算（你最可能需要微調的地方）
   // -----------------------------
-  _AggResult _aggregateDailyRecords(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+  _AggResult _aggregateDailyRecords(
+      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
     // 累積 sum & count
     final symptomDays = <String, int>{};
     final emotionSum = <String, double>{};
@@ -578,8 +613,9 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
         }
 
         if (item is Map) {
-          final name =
-              (item['name'] ?? item['title'] ?? item['symptom'] ?? '').toString().trim();
+          final name = (item['name'] ?? item['title'] ?? item['symptom'] ?? '')
+              .toString()
+              .trim();
           if (name.isNotEmpty) out.add(name);
         }
       }
@@ -657,21 +693,31 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
       worsenThreshold: 3,
     );
 
-    final symptomItems = symptomDeltas.map((d) => _toCompareItem(d, true)).toList();
-    final emotionItems = emotionDeltas.map((d) => _toCompareItem(d, false)).toList();
+    final symptomItems =
+        symptomDeltas.map((d) => _toCompareItem(d, true)).toList();
+    final emotionItems =
+        emotionDeltas.map((d) => _toCompareItem(d, false)).toList();
 
-    final attentionCount =
-        symptomDeltas.where((x) => x.kind == _DeltaKind.newlyAppeared || x.kind == _DeltaKind.worsened).length +
-        emotionDeltas.where((x) => x.kind == _DeltaKind.newlyAppeared || x.kind == _DeltaKind.worsened).length;
+    final attentionCount = symptomDeltas
+            .where((x) =>
+                x.kind == _DeltaKind.newlyAppeared ||
+                x.kind == _DeltaKind.worsened)
+            .length +
+        emotionDeltas
+            .where((x) =>
+                x.kind == _DeltaKind.newlyAppeared ||
+                x.kind == _DeltaKind.worsened)
+            .length;
     final improvedCount =
         symptomDeltas.where((x) => x.kind == _DeltaKind.improved).length +
-        emotionDeltas.where((x) => x.kind == _DeltaKind.improved).length;
+            emotionDeltas.where((x) => x.kind == _DeltaKind.improved).length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _ResultSummaryCard(
-          medName: (_selectedMedData?['name'] ?? _selectedMedId ?? '').toString(),
+          medName:
+              (_selectedMedData?['name'] ?? _selectedMedId ?? '').toString(),
           windowDays: _windowDays,
           beforeDays: _beforeDaysCount,
           afterDays: _afterDaysCount,
@@ -883,25 +929,17 @@ class _Card extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: HealingDesignSystem.cardBg,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: HealingDesignSystem.lineColor),
-        boxShadow: [
-          BoxShadow(
-            color: HealingDesignSystem.primaryBlue.withOpacity(0.06),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+      decoration: HealingDesignSystem.adaptiveCardDecoration(
+        context,
+        radius: 18,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: const TextStyle(
-              color: HealingDesignSystem.deepText,
+            style: TextStyle(
+              color: HealingDesignSystem.adaptivePrimaryText(context),
               fontSize: 15,
               fontWeight: FontWeight.w700,
             ),
@@ -910,8 +948,8 @@ class _Card extends StatelessWidget {
             const SizedBox(height: 3),
             Text(
               subtitle!,
-              style: const TextStyle(
-                color: HealingDesignSystem.mutedText,
+              style: TextStyle(
+                color: HealingDesignSystem.adaptiveSecondaryText(context),
                 fontSize: 12,
               ),
             ),
@@ -933,9 +971,11 @@ class _Hint extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: HealingDesignSystem.cardBg,
+        color: HealingDesignSystem.adaptiveSurface(context),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: HealingDesignSystem.lineColor),
+        border: Border.all(
+          color: HealingDesignSystem.adaptiveCardBorder(context),
+        ),
       ),
       child: Row(
         children: [
@@ -948,8 +988,8 @@ class _Hint extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(
-                color: HealingDesignSystem.mutedText,
+              style: TextStyle(
+                color: HealingDesignSystem.adaptiveSecondaryText(context),
                 fontSize: 13,
               ),
             ),
@@ -984,12 +1024,25 @@ class _CompareTable extends StatelessWidget {
     }
 
     return Card(
+      color: HealingDesignSystem.adaptiveSurface(context),
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: HealingDesignSystem.adaptiveCardBorder(context),
+        ),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: HealingDesignSystem.adaptivePrimaryText(context),
+                  ),
+            ),
             const SizedBox(height: 10),
             ...keys.map((k) {
               final b = before[k];
@@ -1021,7 +1074,15 @@ class _CompareTable extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: Row(
                   children: [
-                    Expanded(child: Text(k)),
+                    Expanded(
+                      child: Text(
+                        k,
+                        style: TextStyle(
+                          color:
+                              HealingDesignSystem.adaptivePrimaryText(context),
+                        ),
+                      ),
+                    ),
                     SizedBox(
                       width: 70,
                       child: Text(
@@ -1050,9 +1111,7 @@ class _CompareTable extends StatelessWidget {
                               ? null
                               : (diff > 0
                                   ? Theme.of(context).colorScheme.error
-                                  : (diff < 0
-                                      ? Colors.green
-                                      : null)),
+                                  : (diff < 0 ? Colors.green : null)),
                         ),
                       ),
                     ),
@@ -1063,7 +1122,9 @@ class _CompareTable extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               '欄位：前段 / 後段 / 差值（後-前）${isPercentage ? '，單位 %' : ''}',
-              style: Theme.of(context).textTheme.bodySmall,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: HealingDesignSystem.adaptiveSecondaryText(context),
+                  ),
             ),
           ],
         ),
@@ -1096,12 +1157,25 @@ class _AfterOnlyTable extends StatelessWidget {
     }
 
     return Card(
+      color: HealingDesignSystem.adaptiveSurface(context),
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: HealingDesignSystem.adaptiveCardBorder(context),
+        ),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: HealingDesignSystem.adaptivePrimaryText(context),
+                  ),
+            ),
             const SizedBox(height: 10),
             ...keys.map((k) {
               final v = data[k]!;
@@ -1109,7 +1183,15 @@ class _AfterOnlyTable extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: Row(
                   children: [
-                    Expanded(child: Text(k)),
+                    Expanded(
+                      child: Text(
+                        k,
+                        style: TextStyle(
+                          color:
+                              HealingDesignSystem.adaptivePrimaryText(context),
+                        ),
+                      ),
+                    ),
                     SizedBox(
                       width: 90,
                       child: Text(
@@ -1124,7 +1206,9 @@ class _AfterOnlyTable extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               '只顯示前段未出現、後段才出現的項目。',
-              style: Theme.of(context).textTheme.bodySmall,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: HealingDesignSystem.adaptiveSecondaryText(context),
+                  ),
             ),
           ],
         ),
@@ -1212,12 +1296,25 @@ class _DeltaTable extends StatelessWidget {
     }
 
     return Card(
+      color: HealingDesignSystem.adaptiveSurface(context),
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: HealingDesignSystem.adaptiveCardBorder(context),
+        ),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: HealingDesignSystem.adaptivePrimaryText(context),
+                  ),
+            ),
             const SizedBox(height: 10),
             ...rows.map((row) {
               return Padding(
@@ -1225,7 +1322,15 @@ class _DeltaTable extends StatelessWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(child: Text(row.name)),
+                    Expanded(
+                      child: Text(
+                        row.name,
+                        style: TextStyle(
+                          color:
+                              HealingDesignSystem.adaptivePrimaryText(context),
+                        ),
+                      ),
+                    ),
                     SizedBox(
                       width: 60,
                       child: Text(fmt(row.before), textAlign: TextAlign.right),
@@ -1256,7 +1361,9 @@ class _DeltaTable extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               '欄位：前段 / 後段 / 差值 / 分類${isPercentage ? '（單位 %）' : ''}',
-              style: Theme.of(context).textTheme.bodySmall,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: HealingDesignSystem.adaptiveSecondaryText(context),
+                  ),
             ),
           ],
         ),
@@ -1292,21 +1399,15 @@ class _ResultSummaryCard extends StatelessWidget {
     final confShort = confidence.split('（').first;
     final confColor = confShort == '高'
         ? HealingDesignSystem.successGreen
-        : (confShort == '中' ? HealingDesignSystem.warningOrange : HealingDesignSystem.dangerRed);
+        : (confShort == '中'
+            ? HealingDesignSystem.warningOrange
+            : HealingDesignSystem.dangerRed);
 
     return Container(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: HealingDesignSystem.cardBg,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: HealingDesignSystem.lineColor),
-        boxShadow: [
-          BoxShadow(
-            color: HealingDesignSystem.primaryBlue.withOpacity(0.10),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-        ],
+      decoration: HealingDesignSystem.adaptiveCardDecoration(
+        context,
+        radius: 20,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1320,17 +1421,18 @@ class _ResultSummaryCard extends StatelessWidget {
                   gradient: HealingDesignSystem.primaryGradient(),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.insights_rounded, color: Colors.white, size: 20),
+                child: const Icon(Icons.insights_rounded,
+                    color: Colors.white, size: 20),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       '分析摘要',
                       style: TextStyle(
-                        color: HealingDesignSystem.deepText,
+                        color: HealingDesignSystem.adaptivePrimaryText(context),
                         fontSize: 17,
                         fontWeight: FontWeight.w800,
                       ),
@@ -1338,8 +1440,9 @@ class _ResultSummaryCard extends StatelessWidget {
                     if (medName.isNotEmpty)
                       Text(
                         medName,
-                        style: const TextStyle(
-                          color: HealingDesignSystem.mutedText,
+                        style: TextStyle(
+                          color: HealingDesignSystem.adaptiveSecondaryText(
+                              context),
                           fontSize: 12,
                         ),
                       ),
@@ -1347,7 +1450,8 @@ class _ResultSummaryCard extends StatelessWidget {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: confColor.withOpacity(0.10),
                   borderRadius: BorderRadius.circular(20),
@@ -1371,7 +1475,7 @@ class _ResultSummaryCard extends StatelessWidget {
                 child: _InfoPill(
                   label: '前段納入',
                   value: '$beforeDays 天',
-                  color: HealingDesignSystem.mutedText,
+                  color: HealingDesignSystem.adaptiveSecondaryText(context),
                 ),
               ),
               const SizedBox(width: 8),
@@ -1387,7 +1491,7 @@ class _ResultSummaryCard extends StatelessWidget {
                 child: _InfoPill(
                   label: '比對窗口',
                   value: '$windowDays 天',
-                  color: HealingDesignSystem.deepText,
+                  color: HealingDesignSystem.adaptivePrimaryText(context),
                 ),
               ),
             ],
@@ -1445,12 +1549,14 @@ class _InfoPill extends StatelessWidget {
         children: [
           Text(
             label,
-            style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600),
+            style: TextStyle(
+                color: color, fontSize: 11, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 2),
           Text(
             value,
-            style: TextStyle(color: color, fontSize: 15, fontWeight: FontWeight.w800),
+            style: TextStyle(
+                color: color, fontSize: 15, fontWeight: FontWeight.w800),
           ),
         ],
       ),
@@ -1498,7 +1604,8 @@ class _CountPill extends StatelessWidget {
                 ),
                 Text(
                   label,
-                  style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                      color: color, fontSize: 12, fontWeight: FontWeight.w600),
                 ),
               ],
             ),
@@ -1523,6 +1630,7 @@ class _AggResult {
     required this.emotionAvg,
   });
 }
+
 enum CompareChangeType {
   improved,
   worsened,
@@ -1612,16 +1720,19 @@ class _AnalysisSummaryCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(Icons.insights_rounded, color: Color(0xFF4F8FA8)),
-              SizedBox(width: 8),
+              Icon(
+                Icons.insights_rounded,
+                color: HealingDesignSystem.adaptiveAccent(context),
+              ),
+              const SizedBox(width: 8),
               Text(
                 '本次分析摘要',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w800,
-                  color: Color(0xFF243B4A),
+                  color: HealingDesignSystem.adaptivePrimaryText(context),
                 ),
               ),
             ],
@@ -1658,12 +1769,12 @@ class _AnalysisSummaryCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          const Text(
+          Text(
             '提醒：此結果呈現關聯趨勢，不等於因果。請搭配睡眠、壓力、生活事件與回診狀況一起判斷。',
             style: TextStyle(
               fontSize: 14,
               height: 1.6,
-              color: Color(0xFF5F6F7A),
+              color: HealingDesignSystem.adaptiveSecondaryText(context),
             ),
           ),
         ],
@@ -1747,12 +1858,12 @@ class _HighlightCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              const Text(
+              Text(
                 '需要優先留意',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
-                  color: HealingDesignSystem.deepText,
+                  color: HealingDesignSystem.adaptivePrimaryText(context),
                 ),
               ),
             ],
@@ -1791,21 +1902,22 @@ class _CompareSectionCard extends StatelessWidget {
           tilePadding: EdgeInsets.zero,
           childrenPadding: EdgeInsets.zero,
           iconColor: HealingDesignSystem.primaryBlue,
-          collapsedIconColor: HealingDesignSystem.mutedText,
+          collapsedIconColor:
+              HealingDesignSystem.adaptiveSecondaryText(context),
           title: Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w800,
-              color: HealingDesignSystem.deepText,
+              color: HealingDesignSystem.adaptivePrimaryText(context),
             ),
           ),
           subtitle: Padding(
             padding: const EdgeInsets.only(top: 3),
             child: Text(
               subtitle,
-              style: const TextStyle(
-                color: HealingDesignSystem.mutedText,
+              style: TextStyle(
+                color: HealingDesignSystem.adaptiveSecondaryText(context),
                 fontSize: 12,
               ),
             ),
@@ -1836,16 +1948,20 @@ class _CompareRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = _typeColor(item.type);
+    final color = item.type == CompareChangeType.mild
+        ? HealingDesignSystem.adaptiveSecondaryText(context)
+        : _typeColor(item.type);
     final label = _typeLabel(item.type);
     final icon = _typeIcon(item.type);
 
     return Container(
       padding: EdgeInsets.all(compact ? 11 : 13),
       decoration: BoxDecoration(
-        color: HealingDesignSystem.softBlue,
+        color: HealingDesignSystem.adaptiveFill(context),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: HealingDesignSystem.lineColor),
+        border: Border.all(
+          color: HealingDesignSystem.adaptiveCardBorder(context),
+        ),
       ),
       child: Row(
         children: [
@@ -1865,10 +1981,10 @@ class _CompareRow extends StatelessWidget {
               children: [
                 Text(
                   item.name,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
-                    color: HealingDesignSystem.deepText,
+                    color: HealingDesignSystem.adaptivePrimaryText(context),
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -1878,15 +1994,17 @@ class _CompareRow extends StatelessWidget {
                   children: [
                     Text(
                       '前：${item.before}',
-                      style: const TextStyle(
-                        color: HealingDesignSystem.mutedText,
+                      style: TextStyle(
+                        color:
+                            HealingDesignSystem.adaptiveSecondaryText(context),
                         fontSize: 12,
                       ),
                     ),
                     Text(
                       '後：${item.after}',
-                      style: const TextStyle(
-                        color: HealingDesignSystem.mutedText,
+                      style: TextStyle(
+                        color:
+                            HealingDesignSystem.adaptiveSecondaryText(context),
                         fontSize: 12,
                       ),
                     ),
@@ -1974,7 +2092,8 @@ class _DisclaimerCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: HealingDesignSystem.warningOrange.withOpacity(0.08),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: HealingDesignSystem.warningOrange.withOpacity(0.30)),
+        border: Border.all(
+            color: HealingDesignSystem.warningOrange.withOpacity(0.30)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1985,13 +2104,13 @@ class _DisclaimerCard extends StatelessWidget {
             size: 18,
           ),
           const SizedBox(width: 10),
-          const Expanded(
+          Expanded(
             child: Text(
               '本頁顯示的是關聯趨勢，不代表因果。若症狀明顯惡化，建議記錄後於回診時提供醫師參考。',
               style: TextStyle(
                 fontSize: 13,
                 height: 1.6,
-                color: HealingDesignSystem.deepText,
+                color: HealingDesignSystem.adaptivePrimaryText(context),
               ),
             ),
           ),
@@ -2010,17 +2129,9 @@ class _SoftCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: HealingDesignSystem.cardBg,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: HealingDesignSystem.lineColor),
-        boxShadow: [
-          BoxShadow(
-            color: HealingDesignSystem.primaryBlue.withOpacity(0.07),
-            blurRadius: 14,
-            offset: const Offset(0, 5),
-          ),
-        ],
+      decoration: HealingDesignSystem.adaptiveCardDecoration(
+        context,
+        radius: 18,
       ),
       child: child,
     );

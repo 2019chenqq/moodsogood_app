@@ -1,4 +1,3 @@
-
 // ──────────────────────────────────────────────
 // AI 分析模式
 // ──────────────────────────────────────────────
@@ -30,6 +29,7 @@ import '../analytics_service.dart';
 import '../utils/secure_storage_service.dart';
 import '../utils/encryption_service.dart';
 import '../constants/healing_design_system.dart';
+
 // ──────────────────────────────────────────────
 // 主 Widget
 // ──────────────────────────────────────────────
@@ -37,6 +37,7 @@ enum AiAnalysisMode {
   basic,
   deep,
 }
+
 class AiJournalReflectionPage extends m.StatefulWidget {
   final DateTime date;
   final AiAnalysisMode mode;
@@ -51,18 +52,15 @@ class AiJournalReflectionPage extends m.StatefulWidget {
       _AiJournalReflectionPageState();
 }
 
-class _AiJournalReflectionPageState
-    extends m.State<AiJournalReflectionPage> {
+class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
   // ── 顏色主題（藍綠色系）──
   static const _teal = m.Color(0xFF4DB6AC);
   static const _tealLight = m.Color(0xFFB2DFDB);
-  static const _tealSurface = m.Color(0xFFF0FAFA);
-  static const _tealDark = m.Color(0xFF00897B);
   static const _amber = m.Color(0xFFFFB74D);
 
   // ── 狀態 ──
-  bool _loading = false;           // 正在生成 AI 回饋
-  bool _hasSavedResult = false;    // 是否已有儲存的 AI 結果
+  bool _loading = false; // 正在生成 AI 回饋
+  bool _hasSavedResult = false; // 是否已有儲存的 AI 結果
   String? _error;
 
   // 從 Firestore 抓到的原始資料
@@ -77,8 +75,15 @@ class _AiJournalReflectionPageState
 
   // ── 危機關鍵字 ──
   static const _crisisKeywords = [
-    '想死', '不想活', '自殺', '傷害自己', '結束生命',
-    '活不下去', '去死', '消失掉', '了結',
+    '想死',
+    '不想活',
+    '自殺',
+    '傷害自己',
+    '結束生命',
+    '活不下去',
+    '去死',
+    '消失掉',
+    '了結',
   ];
 
   // ── 便捷 getter ──
@@ -116,7 +121,7 @@ class _AiJournalReflectionPageState
   void initState() {
     super.initState();
     _init();
-     AnalyticsService.logPage('ai_reflection_page');
+    AnalyticsService.logPage('ai_reflection_page');
   }
 
   Future<void> _init() async {
@@ -157,7 +162,7 @@ class _AiJournalReflectionPageState
           if (key != null) {
             final enc = EncryptionService(key);
             String dec(dynamic v) {
-              final s = (v ?? '') as String;
+              final s = (v ?? '').toString();
               if (s.contains(':')) {
                 return enc.tryDecryptData(s) ?? s;
               }
@@ -211,17 +216,16 @@ class _AiJournalReflectionPageState
         });
       }
     } catch (e) {
-      m.debugPrint('❌ AiJournalReflectionPage: load existing AI result error: $e');
+      m.debugPrint(
+          '❌ AiJournalReflectionPage: load existing AI result error: $e');
     }
   }
 
   Future<Map<String, dynamic>> _buildMedicationContextForAi(String uid) async {
     try {
       final userRef = _db.collection('users').doc(uid);
-      final checkinSnap = await userRef
-          .collection('medicationCheckins')
-          .doc(_docId)
-          .get();
+      final checkinSnap =
+          await userRef.collection('medicationCheckins').doc(_docId).get();
       final medsSnap = await userRef
           .collection('medications')
           .where('isActive', isEqualTo: true)
@@ -329,7 +333,11 @@ class _AiJournalReflectionPageState
     ];
     final topics = <String>[];
     // 僅從日記文字中明確出現的詞彙（簡單分詞，真實應用可用更嚴格規則）
-    final words = diaryContent.split(RegExp(r'[\s,，。.!?\n]')).where((w) => w.trim().isNotEmpty).toSet().toList();
+    final words = diaryContent
+        .split(RegExp(r'[\s,，。.!?\n]'))
+        .where((w) => w.trim().isNotEmpty)
+        .toSet()
+        .toList();
     for (final w in words) {
       if (topics.length >= 3) break;
       if (!topics.contains(w) && w.length > 1) topics.add(w);
@@ -365,14 +373,26 @@ class _AiJournalReflectionPageState
     return {};
   }
 
+  List<String> _safeStringList(dynamic value) {
+    if (value is List) {
+      return value
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+    if (value is String && value.trim().isNotEmpty) {
+      return <String>[value.trim()];
+    }
+    return const <String>[];
+  }
+
   Map<String, dynamic> _normalizeAiResult(Map<String, dynamic> raw) {
     return {
       'summary': (raw['summary'] ?? '').toString(),
       'emotionObservation': (raw['emotionObservation'] ?? '').toString(),
-      'topics': List<String>.from(raw['topics'] ?? const <String>[]),
+      'topics': _safeStringList(raw['topics']),
       'positiveFeedback': (raw['positiveFeedback'] ?? '').toString(),
-      'gratitudeQuestions':
-          List<String>.from(raw['gratitudeQuestions'] ?? const <String>[]),
+      'gratitudeQuestions': _safeStringList(raw['gratitudeQuestions']),
       'tomorrowAction': (raw['tomorrowAction'] ?? '').toString(),
       'crisisDetected': raw['crisisDetected'] == true,
       'isMock': raw['isMock'] == true,
@@ -405,7 +425,8 @@ class _AiJournalReflectionPageState
     }
 
     Map<String, dynamic> diary = _diaryData ?? const <String, dynamic>{};
-    Map<String, dynamic> dailyRecord = _dailyRecordData ?? const <String, dynamic>{};
+    Map<String, dynamic> dailyRecord =
+        _dailyRecordData ?? const <String, dynamic>{};
 
     String _safeText(dynamic v) => (v ?? '').toString().trim();
     num? _toNum(dynamic v) {
@@ -430,7 +451,8 @@ class _AiJournalReflectionPageState
           .map((entry) => '${entry.key}: ${entry.value}')
           .join('\n');
       final emotions = <Map<String, dynamic>>[];
-      final overallMood = _toNum(diary['overallMood'] ?? dailyRecord['overallMood']);
+      final overallMood =
+          _toNum(diary['overallMood'] ?? dailyRecord['overallMood']);
       if (overallMood != null) {
         emotions.add({'name': '整體情緒', 'score': overallMood});
       }
@@ -485,7 +507,8 @@ class _AiJournalReflectionPageState
     required Map<String, dynamic> diaryFields,
     required Map<String, dynamic> dailyRecord,
   }) async {
-    const webhookUrl = 'https://hook.us2.make.com/1o186sfmo838wb7tto62i6neb67zob8r';
+    const webhookUrl =
+        'https://hook.us2.make.com/1o186sfmo838wb7tto62i6neb67zob8r';
 
     final payload = sanitizeForJson({
       'uid': uid,
@@ -499,6 +522,9 @@ class _AiJournalReflectionPageState
       'source': 'make_gemini',
     });
 
+    m.debugPrint('開始呼叫 AI service: Make Gemini webhook');
+    m.debugPrint('request payload: ${jsonEncode(payload)}');
+
     final response = await http.post(
       Uri.parse(webhookUrl),
       headers: {
@@ -507,8 +533,12 @@ class _AiJournalReflectionPageState
       body: jsonEncode(payload),
     );
 
+    m.debugPrint('response status: ${response.statusCode}');
+    m.debugPrint('response body: ${response.body}');
+
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Make Webhook 呼叫失敗：${response.statusCode} ${response.body}');
+      throw Exception(
+          'Make Webhook 呼叫失敗：${response.statusCode} ${response.body}');
     }
 
     m.debugPrint('Make response: ${response.body}');
@@ -557,24 +587,32 @@ class _AiJournalReflectionPageState
     required Map<String, dynamic> dailyRecord,
   }) async {
     try {
-      final callable = FirebaseFunctions.instance
-          .httpsCallable('generateAiJournalReflection');
-      final response = await callable.call({
+      final payload = {
         'date': _docId,
         'aiInput': aiInput,
-      });
+      };
+      m.debugPrint(
+          '開始呼叫 AI service: Firebase Functions generateAiJournalReflection');
+      m.debugPrint('request payload: ${jsonEncode(sanitizeForJson(payload))}');
+      final callable = FirebaseFunctions.instance
+          .httpsCallable('generateAiJournalReflection');
+      final response = await callable.call(payload);
 
       final data = response.data;
+      m.debugPrint('response status: ok');
+      m.debugPrint('response body: $data');
       if (data is! Map) {
         throw const FormatException('AI 回傳格式錯誤');
       }
 
       return _normalizeAiResult(Map<String, dynamic>.from(data));
     } catch (e, stack) {
-  m.debugPrint('❌ generateAIReflection error: $e');
-  m.debugPrint('❌ stack: $stack');
-  rethrow;
-}
+      m.debugPrint('catch 到的 exception: $e');
+      m.debugPrint('stackTrace: $stack');
+      m.debugPrint('❌ generateAIReflection error: $e');
+      m.debugPrint('❌ stack: $stack');
+      rethrow;
+    }
   }
 
   // ──────────────────────────────────────────────
@@ -582,6 +620,7 @@ class _AiJournalReflectionPageState
   // ──────────────────────────────────────────────
 
   Future<void> _generateAndSave() async {
+    m.debugPrint('按鈕已點擊: 生成 AI 回饋');
     final uid = _uid;
     if (uid == null) {
       _showSnack('請先登入後再使用此功能');
@@ -613,12 +652,18 @@ class _AiJournalReflectionPageState
       final diarySections = <MapEntry<String, String>>[
         MapEntry('標題', (diaryFieldsForAi['title'] ?? '').toString().trim()),
         MapEntry('內容', (diaryFieldsForAi['content'] ?? '').toString().trim()),
-        MapEntry('今日主題曲', (diaryFieldsForAi['themeSong'] ?? '').toString().trim()),
-        MapEntry('最想記錄的瞬間', (diaryFieldsForAi['highlight'] ?? '').toString().trim()),
-        MapEntry('今天情緒像', (diaryFieldsForAi['metaphor'] ?? '').toString().trim()),
-        MapEntry('為自己感到驕傲', (diaryFieldsForAi['conceited'] ?? '').toString().trim()),
-        MapEntry('做得不錯的地方', (diaryFieldsForAi['proudOf'] ?? '').toString().trim()),
-        MapEntry('可多照顧自己的地方', (diaryFieldsForAi['selfCare'] ?? '').toString().trim()),
+        MapEntry(
+            '今日主題曲', (diaryFieldsForAi['themeSong'] ?? '').toString().trim()),
+        MapEntry(
+            '最想記錄的瞬間', (diaryFieldsForAi['highlight'] ?? '').toString().trim()),
+        MapEntry(
+            '今天情緒像', (diaryFieldsForAi['metaphor'] ?? '').toString().trim()),
+        MapEntry(
+            '為自己感到驕傲', (diaryFieldsForAi['conceited'] ?? '').toString().trim()),
+        MapEntry(
+            '做得不錯的地方', (diaryFieldsForAi['proudOf'] ?? '').toString().trim()),
+        MapEntry('可多照顧自己的地方',
+            (diaryFieldsForAi['selfCare'] ?? '').toString().trim()),
       ];
 
       final filledDiarySections =
@@ -671,10 +716,14 @@ class _AiJournalReflectionPageState
         _hasSavedResult = true;
         _crisisDetected = crisis;
       });
-    } catch (e) {
+    } catch (e, stack) {
+      m.debugPrint('catch 到的 exception: $e');
+      m.debugPrint('stackTrace: $stack');
       m.debugPrint('❌ generateAndSave error: $e');
       if (!mounted) return;
-      setState(() => _error = '生成時發生錯誤，請稍後再試。\n$e');
+      final message = 'AI 回饋生成失敗，請稍後再試。';
+      setState(() => _error = '$message\n$e');
+      _showSnack(message);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -693,7 +742,7 @@ class _AiJournalReflectionPageState
   @override
   m.Widget build(m.BuildContext context) {
     return m.Scaffold(
-      backgroundColor: _tealSurface,
+      backgroundColor: HealingDesignSystem.adaptiveBackground(context),
       appBar: _buildAppBar(context),
       body: m.ListView(
         padding: const m.EdgeInsets.fromLTRB(16, 8, 16, 32),
@@ -709,7 +758,8 @@ class _AiJournalReflectionPageState
           if (widget.mode == AiAnalysisMode.basic) ...[
             // ② 今日情緒摘要（僅整體情緒分數）
             _OverallMoodCard(
-              overallMood: _diaryData?['overallMood'] ?? _dailyRecordData?['overallMood'],
+              overallMood: _diaryData?['overallMood'] ??
+                  _dailyRecordData?['overallMood'],
               teal: _teal,
               tealLight: _tealLight,
             ),
@@ -758,7 +808,9 @@ class _AiJournalReflectionPageState
                 title: 'AI 可能主題',
                 tealLight: HealingDesignSystem.softBlue,
                 child: _TopicChips(
-                  topics: List<String>.from(_aiResult!['topics'] ?? []).take(3).toList(),
+                  topics: List<String>.from(_aiResult!['topics'] ?? [])
+                      .take(3)
+                      .toList(),
                   teal: HealingDesignSystem.primaryBlue,
                 ),
               ),
@@ -863,9 +915,10 @@ class _AiJournalReflectionPageState
             ),
           ),
           m.Text(
-            '${ _day.year }年${ _day.month }月${ _day.day }日',
+            '${_day.year}年${_day.month}月${_day.day}日',
             style: HealingDesignSystem.bodySmall.copyWith(
-              color: HealingDesignSystem.adaptiveAppBarForeground(context).withOpacity(0.78),
+              color: HealingDesignSystem.adaptiveAppBarForeground(context)
+                  .withOpacity(0.78),
             ),
           ),
         ],
@@ -873,10 +926,13 @@ class _AiJournalReflectionPageState
       actions: [
         if (_hasSavedResult)
           m.Padding(
-            padding: const m.EdgeInsets.only(right: HealingDesignSystem.paddingL),
+            padding:
+                const m.EdgeInsets.only(right: HealingDesignSystem.paddingL),
             child: m.Chip(
               label: m.Text('已儲存',
-                  style: HealingDesignSystem.labelSmall.copyWith(color: HealingDesignSystem.adaptiveAppBarForeground(context))),
+                  style: HealingDesignSystem.labelSmall.copyWith(
+                      color: HealingDesignSystem.adaptiveAppBarForeground(
+                          context))),
               backgroundColor: m.Colors.black.withOpacity(0.22),
               side: m.BorderSide.none,
               padding: m.EdgeInsets.zero,
@@ -892,23 +948,32 @@ class _AiJournalReflectionPageState
     if (_loading) {
       return m.Card(
         elevation: 0,
-        color: HealingDesignSystem.softBlue.withOpacity(0.5),
+        color: HealingDesignSystem.adaptiveSurface(context),
+        surfaceTintColor: m.Colors.transparent,
         shape: m.RoundedRectangleBorder(
-            borderRadius: m.BorderRadius.circular(HealingDesignSystem.radiusL)),
+          borderRadius: m.BorderRadius.circular(HealingDesignSystem.radiusL),
+          side: m.BorderSide(
+            color: HealingDesignSystem.adaptiveCardBorder(context),
+          ),
+        ),
         child: m.Padding(
-          padding: const m.EdgeInsets.symmetric(vertical: HealingDesignSystem.paddingXL),
+          padding: const m.EdgeInsets.symmetric(
+              vertical: HealingDesignSystem.paddingXL),
           child: m.Column(
             children: [
-              m.CircularProgressIndicator(color: HealingDesignSystem.primaryBlue, strokeWidth: 2.5),
+              m.CircularProgressIndicator(
+                  color: HealingDesignSystem.primaryBlue, strokeWidth: 2.5),
               const m.SizedBox(height: HealingDesignSystem.paddingM),
               m.Text(
                 'AI 正在為你生成今日回饋…',
-                style: HealingDesignSystem.bodyMedium.copyWith(color: HealingDesignSystem.primaryBlue),
+                style: HealingDesignSystem.bodyMedium
+                    .copyWith(color: HealingDesignSystem.primaryBlue),
               ),
               const m.SizedBox(height: HealingDesignSystem.paddingXS),
               m.Text(
                 '這通常需要幾秒鐘，請稍候 🌿',
-                style: HealingDesignSystem.bodySmall.copyWith(color: HealingDesignSystem.primaryBlue.withOpacity(0.7)),
+                style: HealingDesignSystem.bodySmall.copyWith(
+                    color: HealingDesignSystem.primaryBlue.withOpacity(0.7)),
               ),
             ],
           ),
@@ -922,9 +987,11 @@ class _AiJournalReflectionPageState
         style: m.FilledButton.styleFrom(
           backgroundColor: HealingDesignSystem.primaryBlue,
           foregroundColor: m.Colors.white,
-          padding: const m.EdgeInsets.symmetric(vertical: HealingDesignSystem.paddingL),
+          padding: const m.EdgeInsets.symmetric(
+              vertical: HealingDesignSystem.paddingL),
           shape: m.RoundedRectangleBorder(
-              borderRadius: m.BorderRadius.circular(HealingDesignSystem.radiusM)),
+              borderRadius:
+                  m.BorderRadius.circular(HealingDesignSystem.radiusM)),
         ),
         onPressed: _hasMeaningfulDiaryInput ? _generateAndSave : null,
         icon: const m.Icon(m.Icons.auto_awesome_rounded, size: 20),
@@ -940,23 +1007,25 @@ class _AiJournalReflectionPageState
 
   // ── 錯誤卡片 ──
   m.Widget _buildErrorCard() {
+    final errorColor = m.Theme.of(context).colorScheme.error;
     return m.Card(
-      color: m.Colors.red.shade50,
-      shape:
-          m.RoundedRectangleBorder(borderRadius: m.BorderRadius.circular(16)),
+      color: errorColor.withOpacity(0.12),
+      surfaceTintColor: m.Colors.transparent,
+      shape: m.RoundedRectangleBorder(
+        borderRadius: m.BorderRadius.circular(16),
+        side: m.BorderSide(color: errorColor.withOpacity(0.35)),
+      ),
       margin: const m.EdgeInsets.only(bottom: 16),
       child: m.Padding(
         padding: const m.EdgeInsets.all(16),
         child: m.Row(
           children: [
-            const m.Icon(m.Icons.error_outline_rounded,
-                color: m.Colors.red, size: 20),
+            m.Icon(m.Icons.error_outline_rounded, color: errorColor, size: 20),
             const m.SizedBox(width: 10),
             m.Expanded(
               child: m.Text(
                 _error!,
-                style:
-                    const m.TextStyle(color: m.Colors.red, fontSize: 13),
+                style: m.TextStyle(color: errorColor, fontSize: 13),
               ),
             ),
           ],
@@ -972,13 +1041,14 @@ class _AiJournalReflectionPageState
       child: m.Row(
         mainAxisAlignment: m.MainAxisAlignment.center,
         children: [
-          m.Icon(m.Icons.check_circle_outline_rounded,
-              color: _teal, size: 16),
+          m.Icon(m.Icons.check_circle_outline_rounded, color: _teal, size: 16),
           const m.SizedBox(width: 6),
           m.Text(
             '已儲存至雲端  •  $_docId',
             style: m.TextStyle(
-                fontSize: 12, color: m.Colors.grey.shade500),
+              fontSize: 12,
+              color: HealingDesignSystem.adaptiveSecondaryText(context),
+            ),
           ),
         ],
       ),
@@ -1020,8 +1090,11 @@ class _DiaryContentCard extends m.StatelessWidget {
             const m.SizedBox(height: 8),
             m.Text(
               title,
-              style: const m.TextStyle(
-                  fontSize: 16, fontWeight: m.FontWeight.w700),
+              style: m.TextStyle(
+                fontSize: 16,
+                fontWeight: m.FontWeight.w700,
+                color: HealingDesignSystem.adaptivePrimaryText(context),
+              ),
             ),
           ],
           if (content.isNotEmpty) ...[
@@ -1029,17 +1102,23 @@ class _DiaryContentCard extends m.StatelessWidget {
             m.Text(
               content,
               style: m.TextStyle(
-                  fontSize: 14, height: 1.65, color: m.Colors.grey.shade700),
+                fontSize: 14,
+                height: 1.65,
+                color: HealingDesignSystem.adaptivePrimaryText(context),
+              ),
             ),
           ],
           if (highlight.isNotEmpty) ...[
             const m.SizedBox(height: 10),
             m.Container(
-              padding: const m.EdgeInsets.symmetric(
-                  horizontal: 12, vertical: 8),
+              padding:
+                  const m.EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: m.BoxDecoration(
-                color: tealLight.withValues(alpha: 0.5),
+                color: HealingDesignSystem.adaptiveFill(context),
                 borderRadius: m.BorderRadius.circular(10),
+                border: m.Border.all(
+                  color: HealingDesignSystem.adaptiveCardBorder(context),
+                ),
               ),
               child: m.Row(
                 crossAxisAlignment: m.CrossAxisAlignment.start,
@@ -1049,9 +1128,10 @@ class _DiaryContentCard extends m.StatelessWidget {
                     child: m.Text(
                       highlight,
                       style: m.TextStyle(
-                          fontSize: 13,
-                          color: m.Colors.teal.shade700,
-                          height: 1.5),
+                        fontSize: 13,
+                        color: HealingDesignSystem.adaptivePrimaryText(context),
+                        height: 1.5,
+                      ),
                     ),
                   ),
                 ],
@@ -1171,8 +1251,7 @@ class _ScoreChip extends m.StatelessWidget {
   @override
   m.Widget build(m.BuildContext context) {
     return m.Container(
-      padding:
-          const m.EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      padding: const m.EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: m.BoxDecoration(
         color: teal.withValues(alpha: 0.1),
         borderRadius: m.BorderRadius.circular(12),
@@ -1186,14 +1265,12 @@ class _ScoreChip extends m.StatelessWidget {
           m.Text(label,
               style: m.TextStyle(
                   fontSize: 12,
-                  color: m.Colors.grey.shade700)),
+                  color: HealingDesignSystem.adaptiveSecondaryText(context))),
           const m.SizedBox(width: 4),
           m.Text(
             value,
             style: m.TextStyle(
-                fontSize: 13,
-                fontWeight: m.FontWeight.w700,
-                color: teal),
+                fontSize: 13, fontWeight: m.FontWeight.w700, color: teal),
           ),
         ],
       ),
@@ -1260,6 +1337,7 @@ class _TopicChips extends m.StatelessWidget {
   @override
   m.Widget build(m.BuildContext context) {
     if (topics.isEmpty) return _EmptyHint(text: '未偵測到明確主題。');
+    final dark = HealingDesignSystem.isDark(context);
     return m.Wrap(
       alignment: m.WrapAlignment.start,
       spacing: 8,
@@ -1278,9 +1356,9 @@ class _TopicChips extends m.StatelessWidget {
             style: m.TextStyle(
               fontSize: 13,
               fontWeight: m.FontWeight.w600,
-              color: m.HSLColor.fromColor(color)
-                  .withLightness(0.3)
-                  .toColor(),
+              color: dark
+                  ? HealingDesignSystem.adaptivePrimaryText(context)
+                  : m.HSLColor.fromColor(color).withLightness(0.3).toColor(),
             ),
           ),
         );
@@ -1296,8 +1374,7 @@ class _GratitudeQuestions extends m.StatelessWidget {
   final List<String> questions;
   final m.Color teal;
 
-  const _GratitudeQuestions(
-      {required this.questions, required this.teal});
+  const _GratitudeQuestions({required this.questions, required this.teal});
 
   @override
   m.Widget build(m.BuildContext context) {
@@ -1334,7 +1411,7 @@ class _GratitudeQuestions extends m.StatelessWidget {
                   style: m.TextStyle(
                       fontSize: 14,
                       height: 1.6,
-                      color: m.Colors.grey.shade700),
+                      color: HealingDesignSystem.adaptivePrimaryText(context)),
                 ),
               ),
             ],
@@ -1354,11 +1431,15 @@ class _CrisisAlertCard extends m.StatelessWidget {
 
   @override
   m.Widget build(m.BuildContext context) {
+    final dangerColor = m.Theme.of(context).colorScheme.error;
     return m.Card(
       elevation: 2,
-      color: const m.Color(0xFFFFF3E0),
-      shape:
-          m.RoundedRectangleBorder(borderRadius: m.BorderRadius.circular(20)),
+      color: dangerColor.withOpacity(0.12),
+      surfaceTintColor: m.Colors.transparent,
+      shape: m.RoundedRectangleBorder(
+        borderRadius: m.BorderRadius.circular(20),
+        side: m.BorderSide(color: dangerColor.withOpacity(0.35)),
+      ),
       child: m.Padding(
         padding: const m.EdgeInsets.all(16),
         child: m.Column(
@@ -1366,25 +1447,28 @@ class _CrisisAlertCard extends m.StatelessWidget {
           children: [
             m.Row(
               children: [
-                m.Icon(m.Icons.favorite_rounded,
-                    color: m.Colors.red.shade400, size: 22),
+                m.Icon(m.Icons.favorite_rounded, color: dangerColor, size: 22),
                 const m.SizedBox(width: 8),
-                const m.Expanded(
+                m.Expanded(
                   child: m.Text(
                     '我注意到你今天有些沉重的感受',
                     style: m.TextStyle(
                       fontSize: 15,
                       fontWeight: m.FontWeight.w700,
-                      color: m.Color(0xFFB71C1C),
+                      color: dangerColor,
                     ),
                   ),
                 ),
               ],
             ),
             const m.SizedBox(height: 8),
-            const m.Text(
+            m.Text(
               '你不需要一個人承擔。每一個人的感受都值得被認真對待，\n專業的支持隨時都在你身邊。',
-              style: m.TextStyle(fontSize: 13, height: 1.6, color: m.Color(0xFF4E342E)),
+              style: m.TextStyle(
+                fontSize: 13,
+                height: 1.6,
+                color: HealingDesignSystem.adaptivePrimaryText(context),
+              ),
             ),
             const m.SizedBox(height: 14),
             _CrisisContactTile(
@@ -1429,9 +1513,15 @@ class _CrisisContactTile extends m.StatelessWidget {
 
   @override
   m.Widget build(m.BuildContext context) {
+    final dangerColor = m.Theme.of(context).colorScheme.error;
     return m.Material(
-      color: m.Colors.white,
-      borderRadius: m.BorderRadius.circular(12),
+      color: HealingDesignSystem.adaptiveSurface(context),
+      shape: m.RoundedRectangleBorder(
+        borderRadius: m.BorderRadius.circular(12),
+        side: m.BorderSide(
+          color: HealingDesignSystem.adaptiveCardBorder(context),
+        ),
+      ),
       child: m.InkWell(
         borderRadius: m.BorderRadius.circular(12),
         onTap: () async {
@@ -1441,8 +1531,7 @@ class _CrisisContactTile extends m.StatelessWidget {
           }
         },
         child: m.Padding(
-          padding:
-              const m.EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          padding: const m.EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           child: m.Row(
             children: [
               m.Text(emoji, style: const m.TextStyle(fontSize: 20)),
@@ -1452,19 +1541,19 @@ class _CrisisContactTile extends m.StatelessWidget {
                   crossAxisAlignment: m.CrossAxisAlignment.start,
                   children: [
                     m.Text(label,
-                        style: const m.TextStyle(
+                        style: m.TextStyle(
                             fontSize: 14,
                             fontWeight: m.FontWeight.w700,
-                            color: m.Color(0xFFB71C1C))),
+                            color: dangerColor)),
                     m.Text(subtitle,
                         style: m.TextStyle(
                             fontSize: 11,
-                            color: m.Colors.grey.shade600)),
+                            color: HealingDesignSystem.adaptiveSecondaryText(
+                                context))),
                   ],
                 ),
               ),
-              m.Icon(m.Icons.phone_outlined,
-                  size: 18, color: m.Colors.red.shade300),
+              m.Icon(m.Icons.phone_outlined, size: 18, color: dangerColor),
             ],
           ),
         ),
@@ -1488,10 +1577,17 @@ class _BaseCard extends m.StatelessWidget {
   m.Widget build(m.BuildContext context) {
     return m.Card(
       elevation: 1.5,
-      shadowColor: m.Colors.black12,
-      color: m.Theme.of(context).cardColor,
-      shape:
-          m.RoundedRectangleBorder(borderRadius: m.BorderRadius.circular(20)),
+      shadowColor: HealingDesignSystem.isDark(context)
+          ? m.Colors.black.withOpacity(0.35)
+          : m.Colors.black12,
+      color: HealingDesignSystem.adaptiveSurface(context),
+      surfaceTintColor: m.Colors.transparent,
+      shape: m.RoundedRectangleBorder(
+        borderRadius: m.BorderRadius.circular(20),
+        side: m.BorderSide(
+          color: HealingDesignSystem.adaptiveCardBorder(context),
+        ),
+      ),
       child: m.Padding(
         padding: const m.EdgeInsets.fromLTRB(16, 14, 16, 16),
         child: child,
@@ -1522,6 +1618,7 @@ class _SectionHeader extends m.StatelessWidget {
           title,
           style: m.Theme.of(context).textTheme.titleMedium?.copyWith(
                 fontWeight: m.FontWeight.w700,
+                color: HealingDesignSystem.adaptivePrimaryText(context),
               ),
         ),
       ],
@@ -1540,7 +1637,10 @@ class _BodyText extends m.StatelessWidget {
     return m.Text(
       text,
       style: m.TextStyle(
-          fontSize: 14, height: 1.7, color: m.Colors.grey.shade700),
+        fontSize: 14,
+        height: 1.7,
+        color: HealingDesignSystem.adaptivePrimaryText(context),
+      ),
       textAlign: m.TextAlign.justify,
     );
   }
@@ -1559,12 +1659,13 @@ class _EmptyHint extends m.StatelessWidget {
         text,
         style: m.TextStyle(
             fontSize: 13,
-            color: m.Colors.grey.shade400,
+            color: HealingDesignSystem.adaptiveSecondaryText(context),
             fontStyle: m.FontStyle.italic),
       ),
     );
   }
 }
+
 // ──────────────────────────────────────────────
 // 今日情緒摘要卡片（僅顯示整體情緒分數）
 // ──────────────────────────────────────────────
@@ -1588,20 +1689,9 @@ class _OverallMoodCard extends m.StatelessWidget {
     return m.Container(
       margin: const m.EdgeInsets.symmetric(horizontal: 4),
       padding: const m.EdgeInsets.all(18),
-      decoration: m.BoxDecoration(
-        color: const m.Color(0xFFF8F7FC),
-        borderRadius: m.BorderRadius.circular(24),
-        border: m.Border.all(
-          color: teal.withOpacity(0.18),
-          width: 1,
-        ),
-        boxShadow: [
-          m.BoxShadow(
-            color: m.Colors.black.withOpacity(0.04),
-            blurRadius: 14,
-            offset: const m.Offset(0, 6),
-          ),
-        ],
+      decoration: HealingDesignSystem.adaptiveCardDecoration(
+        context,
+        radius: 24,
       ),
       child: m.Row(
         children: [
@@ -1628,7 +1718,7 @@ class _OverallMoodCard extends m.StatelessWidget {
                   style: m.TextStyle(
                     fontSize: 17,
                     fontWeight: m.FontWeight.w800,
-                    color: const m.Color(0xFF222222),
+                    color: HealingDesignSystem.adaptivePrimaryText(context),
                   ),
                 ),
                 const m.SizedBox(height: 6),
@@ -1636,7 +1726,7 @@ class _OverallMoodCard extends m.StatelessWidget {
                   '你記錄的整體情緒分數',
                   style: m.TextStyle(
                     fontSize: 13,
-                    color: m.Colors.grey.shade600,
+                    color: HealingDesignSystem.adaptiveSecondaryText(context),
                     height: 1.4,
                   ),
                 ),

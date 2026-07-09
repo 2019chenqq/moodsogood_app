@@ -1420,10 +1420,14 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('新增情緒項目'),
-        content: TextField(controller: c, decoration: const InputDecoration(hintText: '項目名稱')),
+        content: TextField(
+            controller: c, decoration: const InputDecoration(hintText: '項目名稱')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(context, c.text), child: const Text('確定')),
+          TextButton(
+              onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, c.text),
+              child: const Text('確定')),
         ],
       ),
     );
@@ -1440,10 +1444,15 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('重新命名'),
-        content: TextField(controller: c, decoration: InputDecoration(hintText: _emotions[i].name)),
+        content: TextField(
+            controller: c,
+            decoration: InputDecoration(hintText: _emotions[i].name)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(context, c.text), child: const Text('確定')),
+          TextButton(
+              onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, c.text),
+              child: const Text('確定')),
         ],
       ),
     );
@@ -1500,6 +1509,49 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     }
   }
 
+  Future<void> _addSymptom() async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => const _TextInputDialog(
+        title: '新增症狀',
+        hintText: '輸入症狀名稱',
+        confirmText: '確認',
+      ),
+    );
+
+    if (!mounted) return;
+    final trimmed = name?.trim();
+    if (trimmed == null || trimmed.isEmpty) return;
+
+    setState(() {
+      if (!_symptoms.any((symptom) => symptom.name == trimmed)) {
+        _symptoms.add(SymptomItem(name: trimmed));
+      }
+    });
+  }
+
+  Future<void> _renameSymptom(int index) async {
+    if (index < 0 || index >= _symptoms.length) return;
+
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => _TextInputDialog(
+        title: '編輯症狀',
+        hintText: '輸入症狀名稱',
+        initialValue: _symptoms[index].name,
+        confirmText: '確認',
+      ),
+    );
+
+    if (!mounted || index < 0 || index >= _symptoms.length) return;
+    final trimmed = name?.trim();
+    if (trimmed == null || trimmed.isEmpty) return;
+
+    setState(() {
+      _symptoms[index] = _symptoms[index].copyWith(name: trimmed);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -1537,43 +1589,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       ),
       _pageWrapper(SymptomPage(
         items: _symptoms,
-        onAdd: () async {
-          final c = TextEditingController();
-          final name = await showDialog<String>(
-            context: context,
-            builder: (_) => AlertDialog(
-              title: const Text('新增症狀'),
-              content: TextField(controller: c, decoration: const InputDecoration(hintText: '症狀名稱')),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-                FilledButton(onPressed: () => Navigator.pop(context, c.text), child: const Text('確定')),
-              ],
-            ),
-          );
-          c.dispose();
-          if (name != null && name.trim().isNotEmpty) {
-            setState(() => _symptoms.add(SymptomItem(name: name.trim())));
-          }
-        },
-        onRename: (i) async {
-          final c = TextEditingController();
-          final name = await showDialog<String>(
-            context: context,
-            builder: (_) => AlertDialog(
-              title: const Text('重新命名'),
-              content: TextField(controller: c, decoration: InputDecoration(hintText: _symptoms[i].name)),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-                FilledButton(onPressed: () => Navigator.pop(context, c.text), child: const Text('確定')),
-              ],
-            ),
-          );
-          c.dispose();
-          if (name != null && name.trim().isNotEmpty) {
-            setState(
-                () => _symptoms[i] = _symptoms[i].copyWith(name: name.trim()));
-          }
-        },
+        onAdd: _addSymptom,
+        onRename: _renameSymptom,
         onDelete: (i) => setState(() => _symptoms.removeAt(i)),
         onTogglePreset: (name, selected) {
           setState(() {
@@ -1830,6 +1847,67 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _TextInputDialog extends StatefulWidget {
+  const _TextInputDialog({
+    required this.title,
+    required this.hintText,
+    required this.confirmText,
+    this.initialValue = '',
+  });
+
+  final String title;
+  final String hintText;
+  final String confirmText;
+  final String initialValue;
+
+  @override
+  State<_TextInputDialog> createState() => _TextInputDialogState();
+}
+
+class _TextInputDialogState extends State<_TextInputDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    Navigator.of(context).pop(_controller.text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        textInputAction: TextInputAction.done,
+        decoration: InputDecoration(hintText: widget.hintText),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: Text(widget.confirmText),
+        ),
+      ],
     );
   }
 }

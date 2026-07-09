@@ -14,7 +14,8 @@ int? _wholeNumberX(double value) {
 
 String _formatChartNumber(double value) => value.toStringAsFixed(1);
 
-const double _lineTooltipTouchThreshold = double.infinity;
+const double _sameDayTooltipTouchThreshold = 18;
+const double _singleLineTooltipTouchThreshold = double.infinity;
 
 ({double minY, double maxY}) _yBounds(
   List<LineChartBarData> bars, {
@@ -37,6 +38,53 @@ const double _lineTooltipTouchThreshold = double.infinity;
   final padding = max((top - bottom).abs() * 0.08, 0.5);
 
   return (minY: bottom - padding, maxY: top + padding);
+}
+
+FlDotData _dotDataForSpots(List<FlSpot> spots, Color color) {
+  if (spots.length != 1) {
+    return const FlDotData(show: false);
+  }
+
+  return FlDotData(
+    show: true,
+    getDotPainter: (spot, percent, bar, index) => FlDotCirclePainter(
+      radius: 4,
+      color: color,
+      strokeWidth: 0,
+    ),
+  );
+}
+
+List<LineTooltipItem?> _sameDayTooltipItems(
+  List<LineBarSpot> spots, {
+  required Color positiveColor,
+}) {
+  if (spots.isEmpty) {
+    return const [];
+  }
+
+  final targetSpot = spots.reduce((current, next) {
+    final currentDistance =
+        current is TouchLineBarSpot ? current.distance : 0.0;
+    final nextDistance = next is TouchLineBarSpot ? next.distance : 0.0;
+    return nextDistance < currentDistance ? next : current;
+  });
+  final targetX = targetSpot.x;
+
+  return spots.map((spot) {
+    if ((spot.x - targetX).abs() > 0.001) {
+      return null;
+    }
+
+    final label = spot.bar.color == positiveColor ? '正向' : '負向';
+    return LineTooltipItem(
+      '$label ${_formatChartNumber(spot.y)}',
+      const TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+  }).toList();
 }
 
 class EmotionBalanceChartWidget extends StatelessWidget {
@@ -229,20 +277,31 @@ class EmotionBalanceChartWidget extends StatelessWidget {
 
     final positiveColor = HealingDesignSystem.primaryBlue;
     final negativeColor = Colors.deepOrange.shade300;
-
-    final lineBars = <LineChartBarData>[
-      if (positiveSeries.isNotEmpty)
-        LineChartBarData(
-          spots: _spots(
+    final positiveSpots = positiveSeries.isEmpty
+        ? <FlSpot>[]
+        : _spots(
             source: positiveSeries,
             startDate: startDate,
             totalDays: totalDays,
             sortedDates: sortedDates,
-          ),
+          );
+    final negativeSpots = negativeSeries.isEmpty
+        ? <FlSpot>[]
+        : _spots(
+            source: negativeSeries,
+            startDate: startDate,
+            totalDays: totalDays,
+            sortedDates: sortedDates,
+          );
+
+    final lineBars = <LineChartBarData>[
+      if (positiveSeries.isNotEmpty)
+        LineChartBarData(
+          spots: positiveSpots,
           isCurved: false,
           color: positiveColor,
           barWidth: 3,
-          dotData: const FlDotData(show: false),
+          dotData: _dotDataForSpots(positiveSpots, positiveColor),
           belowBarData: BarAreaData(
             show: true,
             color: positiveColor.withValues(alpha: 0.08),
@@ -250,16 +309,11 @@ class EmotionBalanceChartWidget extends StatelessWidget {
         ),
       if (negativeSeries.isNotEmpty)
         LineChartBarData(
-          spots: _spots(
-            source: negativeSeries,
-            startDate: startDate,
-            totalDays: totalDays,
-            sortedDates: sortedDates,
-          ),
+          spots: negativeSpots,
           isCurved: false,
           color: negativeColor,
           barWidth: 3,
-          dotData: const FlDotData(show: false),
+          dotData: _dotDataForSpots(negativeSpots, negativeColor),
           belowBarData: BarAreaData(
             show: true,
             color: negativeColor.withValues(alpha: 0.08),
@@ -381,21 +435,13 @@ class EmotionBalanceChartWidget extends StatelessWidget {
                   ),
                 ),
                 lineTouchData: LineTouchData(
-                  touchSpotThreshold: _lineTooltipTouchThreshold,
+                  touchSpotThreshold: _sameDayTooltipTouchThreshold,
                   handleBuiltInTouches: true,
                   touchTooltipData: LineTouchTooltipData(
-                    getTooltipItems: (spots) {
-                      return spots.map((spot) {
-                        final label = spot.barIndex == 0 ? '正向' : '負向';
-                        return LineTooltipItem(
-                          '$label ${_formatChartNumber(spot.y)}',
-                          const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        );
-                      }).toList();
-                    },
+                    getTooltipItems: (spots) => _sameDayTooltipItems(
+                      spots,
+                      positiveColor: positiveColor,
+                    ),
                   ),
                 ),
                 lineBarsData: lineBars,
@@ -604,18 +650,19 @@ class EmotionBalanceTrendChartWidget extends StatelessWidget {
         ? sortedDates.length
         : endDate.difference(startDate).inDays + 1;
     final lineColor = HealingDesignSystem.adaptiveAccent(context);
+    final balanceSpots = _spots(
+      source: series,
+      startDate: startDate,
+      totalDays: totalDays,
+      sortedDates: sortedDates,
+    );
     final lineBars = [
       LineChartBarData(
-        spots: _spots(
-          source: series,
-          startDate: startDate,
-          totalDays: totalDays,
-          sortedDates: sortedDates,
-        ),
+        spots: balanceSpots,
         isCurved: false,
         color: lineColor,
         barWidth: 3,
-        dotData: const FlDotData(show: false),
+        dotData: _dotDataForSpots(balanceSpots, lineColor),
         belowBarData: BarAreaData(
           show: true,
           color: lineColor.withValues(alpha: 0.08),
@@ -748,7 +795,7 @@ class EmotionBalanceTrendChartWidget extends StatelessWidget {
                   ),
                 ),
                 lineTouchData: LineTouchData(
-                  touchSpotThreshold: _lineTooltipTouchThreshold,
+                  touchSpotThreshold: _singleLineTooltipTouchThreshold,
                   handleBuiltInTouches: true,
                   touchTooltipData: LineTouchTooltipData(
                     getTooltipItems: (spots) {
