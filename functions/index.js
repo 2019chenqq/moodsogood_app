@@ -96,6 +96,13 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function normalizeMoodScore(value, moodScale, fallback = null) {
+  const score = toNumber(value, fallback);
+  if (score == null) return null;
+  const scale = moodScale === 5 ? 5 : 10;
+  return clamp(Number(score), 1, scale);
+}
+
 function normalizeDiaryFields(rawDiaryFields) {
   const raw =
     rawDiaryFields && typeof rawDiaryFields === "object" && !Array.isArray(rawDiaryFields)
@@ -233,15 +240,23 @@ function extractMedicationInfo(dailyRecord) {
 function buildEmotionModel(dailyRecord, diaryFields, diaryText) {
   const emotionEntries = extractEmotionEntries(dailyRecord);
   const medication = extractMedicationInfo(dailyRecord);
-  const mood = toNumber(dailyRecord.overallMood ?? diaryFields.overallMood ?? dailyRecord.mood, 5);
-  const health = toNumber(
-    dailyRecord.overallHealth ?? diaryFields.overallHealth ?? dailyRecord.health,
-    5,
+  const moodScale = toNumber(
+    dailyRecord.moodScale ?? diaryFields.moodScale ?? dailyRecord.diaryMoodScale,
+    10,
   );
-  const anxiety =
-    toNumber(dailyRecord.anxiety, null) ?? pickEmotionScore(emotionEntries, ["焦慮", "緊張", "擔心"]);
-  const energy =
-    toNumber(dailyRecord.energy, null) ?? pickEmotionScore(emotionEntries, ["能量", "活力", "精力"]);
+  const useFivePointScale = moodScale === 5;
+  const mood = normalizeMoodScore(
+    dailyRecord.overallMood ?? diaryFields.overallMood ?? dailyRecord.mood,
+    moodScale,
+    useFivePointScale ? 3 : 5,
+  );
+  const health = normalizeMoodScore(
+    dailyRecord.overallHealth ?? diaryFields.overallHealth ?? dailyRecord.health,
+    moodScale,
+    useFivePointScale ? 3 : 5,
+  );
+  const anxiety = toNumber(dailyRecord.anxiety, null) ?? pickEmotionScore(emotionEntries, ["焦慮", "緊張", "擔心"]);
+  const energy = toNumber(dailyRecord.energy, null) ?? pickEmotionScore(emotionEntries, ["能量", "活力", "精力"]);
 
   const text = String(diaryText || "");
   const negativeHits = countHits(text, NEGATIVE_WORDS);
@@ -268,11 +283,11 @@ function buildEmotionModel(dailyRecord, diaryFields, diaryText) {
 
   compositeScore += (positiveHits - negativeHits) * 0.2;
   compositeScore -= symptomsCount * 0.08;
-  compositeScore = clamp(Number(compositeScore.toFixed(2)), 1, 10);
+  compositeScore = clamp(Number(compositeScore.toFixed(2)), 1, moodScale === 5 ? 5 : 10);
 
   let moodBand = "平穩";
-  if (compositeScore >= 7.5) moodBand = "積極穩定";
-  else if (compositeScore < 4.5) moodBand = "低潮偏高";
+  if (compositeScore >= 4.2) moodBand = "積極穩定";
+  else if (compositeScore < 2.8) moodBand = "低潮偏高";
 
   let anxietyRisk = "未知";
   if (anxiety != null) {
@@ -412,6 +427,7 @@ exports.generateAiJournalReflection = onCall(
       const aiDiaryText = String(safeAiInput.diaryText || "").trim();
       const aiEmotions = Array.isArray(safeAiInput.emotions) ? safeAiInput.emotions : [];
       const aiSymptoms = Array.isArray(safeAiInput.symptoms) ? safeAiInput.symptoms : [];
+      const aiMoodScale = toNumber(safeAiInput.moodScale, 10);
       const aiSleep =
         safeAiInput.sleep && typeof safeAiInput.sleep === "object" && !Array.isArray(safeAiInput.sleep)
           ? safeAiInput.sleep
@@ -429,6 +445,7 @@ exports.generateAiJournalReflection = onCall(
       });
 
       safeDailyRecord = {
+        moodScale: aiMoodScale,
         overallMood: toNumber(overallMoodFromAi?.score, null),
         anxiety: toNumber(anxietyFromAi?.score, null),
         emotions: aiEmotions
@@ -489,7 +506,8 @@ exports.generateAiJournalReflection = onCall(
           {
             role: "system",
             content: [
-              "你是一位使用繁體中文的心理支持助理。請基於完整日記欄位做文本分析，並結合提供的 emotionModel（每日紀錄情緒分析模型）產生回饋。若 emotionModel.medication.hasMedicationData 為 true，請把用藥作為觀察脈絡之一，但禁止推論藥效與醫療結果。不要做醫療診斷、不要下病名、不要保證療效。情緒觀察段落禁止提及睡眠、就寢、醒來、失眠等睡眠資訊。若內容包含明確自傷或自殺意圖，要將 crisisDetected 設為 true。你只能輸出 JSON。",
+              "你是一位使用繁體中文的心理支持助理。請基於完整日記欄位做文本分析，並結合提供的 emotionModel（每日紀錄情緒分析模型）產生回饋。整體情緒與綜合分數皆使用 1 到 5 分制，不可用 10 分制描述。若 emotionModel.medication.hasMedicationData 為 true，請把用藥作為觀察脈絡之一，但禁止推論藥效與醫療結果。不要做醫療診斷、不要下病名、不要保證療效。情緒觀察段落禁止提及睡眠、就寢、醒來、失眠等睡眠資訊。若內容包含明確自傷或自殺意圖，要將 crisisDetected 設為 true。你只能輸出 JSON。",
+              "請依 emotionModel.moodScale 使用正確量表：moodScale 為 5 時請用 1 到 5 分制；moodScale 為 10 時請保留 1 到 10 分制，不要自行換算或折半。",
               "請用溫柔、支持、不批判的語氣回應，像一位專業心理師，避免說教、避免過度正向或空泛鼓勵。",
               "",
               "請做到：",
@@ -504,7 +522,7 @@ exports.generateAiJournalReflection = onCall(
               task: "請輸出日記反思 JSON",
               rules: {
                 summary: "1 段 70-140 字，須反映多個日記欄位內容",
-                emotionObservation: "1 段 70-140 字，必須解讀 emotionModel.emotionEntries 的情緒名稱與分數，至少提到 2 個情緒名稱與其分數，並結合綜合分數與風險觀察。若有 medication 資料可輕量提及，但不得推論療效。且不得出現任何睡眠相關字詞",
+                emotionObservation: "1 段 70-140 字，必須解讀 emotionModel.emotionEntries 的情緒名稱與分數，至少提到 2 個情緒名稱與其分數，並結合 emotionModel.moodScale 對應的整體情緒分數與風險觀察。若 moodScale 為 5，使用 1 到 5 分制；若 moodScale 為 10，保留 1 到 10 分制。若有 medication 資料可輕量提及，但不得推論療效。且不得出現任何睡眠相關字詞",
                 topics: "3 到 5 個短詞",
                 positiveFeedback: "1 段 70-140 字，聚焦使用者已做到的具體行為",
                 gratitudeQuestions: "剛好 3 題，每題一句",

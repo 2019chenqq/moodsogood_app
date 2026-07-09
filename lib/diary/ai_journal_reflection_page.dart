@@ -21,11 +21,11 @@ import 'dart:math';
 import 'package:flutter/material.dart' as m;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../analytics_service.dart';
+import '../services/ai_journal_reflection_http_client.dart';
 import '../utils/secure_storage_service.dart';
 import '../utils/encryption_service.dart';
 import '../constants/healing_design_system.dart';
@@ -69,6 +69,8 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
 
   // AI 回饋結果
   Map<String, dynamic>? _aiResult;
+  final AiJournalReflectionHttpClient _aiClient =
+      AiJournalReflectionHttpClient();
 
   // 危機關鍵字偵測結果
   bool _crisisDetected = false;
@@ -125,8 +127,13 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
   }
 
   Future<void> _init() async {
-    await _loadFirestoreData();
-    await _loadExistingAiResult();
+    try {
+      await _loadFirestoreData();
+      await _loadExistingAiResult();
+    } catch (e, stack) {
+      m.debugPrint('AiJournalReflectionPage init exception: $e');
+      m.debugPrint('AiJournalReflectionPage init stackTrace: $stack');
+    }
   }
 
   // ──────────────────────────────────────────────
@@ -186,12 +193,14 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
         }
       }
 
+      if (!mounted) return;
       setState(() {
         _diaryData = diaryData;
         _dailyRecordData = recordSnap.data();
       });
-    } catch (e) {
-      m.debugPrint('❌ AiJournalReflectionPage: Firestore read error: $e');
+    } catch (e, stack) {
+      m.debugPrint('AiJournalReflectionPage Firestore read exception: $e');
+      m.debugPrint('AiJournalReflectionPage Firestore read stackTrace: $stack');
     }
   }
 
@@ -215,9 +224,11 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
           _crisisDetected = snap.data()?['crisisDetected'] == true;
         });
       }
-    } catch (e) {
+    } catch (e, stack) {
       m.debugPrint(
-          '❌ AiJournalReflectionPage: load existing AI result error: $e');
+          'AiJournalReflectionPage load existing AI result exception: $e');
+      m.debugPrint(
+          'AiJournalReflectionPage load existing AI result stackTrace: $stack');
     }
   }
 
@@ -290,8 +301,9 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
         'skippedMedicationNames': skippedNames.toList(),
         'pendingMedicationNames': pendingNames.toList(),
       };
-    } catch (e) {
-      m.debugPrint('⚠️ buildMedicationContextForAi failed: $e');
+    } catch (e, stack) {
+      m.debugPrint('buildMedicationContextForAi exception: $e');
+      m.debugPrint('buildMedicationContextForAi stackTrace: $stack');
       return const <String, dynamic>{};
     }
   }
@@ -459,6 +471,7 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
       final result = <String, dynamic>{
         'date': _docId,
         'mode': 'basic',
+        'moodScale': _diaryData?['diaryMoodScale'] ?? 10,
         'diaryText': diaryText,
         'emotions': emotions,
         'allowedAnalysisScope': [
@@ -525,26 +538,36 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
     m.debugPrint('開始呼叫 AI service: Make Gemini webhook');
     m.debugPrint('request payload: ${jsonEncode(payload)}');
 
-    final response = await http.post(
-      Uri.parse(webhookUrl),
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode(payload),
-    );
-
-    m.debugPrint('response status: ${response.statusCode}');
-    m.debugPrint('response body: ${response.body}');
-
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception(
-          'Make Webhook 呼叫失敗：${response.statusCode} ${response.body}');
+    late http.Response response;
+    try {
+      response = await http
+          .post(
+            Uri.parse(webhookUrl),
+            headers: {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Accept': 'application/json',
+            },
+            body: utf8.encode(jsonEncode(payload)),
+          )
+          .timeout(const Duration(seconds: 60));
+    } catch (e, stack) {
+      m.debugPrint('Make Gemini HTTP exception: $e');
+      m.debugPrint('Make Gemini HTTP stackTrace: $stack');
+      rethrow;
     }
 
-    m.debugPrint('Make response: ${response.body}');
+    m.debugPrint('response status: ${response.statusCode}');
+    final responseBody = utf8.decode(response.bodyBytes);
+    m.debugPrint('response body: $responseBody');
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Make Webhook 呼叫失敗：${response.statusCode} $responseBody');
+    }
+
+    m.debugPrint('Make response: $responseBody');
 
     try {
-      final decoded = jsonDecode(response.body);
+      final decoded = jsonDecode(responseBody);
 
       if (decoded is Map<String, dynamic>) {
         return {
@@ -561,12 +584,14 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
           'generatedAt': FieldValue.serverTimestamp(),
         };
       }
-    } catch (_) {
+    } catch (e, stack) {
+      m.debugPrint('Make Gemini response parse exception: $e');
+      m.debugPrint('Make Gemini response parse stackTrace: $stack');
       // Fallback to plain text when Make returns a non-JSON body.
     }
 
     return {
-      'summary': response.body,
+      'summary': responseBody,
       'emotionObservation': '',
       'topics': [],
       'positiveFeedback': '',
@@ -591,26 +616,19 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
         'date': _docId,
         'aiInput': aiInput,
       };
-      m.debugPrint(
-          '開始呼叫 AI service: Firebase Functions generateAiJournalReflection');
+      m.debugPrint('開始呼叫 AI service: HTTP generateAiJournalReflection');
       m.debugPrint('request payload: ${jsonEncode(sanitizeForJson(payload))}');
-      final callable = FirebaseFunctions.instance
-          .httpsCallable('generateAiJournalReflection');
-      final response = await callable.call(payload);
 
-      final data = response.data;
+      final data = await _aiClient.generate(payload: payload);
       m.debugPrint('response status: ok');
       m.debugPrint('response body: $data');
-      if (data is! Map) {
-        throw const FormatException('AI 回傳格式錯誤');
-      }
 
-      return _normalizeAiResult(Map<String, dynamic>.from(data));
+      return _normalizeAiResult(data);
     } catch (e, stack) {
       m.debugPrint('catch 到的 exception: $e');
       m.debugPrint('stackTrace: $stack');
-      m.debugPrint('❌ generateAIReflection error: $e');
-      m.debugPrint('❌ stack: $stack');
+      m.debugPrint('generateAIReflection exception: $e');
+      m.debugPrint('generateAIReflection stackTrace: $stack');
       rethrow;
     }
   }
@@ -627,6 +645,7 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
       return;
     }
 
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -647,6 +666,7 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
         'overallMood': _diaryData?['overallMood'],
         'overallHealth': _diaryData?['overallHealth'],
         'overallSleepQuality': _diaryData?['overallSleepQuality'],
+        'moodScale': _diaryData?['diaryMoodScale'] ?? 10,
       };
 
       final diarySections = <MapEntry<String, String>>[
@@ -690,6 +710,7 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
       final dailyRecordForAi = {
         if (_diaryData?['overallMood'] != null)
           'overallMood': _diaryData!['overallMood'],
+        'moodScale': _diaryData?['diaryMoodScale'] ?? 10,
       };
       final result = await generateAIReflection(
         aiInput: aiInput,
@@ -719,7 +740,7 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
     } catch (e, stack) {
       m.debugPrint('catch 到的 exception: $e');
       m.debugPrint('stackTrace: $stack');
-      m.debugPrint('❌ generateAndSave error: $e');
+      m.debugPrint('generateAndSave exception: $e');
       if (!mounted) return;
       final message = 'AI 回饋生成失敗，請稍後再試。';
       setState(() => _error = '$message\n$e');
@@ -730,6 +751,7 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
   }
 
   void _showSnack(String msg) {
+    if (!mounted) return;
     m.ScaffoldMessenger.of(context).showSnackBar(
       m.SnackBar(content: m.Text(msg)),
     );

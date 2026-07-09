@@ -1,7 +1,7 @@
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 
 import '../models/calendar_day_summary.dart';
+import 'ai_journal_reflection_http_client.dart';
 import 'diary_ai_prompt_builder.dart';
 
 enum AIFeedbackMode {
@@ -10,6 +10,9 @@ enum AIFeedbackMode {
 }
 
 class AIFeedbackService {
+  final AiJournalReflectionHttpClient _aiClient =
+      AiJournalReflectionHttpClient();
+
   Future<String> generateDiaryFeedback({
     required AIFeedbackMode mode,
     String? diaryTitle,
@@ -56,9 +59,7 @@ class AIFeedbackService {
             'name': '整體情緒',
             'score': daySummary.averageMood,
           },
-        ...daySummary.emotionNames
-            .where((name) => name.trim().isNotEmpty)
-            .map(
+        ...daySummary.emotionNames.where((name) => name.trim().isNotEmpty).map(
               (name) => {
                 'name': name.trim(),
                 'score': null,
@@ -66,58 +67,24 @@ class AIFeedbackService {
             ),
       ];
 
-      final symptomNames = daySummary.symptomNames
-          .where((name) => name.trim().isNotEmpty)
-          .map((name) => name.trim())
-          .toList();
-
-      final sleepData = <String, dynamic>{
-        'hours': daySummary.sleepHours,
-        'quality': daySummary.sleepQuality,
-      };
-
       final promptPayload = buildDiaryAiPromptBasic(
         date: dateKey,
         diaryText: diaryText,
         emotions: emotionScores.where((e) => e['name'] == '整體情緒').toList(),
       );
 
-      final diaryFields = <String, dynamic>{
-        'title': diaryTitle,
-        'content': diaryContent.isNotEmpty ? diaryContent : diarySummary,
-        'overallMood': daySummary.averageMood,
-        'overallSleepQuality': daySummary.sleepQuality,
-      };
-
-      final dailyRecord = <String, dynamic>{
-        if (daySummary.averageMood != null)
-          'overallMood': daySummary.averageMood,
-      };
-
-            final payload = <String, dynamic>{
+      final payload = <String, dynamic>{
         'date': dateKey,
         'promptPayload': promptPayload,
         'aiInput': promptPayload,
-            };
+      };
 
       debugPrint(
-        '🧪 AI Feedback Service: Calling generateAiJournalReflection with payload: $payload',
+        'AI Feedback Service request payload: $payload',
       );
 
-      final callable =
-          FirebaseFunctions.instance.httpsCallable('generateAiJournalReflection');
-
-      final response = await callable.call(payload);
-
-      debugPrint(
-        '🧪 AI Feedback Service: Response received: ${response.data}',
-      );
-
-      if (response.data is! Map) {
-        throw Exception('AI 回應格式錯誤');
-      }
-
-      final data = Map<String, dynamic>.from(response.data as Map);
+      final data = await _aiClient.generate(payload: payload);
+      debugPrint('AI Feedback Service response body: $data');
 
       final summary = (data['summary'] ?? '').toString().trim();
 
@@ -144,8 +111,7 @@ class AIFeedbackService {
 
       final riskLevel = (data['riskLevel'] ?? 'low').toString().trim();
 
-      final disclaimer = (data['disclaimer'] ??
-              '此回饋僅根據今日紀錄整理，不能取代專業醫療或心理諮詢。')
+      final disclaimer = (data['disclaimer'] ?? '此回饋僅根據今日紀錄整理，不能取代專業醫療或心理諮詢。')
           .toString()
           .trim();
 
@@ -186,8 +152,9 @@ class AIFeedbackService {
       final combined = sections.join('\n\n');
 
       return combined.isNotEmpty ? combined : '暫時無法生成回饋，請稍後重試。';
-    } catch (e) {
-      debugPrint('❌ AI Feedback Service error: $e');
+    } catch (e, stack) {
+      debugPrint('AI Feedback Service exception: $e');
+      debugPrint('AI Feedback Service stackTrace: $stack');
       rethrow;
     }
   }
