@@ -74,6 +74,9 @@ dependencies {
     
     // WorkManager for background tasks
     implementation("androidx.work:work-runtime-ktx:2.9.0")
+
+    // Required when using TextRecognitionScript.chinese with google_mlkit_text_recognition.
+    implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
 }
 
 flutter {

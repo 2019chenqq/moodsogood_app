@@ -46,12 +46,8 @@ app.*.map.json
 pubspec.lock
 
 # Flutter / Dart
-.dart_tool/
 .flutter-plugins
-.flutter-plugins-dependencies
 .packages
-.pub-cache/
-.pub/
 build/
 
 # Android / Gradle
@@ -90,5 +86,15 @@ pnpm-debug.log*
 .env.*.local
 
 # VS Code / OS
-.DS_Store
 .vscode/
+
+# Signing credentials
+*.jks
+*.keystore
+key.properties
+
+# Local configuration
+local.properties
+
+# Firebase backup files
+android/app/google-services_bkk.json

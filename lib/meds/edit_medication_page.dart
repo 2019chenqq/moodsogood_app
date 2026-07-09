@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -177,12 +177,13 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
     }
 
     final pillVal = d['pillCount'];
-    if (pillVal is int)
+    if (pillVal is int) {
       _pillCount = pillVal.toDouble();
-    else if (pillVal is double)
+    } else if (pillVal is double) {
       _pillCount = pillVal;
-    else
+    } else {
       _pillCount = 1.0;
+    }
 
     _unit = (d['unit'] as String?) ?? 'mg';
     final times =
@@ -263,7 +264,7 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
                     TextFormField(
                       controller: _nameCtrl,
                       textInputAction: TextInputAction.next,
-                      decoration: _inputDeco('例如：克癲平、思樂康…').copyWith(
+                      decoration: _inputDeco('例如：克癇平、思樂康…').copyWith(
                         suffixIcon: _isSearchingDrug
                             ? const Padding(
                                 padding: EdgeInsets.all(12),
@@ -1271,6 +1272,7 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
           await DrugDictionaryService.instance.findDrugInfo(query);
 
       if (!mounted) return;
+      if (_nameCtrl.text.trim() != query) return;
       final list = suggestions
           .map((s) => <String, String>{
                 'zh': s.zh,
@@ -1306,8 +1308,10 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
   void _applyDrugAutoFill(Map<String, String>? info) {
     if (info == null || !mounted) return;
 
+    final zhText = info['zh']?.trim() ?? _nameCtrl.text.trim();
     final exactEn = info['en']?.trim() ?? '';
     final doseText = info['dose']?.trim() ?? '';
+    final doseParseText = doseText.isNotEmpty ? doseText : zhText;
     final formText = info['form']?.trim() ?? '';
     final compoundType = info['compoundType']?.trim() ?? '';
     final concentration = info['concentration']?.trim() ?? '';
@@ -1318,12 +1322,15 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
         .map((line) => line.trim())
         .where((line) => line.isNotEmpty)
         .toList();
-    final hasDose = doseText.isNotEmpty;
+    final hasDose = doseParseText.isNotEmpty;
     final parsedDose = hasDose
-        ? DrugDictionaryService.instance.parseDoseValue(doseText)
+        ? DrugDictionaryService.instance.parseDoseValue(doseParseText)
         : null;
-    final parsedUnit =
-        hasDose ? DrugDictionaryService.instance.parseDoseUnit(doseText) : null;
+    final parsedUnit = hasDose
+        ? DrugDictionaryService.instance.parseDoseUnit(doseParseText)
+        : null;
+    final canApplyParsedDose =
+        parsedDose != null && (doseText.isNotEmpty || parsedUnit != null);
     final medType = MedicationScheduleUtils.resolveMedicationType(
       dosageForm: formText,
       manualMedicationType: _medType,
@@ -1364,13 +1371,15 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
         if (_intakeMl <= 0) _intakeMl = 1.0;
       } else if (hasDose) {
         if (parsedUnit != null) _unit = parsedUnit;
-        if (parsedDose != null)
+        if (canApplyParsedDose) {
           _dose = parsedDose.clamp(0, kMaxDose).toDouble();
+        }
       }
     });
   }
 
   void _applyDrugSuggestion(Map<String, String> s) {
+    _drugDebounce?.cancel();
     final zh = (s['zh'] ?? '').trim();
     final en = (s['en'] ?? '').trim();
     final dose = (s['dose'] ?? '').trim();
@@ -1392,6 +1401,7 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
     }
 
     _applyDrugAutoFill({
+      'zh': zh,
       'en': en,
       'dose': dose,
       'form': form,
@@ -1407,6 +1417,7 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
     FocusScope.of(context).nextFocus(); // 跳到下一個輸入欄
   }
 
+  // ignore: unused_element
   Future<void> _showAddDrugDialog(String input) async {
     final zhCtrl = TextEditingController(text: input);
     final enCtrl = TextEditingController();
@@ -1494,7 +1505,9 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
 
     addKeywordsFrom(zh);
     addKeywordsFrom(en);
-    for (final a in aliases ?? []) addKeywordsFrom(a);
+    for (final a in aliases ?? []) {
+      addKeywordsFrom(a);
+    }
 
     doc['keywords'] = kw.toList();
 

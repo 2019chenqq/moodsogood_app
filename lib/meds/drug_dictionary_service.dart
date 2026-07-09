@@ -191,9 +191,18 @@ class DrugDictionaryService {
     final q = _norm(input);
     if (q.isEmpty) return null;
 
+    for (final item in _seed) {
+      final matchedZh = item.zhNames.any((name) => _norm(name) == q);
+      final matchedAlias = item.aliases.any((name) => _norm(name) == q);
+      if (matchedZh || matchedAlias) {
+        return _suggestionFromItem(item, 1000).toInfoMap();
+      }
+    }
+
     final userMatch = _userMap[q]?.trim();
     if (userMatch != null && userMatch.isNotEmpty) {
       return {
+        'zh': _denormKey(q),
         'en': userMatch,
         'dose': '',
         'form': '',
@@ -206,33 +215,31 @@ class DrugDictionaryService {
       };
     }
 
-    for (final item in _seed) {
-      final matchedZh = item.zhNames.any((name) => _norm(name) == q);
-      final matchedAlias = item.aliases.any((name) => _norm(name) == q);
-      if (matchedZh || matchedAlias) {
-        return _suggestionFromItem(item, 1000).toInfoMap();
-      }
-    }
-
     final suggestions = await suggest(input, limit: 1);
     if (suggestions.isEmpty || suggestions.first.score < 200) return null;
     return suggestions.first.toInfoMap();
   }
 
   double? parseDoseValue(String input) {
-    final raw = input.trim().replaceAll(',', '');
+    final raw = _normalizeDoseText(input).replaceAll(',', '');
     if (raw.contains('+')) return null;
     if (raw.isEmpty) return null;
-    final match = RegExp(r'([0-9]+(?:\.[0-9]+)?)').firstMatch(raw);
+    final match = RegExp(r'((?:[0-9]+)?\.[0-9]+|[0-9]+)').firstMatch(raw);
     if (match == null) return null;
     return double.tryParse(match.group(1)!);
   }
 
   String? parseDoseUnit(String input) {
-    final raw = input.trim().toUpperCase();
+    final raw = _normalizeDoseText(input).toUpperCase();
     if (raw.isEmpty) return null;
 
-    final match = RegExp(r'\b(MCG|MG|GM|G|ML|IU|U)\b').firstMatch(raw);
+    if (raw.contains('毫克') || raw.contains('公絲')) return 'mg';
+    if (raw.contains('微克')) return 'mcg';
+    if (raw.contains('公克')) return 'g';
+    if (raw.contains('毫升') || raw.contains('公撮')) return 'mL';
+    if (raw.contains('國際單位') || raw.contains('單位')) return 'IU';
+
+    final match = RegExp(r'(MCG|MG|GM|G|ML|IU|UNIT|U)').firstMatch(raw);
     switch (match?.group(1)) {
       case 'MCG':
         return 'mcg';
@@ -244,11 +251,31 @@ class DrugDictionaryService {
       case 'ML':
         return 'mL';
       case 'IU':
+      case 'UNIT':
       case 'U':
         return 'IU';
       default:
         return null;
     }
+  }
+
+  String _normalizeDoseText(String input) {
+    final buffer = StringBuffer();
+    for (final rune in input.trim().runes) {
+      var code = rune;
+      if (code == 0x3000) {
+        code = 0x20;
+      } else if (code >= 0xff01 && code <= 0xff5e) {
+        code -= 0xfee0;
+      }
+      buffer.writeCharCode(code);
+    }
+    return buffer
+        .toString()
+        .replaceAll('．', '.')
+        .replaceAll('・', '.')
+        .replaceAll('。', '.')
+        .replaceAll('／', '/');
   }
 
   String mapFormToMedType(String form) {
@@ -316,8 +343,12 @@ class DrugDictionaryService {
       final code = _read(row, '藥品代號');
       final zh = _read(row, '藥品中文名稱');
       final productEn = _read(row, '藥品英文名稱');
-      final ingredient = _read(row, '英文成分');
-      final strength = _read(row, '劑量');
+      final ingredientText = _firstNonEmpty([
+        _read(row, '英文成分'),
+        _extractIngredientName(_read(row, '成分拆分')),
+        _extractIngredientName(_read(row, '成分')),
+      ]);
+      final strength = _resolveDoseText(row);
       final packageAmount = _read(row, '規格量');
       final packageUnit = _read(row, '規格單位');
       final compoundType = _read(row, '單複方');
@@ -339,13 +370,18 @@ class DrugDictionaryService {
         ),
       );
       builder.addZh(zh);
-      builder.addIngredient(ingredient, strength);
+      builder.addIngredient(ingredientText, strength);
     }
 
     return builders.values.map((builder) => builder.build()).toList();
   }
 
   String _read(Map<String, dynamic> row, String key) {
+    if (row.containsKey(key)) {
+      final direct = row[key];
+      return direct == null ? '' : direct.toString().trim();
+    }
+
     final direct = row[key];
     if (direct != null) return direct.toString().trim();
 
@@ -355,16 +391,76 @@ class DrugDictionaryService {
       '藥品英文名稱': 1,
       '藥品中文名稱': 2,
       '成分': 3,
-      '英文成分': 4,
-      '劑量': 5,
-      '規格量': 6,
-      '規格單位': 7,
-      '單複方': 8,
-      '劑型': 9,
-      'ATC代碼': 10,
+      '規格量': 4,
+      '規格單位': 5,
+      '單複方': 6,
+      '劑型': 7,
+      'ATC代碼': 8,
+      '成分拆分': 10,
+      '英文成分': 11,
+      '劑量': 12,
+      '劑量數值': 13,
+      '劑量單位': 14,
     }[key];
     if (index == null || index >= row.length) return '';
     return row.values.elementAt(index).toString().trim();
+  }
+
+  String _resolveDoseText(Map<String, dynamic> row) {
+    final explicitDose = _read(row, '劑量');
+    if (explicitDose.isNotEmpty) return explicitDose;
+
+    final doseValue = _read(row, '劑量數值');
+    final doseUnit = _read(row, '劑量單位');
+    final doseFromParts = _joinDose(doseValue, doseUnit);
+    if (doseFromParts.isNotEmpty) return doseFromParts;
+
+    final packageDose = _joinDose(_read(row, '規格量'), _read(row, '規格單位'));
+    if (packageDose.isNotEmpty) return packageDose;
+
+    return _firstNonEmpty([
+      _extractDoseText(_read(row, '成分拆分')),
+      _extractDoseText(_read(row, '成分')),
+    ]);
+  }
+
+  String _joinDose(String value, String unit) {
+    final v = value.trim();
+    final u = unit.trim();
+    if (v.isEmpty || u.isEmpty) return '';
+    return '$v $u';
+  }
+
+  String _extractDoseText(String input) {
+    final normalized = _normalizeDoseText(input);
+    final match = RegExp(
+      r'((?:[0-9]+)?\.[0-9]+|[0-9]+)\s*(MCG|MG|GM|G|ML|IU|UNIT|U)\b',
+      caseSensitive: false,
+    ).firstMatch(normalized);
+    if (match == null) return '';
+    final unit = parseDoseUnit(match.group(2) ?? '') ?? match.group(2) ?? '';
+    return '${match.group(1)} $unit'.trim();
+  }
+
+  String _extractIngredientName(String input) {
+    final normalized = _normalizeDoseText(input);
+    return normalized
+        .replaceFirst(
+          RegExp(
+            r'\s*((?:[0-9]+)?\.[0-9]+|[0-9]+)\s*(MCG|MG|GM|G|ML|IU|UNIT|U)\b.*$',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .trim();
+  }
+
+  String _firstNonEmpty(Iterable<String> values) {
+    for (final value in values) {
+      final trimmed = value.trim();
+      if (trimmed.isNotEmpty) return trimmed;
+    }
+    return '';
   }
 
   DrugSuggestion _suggestionFromItem(DrugDictItem item, int score) {

@@ -11,6 +11,7 @@ import '../pages/hub_pages.dart';
 import '../pages/life_overview_page.dart';
 import '../pages/profile_page.dart';
 import '../constants/healing_design_system.dart';
+import '../medication/medication_scan_page.dart';
 
 class MainDrawer extends StatefulWidget {
   const MainDrawer({super.key});
@@ -238,6 +239,20 @@ class _MainDrawerState extends State<MainDrawer> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const LifeOverviewPage()),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.document_scanner_outlined,
+                  color: HealingDesignSystem.primaryBlue),
+              title: Text('藥單掃描測試', style: drawerTitleStyle),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const MedicationScanPage(),
+                  ),
                 );
               },
             ),

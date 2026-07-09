@@ -283,8 +283,9 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
                   ),
               switchTheme: Theme.of(context).switchTheme.copyWith(
                 thumbColor: WidgetStateProperty.resolveWith((states) {
-                  if (states.contains(WidgetState.selected))
+                  if (states.contains(WidgetState.selected)) {
                     return HealingDesignSystem.primaryBlue;
+                  }
                   return Colors.white;
                 }),
                 trackColor: WidgetStateProperty.resolveWith((states) {
@@ -1185,6 +1186,7 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
           await DrugDictionaryService.instance.findDrugInfo(query);
 
       if (!mounted) return;
+      if (_nameCtrl.text.trim() != query) return;
       final list = suggestions
           .map((s) => <String, String>{
                 'zh': s.zh,
@@ -1221,8 +1223,10 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
   void _applyDrugAutoFill(Map<String, String>? info) {
     if (info == null || !mounted) return;
 
+    final zhText = info['zh']?.trim() ?? _nameCtrl.text.trim();
     final exactEn = info['en']?.trim() ?? '';
     final doseText = info['dose']?.trim() ?? '';
+    final doseParseText = doseText.isNotEmpty ? doseText : zhText;
     final formText = info['form']?.trim() ?? '';
     final compoundType = info['compoundType']?.trim() ?? '';
     final concentration = info['concentration']?.trim() ?? '';
@@ -1233,12 +1237,15 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
         .map((line) => line.trim())
         .where((line) => line.isNotEmpty)
         .toList();
-    final hasDose = doseText.isNotEmpty;
+    final hasDose = doseParseText.isNotEmpty;
     final parsedDose = hasDose
-        ? DrugDictionaryService.instance.parseDoseValue(doseText)
+        ? DrugDictionaryService.instance.parseDoseValue(doseParseText)
         : null;
-    final parsedUnit =
-        hasDose ? DrugDictionaryService.instance.parseDoseUnit(doseText) : null;
+    final parsedUnit = hasDose
+        ? DrugDictionaryService.instance.parseDoseUnit(doseParseText)
+        : null;
+    final canApplyParsedDose =
+        parsedDose != null && (doseText.isNotEmpty || parsedUnit != null);
     final medType = MedicationScheduleUtils.resolveMedicationType(
       dosageForm: formText,
       manualMedicationType: _medType,
@@ -1279,13 +1286,15 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
         if (_intakeMl <= 0) _intakeMl = 1.0;
       } else if (hasDose) {
         if (parsedUnit != null) _unit = parsedUnit;
-        if (parsedDose != null)
+        if (canApplyParsedDose) {
           _dose = parsedDose.clamp(0, kMaxDose).toDouble();
+        }
       }
     });
   }
 
   void _applyDrugSuggestion(Map<String, String> s) {
+    _drugDebounce?.cancel();
     final zh = (s['zh'] ?? '').trim();
     final en = (s['en'] ?? '').trim();
     final dose = (s['dose'] ?? '').trim();
@@ -1307,6 +1316,7 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
     }
 
     _applyDrugAutoFill({
+      'zh': zh,
       'en': en,
       'dose': dose,
       'form': form,
@@ -1322,6 +1332,7 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
     FocusScope.of(context).nextFocus(); // 跳到下一個輸入欄
   }
 
+  // ignore: unused_element
   Future<void> _showAddDrugDialog(String input) async {
     final zhCtrl = TextEditingController(text: input);
     final enCtrl = TextEditingController();
@@ -1409,7 +1420,9 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
 
     addKeywordsFrom(zh);
     addKeywordsFrom(en);
-    for (final a in aliases ?? []) addKeywordsFrom(a);
+    for (final a in aliases ?? []) {
+      addKeywordsFrom(a);
+    }
 
     doc['keywords'] = kw.toList();
 

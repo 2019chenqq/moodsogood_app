@@ -13,3 +13,4 @@ android/build/
 key.properties
 **/*.keystore
 **/*.jks
+/app/google-services_bkk.json
