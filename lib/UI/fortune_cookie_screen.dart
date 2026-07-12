@@ -127,14 +127,14 @@ class _FortuneCookieScreenState extends State<FortuneCookieScreen> {
           // ===== 背景（霧面）=====
           Positioned.fill(
             child: Container(
-              color: const Color(0xFFF6E08E), // 幸運餅乾頁主背景色
+              color: const Color(0xFFF6DF8D), // 幸運餅乾頁主背景色
             ),
           ),
           Positioned.fill(
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
               child: Container(
-                color: const Color(0xFFF6E08E).withValues(alpha: 0.25),
+                color: const Color(0xFFF6DF8D).withValues(alpha: 0.25),
               ),
             ),
           ),
