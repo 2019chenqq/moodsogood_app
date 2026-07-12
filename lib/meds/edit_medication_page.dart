@@ -63,6 +63,23 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
       _packageAmount.isNotEmpty ||
       _packageUnit.isNotEmpty ||
       _ingredientLines.isNotEmpty;
+  bool get _shouldShowManualMedicationType => !_hasCleanDrugInfo;
+  bool get _isTabletLikeForm {
+    final form = _drugForm.trim();
+    return form.contains('錠') ||
+        form.contains('膠囊') ||
+        form.contains('丸') ||
+        form.contains('口溶') ||
+        form.contains('口崩') ||
+        form.contains('顆粒');
+  }
+
+  bool get _showCleanDrugConcentration =>
+      _drugConcentration.isNotEmpty && (_isCompoundDrug || !_isTabletLikeForm);
+  bool get _showCleanDrugPackageDose =>
+      _packageAmount.isNotEmpty &&
+      _packageUnit.isNotEmpty &&
+      (_isCompoundDrug || !_isTabletLikeForm);
 
 // 候選結果：[{id, zh, en}]
   List<Map<String, String>> _drugSuggestions = [];
@@ -542,42 +559,44 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
                   ],
                 ),
               ),
-              _SectionCard(
-                title: '藥物形式',
-                icon: Icons.medical_services_outlined,
-                child: Wrap(
-                  alignment: WrapAlignment.spaceBetween,
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    ChoiceChip(
-                      label: const Text('口服藥'),
-                      selected: _medType == 'tablet',
-                      onSelected: (_) => setState(() => _medType = 'tablet'),
-                    ),
-                    ChoiceChip(
-                      label: const Text('長效針'),
-                      selected: _medType == 'injection',
-                      onSelected: (_) => setState(() {
-                        _medType = 'injection';
-                        // 切到長效針時，清掉服用時間，避免混入早/晚分類
-                        for (final k in _timeSlots.keys) {
-                          _timeSlots[k] = false;
-                        }
-                      }),
-                    ),
-                    ChoiceChip(
-                      label: const Text('滴劑'),
-                      selected: _medType == 'drops',
-                      onSelected: (_) => setState(() {
-                        _medType = 'drops';
-                        _unit = 'mg';
-                      }),
-                    ),
-                  ],
+              if (_shouldShowManualMedicationType) ...[
+                _SectionCard(
+                  title: '藥物形式',
+                  icon: Icons.medical_services_outlined,
+                  child: Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('口服藥'),
+                        selected: _medType == 'tablet',
+                        onSelected: (_) => setState(() => _medType = 'tablet'),
+                      ),
+                      ChoiceChip(
+                        label: const Text('長效針'),
+                        selected: _medType == 'injection',
+                        onSelected: (_) => setState(() {
+                          _medType = 'injection';
+                          // 切到長效針時，清掉服用時間，避免混入早/晚分類
+                          for (final k in _timeSlots.keys) {
+                            _timeSlots[k] = false;
+                          }
+                        }),
+                      ),
+                      ChoiceChip(
+                        label: const Text('滴劑'),
+                        selected: _medType == 'drops',
+                        onSelected: (_) => setState(() {
+                          _medType = 'drops';
+                          _unit = 'mg';
+                        }),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
+                const SizedBox(height: 12),
+              ],
 
               if (_medType == 'injection') ...[
                 _SectionCard(
@@ -1171,9 +1190,9 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
     final rows = <Widget>[
       if (_compoundType.isNotEmpty) _buildInfoRow('單複方', _compoundType),
       if (_drugForm.isNotEmpty) _buildInfoRow('藥物形式', _drugForm),
-      if (_drugConcentration.isNotEmpty)
+      if (_showCleanDrugConcentration)
         _buildInfoRow('藥物濃度', _drugConcentration),
-      if (packageDose.isNotEmpty) _buildInfoRow('規格量', packageDose),
+      if (_showCleanDrugPackageDose) _buildInfoRow('規格量', packageDose),
       if (_isCompoundDrug && _ingredientLines.isNotEmpty) ...[
         const SizedBox(height: 8),
         Text('複方成分', style: Theme.of(context).textTheme.labelLarge),
@@ -1227,6 +1246,7 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
           await DrugDictionaryService.instance.findDrugInfo(query);
 
       if (!mounted) return;
+      if (_nameCtrl.text.trim() != query) return;
       final list = suggestions
           .map((s) => <String, String>{
                 'zh': s.zh,
@@ -1262,8 +1282,10 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
   void _applyDrugAutoFill(Map<String, String>? info) {
     if (info == null || !mounted) return;
 
+    final zhText = info['zh']?.trim() ?? _nameCtrl.text.trim();
     final exactEn = info['en']?.trim() ?? '';
     final doseText = info['dose']?.trim() ?? '';
+    final doseParseText = doseText.isNotEmpty ? doseText : zhText;
     final formText = info['form']?.trim() ?? '';
     final compoundType = info['compoundType']?.trim() ?? '';
     final concentration = info['concentration']?.trim() ?? '';
@@ -1274,13 +1296,16 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
         .map((line) => line.trim())
         .where((line) => line.isNotEmpty)
         .toList();
-    final hasDose = doseText.isNotEmpty;
+    final hasDose = doseParseText.isNotEmpty;
     final hasForm = formText.isNotEmpty;
     final parsedDose = hasDose
-        ? DrugDictionaryService.instance.parseDoseValue(doseText)
+        ? DrugDictionaryService.instance.parseDoseValue(doseParseText)
         : null;
-    final parsedUnit =
-        hasDose ? DrugDictionaryService.instance.parseDoseUnit(doseText) : null;
+    final parsedUnit = hasDose
+        ? DrugDictionaryService.instance.parseDoseUnit(doseParseText)
+        : null;
+    final canApplyParsedDose =
+        parsedDose != null && (doseText.isNotEmpty || parsedUnit != null);
     final medType = hasForm
         ? DrugDictionaryService.instance.mapFormToMedType(formText)
         : null;
@@ -1320,13 +1345,15 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
         if (_intakeMl <= 0) _intakeMl = 1.0;
       } else if (hasDose) {
         if (parsedUnit != null) _unit = parsedUnit;
-        if (parsedDose != null)
+        if (canApplyParsedDose) {
           _dose = parsedDose.clamp(0, kMaxDose).toDouble();
+        }
       }
     });
   }
 
   void _applyDrugSuggestion(Map<String, String> s) {
+    _drugDebounce?.cancel();
     final zh = (s['zh'] ?? '').trim();
     final en = (s['en'] ?? '').trim();
     final dose = (s['dose'] ?? '').trim();
@@ -1348,6 +1375,7 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
     }
 
     _applyDrugAutoFill({
+      'zh': zh,
       'en': en,
       'dose': dose,
       'form': form,
