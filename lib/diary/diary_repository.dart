@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../utils/encryption_service.dart';
 import '../utils/secure_storage_service.dart';
+import 'diary_image_encryption_service.dart';
 
 class DiaryEntry {
   final int? id;
@@ -153,7 +154,12 @@ class DiaryRepository {
       'proudOf': encryption.encryptData(entry.proudOf ?? ''),
       'selfCare': encryption.encryptData(entry.selfCare ?? ''),
       'gratitude': encryption.encryptData(entry.gratitude ?? ''),
-      'imageUrls': entry.imageUrls,
+      'imageUrls': DiaryImageEncryptionService.encodeImageSources(
+        entry.imageUrls,
+        encryption,
+      ),
+      'imageRefsEncrypted': true,
+      'imageEncryptionVersion': DiaryImageEncryptionService.migrationVersion,
       'overallMood': entry.moodScore,
       'updatedAt': FieldValue.serverTimestamp(),
       'isEncrypted': true,
@@ -164,7 +170,25 @@ class DiaryRepository {
   Future<int> delete(int id) => deleteByDate(_dateFromInt(id));
 
   Future<int> deleteByDate(DateTime date) async {
-    await _entries.doc(_dateId(date)).delete();
+    final ref = _entries.doc(_dateId(date));
+    final snapshot = await ref.get();
+    var imageSources = const <String>[];
+    final data = snapshot.data();
+    if (data != null) {
+      final key = await SecureStorageService.getOrRecoverKey();
+      if (key != null) {
+        imageSources = DiaryImageEncryptionService.decodeImageSources(
+          data,
+          EncryptionService(key),
+        );
+      }
+    }
+    await ref.delete();
+    for (final source in imageSources) {
+      try {
+        await DiaryImageEncryptionService.deleteSource(source);
+      } catch (_) {}
+    }
     return 1;
   }
 
@@ -195,10 +219,10 @@ class DiaryRepository {
         proudOf: text('proudOf'),
         selfCare: text('selfCare'),
         gratitude: text('gratitude'),
-        imageUrls: (data['imageUrls'] as List<dynamic>?)
-                ?.map((e) => e.toString())
-                .toList() ??
-            [],
+        imageUrls: DiaryImageEncryptionService.decodeImageSources(
+          data,
+          encryption,
+        ),
         moodScore: (data['overallMood'] as num?)?.toDouble(),
         createdAt: _asDate(data['createdAt']),
         updatedAt: _asDate(data['updatedAt']),

@@ -7,6 +7,7 @@ const OpenAI = require("openai");
 admin.initializeApp();
 const db = admin.firestore();
 const openAiApiKey = defineSecret("OPENAI_API_KEY");
+const DEFAULT_AI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 
 const CRISIS_KEYWORDS = [
   "想死",
@@ -117,7 +118,6 @@ function normalizeDiaryFields(rawDiaryFields) {
   // 也帶上三個分數欄位，方便模型補充判讀
   result.overallMood = toNumber(raw.overallMood, null);
   result.overallHealth = toNumber(raw.overallHealth, null);
-  result.overallSleepQuality = toNumber(raw.overallSleepQuality, null);
 
   return result;
 }
@@ -329,7 +329,7 @@ function buildEmotionModel(dailyRecord, diaryFields, diaryText) {
   };
 }
 
-function normalizeReflection(payload, fallbackCrisis) {
+function normalizeReflection(payload, fallbackCrisis, actualModel) {
   const topics = Array.isArray(payload.topics)
     ? payload.topics.map((item) => String(item).trim()).filter(Boolean).slice(0, 5)
     : [];
@@ -349,7 +349,7 @@ function normalizeReflection(payload, fallbackCrisis) {
     tomorrowAction: String(payload.tomorrowAction || "").trim(),
     crisisDetected: Boolean(payload.crisisDetected) || fallbackCrisis,
     isMock: false,
-    model: String(payload.model || "gpt-4.1-mini"),
+    model: actualModel,
     emotionModel:
       payload.emotionModel && typeof payload.emotionModel === "object"
         ? payload.emotionModel
@@ -499,7 +499,7 @@ exports.generateAiJournalReflection = onCall(
       }
       const client = new OpenAI({ apiKey });
       const completion = await client.chat.completions.create({
-        model: "gpt-4.1-mini",
+        model: DEFAULT_AI_MODEL,
         temperature: 0.7,
         response_format: { type: "json_object" },
         messages: [
@@ -542,7 +542,11 @@ exports.generateAiJournalReflection = onCall(
 
       const rawText = completion.choices?.[0]?.message?.content || "";
       const parsed = JSON.parse(stripMarkdownFence(rawText));
-      const normalized = normalizeReflection(parsed, crisisDetected);
+      const normalized = normalizeReflection(
+        parsed,
+        crisisDetected,
+        DEFAULT_AI_MODEL,
+      );
       normalized.emotionModel = emotionModel;
 
       const emotionNames = (emotionModel.emotionEntries || []).map((e) => e.name);
@@ -566,6 +570,267 @@ exports.generateAiJournalReflection = onCall(
     } catch (error) {
       console.error("generateAiJournalReflection failed:", error);
       throw new HttpsError("internal", "AI 生成失敗，請稍後再試");
+    }
+  },
+);
+
+function normalizeInneraRecordDraft(rawDraft, existingDraft) {
+  const raw = rawDraft && typeof rawDraft === "object" ? rawDraft : {};
+  const existing = existingDraft && typeof existingDraft === "object" ? existingDraft : {};
+  const safeText = (value, max = 1200) => String(value || "").trim().slice(0, max);
+  const validTime = (value) => {
+    const text = safeText(value, 5);
+    return /^([01]?\d|2[0-3]):[0-5]\d$/.test(text) ? text.padStart(5, "0") : null;
+  };
+  const validScore = (value) => {
+    const score = Number(value);
+    return Number.isInteger(score) && score >= 1 && score <= 5 ? score : null;
+  };
+  const mergeNames = (first, second, max) =>
+    [...new Set([...(Array.isArray(first) ? first : []), ...(Array.isArray(second) ? second : [])]
+      .map((item) => safeText(item, 100))
+      .filter(Boolean))].slice(0, max);
+  const emotionMap = new Map();
+  for (const item of Array.isArray(existing.emotions) ? existing.emotions : []) {
+    const name = safeText(item && item.name, 60);
+    const score = validScore(item && item.score);
+    if (name && score) emotionMap.set(name, { name, score, source: item.source || "existingRecord" });
+  }
+  for (const item of Array.isArray(raw.emotions) ? raw.emotions : []) {
+    const name = safeText(item && item.name, 60);
+    const score = validScore(item && item.score);
+    const source =
+      item?.source === "defaultPendingConfirmation"
+        ? "defaultPendingConfirmation"
+        : "explicitUserInput";
+    if (name && score) emotionMap.set(name, { name, score, source });
+  }
+  const oldSleep = existing.sleep && typeof existing.sleep === "object" ? existing.sleep : {};
+  const nextSleep = raw.sleep && typeof raw.sleep === "object" ? raw.sleep : {};
+  const sleep = {
+    sleepTime: validTime(nextSleep.sleepTime) || validTime(oldSleep.sleepTime),
+    wakeTime: validTime(nextSleep.wakeTime) || validTime(oldSleep.wakeTime),
+    finalWakeTime: validTime(nextSleep.finalWakeTime) || validTime(oldSleep.finalWakeTime),
+    quality: validScore(nextSleep.quality) || validScore(oldSleep.quality),
+    midWakeList: safeText(nextSleep.midWakeList, 300) || safeText(oldSleep.midWakeList, 300),
+    flags: mergeNames(oldSleep.flags, nextSleep.flags, 12),
+    naps: Array.isArray(nextSleep.naps) ? nextSleep.naps.slice(0, 6) : (Array.isArray(oldSleep.naps) ? oldSleep.naps.slice(0, 6) : []),
+  };
+  const overallMood = validScore(raw.overallMood) || validScore(existing.overallMood);
+  return {
+    date: safeText(raw.date || existing.date, 10),
+    moodScale: 5,
+    overallMood: overallMood,
+    emotions: [...emotionMap.values()].slice(0, 20),
+    symptoms: mergeNames(existing.symptoms, raw.symptoms, 30),
+    sleep,
+    events: mergeNames(existing.events, raw.events, 12),
+    diaryText: safeText(raw.diaryText, 8000) || safeText(existing.diaryText, 8000),
+    missingFields: mergeNames([], raw.missingFields, 8),
+  };
+}
+
+exports.generateInneraAiChat = onCall(
+  { secrets: [openAiApiKey] },
+  async (request) => {
+    console.log("generateInneraAiChat invoked", {
+      mode: request.data?.mode,
+      authenticated: Boolean(request.auth),
+    });
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "請先登入後再使用心域 AI");
+    }
+
+    const data = request.data || {};
+    const mode = String(data.mode || "emotionalSupport").trim();
+    const message = String(data.message || "").trim().slice(0, 2000);
+    const context =
+      data.context && typeof data.context === "object" ? { ...data.context } : {};
+    const history = Array.isArray(data.messages) ? data.messages : [];
+    const existingRecordDraft =
+      data.recordDraft && typeof data.recordDraft === "object" ? data.recordDraft : {};
+    const contextSources = Array.isArray(data.contextSources)
+      ? data.contextSources
+          .map((item) => ({
+            label: String((item && item.label) || "").trim().slice(0, 120),
+            dateRange: String((item && item.dateRange) || "").trim().slice(0, 120),
+            count: Math.max(0, Math.min(1000, Number((item && item.count) || 0) || 0)),
+          }))
+          .filter((item) => item.label)
+      : [];
+    const allowedModes = new Set([
+      "dailyRecord",
+      "emotionalSupport",
+      "physicalHealth",
+      "recentReview",
+    ]);
+
+    if (!allowedModes.has(mode)) {
+      throw new HttpsError("invalid-argument", "Unsupported AI mode");
+    }
+    if (mode === "dailyRecord") {
+      // Older app versions may still send this field. Daily-record AI uses only today.
+      delete context.yesterdaySleep;
+    }
+    if (!message) {
+      throw new HttpsError("invalid-argument", "請輸入想和心域 AI 說的內容");
+    }
+
+    const imminentPhrases = [
+      "割腕",
+      "跳樓",
+      "吞藥",
+      "已經準備好工具",
+      "等一下就要做",
+      "正在傷害自己",
+      "想殺人",
+      "想傷害別人",
+    ];
+    const medicalUrgencyPhrases = [
+      "吐血",
+      "黑便",
+      "呼吸困難",
+      "胸痛",
+      "昏倒",
+      "嚴重過敏",
+      "意識不清",
+      "持續大量出血",
+    ];
+    const hasImminentDanger = imminentPhrases.some((phrase) => message.includes(phrase));
+    const hasMedicalUrgency = medicalUrgencyPhrases.some((phrase) => message.includes(phrase));
+    if (hasImminentDanger || hasMedicalUrgency) {
+      return {
+        reply: "",
+        followUpQuestion: null,
+        sources: [],
+        suggestedActions: [],
+        recordDraft: null,
+        safetyLevel: hasMedicalUrgency ? "medicalUrgency" : "imminentDanger",
+        requiresFixedSafetyUi: true,
+        model: null,
+      };
+    }
+
+    try {
+      const apiKey = openAiApiKey.value();
+      if (!apiKey) {
+        throw new HttpsError("internal", "缺少 OPENAI_API_KEY 設定");
+      }
+
+      const safeHistory = history
+        .map((item) => {
+          const role = item && item.role === "user" ? "user" : "assistant";
+          const content = String((item && item.content) || "").trim().slice(0, 1600);
+          if (!content) return null;
+          return { role, content };
+        })
+        .filter(Boolean)
+        .slice(-12);
+
+      const client = new OpenAI({ apiKey });
+      const completion = await client.chat.completions.create({
+        model: DEFAULT_AI_MODEL,
+        temperature: 0.55,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content: [
+              "You are Innera AI, a mental-health record and reflection assistant.",
+              "Reply in Traditional Chinese with a gentle, respectful, non-judgmental tone.",
+              "You are not a doctor, therapist, or emergency service.",
+              "Do not diagnose, claim causation, recommend medication changes, or invent records.",
+              "Do not minimize self-harm, violence, or medical emergency risk.",
+              "Return only JSON with reply, followUpQuestion, sources, suggestedActions, recordDraft, safetyLevel, requiresFixedSafetyUi.",
+              "sources must only reuse the supplied contextSources without private text.",
+              "requiresFixedSafetyUi must be false unless an urgent risk needs emergency help.",
+              mode === "dailyRecord"
+                ? "You are completing today's structured record. Every response must include recordDraft. All new mood scores use a 1 to 5 scale only: 1 lowest and 5 highest. Never ask for, output, or store a 10-point scale. Extract every emotion the user explicitly names into recordDraft.emotions. When the user names an emotion but gives no strength, include it with score 3 and source defaultPendingConfirmation, add its strength to missingFields, and clearly say it is a temporary 3/5 value the user can adjust before confirming. Extract symptoms, sleep, events, and diary text. Use only sleep values supplied for today's date; if today's sleep is absent, say it has not been recorded. Do not infer or refer to yesterday's sleep. Ask only one or two missing details already absent from recordDraft. If the user gives 8 or another score above 5, ask them to restate it on 1 to 5 and do not store that score."
+                : mode === "physicalHealth"
+                  ? "Separate observations, missing information, what to keep recording, and when to seek care. Do not diagnose."
+                  : mode === "recentReview"
+                    ? "Separate record facts, possible relationships, and directions to notice. Missing data does not mean an event did not occur."
+                    : "Respond to emotions first. Ask at most one open question and encourage real-world support when appropriate.",
+            ].join("\n"),
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              mode,
+              context,
+              contextSources,
+              recordDraft: existingRecordDraft,
+            }),
+          },
+          ...safeHistory,
+          {
+            role: "user",
+            content: message,
+          },
+        ],
+      });
+
+      const rawText = String(completion.choices?.[0]?.message?.content || "").trim();
+      if (!rawText) {
+        throw new Error("Empty OpenAI response");
+      }
+      const parsed = JSON.parse(stripMarkdownFence(rawText));
+      const reply = String(parsed.reply || "").trim().slice(0, 6000);
+      if (!reply) {
+        throw new Error("Missing AI reply");
+      }
+
+      return {
+        reply,
+        followUpQuestion: String(parsed.followUpQuestion || "").trim().slice(0, 600),
+        sources: contextSources,
+        suggestedActions: Array.isArray(parsed.suggestedActions)
+          ? parsed.suggestedActions.map((item) => String(item).trim()).filter(Boolean).slice(0, 4)
+          : [],
+        recordDraft:
+          mode === "dailyRecord"
+            ? normalizeInneraRecordDraft(parsed.recordDraft, existingRecordDraft)
+            : null,
+        safetyLevel: "normal",
+        requiresFixedSafetyUi: false,
+        model: DEFAULT_AI_MODEL,
+      };
+    } catch (error) {
+      console.error("generateInneraAiChat failed", {
+        name: error?.name,
+        message: error?.message,
+        status: error?.status,
+        code: error?.code,
+        type: error?.type,
+        requestId: error?.request_id,
+        model: DEFAULT_AI_MODEL,
+      });
+
+      if (error?.status === 401) {
+        throw new HttpsError(
+          "failed-precondition",
+          "AI 服務驗證失敗，請檢查伺服器設定。",
+        );
+      }
+
+      if (error?.status === 404) {
+        throw new HttpsError(
+          "failed-precondition",
+          `目前設定的 AI 模型無法使用：${DEFAULT_AI_MODEL}`,
+        );
+      }
+
+      if (error?.status === 429) {
+        throw new HttpsError(
+          "resource-exhausted",
+          "AI 服務目前已達使用限制，請稍後再試。",
+        );
+      }
+
+      throw new HttpsError(
+        "internal",
+        "AI 服務暫時無法回覆，請稍後再試。",
+      );
     }
   },
 );

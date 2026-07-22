@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 class EncryptionService {
+  static final Uint8List _binaryMagic =
+      Uint8List.fromList(utf8.encode('INNERAIMG1'));
+  static const int _gcmIvLength = 12;
   // 假設我們已經有一把 32 bytes (256-bit) 的金鑰
   // (這把金鑰稍後會從手機安全儲存空間拿出來)
   final encrypt_lib.Key key;
@@ -14,13 +17,68 @@ class EncryptionService {
   String encryptData(String plainText) {
     // AES-GCM 標準 IV 長度為 12 bytes（96 bits）
     final iv = encrypt_lib.IV.fromSecureRandom(12);
-    final encrypter = encrypt_lib.Encrypter(encrypt_lib.AES(key, mode: encrypt_lib.AESMode.gcm));
+    final encrypter = encrypt_lib.Encrypter(
+        encrypt_lib.AES(key, mode: encrypt_lib.AESMode.gcm));
 
     // 進行加密
     final encrypted = encrypter.encrypt(plainText, iv: iv);
 
     // 將 IV 和密文組合在一起，用冒號分隔，方便存進資料庫
     return '${iv.base64}:${encrypted.base64}';
+  }
+
+  /// Encrypts binary diary content (for example, an image) on the device.
+  /// The returned bytes contain only a small version header, the random IV,
+  /// and AES-GCM authenticated ciphertext. The original bytes never need to
+  /// be sent to Firebase Storage.
+  Uint8List encryptBytes(Uint8List plainBytes) {
+    final iv = encrypt_lib.IV.fromSecureRandom(_gcmIvLength);
+    final encrypter = encrypt_lib.Encrypter(
+      encrypt_lib.AES(key, mode: encrypt_lib.AESMode.gcm),
+    );
+    final encrypted = encrypter.encryptBytes(plainBytes, iv: iv);
+    return Uint8List.fromList([
+      ..._binaryMagic,
+      ...iv.bytes,
+      ...encrypted.bytes,
+    ]);
+  }
+
+  Uint8List decryptBytes(Uint8List encryptedBytes) {
+    final result = tryDecryptBytes(encryptedBytes);
+    if (result == null) {
+      throw const FormatException('Invalid or unreadable encrypted image.');
+    }
+    return result;
+  }
+
+  Uint8List? tryDecryptBytes(Uint8List encryptedBytes) {
+    try {
+      final headerLength = _binaryMagic.length;
+      if (encryptedBytes.length <= headerLength + _gcmIvLength) return null;
+      for (var i = 0; i < headerLength; i++) {
+        if (encryptedBytes[i] != _binaryMagic[i]) return null;
+      }
+      final iv = encrypt_lib.IV(
+        Uint8List.sublistView(
+          encryptedBytes,
+          headerLength,
+          headerLength + _gcmIvLength,
+        ),
+      );
+      final ciphertext = encrypt_lib.Encrypted(
+        Uint8List.sublistView(
+          encryptedBytes,
+          headerLength + _gcmIvLength,
+        ),
+      );
+      final encrypter = encrypt_lib.Encrypter(
+        encrypt_lib.AES(key, mode: encrypt_lib.AESMode.gcm),
+      );
+      return Uint8List.fromList(encrypter.decryptBytes(ciphertext, iv: iv));
+    } catch (_) {
+      return null;
+    }
   }
 
   /// 🔓 將 Firebase 下載的密文還原成明文 (顯示在 App 畫面上)
@@ -41,12 +99,14 @@ class EncryptionService {
 
       final ivBytes = base64Decode(parts[0]);
       final encryptedText = encrypt_lib.Encrypted.fromBase64(parts[1]);
-      final encrypter = encrypt_lib.Encrypter(encrypt_lib.AES(key, mode: encrypt_lib.AESMode.gcm));
+      final encrypter = encrypt_lib.Encrypter(
+          encrypt_lib.AES(key, mode: encrypt_lib.AESMode.gcm));
 
       // 新格式：優先使用 12 bytes IV 解密
       if (ivBytes.length >= 12) {
         try {
-          final iv12 = encrypt_lib.IV(Uint8List.fromList(ivBytes.take(12).toList()));
+          final iv12 =
+              encrypt_lib.IV(Uint8List.fromList(ivBytes.take(12).toList()));
           return encrypter.decrypt(encryptedText, iv: iv12);
         } catch (_) {
           // fallback to legacy 16-byte IV below
@@ -55,7 +115,8 @@ class EncryptionService {
 
       // 舊格式回退：嘗試以 16 bytes IV 解密，確保舊資料仍可讀
       if (ivBytes.length >= 16) {
-        final iv16 = encrypt_lib.IV(Uint8List.fromList(ivBytes.take(16).toList()));
+        final iv16 =
+            encrypt_lib.IV(Uint8List.fromList(ivBytes.take(16).toList()));
         return encrypter.decrypt(encryptedText, iv: iv16);
       }
 

@@ -11,7 +11,6 @@ import 'package:encrypt/encrypt.dart' as encrypt_lib;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 
 import '../utils/date_helper.dart';
 import '../utils/firebase_sync_config.dart';
@@ -23,6 +22,7 @@ import '../utils/encryption_service.dart';
 import '../utils/key_manager.dart';
 import '../test_pages/pro_preview_page.dart';
 import '../analytics_service.dart';
+import 'diary_image_encryption_service.dart';
 
 const int kDiaryMaxImageCount = 10;
 const int kCurrentDiaryMoodScale = 5;
@@ -90,7 +90,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   @override
   void initState() {
     super.initState();
-    _loadDraft(); // 讀入當日已存的內容（如有）
+    _loadDraft().then((_) => _runEncryptionMigration());
     _attachAutoSave(); // 綁定每欄位防彈跳自動儲存
     _loadNeighbors(); // 查上一筆/下一筆
     AnalyticsService.logPage('diary_page');
@@ -109,6 +109,15 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
     _selfCareCtrl.dispose();
     _gratitudeCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _runEncryptionMigration() async {
+    try {
+      await DiaryImageEncryptionService.migrateAllForCurrentUser();
+      if (mounted) await _loadDraft();
+    } catch (error) {
+      m.debugPrint('Diary encryption migration deferred: $error');
+    }
   }
 
   // 從控制器值更新 UI 的輔助函數
@@ -218,8 +227,14 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
                 'proudOf', data['proudOf'], fallbackValues['proudOf'] ?? ''),
             'selfCare': decrypt(
                 'selfCare', data['selfCare'], fallbackValues['selfCare'] ?? ''),
-            'gratitude': decrypt(
-                'gratitude', data['gratitude'], fallbackValues['gratitude'] ?? ''),
+            'gratitude': decrypt('gratitude', data['gratitude'],
+                fallbackValues['gratitude'] ?? ''),
+            'imageUrls': encService == null
+                ? const <String>[]
+                : DiaryImageEncryptionService.decodeImageSources(
+                    data,
+                    encService,
+                  ),
           };
 
           _updateUIFromData(decryptedData);
@@ -501,24 +516,16 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
 
       setState(() => _uploadingImage = true);
 
-      final safeDocId = _docId.replaceAll('/', '-');
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final storagePath = 'users/$uid/diary_images/$safeDocId/$fileName';
-
-      final ref = FirebaseStorage.instance.ref(storagePath);
       final bytes = await picked.readAsBytes();
-
-      await ref.putData(
-        bytes,
-        SettableMetadata(contentType: 'image/jpeg'),
+      final source = await DiaryImageEncryptionService.uploadEncrypted(
+        uid: uid,
+        plainBytes: bytes,
       );
-
-      final url = await ref.getDownloadURL();
 
       if (!mounted) return;
 
       setState(() {
-        _imageUrls.add(url);
+        _imageUrls.add(source);
         _uploadingImage = false;
       });
 
@@ -534,11 +541,32 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
     }
   }
 
-  void _removeImageUrl(String url) {
+  Future<void> _removeImageUrl(String url) async {
     setState(() {
       _imageUrls.remove(url);
     });
-    _saveDraft();
+    await _saveDraft();
+    if (!FirebaseSyncConfig.shouldSync() ||
+        _blockCloudSaveDueToDecryptFailure) {
+      return;
+    }
+    try {
+      final key = await SecureStorageService.getOrRecoverKey();
+      final docRef = _docRef;
+      if (key == null || docRef == null) return;
+      final encryption = EncryptionService(key);
+      await docRef.set({
+        'imageUrls': DiaryImageEncryptionService.encodeImageSources(
+          _imageUrls,
+          encryption,
+        ),
+        'imageRefsEncrypted': true,
+        'imageEncryptionVersion': DiaryImageEncryptionService.migrationVersion,
+      }, SetOptions(merge: true));
+      await DiaryImageEncryptionService.deleteSource(url);
+    } catch (error) {
+      m.debugPrint('Diary image cleanup failed: $error');
+    }
   }
 
   Future<void> _saveDraft() async {
@@ -590,7 +618,13 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
             'proudOf': encService.encryptData(_proudOfCtrl.text.trim()),
             'selfCare': encService.encryptData(_selfCareCtrl.text.trim()),
             'gratitude': encService.encryptData(_gratitudeCtrl.text.trim()),
-            'imageUrls': _imageUrls,
+            'imageUrls': DiaryImageEncryptionService.encodeImageSources(
+              _imageUrls,
+              encService,
+            ),
+            'imageRefsEncrypted': true,
+            'imageEncryptionVersion':
+                DiaryImageEncryptionService.migrationVersion,
             'overallMood': _overallMoodScore,
             'overallHealth': _overallHealthScore,
             'diaryMoodScale': _diaryMoodScale,
@@ -1068,7 +1102,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
               minLines: 3,
               maxLines: 10,
               onAnyChanged: _onAnyFieldChanged,
-              ),
+            ),
           ],
         ),
       ),
@@ -1569,8 +1603,8 @@ class _PhotoPickerCard extends m.StatelessWidget {
                     children: [
                       m.ClipRRect(
                         borderRadius: m.BorderRadius.circular(18),
-                        child: m.Image.network(
-                          url,
+                        child: _DiaryImage(
+                          source: url,
                           width: 96,
                           height: 96,
                           fit: m.BoxFit.cover,
@@ -1616,4 +1650,85 @@ class _PhotoPickerCard extends m.StatelessWidget {
       ),
     );
   }
+}
+
+class _DiaryImage extends m.StatefulWidget {
+  final String source;
+  final double width;
+  final double height;
+  final m.BoxFit fit;
+
+  const _DiaryImage({
+    required this.source,
+    required this.width,
+    required this.height,
+    required this.fit,
+  });
+
+  @override
+  m.State<_DiaryImage> createState() => _DiaryImageState();
+}
+
+class _DiaryImageState extends m.State<_DiaryImage> {
+  Future<Uint8List>? _decryptedBytes;
+
+  @override
+  void initState() {
+    super.initState();
+    _prepareSource();
+  }
+
+  @override
+  void didUpdateWidget(covariant _DiaryImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.source != widget.source) _prepareSource();
+  }
+
+  void _prepareSource() {
+    _decryptedBytes =
+        DiaryImageEncryptionService.isEncryptedStorageSource(widget.source)
+            ? DiaryImageEncryptionService.downloadAndDecrypt(widget.source)
+            : null;
+  }
+
+  @override
+  m.Widget build(m.BuildContext context) {
+    if (_decryptedBytes == null) {
+      return m.Image.network(
+        widget.source,
+        width: widget.width,
+        height: widget.height,
+        fit: widget.fit,
+        errorBuilder: (_, __, ___) => _errorPlaceholder(),
+      );
+    }
+    return m.FutureBuilder<Uint8List>(
+      future: _decryptedBytes,
+      builder: (context, snapshot) {
+        if (snapshot.hasData) {
+          return m.Image.memory(
+            snapshot.data!,
+            width: widget.width,
+            height: widget.height,
+            fit: widget.fit,
+            gaplessPlayback: true,
+          );
+        }
+        if (snapshot.hasError) return _errorPlaceholder();
+        return m.SizedBox(
+          width: widget.width,
+          height: widget.height,
+          child: const m.Center(child: m.CircularProgressIndicator()),
+        );
+      },
+    );
+  }
+
+  m.Widget _errorPlaceholder() => m.Container(
+        width: widget.width,
+        height: widget.height,
+        color: m.Colors.black12,
+        alignment: m.Alignment.center,
+        child: const m.Icon(m.Icons.broken_image_outlined),
+      );
 }

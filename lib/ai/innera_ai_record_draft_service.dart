@@ -1,0 +1,201 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+import '../diary/diary_repository.dart';
+import 'innera_ai_record_draft.dart';
+
+class InneraAiRecordDraftService {
+  InneraAiRecordDraftService({FirebaseFirestore? firestore, FirebaseAuth? auth})
+      : _firestore = firestore ?? FirebaseFirestore.instance,
+        _auth = auth ?? FirebaseAuth.instance;
+
+  final FirebaseFirestore _firestore;
+  final FirebaseAuth _auth;
+
+  DocumentReference<Map<String, dynamic>> _draftRef(
+          String uid, String dateKey) =>
+      _firestore
+          .collection('users')
+          .doc(uid)
+          .collection('aiRecordDrafts')
+          .doc(dateKey);
+  DocumentReference<Map<String, dynamic>> _recordRef(
+          String uid, String dateKey) =>
+      _firestore
+          .collection('users')
+          .doc(uid)
+          .collection('dailyRecords')
+          .doc(dateKey);
+
+  Future<InneraAiRecordDraft?> loadToday() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) throw StateError('A signed-in user is required.');
+    final draft = InneraAiRecordDraft.empty(DateTime.now());
+    final snapshot = await _draftRef(uid, draft.dateKey).get();
+    if (!snapshot.exists || snapshot.data() == null) return null;
+    return InneraAiRecordDraft.fromFirestore(snapshot.data()!);
+  }
+
+  Future<InneraAiRecordDraft> loadOrCreateToday() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) throw StateError('A signed-in user is required.');
+    final existing = await loadToday();
+    if (existing != null) return existing;
+    final draft = InneraAiRecordDraft.empty(DateTime.now());
+    final record = await _recordRef(uid, draft.dateKey).get();
+    final result = record.exists && record.data() != null
+        ? _fromExistingRecord(draft, record.data()!)
+        : draft;
+    await save(result);
+    return result;
+  }
+
+  Future<void> save(InneraAiRecordDraft draft) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) throw StateError('A signed-in user is required.');
+    await _draftRef(uid, draft.dateKey).set(
+      {...draft.toFirestore(), 'updatedAt': FieldValue.serverTimestamp()},
+      SetOptions(merge: true),
+    );
+  }
+
+  Future<void> confirmAndMerge({
+    required InneraAiRecordDraft draft,
+    required String diaryContent,
+    required bool replaceDiary,
+  }) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) throw StateError('A signed-in user is required.');
+    final recordRef = _recordRef(uid, draft.dateKey);
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(recordRef);
+      final current = snapshot.data() ?? <String, dynamic>{};
+      final currentEmotions = _emotionMap(current['emotions']);
+      final hasLegacyTenPointEmotions =
+          (current['moodScale'] as num?)?.toInt() == 10 &&
+              currentEmotions.isNotEmpty;
+      if (!hasLegacyTenPointEmotions) {
+        for (final emotion in draft.emotions) {
+          currentEmotions[emotion.name] = emotion.score;
+        }
+      }
+      final currentSymptoms = _strings(current['symptoms']);
+      final legacySymptoms = _strings(current['bodySymptoms']);
+      final symptoms =
+          {...currentSymptoms, ...legacySymptoms, ...draft.symptoms}.toList();
+      final sleep = Map<String, dynamic>.from(
+        current['sleep'] is Map
+            ? current['sleep'] as Map
+            : const <String, dynamic>{},
+      );
+      final patchSleep = draft.sleep.toMap();
+      patchSleep.forEach((key, value) {
+        final meaningful =
+            value is List ? value.isNotEmpty : value != null && value != '';
+        if (meaningful) sleep[key] = value;
+      });
+      transaction.set(
+          recordRef,
+          {
+            'date': Timestamp.fromDate(DateTime.parse(draft.dateKey)),
+            if (!hasLegacyTenPointEmotions) ...{
+              'moodScale': 5,
+              'emotions': currentEmotions.entries
+                  .map((entry) => {'name': entry.key, 'value': entry.value})
+                  .toList(),
+              'overallMood': draft.overallMood ?? current['overallMood'],
+            },
+            'symptoms': symptoms,
+            'bodySymptoms': symptoms,
+            'sleep': sleep,
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true));
+    });
+
+    if (diaryContent.trim().isNotEmpty) {
+      final date = DateTime.parse(draft.dateKey);
+      final diaryRepository = DiaryRepository();
+      final existingDiary = await diaryRepository.getByDate(date);
+      final content = existingDiary == null || replaceDiary
+          ? diaryContent.trim()
+          : '${existingDiary.content.trim()}\n\n$diaryContent'.trim();
+      await diaryRepository.upsert(DiaryEntry(
+        date: date,
+        title: existingDiary?.title ?? '每日紀錄',
+        content: content,
+        moodScore: draft.overallMood ?? existingDiary?.moodScore,
+        moodKeyword: existingDiary?.moodKeyword,
+      ));
+    }
+    await _draftRef(uid, draft.dateKey).set(
+      {
+        ...draft.copyWith(confirmed: true).toFirestore(),
+        'confirmedAt': FieldValue.serverTimestamp()
+      },
+      SetOptions(merge: true),
+    );
+  }
+
+  InneraAiRecordDraft _fromExistingRecord(
+      InneraAiRecordDraft base, Map<String, dynamic> data) {
+    final isLegacyTenPoint = (data['moodScale'] as num?)?.toInt() == 10;
+    final emotions =
+        (isLegacyTenPoint ? <String, int>{} : _emotionMap(data['emotions']))
+            .entries
+            .map((entry) => AiEmotionDraft(
+                  name: entry.key,
+                  score: entry.value.clamp(1, 5),
+                  source: AiDraftSource.existingRecord,
+                ))
+            .toList();
+    final storedSleep = data['sleep'] is Map
+        ? Map<String, dynamic>.from(data['sleep'] as Map)
+        : <String, dynamic>{};
+    return InneraAiRecordDraft(
+      dateKey: base.dateKey,
+      // Never reinterpret a stored 10-point score as a new 5-point score.
+      overallMood: isLegacyTenPoint ? null : _score(data['overallMood']),
+      emotions: emotions,
+      symptoms: {
+        ..._strings(data['symptoms']),
+        ..._strings(data['bodySymptoms'])
+      }.toList(),
+      sleep: AiSleepDraft.fromMap(storedSleep),
+      updatedAt: DateTime.now(),
+      hasExistingRecord: true,
+    );
+  }
+
+  static Map<String, int> _emotionMap(dynamic value) {
+    final result = <String, int>{};
+    if (value is List) {
+      for (final item in value.whereType<Map>()) {
+        final name = item['name']?.toString().trim() ?? '';
+        final score = (item['value'] as num?)?.toInt();
+        if (name.isNotEmpty && score != null) {
+          result[name] = score;
+        }
+      }
+    } else if (value is Map) {
+      value.forEach((key, item) {
+        final score = (item as num?)?.toInt();
+        if (key.toString().trim().isNotEmpty && score != null) {
+          result[key.toString()] = score;
+        }
+      });
+    }
+    return result;
+  }
+
+  static List<String> _strings(dynamic value) => value is List
+      ? value
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .toList()
+      : const [];
+  static double? _score(dynamic value) {
+    final score = (value as num?)?.toDouble();
+    return score != null && score >= 1 && score <= 5 ? score : null;
+  }
+}

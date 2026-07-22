@@ -279,7 +279,7 @@ final alreadyHasRecovery =
     final snapshot = await diariesRef.get();
     final fieldsToMigrate = [
       'title', 'content', 'themeSong', 'highlight',
-      'metaphor', 'conceited', 'proudOf', 'selfCare'
+      'metaphor', 'conceited', 'proudOf', 'selfCare', 'gratitude'
     ];
 
     final batch = FirebaseFirestore.instance.batch();
@@ -332,7 +332,8 @@ final alreadyHasRecovery =
         'metaphor', 
         'conceited', 
         'proudOf', 
-        'selfCare'
+        'selfCare',
+        'gratitude'
       ];
 
       // 迴圈檢查每一篇舊日記

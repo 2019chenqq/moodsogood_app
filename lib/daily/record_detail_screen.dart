@@ -26,7 +26,6 @@ class RecordDetailScreen extends StatefulWidget {
 }
 
 class _RecordDetailScreenState extends State<RecordDetailScreen> {
-
   @override
   void initState() {
     super.initState();
@@ -44,7 +43,8 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
     // 1. 先嘗試本地
     try {
       final repo = DailyRecordRepository();
-      final localData = await repo.getDailyRecord(userId: widget.uid, date: date);
+      final localData =
+          await repo.getDailyRecord(userId: widget.uid, date: date);
       if (localData != null) {
         debugPrint('✅ Loaded record from local SQLite: ${widget.docId}');
         return _convertLocalToRecord(localData, date);
@@ -56,10 +56,12 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
     // 2. 再嘗試 Firebase
     try {
       final snap = await FirebaseFirestore.instance
-          .collection('users').doc(widget.uid)
-          .collection('dailyRecords').doc(widget.docId)
+          .collection('users')
+          .doc(widget.uid)
+          .collection('dailyRecords')
+          .doc(widget.docId)
           .get();
-      
+
       if (snap.exists && snap.data() != null) {
         debugPrint('✅ Loaded record from Firebase: ${widget.docId}');
         return DailyRecord.fromFirestore(snap);
@@ -76,17 +78,20 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
     List<Emotion> emotions = [];
     if (data['emotions'] != null) {
       try {
-        Map<String, dynamic> emotionMap;
-        if (data['emotions'] is String) {
-          emotionMap = jsonDecode(data['emotions']) as Map<String, dynamic>;
-        } else if (data['emotions'] is Map) {
-          emotionMap = data['emotions'] as Map<String, dynamic>;
+        final rawEmotions = data['emotions'];
+        if (rawEmotions is List) {
+          emotions = rawEmotions
+              .whereType<Map>()
+              .map((item) => Emotion.fromMap(Map<String, dynamic>.from(item)))
+              .toList();
         } else {
-          throw TypeError();
+          final emotionMap = rawEmotions is String
+              ? jsonDecode(rawEmotions) as Map<String, dynamic>
+              : (rawEmotions as Map).cast<String, dynamic>();
+          emotionMap.forEach((name, value) {
+            emotions.add(Emotion(name: name, value: value as int?));
+          });
         }
-        emotionMap.forEach((name, value) {
-          emotions.add(Emotion(name: name, value: value as int?));
-        });
       } catch (e) {
         debugPrint('❌ Failed to parse emotions: $e');
       }
@@ -165,37 +170,46 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
       tookHypnotic: sleepMap['tookHypnotic'] ?? false,
       hypnoticName: sleepMap['hypnoticName'],
       hypnoticDose: sleepMap['hypnoticDose'],
-      sleepTime: sleepMap['sleepTime'] != null ? DateHelper.parseTime(sleepMap['sleepTime']) : null,
-      wakeTime: sleepMap['wakeTime'] != null ? DateHelper.parseTime(sleepMap['wakeTime']) : null,
-      finalWakeTime: sleepMap['finalWakeTime'] != null ? DateHelper.parseTime(sleepMap['finalWakeTime']) : null,
+      sleepTime: sleepMap['sleepTime'] != null
+          ? DateHelper.parseTime(sleepMap['sleepTime'])
+          : null,
+      wakeTime: sleepMap['wakeTime'] != null
+          ? DateHelper.parseTime(sleepMap['wakeTime'])
+          : null,
+      finalWakeTime: sleepMap['finalWakeTime'] != null
+          ? DateHelper.parseTime(sleepMap['finalWakeTime'])
+          : null,
       midWakeList: sleepMap['midWakeList'],
       flags: List<String>.from(sleepMap['flags'] ?? []),
       note: sleepMap['note'],
       quality: sleepMap['quality'],
       naps: (sleepMap['naps'] as List?)
-          ?.map((n) => NapItem(
-            start: DateHelper.parseTime(n['start']) ?? const TimeOfDay(hour: 0, minute: 0),
-            end: DateHelper.parseTime(n['end']) ?? const TimeOfDay(hour: 0, minute: 0),
-          ))
-          .toList() ?? [],
+              ?.map((n) => NapItem(
+                    start: DateHelper.parseTime(n['start']) ??
+                        const TimeOfDay(hour: 0, minute: 0),
+                    end: DateHelper.parseTime(n['end']) ??
+                        const TimeOfDay(hour: 0, minute: 0),
+                  ))
+              .toList() ??
+          [],
     );
   }
-  
+
 // 將 flags（英文字串）轉為中文，並固定顯示順序
   String _prettyFlags(List<String> keys) {
     if (keys.isEmpty) return '-';
 
     // 顯示順序
     const order = <String>[
-      'good',          // 優
-      'ok',            // 良好
-      'earlyWake',     // 早醒
-      'dreams',        // 多夢
-      'lightSleep',         // 淺眠
-      'nocturia',      // 夜尿
-      'fragmented',       // 睡睡醒醒
-      'insufficient',          // 睡眠不足
-      'initInsomnia',  // 入睡困難
+      'good', // 優
+      'ok', // 良好
+      'earlyWake', // 早醒
+      'dreams', // 多夢
+      'lightSleep', // 淺眠
+      'nocturia', // 夜尿
+      'fragmented', // 睡睡醒醒
+      'insufficient', // 睡眠不足
+      'initInsomnia', // 入睡困難
       'interrupted', // 睡眠中斷
     ];
 
@@ -221,74 +235,78 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
     }
     return out.isEmpty ? '-' : out.join('、');
   }
-Future<void> _clearRecord(BuildContext context) async {
-  final uid = widget.uid;
-  final docId = widget.docId;
 
-  final navigator = Navigator.of(context);
-  final messenger = ScaffoldMessenger.of(context);
+  Future<void> _clearRecord(BuildContext context) async {
+    final uid = widget.uid;
+    final docId = widget.docId;
 
-  final confirm = await showDialog<bool>(
-    context: context,
-    builder: (context) {
-      return AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
-        ),
-        title: const Text('清除這一天的紀錄？',
-            style: TextStyle(fontWeight: FontWeight.w600)),
-        content: Text(
-          '所有情緒、症狀、睡眠、生理期資料都會被清除，無法復原。',
-          style: TextStyle(color: HealingDesignSystem.adaptiveSecondaryText(context)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(
-              '取消',
-              style: TextStyle(color: HealingDesignSystem.adaptiveSecondaryText(context)),
-            ),
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: HealingDesignSystem.dangerRed,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+          title: const Text('清除這一天的紀錄？',
+              style: TextStyle(fontWeight: FontWeight.w600)),
+          content: Text(
+            '所有情緒、症狀、睡眠、生理期資料都會被清除，無法復原。',
+            style: TextStyle(
+                color: HealingDesignSystem.adaptiveSecondaryText(context)),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(
+                '取消',
+                style: TextStyle(
+                    color: HealingDesignSystem.adaptiveSecondaryText(context)),
               ),
             ),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('清除'),
-          ),
-        ],
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: HealingDesignSystem.dangerRed,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius:
+                      BorderRadius.circular(HealingDesignSystem.radiusM),
+                ),
+              ),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('清除'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm != true) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('dailyRecords')
+          .doc(docId)
+          .delete();
+
+      if (!mounted) return;
+
+      messenger.showSnackBar(
+        const SnackBar(content: Text('已清除當日紀錄')),
       );
-    },
-  );
 
-  if (confirm != true) return;
-
-  try {
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('dailyRecords')
-        .doc(docId)
-        .delete();
-
-    if (!mounted) return;
-
-    messenger.showSnackBar(
-      const SnackBar(content: Text('已清除當日紀錄')),
-    );
-
-    navigator.pop(); // 返回上一頁（歷程頁）
-  } catch (e) {
-    debugPrint('刪除當日紀錄錯誤: $e');
-    messenger.showSnackBar(
-      SnackBar(content: Text('刪除失敗：$e')),
-    );
+      navigator.pop(); // 返回上一頁（歷程頁）
+    } catch (e) {
+      debugPrint('刪除當日紀錄錯誤: $e');
+      messenger.showSnackBar(
+        SnackBar(content: Text('刪除失敗：$e')),
+      );
+    }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -297,9 +315,10 @@ Future<void> _clearRecord(BuildContext context) async {
       builder: (context, snap) {
         // 1. 處理載入中與錯誤
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(
+              body: Center(child: CircularProgressIndicator()));
         }
-        
+
         final record = snap.data;
         if (record == null) {
           return const Scaffold(body: Center(child: Text('找不到資料')));
@@ -310,8 +329,10 @@ Future<void> _clearRecord(BuildContext context) async {
         return Scaffold(
           backgroundColor: HealingDesignSystem.adaptiveBackground(context),
           appBar: AppBar(
-            backgroundColor: HealingDesignSystem.adaptiveAppBarBackground(context),
-            foregroundColor: HealingDesignSystem.adaptiveAppBarForeground(context),
+            backgroundColor:
+                HealingDesignSystem.adaptiveAppBarBackground(context),
+            foregroundColor:
+                HealingDesignSystem.adaptiveAppBarForeground(context),
             elevation: 0,
             title: Text(
               DateHelper.toDisplay(record.date),
@@ -348,11 +369,11 @@ Future<void> _clearRecord(BuildContext context) async {
                 },
               ),
               IconButton(
-      icon: const Icon(Icons.delete_outline),
-      tooltip: '清除當日資料',
-      onPressed: () => _clearRecord(context),
-    ),
-  ],
+                icon: const Icon(Icons.delete_outline),
+                tooltip: '清除當日資料',
+                onPressed: () => _clearRecord(context),
+              ),
+            ],
           ),
           body: ListView(
             padding: const EdgeInsets.all(16),
@@ -372,18 +393,22 @@ Future<void> _clearRecord(BuildContext context) async {
                         padding: const EdgeInsets.all(16),
                         child: Text('無情緒紀錄',
                             style: HealingDesignSystem.bodySmall.copyWith(
-                                color: HealingDesignSystem.adaptiveSecondaryText(context))),
+                                color:
+                                    HealingDesignSystem.adaptiveSecondaryText(
+                                        context))),
                       ),
                     ...record.emotions.map((e) => ListTile(
                           title: Text(e.name,
                               style: HealingDesignSystem.bodyMedium.copyWith(
-                                  color: HealingDesignSystem.adaptivePrimaryText(context))),
+                                  color:
+                                      HealingDesignSystem.adaptivePrimaryText(
+                                          context))),
                           trailing: Text(
                             e.value == null ? '-' : '${e.value}',
-                            style: HealingDesignSystem.bodyMedium
-                                .copyWith(
-                                    color: HealingDesignSystem.adaptivePrimaryText(context),
-                                    fontWeight: FontWeight.w600),
+                            style: HealingDesignSystem.bodyMedium.copyWith(
+                                color: HealingDesignSystem.adaptivePrimaryText(
+                                    context),
+                                fontWeight: FontWeight.w600),
                           ),
                         )),
                   ],
@@ -406,7 +431,8 @@ Future<void> _clearRecord(BuildContext context) async {
                             '無症狀紀錄',
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              color: HealingDesignSystem.adaptiveSecondaryText(context),
+                              color: HealingDesignSystem.adaptiveSecondaryText(
+                                  context),
                               fontSize: 12,
                               height: 1.4,
                             ),
@@ -421,7 +447,8 @@ Future<void> _clearRecord(BuildContext context) async {
                               .where((s) => s.trim().isNotEmpty)
                               .join('、'),
                           style: HealingDesignSystem.bodyMedium.copyWith(
-                              color: HealingDesignSystem.adaptivePrimaryText(context)),
+                              color: HealingDesignSystem.adaptivePrimaryText(
+                                  context)),
                         ),
                       ),
               ),
@@ -436,26 +463,27 @@ Future<void> _clearRecord(BuildContext context) async {
                 ),
                 child: Column(
                   children: [
-                    _detailTile(context, '前一晚是否服用安眠藥',
-                        sleep.tookHypnotic ? '有' : '無'),
+                    _detailTile(
+                        context, '前一晚是否服用安眠藥', sleep.tookHypnotic ? '有' : '無'),
                     if (sleep.tookHypnotic) ...[
-                      _detailTile(context, '藥物名稱',
+                      _detailTile(
+                          context,
+                          '藥物名稱',
                           (sleep.hypnoticName ?? '').isEmpty
                               ? '-'
                               : sleep.hypnoticName!),
-                      _detailTile(context, '劑量',
+                      _detailTile(
+                          context,
+                          '劑量',
                           (sleep.hypnoticDose ?? '').isEmpty
                               ? '-'
                               : sleep.hypnoticDose!),
                     ],
+                    _detailTile(context, '入睡時間',
+                        DateHelper.formatTime(sleep.sleepTime)),
+                    _detailTile(context, '夜間睡眠狀況', _prettyFlags(sleep.flags)),
                     _detailTile(
-                      context,
-                        '入睡時間', DateHelper.formatTime(sleep.sleepTime)),
-                    _detailTile(
-                      context,
-                        '夜間睡眠狀況', _prettyFlags(sleep.flags)),
-                    _detailTile(
-                      context,
+                        context,
                         '夜間醒來時間',
                         sleep.midWakeList == null ||
                                 sleep.midWakeList!.trim().isEmpty
@@ -466,13 +494,18 @@ Future<void> _clearRecord(BuildContext context) async {
                     if ((sleep.note ?? '').isNotEmpty)
                       ListTile(
                         title: Text('睡眠註記',
-                        style: HealingDesignSystem.bodyMedium.copyWith(
-                          color: HealingDesignSystem.adaptiveSecondaryText(context))),
+                            style: HealingDesignSystem.bodyMedium.copyWith(
+                                color:
+                                    HealingDesignSystem.adaptiveSecondaryText(
+                                        context))),
                         subtitle: Text(sleep.note!,
-                        style: HealingDesignSystem.bodyMedium.copyWith(
-                          color: HealingDesignSystem.adaptivePrimaryText(context))),
+                            style: HealingDesignSystem.bodyMedium.copyWith(
+                                color: HealingDesignSystem.adaptivePrimaryText(
+                                    context))),
                       ),
-                    _detailTile(context, '甦醒時間',
+                    _detailTile(
+                        context,
+                        '甦醒時間',
                         DateHelper.formatTime(
                             sleep.finalWakeTime ?? sleep.wakeTime)),
                     _detailTile(context, '起床開始活動時間',
@@ -481,8 +514,10 @@ Future<void> _clearRecord(BuildContext context) async {
                     if (sleep.naps.isNotEmpty)
                       ListTile(
                         title: Text('小睡',
-                          style: HealingDesignSystem.bodyMedium.copyWith(
-                            color: HealingDesignSystem.adaptiveSecondaryText(context))),
+                            style: HealingDesignSystem.bodyMedium.copyWith(
+                                color:
+                                    HealingDesignSystem.adaptiveSecondaryText(
+                                        context))),
                         subtitle: Text(
                           sleep.naps.map((nap) {
                             final s = DateHelper.formatTime(nap.start);
@@ -492,7 +527,8 @@ Future<void> _clearRecord(BuildContext context) async {
                             return '$s → $e （$dur）';
                           }).join('\n'),
                           style: HealingDesignSystem.bodyMedium.copyWith(
-                              color: HealingDesignSystem.adaptivePrimaryText(context)),
+                              color: HealingDesignSystem.adaptivePrimaryText(
+                                  context)),
                         ),
                       ),
                   ],
@@ -503,7 +539,7 @@ Future<void> _clearRecord(BuildContext context) async {
         );
       },
     );
-    }
+  }
 //     String _buildPeriodText(DailyRecord r) {
 //   if (r.isPeriod == true) {
 //     return '🌸 生理期';
@@ -512,7 +548,8 @@ Future<void> _clearRecord(BuildContext context) async {
 }
 
 /// 區塊標題
-Widget _sectionHeader(BuildContext context, String title, {VoidCallback? onEdit}) {
+Widget _sectionHeader(BuildContext context, String title,
+    {VoidCallback? onEdit}) {
   return Padding(
     padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
     child: Row(
@@ -566,11 +603,11 @@ Widget _detailTile(BuildContext context, String label, String value) {
 }
 
 Future<void> openEmotionEditor(
-    BuildContext context,
-    String uid,
-    String docId,
-    List<Map> emotions,
-    ) async {
+  BuildContext context,
+  String uid,
+  String docId,
+  List<Map> emotions,
+) async {
   await showModalBottomSheet(
     context: context,
     isScrollControlled: true,

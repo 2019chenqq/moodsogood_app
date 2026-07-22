@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:tutorial_coach_mark/tutorial_coach_mark.dart';
 import '../widgets/main_drawer.dart';
+import '../ai/innera_ai_home_page.dart';
 import '../daily/daily_record_screen.dart';
 import '../daily/daily_record_history.dart';
 import '../diary/diary_home_page.dart';
@@ -155,6 +156,15 @@ class _RecordHubPageState extends State<RecordHubPage> {
             ),
             const SizedBox(height: 12),
             _RecordEntryCard(
+              icon: Icons.auto_awesome_rounded,
+              title: '心域 AI',
+              subtitle: '說說現在的狀態，或讓 AI 協助回顧近期紀錄',
+              color: const Color(0xFF7DB7D8),
+              onTap: () => _push(context, const InneraAiHomePage()),
+              actionLabel: '開始對話',
+            ),
+            const SizedBox(height: 12),
+            _RecordEntryCard(
               icon: Icons.history,
               title: '紀錄歷程',
               subtitle: '列表與週報',
@@ -288,6 +298,7 @@ class _RecordEntryCard extends StatefulWidget {
     required this.subtitle,
     required this.color,
     required this.onTap,
+    this.actionLabel,
   });
 
   final IconData icon;
@@ -295,6 +306,7 @@ class _RecordEntryCard extends StatefulWidget {
   final String subtitle;
   final Color color;
   final VoidCallback onTap;
+  final String? actionLabel;
 
   @override
   State<_RecordEntryCard> createState() => _RecordEntryCardState();
@@ -408,14 +420,30 @@ class _RecordEntryCardState extends State<_RecordEntryCard>
               ),
               subtitle: Padding(
                 padding: const EdgeInsets.only(top: 6),
-                child: Text(
-                  widget.subtitle,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withOpacity(0.7),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.subtitle,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withOpacity(0.7),
+                          ),
+                    ),
+                    if (widget.actionLabel != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        widget.actionLabel!,
+                        style:
+                            Theme.of(context).textTheme.labelMedium?.copyWith(
+                                  color: widget.color,
+                                  fontWeight: FontWeight.w800,
+                                ),
                       ),
+                    ],
+                  ],
                 ),
               ),
               trailing: Container(
