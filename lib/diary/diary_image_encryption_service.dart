@@ -27,6 +27,15 @@ class DiaryImageEncryptionService {
     'proudOf',
     'selfCare',
     'gratitude',
+    'themeSongProvider',
+    'themeSongProviderId',
+    'themeSongTitle',
+    'themeSongArtist',
+    'themeSongAlbum',
+    'themeSongArtworkUrl',
+    'themeSongExternalUrl',
+    'themeSongIsrc',
+    'themeSongRecommendationReason',
   };
 
   static bool isEncryptedStorageSource(String source) =>

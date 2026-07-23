@@ -46,6 +46,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   final _proudOfCtrl = m.TextEditingController(); // 我做得不錯的地方
   final _selfCareCtrl = m.TextEditingController(); // 我還能多照顧自己一點
   final _gratitudeCtrl = m.TextEditingController(); // 今日感恩事項
+  String _loadedThemeSong = '';
   List<String> _imageUrls = [];
   bool _uploadingImage = false;
   int _overallMoodScore = 5;
@@ -127,6 +128,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
     _titleCtrl.text = (data['title'] ?? '') as String;
     _contentCtrl.text = (data['content'] ?? '') as String;
     _songCtrl.text = (data['themeSong'] ?? '') as String;
+    _loadedThemeSong = _songCtrl.text.trim();
     _highlightCtrl.text = (data['highlight'] ?? '') as String;
     _metaphorCtrl.text = (data['metaphor'] ?? '') as String;
     _conceitedCtrl.text = (data['conceited'] ?? '') as String;
@@ -618,6 +620,20 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
             'proudOf': encService.encryptData(_proudOfCtrl.text.trim()),
             'selfCare': encService.encryptData(_selfCareCtrl.text.trim()),
             'gratitude': encService.encryptData(_gratitudeCtrl.text.trim()),
+            if (_songCtrl.text.trim() != _loadedThemeSong) ...{
+              // A manual edit is no longer tied to the previously verified
+              // catalog item. Clear stable metadata instead of leaving a
+              // misleading Spotify link attached to different display text.
+              'themeSongProvider': encService.encryptData(''),
+              'themeSongProviderId': encService.encryptData(''),
+              'themeSongTitle': encService.encryptData(''),
+              'themeSongArtist': encService.encryptData(''),
+              'themeSongAlbum': encService.encryptData(''),
+              'themeSongArtworkUrl': encService.encryptData(''),
+              'themeSongExternalUrl': encService.encryptData(''),
+              'themeSongIsrc': encService.encryptData(''),
+              'themeSongRecommendationReason': encService.encryptData(''),
+            },
             'imageUrls': DiaryImageEncryptionService.encodeImageSources(
               _imageUrls,
               encService,
@@ -631,6 +647,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
             'updatedAt': FieldValue.serverTimestamp(),
             'isEncrypted': true,
           }, SetOptions(merge: true));
+          _loadedThemeSong = _songCtrl.text.trim();
 
           m.debugPrint('✅ 雲端加密儲存成功');
         } catch (e) {
@@ -837,6 +854,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
         _titleCtrl.clear();
         _contentCtrl.clear();
         _songCtrl.clear();
+        _loadedThemeSong = '';
         _highlightCtrl.clear();
         _metaphorCtrl.clear();
         _conceitedCtrl.clear();

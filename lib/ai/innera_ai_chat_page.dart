@@ -2,6 +2,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 
 import '../constants/healing_design_system.dart';
+import 'ai_diary_draft_service.dart';
 import 'innera_ai_message.dart';
 import 'innera_ai_mode.dart';
 import 'innera_ai_record_draft.dart';
@@ -11,6 +12,7 @@ import 'innera_ai_service.dart';
 import 'widgets/ai_message_bubble.dart';
 import 'widgets/ai_safety_notice.dart';
 import 'widgets/ai_record_draft_card.dart';
+import 'widgets/ai_diary_draft_sheet.dart';
 
 class InneraAiChatPage extends StatefulWidget {
   const InneraAiChatPage({
@@ -41,6 +43,8 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
   final _draftService = InneraAiRecordDraftService();
   InneraAiRecordDraft? _recordDraft;
   bool _loadingDraft = false;
+  bool _isExtractingDiary = false;
+  final _diaryDraftService = AiDiaryDraftService();
 
   @override
   void initState() {
@@ -335,6 +339,80 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     await _confirmDraft(draft);
   }
 
+  Future<void> _extractDiaryDraft() async {
+    if (_isExtractingDiary || _isSending) return;
+    final hasUserMessage =
+        _messages.any((item) => item.role == InneraAiMessageRole.user);
+    if (!hasUserMessage) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('請先聊聊今天發生的事，再整理成今日紀錄。')),
+      );
+      return;
+    }
+    setState(() => _isExtractingDiary = true);
+    try {
+      var draft = await _diaryDraftService.generate(messages: _messages);
+      DiaryDraftConfirmation? confirmation;
+      while (mounted) {
+        final existing =
+            await _diaryDraftService.existingDiary(draft.recordDate);
+        if (!mounted) return;
+        final result = await showModalBottomSheet<Object>(
+          context: context,
+          useSafeArea: true,
+          isScrollControlled: true,
+          builder: (context) => AiDiaryDraftSheet(
+            draft: draft,
+            existingDiary: existing,
+          ),
+        );
+        if (result is DiaryDraftConfirmation) {
+          confirmation = result;
+          break;
+        }
+        if (result is String && result.startsWith('regenerate:')) {
+          final field = result.substring('regenerate:'.length);
+          draft = await _diaryDraftService.generate(
+            messages: _messages,
+            requestedField: field == 'all' ? null : field,
+            currentDraft: draft,
+          );
+          continue;
+        }
+        return;
+      }
+      if (confirmation == null) return;
+      await _diaryDraftService.confirm(
+        draft: draft,
+        confirmation: confirmation,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已儲存到今天的日記紀錄。')),
+      );
+    } on FirebaseFunctionsException catch (error, stackTrace) {
+      debugPrint(
+        'generateInneraDiaryDraft failed: ${error.code} ${error.message}',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_callableErrorMessage(error))),
+        );
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Diary extraction failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('目前無法整理日記草稿，原對話與既有紀錄都不會被更動。')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExtractingDiary = false);
+    }
+  }
+
   String _sleepPreview(InneraAiRecordDraft draft) {
     final sleep = draft.sleep;
     final details = <String>[];
@@ -525,6 +603,8 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                 AiRecordDraftCard(
                   draft: _recordDraft!,
                   onPreview: _showDraftPreview,
+                  onExtractDiary: _extractDiaryDraft,
+                  isExtractingDiary: _isExtractingDiary,
                 ),
               Expanded(
                 child: ListView.builder(

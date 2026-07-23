@@ -8,10 +8,14 @@ class AiRecordDraftCard extends StatelessWidget {
     super.key,
     required this.draft,
     required this.onPreview,
+    required this.onExtractDiary,
+    this.isExtractingDiary = false,
   });
 
   final InneraAiRecordDraft draft;
   final VoidCallback onPreview;
+  final VoidCallback onExtractDiary;
+  final bool isExtractingDiary;
 
   @override
   Widget build(BuildContext context) {
@@ -70,6 +74,22 @@ class AiRecordDraftCard extends StatelessWidget {
               Text('仍可補充：${draft.missingFields.take(2).join('、')}',
                   style: textTheme.bodySmall),
             ],
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: isExtractingDiary ? null : onExtractDiary,
+                icon: isExtractingDiary
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.auto_awesome_rounded, size: 18),
+                label: Text(
+                  isExtractingDiary ? '正在整理…' : '整理成今日紀錄',
+                ),
+              ),
+            ),
           ],
         ),
       ),
