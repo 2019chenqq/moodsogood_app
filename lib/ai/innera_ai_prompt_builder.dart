@@ -1,3 +1,4 @@
+import '../daily/emotion_dimensions.dart';
 import 'innera_ai_mode.dart';
 
 class InneraAiPromptBuilder {
@@ -8,15 +9,22 @@ class InneraAiPromptBuilder {
   String _modeRules(InneraAiMode mode) {
     switch (mode) {
       case InneraAiMode.dailyRecord:
+        final dimensions = kEmotionDimensions
+            .map((item) => '${item.id}:${item.displayName}')
+            .join('、');
         return '''
 目前模式：幫我記錄今天。
 你正在協助使用者完成今天的結構化狀態紀錄。所有新情緒與程度評分皆使用 1 到 5 分制：1 代表程度最低，5 代表程度最高。不得使用、詢問或輸出 10 分制。
 目標是協助完成紀錄，而不是陪聊無限延伸。每次最多詢問一至兩個最重要的缺漏欄位，並更新 recordDraft。
-優先順序：使用者當下想表達的內容、情緒名稱、情緒強度、症狀、睡眠、重要事件。
-不要重複詢問已存在於 recordDraft 的資料。若只有情緒名稱沒有分數，詢問「如果用 1～5 分表示，今天的焦慮大約是幾分？」。若使用者回答超過 5，請溫和請對方改以 1～5 分表示，不得儲存該分數。
+分類優先順序：睡眠時間、入睡、夜醒、早醒與睡眠品質先放入 sleep；明確情緒詞先作為 emotionMentions；其餘身體不適才放入 symptoms。同一句可以拆到不同欄位，入睡困難不得放進 symptoms。
+每個 emotionMention 必須保留 rawText、normalizedDimensionId、normalizedDimensionName、confidence、needsConfirmation、value、timeContext 與 evidence。情緒沒有分數時 value=null、mentioned=true、needsFollowUp=true、source=explicit；不得自動填 3 分或套用整體情緒分數。早上與下午的不同情緒都要保留。
+新紀錄唯一允許的正式情緒維度為：$dimensions。normalizedDimensionId 與 normalizedDimensionName 必須來自這份清單。無法可靠映射時兩者皆為 null，保留 rawText 並設 needsConfirmation=true，不得自行建立「○○程度」。
+睡不著／難入睡→initInsomnia；半夜反覆醒→interrupted；早醒→earlyWake；淺眠→lightSleep；多夢／惡夢→dreams；睡眠不足→insufficient；睡睡醒醒→fragmented；夜尿→nocturia。
+睡眠時間欄位不得混用：finalWakeTime 是「甦醒時刻」（醒來、醒著、睜眼、清醒），wakeTime 是「離床活動時刻」（起床、離床、下床開始活動）。例如「凌晨4點醒來，5點起床」必須輸出 finalWakeTime=04:00、wakeTime=05:00。若半夜醒來後又睡著，該時間屬於 midWakeList／interrupted，不是 finalWakeTime。
+不要重複詢問已存在於 recordDraft 的資料。若只有情緒名稱沒有分數，可以詢問強度，但不得忽略該情緒。若使用者回答超過 5，請溫和請對方改以 1～5 分表示，不得儲存該分數。
 不得要求每次都填滿所有欄位。
 可以用「我目前整理到」產生待確認摘要。
-TODO: 未來加入「確認並加入每日紀錄」時，必須先取得使用者明確確認，再轉換成既有 DailyRecord model 並合併寫入 users/{uid}/dailyRecords/{yyyy-MM-dd}，不得覆蓋既有紀錄。''';
+只有使用者在預覽中確認正式情緒維度與分數後，App 才會合併寫入 DailyRecord；不得要求或暗示未確認推測已經儲存。''';
       case InneraAiMode.emotionalSupport:
         return '''
 目前模式：我想聊聊。

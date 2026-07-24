@@ -3,6 +3,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../diary/diary_repository.dart';
+import 'ai_callable_diagnostics.dart';
 import 'ai_diary_draft.dart';
 import 'diary_extraction_prompt.dart';
 import 'emotion_metaphor_library.dart';
@@ -32,8 +33,8 @@ class AiDiaryDraftService {
     FirebaseFirestore? firestore,
     FirebaseAuth? auth,
     DiaryRepository? diaryRepository,
-  })  : _functions =
-            functions ?? FirebaseFunctions.instanceFor(region: 'us-central1'),
+  })  : _functions = functions ??
+            FirebaseFunctions.instanceFor(region: AiCallableEndpoints.region),
         _firestore = firestore ?? FirebaseFirestore.instance,
         _auth = auth ?? FirebaseAuth.instance,
         _diaryRepository = diaryRepository ?? DiaryRepository();
@@ -65,7 +66,7 @@ class AiDiaryDraftService {
     }
 
     final result =
-        await _functions.httpsCallable('generateInneraDiaryDraft').call({
+        await _functions.httpsCallable(AiCallableEndpoints.diaryDraft).call({
       'messages': conversation,
       'recordDate': _dateKey(DateTime.now()),
       'promptVersion': DiaryExtractionPrompt.version,
@@ -96,8 +97,9 @@ class AiDiaryDraftService {
       draft = AiDiaryDraft.fromMap(withCurrentSongs);
     } else {
       try {
-        final songResult =
-            await _functions.httpsCallable('recommendInneraSongs').call({
+        final songResult = await _functions
+            .httpsCallable(AiCallableEndpoints.recommendSongs)
+            .call({
           'profile': draft.songRecommendationProfile.toMap(),
           'market': 'TW',
         }).timeout(const Duration(seconds: 45));
@@ -125,7 +127,7 @@ class AiDiaryDraftService {
 
   Future<List<VerifiedSongRecommendation>> searchSongs(String query) async {
     final result = await _functions
-        .httpsCallable('searchInneraSongs')
+        .httpsCallable(AiCallableEndpoints.searchSongs)
         .call({'query': query.trim(), 'market': 'TW'}).timeout(
             const Duration(seconds: 30));
     final data = result.data is Map

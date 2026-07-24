@@ -1,8 +1,14 @@
+import 'dart:async';
+
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import '../constants/healing_design_system.dart';
+import '../daily/emotion_dimensions.dart';
+import 'ai_callable_diagnostics.dart';
 import 'ai_diary_draft_service.dart';
+import 'innera_ai_conversation_service.dart';
 import 'innera_ai_message.dart';
 import 'innera_ai_mode.dart';
 import 'innera_ai_record_draft.dart';
@@ -41,6 +47,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
   String? _lastFailedInput;
   AiSafetyLevel _activeSafetyLevel = AiSafetyLevel.normal;
   final _draftService = InneraAiRecordDraftService();
+  final _conversationService = InneraAiConversationService();
   InneraAiRecordDraft? _recordDraft;
   bool _loadingDraft = false;
   bool _isExtractingDiary = false;
@@ -51,8 +58,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     super.initState();
     _mode = widget.initialMode;
     _service = widget._service ?? InneraAiService();
-    _addWelcomeMessage();
-    if (_mode == InneraAiMode.dailyRecord) _loadTodayDraft();
+    _loadTodaySession();
   }
 
   @override
@@ -63,74 +69,146 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     super.dispose();
   }
 
-  void _addWelcomeMessage() {
-    _messages.add(
-      InneraAiMessage(
+  Future<void> _loadTodaySession() async {
+    setState(() => _loadingDraft = true);
+    try {
+      final draft = await _draftService.loadOrCreateToday();
+      final conversation = await _conversationService.loadToday(mode: _mode);
+      if (!mounted) return;
+      final restoredMessages = <InneraAiMessage>[
+        ...?conversation?.messages,
+      ];
+      var migratedDraftEntries = false;
+      if (_mode == InneraAiMode.dailyRecord &&
+          restoredMessages.isEmpty &&
+          draft.rawUserEntries.isNotEmpty) {
+        migratedDraftEntries = true;
+        final baseTime = DateTime.now().subtract(
+          Duration(seconds: draft.rawUserEntries.length + 1),
+        );
+        for (var index = 0; index < draft.rawUserEntries.length; index++) {
+          restoredMessages.add(
+            InneraAiMessage(
+              id: 'migrated-${draft.dateKey}-$index',
+              role: InneraAiMessageRole.user,
+              text: draft.rawUserEntries[index],
+              createdAt: baseTime.add(Duration(seconds: index)),
+            ),
+          );
+        }
+        restoredMessages.add(
+          InneraAiMessage(
+            id: 'migrated-note-${draft.dateKey}',
+            role: InneraAiMessageRole.assistant,
+            text: '我已把先前保留在草稿中的原始內容恢復到對話，可以直接接著聊，不需要重新輸入。',
+            createdAt: DateTime.now(),
+          ),
+        );
+      }
+      if (restoredMessages.isEmpty) {
+        restoredMessages.add(_welcomeMessage());
+      }
+      setState(() {
+        _recordDraft = draft;
+        _messages
+          ..clear()
+          ..addAll(restoredMessages);
+        _activeSafetyLevel = restoredMessages.last.safetyLevel;
+        _loadingDraft = false;
+      });
+      if (migratedDraftEntries) await _persistConversation();
+      _scrollToBottom();
+    } catch (error, stackTrace) {
+      debugPrint('InneraAiChatPage session load failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        setState(() {
+          if (_messages.isEmpty) _messages.add(_welcomeMessage());
+          _loadingDraft = false;
+        });
+      }
+    }
+  }
+
+  InneraAiMessage _welcomeMessage() => InneraAiMessage(
         id: 'welcome-${DateTime.now().microsecondsSinceEpoch}',
         role: InneraAiMessageRole.assistant,
         text: _mode.welcomeMessage,
         createdAt: DateTime.now(),
-      ),
-    );
-  }
+      );
 
-  Future<void> _loadTodayDraft() async {
-    setState(() => _loadingDraft = true);
+  Future<bool> _persistConversation() async {
     try {
-      final draft = await _draftService.loadOrCreateToday();
-      if (!mounted) return;
-      setState(() {
-        _recordDraft = draft;
-        if (draft.rawUserEntries.isNotEmpty ||
-            draft.emotions.isNotEmpty ||
-            draft.symptoms.isNotEmpty) {
-          _messages.add(InneraAiMessage(
-            id: 'draft-restored-${DateTime.now().microsecondsSinceEpoch}',
-            role: InneraAiMessageRole.assistant,
-            text: draft.hasExistingRecord
-                ? '今天已經有一筆紀錄。這次整理的內容將先作為草稿，確認後再合併。'
-                : '我保留了你剛才整理到的內容，可以繼續補充。',
-            createdAt: DateTime.now(),
-          ));
-        }
-        _loadingDraft = false;
-      });
-      _scrollToBottom();
+      await _conversationService.saveToday(
+        messages: List<InneraAiMessage>.of(_messages),
+        mode: _mode,
+      );
+      return true;
     } catch (error, stackTrace) {
-      debugPrint('InneraAiChatPage draft load failed: $error');
+      debugPrint('InneraAiChatPage conversation save failed: $error');
       debugPrintStack(stackTrace: stackTrace);
-      if (mounted) setState(() => _loadingDraft = false);
+      return false;
     }
   }
 
   Future<bool> _confirmLeave() async {
-    if (_mode == InneraAiMode.dailyRecord && _recordDraft != null) {
+    final saved = await _persistConversation();
+    if (mounted && saved) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('今天的紀錄草稿已保存，你可以稍後回來繼續。')),
+        const SnackBar(content: Text('對話與今天的草稿都已保存，可以稍後繼續。')),
       );
-      return true;
     }
-    final hasConversation =
-        _messages.where((m) => m.role == InneraAiMessageRole.user).isNotEmpty;
-    if (!hasConversation) return true;
-    final result = await showDialog<bool>(
+    return true;
+  }
+
+  Future<void> _resetConversation() async {
+    if (_isSending || _isExtractingDiary) return;
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('離開對話？'),
-        content: const Text('這次對話尚未儲存，離開後將不會保留。確定要離開嗎？'),
+        title: const Text('刪除對話並重新開始？'),
+        content: const Text(
+          '這會刪除今天尚未確認的 AI 對話與整理草稿，但不會刪除已正式儲存的每日紀錄或日記。',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('繼續對話'),
+            child: const Text('取消'),
           ),
-          FilledButton(
+          FilledButton.tonal(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('離開'),
+            child: const Text('刪除並重新開始'),
           ),
         ],
       ),
     );
-    return result == true;
+    if (confirmed != true || !mounted) return;
+    setState(() => _loadingDraft = true);
+    try {
+      await _conversationService.resetToday(mode: _mode);
+      final freshDraft = await _draftService.loadOrCreateToday();
+      if (!mounted) return;
+      setState(() {
+        _messages
+          ..clear()
+          ..add(_welcomeMessage());
+        _recordDraft = freshDraft;
+        _lastFailedInput = null;
+        _activeSafetyLevel = AiSafetyLevel.normal;
+        _controller.clear();
+        _loadingDraft = false;
+      });
+      await _persistConversation();
+      _scrollToBottom();
+    } catch (error, stackTrace) {
+      debugPrint('InneraAiChatPage reset failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      setState(() => _loadingDraft = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('目前無法刪除對話，原對話與草稿仍保留。')),
+      );
+    }
   }
 
   Future<void> _send({String? overrideText}) async {
@@ -160,6 +238,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
       );
     });
     _scrollToBottom();
+    await _persistConversation();
 
     try {
       final response = await _service
@@ -183,7 +262,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
         }
         nextDraft = (_recordDraft ?? InneraAiRecordDraft.empty(DateTime.now()))
             .mergePatch(recordDraftPatch, rawUserEntry: text)
-            .mergeExplicitEmotionScores(text);
+            .mergeExplicitRecordFacts(text);
         await _draftService.save(nextDraft);
       }
       if (!mounted) return;
@@ -205,15 +284,16 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
         if (nextDraft != null) _recordDraft = nextDraft;
         _isSending = false;
       });
+      await _persistConversation();
       _scrollToBottom();
-    } on FirebaseFunctionsException catch (error, stackTrace) {
-      debugPrint(
-        'generateInneraAiChat failed in chat page: '
-        'code=${error.code}, message=${error.message}, '
-        'details=${error.details}',
+    } on FirebaseFunctionsException catch (error) {
+      _showSendError(
+        text,
+        aiCallableErrorMessage(
+          error,
+          functionName: AiCallableEndpoints.chat,
+        ),
       );
-      debugPrintStack(stackTrace: stackTrace);
-      _showSendError(text, _callableErrorMessage(error));
     } catch (error, stackTrace) {
       debugPrint('InneraAiChatPage send failed: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -246,27 +326,9 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     _scrollToBottom();
   }
 
-  String _messageForError(Object error) =>
-      error is InneraAiException ? error.message : 'AI 服務暫時無法回覆，請稍後再試。';
-
-  String _callableErrorMessage(FirebaseFunctionsException error) {
-    switch (error.code) {
-      case 'unauthenticated':
-        return '登入狀態已失效，請重新登入後再試。';
-      case 'not-found':
-        return 'AI 服務尚未部署，請確認 Firebase Functions 設定。';
-      case 'failed-precondition':
-        return error.message?.trim().isNotEmpty == true
-            ? error.message!.trim()
-            : 'AI 服務設定暫時無法使用。';
-      case 'resource-exhausted':
-        return 'AI 使用額度已達限制，請稍後再試。';
-      case 'internal':
-        return 'AI 服務暫時無法回覆，請稍後再試。';
-      default:
-        return 'AI 服務暫時無法回覆，請稍後再試。';
-    }
-  }
+  String _messageForError(Object error) => error is InneraAiException
+      ? error.message
+      : 'AI 服務連線失敗或發生未預期錯誤，請確認網路後再試；目前草稿已保留。';
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -282,64 +344,186 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
   Future<void> _showDraftPreview() async {
     final draft = _recordDraft;
     if (draft == null) return;
-    final action = await showModalBottomSheet<String>(
+    var workingDraft = draft;
+    final confirmedDraft = await showModalBottomSheet<InneraAiRecordDraft>(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
-      builder: (context) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.72,
-        builder: (context, controller) => ListView(
-          controller: controller,
-          padding: const EdgeInsets.all(20),
-          children: [
-            Text('今天的紀錄', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 16),
-            Text('情緒', style: Theme.of(context).textTheme.titleSmall),
-            Text(draft.emotions.isEmpty
-                ? '尚未補充'
-                : [
-                    if (draft.overallMood != null)
-                      '整體情緒：${draft.overallMood} / 5',
-                    ...draft.emotions.map(
-                      (item) => item.source ==
-                              AiDraftSource.defaultPendingConfirmation
-                          ? '${item.name}：暫定 ${item.score} / 5（可調整）'
-                          : '${item.name}：${item.score} / 5',
-                    ),
-                  ].join('\n')),
-            const SizedBox(height: 14),
-            Text('症狀', style: Theme.of(context).textTheme.titleSmall),
-            Text(draft.symptoms.isEmpty ? '尚未補充' : draft.symptoms.join('、')),
-            const SizedBox(height: 14),
-            Text('睡眠', style: Theme.of(context).textTheme.titleSmall),
-            Text(_sleepPreview(draft)),
-            const SizedBox(height: 14),
-            Text('原始內容', style: Theme.of(context).textTheme.titleSmall),
-            Text(draft.rawUserEntries.isEmpty
-                ? '尚未補充'
-                : draft.rawUserEntries.join('\n\n')),
-            const SizedBox(height: 14),
-            Text('AI 整理', style: Theme.of(context).textTheme.titleSmall),
-            Text(draft.diaryText.isEmpty ? '尚未補充' : draft.diaryText),
-            const SizedBox(height: 24),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, 'confirm'),
-              child: const Text('確認加入今日紀錄'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('繼續補充'),
-            ),
-          ],
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.82,
+          builder: (context, controller) => ListView(
+            controller: controller,
+            padding: const EdgeInsets.all(20),
+            children: [
+              Text('今天的紀錄', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 16),
+              Text('情緒', style: Theme.of(context).textTheme.titleSmall),
+              if (workingDraft.overallMood != null)
+                Text('整體情緒：${workingDraft.overallMood} / 5'),
+              if (workingDraft.emotions.isEmpty &&
+                  workingDraft.overallMood == null)
+                const Text('尚未補充'),
+              ...workingDraft.emotions.map(
+                (item) => Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item.timeContext == null
+                                      ? item.rawText
+                                      : '${item.rawText}（${item.timeContext}）',
+                                ),
+                                if (item.normalizedDimensionName != null)
+                                  Text(
+                                    '最接近：${item.normalizedDimensionName}',
+                                    style:
+                                        Theme.of(context).textTheme.bodySmall,
+                                  ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => setSheetState(() {
+                              workingDraft =
+                                  workingDraft.withoutEmotion(item.dedupeKey);
+                            }),
+                            icon: const Icon(Icons.close_rounded),
+                            tooltip: '不寫入此情緒',
+                          ),
+                        ],
+                      ),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          DropdownButton<String>(
+                            value: item.normalizedDimensionId,
+                            hint: const Text('選擇情緒'),
+                            items: kEmotionDimensions
+                                .map(
+                                  (dimension) => DropdownMenuItem(
+                                    value: dimension.id,
+                                    child: Text(dimension.displayName),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (value) {
+                              final dimension = kEmotionDimensionsById[value];
+                              if (dimension == null) return;
+                              final oldKey = item.dedupeKey;
+                              setSheetState(() {
+                                workingDraft =
+                                    workingDraft.withEmotionDimension(
+                                  oldKey,
+                                  dimension,
+                                );
+                              });
+                            },
+                          ),
+                          DropdownButton<int>(
+                            value: item.score,
+                            hint: const Text('待補分數'),
+                            items: List.generate(
+                              5,
+                              (index) => DropdownMenuItem(
+                                value: index + 1,
+                                child: Text('${index + 1} / 5'),
+                              ),
+                            ),
+                            onChanged: (value) {
+                              if (value == null) return;
+                              setSheetState(() {
+                                workingDraft = workingDraft.withEmotionScore(
+                                  item.dedupeKey,
+                                  value,
+                                );
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                      if (item.evidence?.isNotEmpty == true)
+                        Text(
+                          '依據：${item.evidence}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text('症狀', style: Theme.of(context).textTheme.titleSmall),
+              Text(workingDraft.symptoms.isEmpty
+                  ? '尚未補充'
+                  : workingDraft.symptoms.join('、')),
+              const SizedBox(height: 14),
+              Text('睡眠', style: Theme.of(context).textTheme.titleSmall),
+              Text(_sleepPreview(workingDraft)),
+              const SizedBox(height: 14),
+              Text('原始內容', style: Theme.of(context).textTheme.titleSmall),
+              Text(workingDraft.rawUserEntries.isEmpty
+                  ? '尚未補充'
+                  : workingDraft.rawUserEntries.join('\n\n')),
+              const SizedBox(height: 14),
+              Text('AI 整理', style: Theme.of(context).textTheme.titleSmall),
+              Text(workingDraft.diaryText.isEmpty
+                  ? '尚未補充'
+                  : workingDraft.diaryText),
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: workingDraft.emotions.any(
+                  (item) => !item.hasValidDimension || item.score == null,
+                )
+                    ? null
+                    : () => Navigator.pop(context, workingDraft),
+                child: const Text('儲存草稿並整理今日紀錄'),
+              ),
+              if (workingDraft.emotions.any(
+                (item) => !item.hasValidDimension || item.score == null,
+              ))
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Text('請為辨識到的情緒選擇正式維度與 1～5 分，或移除不需寫入的項目。'),
+                ),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('繼續補充'),
+              ),
+            ],
+          ),
         ),
       ),
     );
-    if (action != 'confirm' || !mounted) return;
-    await _confirmDraft(draft);
+    if (confirmedDraft == null || !mounted) return;
+    try {
+      await _draftService.save(confirmedDraft);
+      if (!mounted) return;
+      setState(() => _recordDraft = confirmedDraft);
+      await _extractDiaryDraft(structuredDraft: confirmedDraft);
+    } catch (error, stackTrace) {
+      debugPrint('InneraAiChatPage draft score save failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('目前無法儲存草稿，尚未開始整理今日紀錄。')),
+        );
+      }
+    }
   }
 
-  Future<void> _extractDiaryDraft() async {
+  Future<void> _extractDiaryDraft({
+    InneraAiRecordDraft? structuredDraft,
+  }) async {
     if (_isExtractingDiary || _isSending) return;
     final hasUserMessage =
         _messages.any((item) => item.role == InneraAiMessageRole.user);
@@ -386,18 +570,66 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
         draft: draft,
         confirmation: confirmation,
       );
+      final recordDraft = structuredDraft ?? _recordDraft;
+      if (recordDraft != null) {
+        try {
+          await _draftService.confirmAndMerge(
+            draft: recordDraft,
+            diaryContent: '',
+            replaceDiary: false,
+          );
+        } catch (error, stackTrace) {
+          debugPrint(
+            'Diary saved but structured daily record merge failed: $error',
+          );
+          debugPrintStack(stackTrace: stackTrace);
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('完整日記已儲存，但情緒／症狀／睡眠暫時無法合併；草稿仍保留可再次確認。'),
+            ),
+          );
+          return;
+        }
+      }
       if (!mounted) return;
+      if (recordDraft != null) {
+        setState(
+          () => _recordDraft = recordDraft.copyWith(confirmed: true),
+        );
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已儲存到今天的日記紀錄。')),
+        const SnackBar(content: Text('已儲存完整今日紀錄，並合併情緒、症狀與睡眠。')),
       );
     } on FirebaseFunctionsException catch (error, stackTrace) {
+      logAiCallableFailure(
+        functionName: AiCallableEndpoints.diaryDraft,
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              aiCallableErrorMessage(
+                error,
+                functionName: AiCallableEndpoints.diaryDraft,
+              ),
+            ),
+          ),
+        );
+      }
+    } on TimeoutException catch (error, stackTrace) {
       debugPrint(
-        'generateInneraDiaryDraft failed: ${error.code} ${error.message}',
+        'AI callable timed out: '
+        'projectId=${Firebase.app().options.projectId}, '
+        'function=${AiCallableEndpoints.diaryDraft}, '
+        'region=${AiCallableEndpoints.region}, error=$error',
       );
       debugPrintStack(stackTrace: stackTrace);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_callableErrorMessage(error))),
+          const SnackBar(content: Text('AI 日記整理回應逾時，請稍後再試；原對話與目前草稿均已保留。')),
         );
       }
     } catch (error, stackTrace) {
@@ -417,61 +649,32 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     final sleep = draft.sleep;
     final details = <String>[];
     if (sleep.sleepTime != null) details.add('${sleep.sleepTime} 入睡');
-    if (sleep.wakeTime != null) details.add('${sleep.wakeTime} 起床');
+    if (sleep.finalWakeTime != null) {
+      details.add('${sleep.finalWakeTime} 甦醒');
+    }
+    if (sleep.wakeTime != null) details.add('${sleep.wakeTime} 起床／離床');
     if (sleep.quality != null) details.add('品質 ${sleep.quality} / 5');
     if (sleep.midWakeList != null) details.add('中途醒來：${sleep.midWakeList}');
-    details.addAll(sleep.flags);
+    details.addAll(
+      sleep.flags.map(
+        (flag) => '睡眠狀況：${_sleepFlagLabels[flag] ?? flag}',
+      ),
+    );
     return details.isEmpty ? '尚未補充' : details.join('\n');
   }
 
-  Future<void> _confirmDraft(InneraAiRecordDraft draft) async {
-    final selection = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('選擇日記內容'),
-        content:
-            const Text('原始內容會保留使用者描述；AI 整理版本可作為較易閱讀的日記。若當天已有日記，選擇附加會保留原文。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, 'rawAppend'),
-            child: const Text('使用原始內容並附加'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, 'aiAppend'),
-            child: const Text('使用 AI 整理並附加'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, 'aiReplace'),
-            child: const Text('使用 AI 整理取代'),
-          ),
-        ],
-      ),
-    );
-    if (selection == null || !mounted) return;
-    final content = selection == 'rawAppend'
-        ? draft.rawUserEntries.join('\n\n')
-        : draft.diaryText;
-    try {
-      await _draftService.confirmAndMerge(
-        draft: draft,
-        diaryContent: content,
-        replaceDiary: selection == 'aiReplace',
-      );
-      if (!mounted) return;
-      setState(() => _recordDraft = draft.copyWith(confirmed: true));
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已合併到今天的每日紀錄與日記。')),
-      );
-    } catch (error, stackTrace) {
-      debugPrint('InneraAiChatPage confirm draft failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('目前無法確認儲存，草稿仍會保留。')),
-        );
-      }
-    }
-  }
+  static const _sleepFlagLabels = <String, String>{
+    'good': '優',
+    'ok': '良好',
+    'earlyWake': '早醒',
+    'dreams': '多夢／惡夢',
+    'lightSleep': '淺眠',
+    'fragmented': '睡睡醒醒',
+    'insufficient': '睡眠不足',
+    'initInsomnia': '入睡困難',
+    'interrupted': '睡眠中斷',
+    'nocturia': '夜尿',
+  };
 
   Future<void> _showModeSheet() async {
     final selected = await showModalBottomSheet<InneraAiMode>(
@@ -525,18 +728,35 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
       ),
     );
     if (confirmed != true || !mounted) return;
+    await _persistConversation();
+    if (!mounted) return;
     setState(() {
       _mode = selected;
+      _loadingDraft = true;
       _activeSafetyLevel = AiSafetyLevel.normal;
-      _messages.add(
-        InneraAiMessage(
-          id: 'mode-${DateTime.now().microsecondsSinceEpoch}',
-          role: InneraAiMessageRole.assistant,
-          text: selected.welcomeMessage,
-          createdAt: DateTime.now(),
-        ),
-      );
     });
+    try {
+      final conversation = await _conversationService.loadToday(mode: selected);
+      if (!mounted) return;
+      setState(() {
+        _messages
+          ..clear()
+          ..addAll(conversation?.messages ?? [_welcomeMessage()]);
+        _activeSafetyLevel = _messages.last.safetyLevel;
+        _loadingDraft = false;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('InneraAiChatPage mode conversation load failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      setState(() {
+        _messages
+          ..clear()
+          ..add(_welcomeMessage());
+        _loadingDraft = false;
+      });
+    }
+    await _persistConversation();
     _scrollToBottom();
   }
 
@@ -576,6 +796,15 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
               ),
             ],
           ),
+          actions: [
+            IconButton(
+              onPressed: _isSending || _isExtractingDiary || _loadingDraft
+                  ? null
+                  : _resetConversation,
+              icon: const Icon(Icons.delete_outline_rounded),
+              tooltip: '刪除對話並重新開始',
+            ),
+          ],
         ),
         body: SafeArea(
           child: Column(
@@ -594,6 +823,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                       ),
                     );
                   });
+                  unawaited(_persistConversation());
                   _scrollToBottom();
                 },
               ),

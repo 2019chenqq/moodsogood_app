@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 
+import '../daily/emotion_dimensions.dart';
+import 'ai_callable_diagnostics.dart';
 import 'innera_ai_context_service.dart';
 import 'innera_ai_message.dart';
 import 'innera_ai_mode.dart';
@@ -19,6 +21,9 @@ class InneraAiResponse {
     required this.safetyLevel,
     required this.requiresFixedSafetyUi,
     required this.model,
+    this.promptVersion,
+    this.inputTokens,
+    this.outputTokens,
   });
 
   final String reply;
@@ -29,6 +34,9 @@ class InneraAiResponse {
   final AiSafetyLevel safetyLevel;
   final bool requiresFixedSafetyUi;
   final String? model;
+  final String? promptVersion;
+  final int? inputTokens;
+  final int? outputTokens;
 
   String get displayText {
     if (followUpQuestion == null || followUpQuestion!.isEmpty) return reply;
@@ -43,8 +51,8 @@ class InneraAiService {
     FirebaseFunctions? functions,
   })  : _contextService = contextService ?? InneraAiContextService(),
         _safetyService = safetyService ?? InneraAiSafetyService(),
-        _functions =
-            functions ?? FirebaseFunctions.instanceFor(region: 'us-central1');
+        _functions = functions ??
+            FirebaseFunctions.instanceFor(region: AiCallableEndpoints.region);
 
   final InneraAiContextService _contextService;
   final InneraAiSafetyService _safetyService;
@@ -76,23 +84,59 @@ class InneraAiService {
       );
     }
 
+    return sendMessageWithContext(
+      mode: mode,
+      history: history,
+      userMessage: userMessage,
+      context: contextBundle.data,
+      contextSources: contextBundle.sources,
+      recordDraft: recordDraft,
+    );
+  }
+
+  /// Uses the same production callable with an explicitly supplied context.
+  ///
+  /// This is intended for isolated developer tooling, where reading the
+  /// signed-in user's Firestore context would contaminate synthetic tests.
+  Future<InneraAiResponse> sendMessageWithContext({
+    required InneraAiMode mode,
+    required List<InneraAiMessage> history,
+    required String userMessage,
+    required Map<String, dynamic> context,
+    required List<AiContextSource> contextSources,
+    InneraAiRecordDraft? recordDraft,
+  }) async {
+    final localSafety = _safetyService.assess(userMessage);
+    if (_requiresFixedSafetyUi(localSafety.level)) {
+      return _fixedSafetyResponse(localSafety.level);
+    }
+
     final messages = _historyPayload(history, userMessage);
     final payload = <String, dynamic>{
       'mode': mode.systemPromptKey,
       'message': userMessage,
       'messages': messages,
-      'context': contextBundle.data,
-      'contextSources': contextBundle.sources.map(_sourcePayload).toList(),
+      'context': context,
+      'contextSources': contextSources.map(_sourcePayload).toList(),
+      'emotionDimensions': kEmotionDimensions
+          .map(
+            (dimension) => <String, dynamic>{
+              'id': dimension.id,
+              'displayName': dimension.displayName,
+              'aliases': dimension.aliases,
+            },
+          )
+          .toList(),
       if (recordDraft != null) 'recordDraft': recordDraft.toCallablePayload(),
     };
 
     try {
       final result = await _functions
-          .httpsCallable('generateInneraAiChat')
+          .httpsCallable(AiCallableEndpoints.chat)
           .call(payload)
           .timeout(const Duration(seconds: 60));
       final data = _asMap(result.data);
-      final response = _parseResponse(data, contextBundle.sources);
+      final response = _parseResponse(data, contextSources);
       if (response.requiresFixedSafetyUi) return response;
 
       final responseSafety = _safetyService.assess(response.reply);
@@ -101,15 +145,14 @@ class InneraAiService {
       }
       return response;
     } on FirebaseFunctionsException catch (error, stackTrace) {
-      debugPrint(
-        'generateInneraAiChat failed: '
-        'code=${error.code}, message=${error.message}, '
-        'details=${error.details}',
+      logAiCallableFailure(
+        functionName: AiCallableEndpoints.chat,
+        error: error,
+        stackTrace: stackTrace,
       );
-      debugPrintStack(stackTrace: stackTrace);
       rethrow;
     } on TimeoutException {
-      throw const InneraAiException('目前暫時無法取得 AI 回覆，請稍後再試。');
+      throw const InneraAiException('AI 回應逾時，請稍後再試；目前草稿已保留。');
     } catch (error, stackTrace) {
       debugPrint('InneraAiService generate failed: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -130,8 +173,18 @@ class InneraAiService {
         messages.last.text.trim() == userMessage.trim()) {
       messages.removeLast();
     }
-    return messages
-        .skip(messages.length > 12 ? messages.length - 12 : 0)
+    const maxMessages = 60;
+    const maxCharacters = 48000;
+    final selected = <InneraAiMessage>[];
+    var characters = 0;
+    for (final message in messages.reversed) {
+      if (selected.length >= maxMessages) break;
+      final nextCharacters = characters + message.text.length;
+      if (selected.isNotEmpty && nextCharacters > maxCharacters) break;
+      selected.add(message);
+      characters = nextCharacters;
+    }
+    return selected.reversed
         .map(
           (message) => <String, String>{
             'role':
@@ -167,6 +220,9 @@ class InneraAiService {
       safetyLevel: _parseSafetyLevel(data['safetyLevel']),
       requiresFixedSafetyUi: requiresFixedSafetyUi,
       model: _optionalText(data['model']),
+      promptVersion: _optionalText(data['promptVersion']),
+      inputTokens: (data['inputTokens'] as num?)?.toInt(),
+      outputTokens: (data['outputTokens'] as num?)?.toInt(),
     );
   }
 
@@ -183,6 +239,9 @@ class InneraAiService {
       safetyLevel: level,
       requiresFixedSafetyUi: true,
       model: null,
+      promptVersion: null,
+      inputTokens: null,
+      outputTokens: null,
     );
   }
 

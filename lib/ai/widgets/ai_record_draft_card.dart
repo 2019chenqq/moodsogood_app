@@ -23,13 +23,18 @@ class AiRecordDraftCard extends StatelessWidget {
     final summary = <String>[];
     if (draft.emotions.isNotEmpty) {
       summary.add(
-        draft.emotions
-            .map(
-              (item) => item.source == AiDraftSource.defaultPendingConfirmation
-                  ? '${item.name} 暫定 ${item.score} / 5'
-                  : '${item.name} ${item.score} / 5',
-            )
-            .join('、'),
+        draft.emotions.map(
+          (item) {
+            final label = item.normalizedDimensionName == null
+                ? '${item.rawText}：待選情緒'
+                : item.rawText == item.normalizedDimensionName
+                    ? item.normalizedDimensionName!
+                    : '${item.rawText} → ${item.normalizedDimensionName}';
+            return item.score == null
+                ? '$label：待補分數'
+                : '$label ${item.score} / 5';
+          },
+        ).join('、'),
       );
     }
     if (draft.symptoms.isNotEmpty) {

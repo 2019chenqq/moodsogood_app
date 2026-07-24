@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../daily/emotion_dimensions.dart';
 import '../diary/diary_repository.dart';
 import 'innera_ai_record_draft.dart';
 
@@ -76,7 +77,14 @@ class InneraAiRecordDraftService {
               currentEmotions.isNotEmpty;
       if (!hasLegacyTenPointEmotions) {
         for (final emotion in draft.emotions) {
-          currentEmotions[emotion.name] = emotion.score;
+          final score = emotion.score;
+          final dimension =
+              kEmotionDimensionsById[emotion.normalizedDimensionId];
+          if (score != null &&
+              dimension != null &&
+              dimension.displayName == emotion.normalizedDimensionName) {
+            currentEmotions[dimension.displayName] = score;
+          }
         }
       }
       final currentSymptoms = _strings(current['symptoms']);
@@ -143,12 +151,18 @@ class InneraAiRecordDraftService {
     final emotions =
         (isLegacyTenPoint ? <String, int>{} : _emotionMap(data['emotions']))
             .entries
-            .map((entry) => AiEmotionDraft(
-                  name: entry.key,
-                  score: entry.value.clamp(1, 5),
-                  source: AiDraftSource.existingRecord,
-                ))
-            .toList();
+            .map((entry) {
+      final dimension = resolveEmotionDimension(entry.key);
+      return AiEmotionDraft(
+        rawText: entry.key,
+        normalizedDimensionId: dimension?.id,
+        normalizedDimensionName: dimension?.displayName,
+        score: entry.value.clamp(1, 5),
+        source: AiDraftSource.existingRecord,
+        confidence: dimension == null ? 0 : 1,
+        needsConfirmation: dimension == null,
+      );
+    }).toList();
     final storedSleep = data['sleep'] is Map
         ? Map<String, dynamic>.from(data['sleep'] as Map)
         : <String, dynamic>{};

@@ -12,7 +12,7 @@ const lastFmApiKey = defineSecret("LASTFM_API_KEY");
 const spotifyClientId = defineSecret("SPOTIFY_CLIENT_ID");
 const spotifyClientSecret = defineSecret("SPOTIFY_CLIENT_SECRET");
 const DEFAULT_AI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
-const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v1";
+const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v3-sleep-semantics";
 const DIARY_EXTRACTION_PROMPT_VERSION = "diary_extraction_v1";
 
 const diarySuggestionSchema = {
@@ -196,6 +196,249 @@ const diaryExtractionSchema = {
     },
   },
 };
+
+const nullableStringSchema = {
+  anyOf: [{ type: "string" }, { type: "null" }],
+};
+const nullableScoreSchema = {
+  anyOf: [
+    { type: "integer", minimum: 1, maximum: 5 },
+    { type: "null" },
+  ],
+};
+const inneraChatSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "reply",
+    "followUpQuestion",
+    "sources",
+    "suggestedActions",
+    "recordDraft",
+    "safetyLevel",
+    "requiresFixedSafetyUi",
+  ],
+  properties: {
+    reply: { type: "string" },
+    followUpQuestion: nullableStringSchema,
+    sources: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["label", "dateRange", "count"],
+        properties: {
+          label: { type: "string" },
+          dateRange: { type: "string" },
+          count: { type: "integer" },
+        },
+      },
+    },
+    suggestedActions: {
+      type: "array",
+      maxItems: 4,
+      items: { type: "string" },
+    },
+    recordDraft: {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "date",
+        "moodScale",
+        "overallMood",
+        "emotionMentions",
+        "symptoms",
+        "sleep",
+        "events",
+        "diaryText",
+        "missingFields",
+      ],
+      properties: {
+        date: { type: "string" },
+        moodScale: { type: "integer", enum: [5] },
+        overallMood: nullableScoreSchema,
+        emotionMentions: {
+          type: "array",
+          maxItems: 20,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: [
+              "rawText",
+              "normalizedDimensionId",
+              "normalizedDimensionName",
+              "value",
+              "mentioned",
+              "source",
+              "needsFollowUp",
+              "needsConfirmation",
+              "confidence",
+              "timeContext",
+              "evidence",
+            ],
+            properties: {
+              rawText: { type: "string" },
+              normalizedDimensionId: nullableStringSchema,
+              normalizedDimensionName: nullableStringSchema,
+              value: nullableScoreSchema,
+              mentioned: { type: "boolean" },
+              source: {
+                type: "string",
+                enum: ["explicit", "summarized", "inferred"],
+              },
+              needsFollowUp: { type: "boolean" },
+              needsConfirmation: { type: "boolean" },
+              confidence: { type: "number", minimum: 0, maximum: 1 },
+              timeContext: nullableStringSchema,
+              evidence: { type: "string" },
+            },
+          },
+        },
+        symptoms: {
+          type: "array",
+          maxItems: 30,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["name", "source"],
+            properties: {
+              name: { type: "string" },
+              source: {
+                type: "string",
+                enum: ["explicit", "summarized", "inferred"],
+              },
+            },
+          },
+        },
+        sleep: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "sleepTime",
+            "wakeTime",
+            "finalWakeTime",
+            "quality",
+            "midWakeList",
+            "flags",
+            "naps",
+          ],
+          properties: {
+            sleepTime: nullableStringSchema,
+            wakeTime: {
+              ...nullableStringSchema,
+              description: "離床活動時刻：起床、離床、下床開始活動。不是睜眼甦醒時刻。",
+            },
+            finalWakeTime: {
+              ...nullableStringSchema,
+              description: "甦醒時刻：醒來、醒著、睜眼、清醒。不是起床離床時刻。",
+            },
+            quality: nullableScoreSchema,
+            midWakeList: nullableStringSchema,
+            flags: {
+              type: "array",
+              items: {
+                type: "string",
+                enum: [
+                  "good",
+                  "ok",
+                  "earlyWake",
+                  "dreams",
+                  "lightSleep",
+                  "fragmented",
+                  "insufficient",
+                  "initInsomnia",
+                  "interrupted",
+                  "nocturia",
+                ],
+              },
+            },
+            naps: {
+              type: "array",
+              maxItems: 6,
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["startTime", "endTime", "durationMinutes"],
+                properties: {
+                  startTime: nullableStringSchema,
+                  endTime: nullableStringSchema,
+                  durationMinutes: {
+                    anyOf: [{ type: "integer" }, { type: "null" }],
+                  },
+                },
+              },
+            },
+          },
+        },
+        events: {
+          type: "array",
+          maxItems: 12,
+          items: { type: "string" },
+        },
+        diaryText: { type: "string" },
+        missingFields: {
+          type: "array",
+          maxItems: 20,
+          items: { type: "string" },
+        },
+      },
+    },
+    safetyLevel: {
+      type: "string",
+      enum: [
+        "normal",
+        "possibleSelfHarm",
+        "imminentDanger",
+        "medicalUrgency",
+      ],
+    },
+    requiresFixedSafetyUi: { type: "boolean" },
+  },
+};
+
+const DAILY_RECORD_CLASSIFICATION_PROMPT = `
+你正在協助使用者完成今天的結構化紀錄。你必須把對話分別分類到 emotionMentions、symptoms、sleep，不得只產生文字摘要。
+
+分類優先順序：
+1. 睡眠時間、入睡、夜醒、早醒、睡眠品質優先放入 sleep。
+2. 明確情緒詞先保留為 emotionMentions.rawText，再嘗試映射到系統提供的正式情緒維度。
+3. 身體不適或不屬於睡眠欄位的狀況才放入 symptoms。
+4. 同一句可以拆到多個欄位。
+5. 情緒沒有明確 1～5 分時仍必須保留，value=null、mentioned=true、needsFollowUp=true。
+6. 使用者明確說出的情緒 source=explicit。每筆保留 rawText、confidence、needsConfirmation、timeContext 和 evidence。
+7. 不得把早上興奮、下午無聊簡化成只有 overallMood。
+8. 不得把入睡困難放入 symptoms。
+9. normalizedDimensionId 與 normalizedDimensionName 只能使用請求中 emotionDimensions 的成對值。
+10. 無法可靠映射時兩者都輸出 null、needsConfirmation=true；不得建立新維度，也不得使用「無聊程度、空虛程度、興奮程度、焦慮程度」等舊名稱。
+
+睡眠 flags：入睡困難=initInsomnia；半夜反覆醒／維持睡眠困難=interrupted；
+太早醒=earlyWake；淺眠=lightSleep；多夢／惡夢=dreams；睡眠不足=insufficient；
+睡眠斷續=fragmented；夜尿=nocturia。
+
+睡眠時間欄位不得混用：
+- finalWakeTime 是甦醒時刻，對應「醒來、醒著、睜眼、清醒」。
+- wakeTime 是離床活動時刻，對應「起床、離床、下床開始活動」。
+- 「凌晨4點醒來，5點起床」必須是 finalWakeTime="04:00"、wakeTime="05:00"。
+- 若半夜醒來後又睡著，該時間放入 midWakeList／interrupted，不是 finalWakeTime。
+
+範例一：
+輸入：我今天很疲倦，晚上躺很久都睡不著。
+正確：symptoms=[{"name":"疲倦","source":"explicit"}]；
+sleep.flags=["initInsomnia"]。不得把入睡困難放進 symptoms。
+
+範例二：
+輸入：我下午很無聊，也覺得很空虛，但早上看到比賽消息時很興奮。整體心情大概3分。
+正確：overallMood=3；emotionMentions 保留 rawText=無聊、空虛、興奮，
+依 emotionDimensions 映射成正式新維度；value=null，並保留下午／早上的 timeContext。
+
+範例三：
+輸入：我焦慮大概4分，昨天半夜醒了三次。
+正確：rawText=焦慮、value=4、source=explicit，映射到正式維度「焦慮」；
+但昨天的睡眠不得寫入今天的 sleep。
+
+每次最多補問一至兩個最重要的缺漏。已辨識但無分數的情緒可以詢問強度，
+但不得忽略、不得填暫定 3 分，也不得自動套用 overallMood。
+`;
 
 const ALLOWED_MUSIC_TAGS = new Set([
   "calm",
@@ -823,7 +1066,14 @@ exports.generateAiJournalReflection = onCall(
       const completion = await client.chat.completions.create({
         model: DEFAULT_AI_MODEL,
         temperature: 0.7,
-        response_format: { type: "json_object" },
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "innera_ai_chat_response",
+            strict: true,
+            schema: inneraChatSchema,
+          },
+        },
         messages: [
           {
             role: "system",
@@ -896,7 +1146,39 @@ exports.generateAiJournalReflection = onCall(
   },
 );
 
-function normalizeInneraRecordDraft(rawDraft, existingDraft) {
+function extractExplicitSleepTimes(rawText) {
+  const result = { wakeTime: null, finalWakeTime: null };
+  const clauses = String(rawText || "").split(/[，。！？\n]+/).filter(Boolean);
+  const clockBeforeAction = (clause, actionPattern) => {
+    const match = clause.match(new RegExp(
+      "(凌晨|清晨|早上|上午|下午|晚上)?\\s*" +
+      "(\\d{1,2})(?:[:：]([0-5]\\d)|點(?:(半)|([0-5]?\\d)\\s*分?)?)" +
+      "\\s*(?:多|左右)?" +
+      `[^0-9０-９，。！？\\n]{0,12}(?:${actionPattern})`,
+    ));
+    if (!match) return null;
+    let hour = Number(match[2]);
+    if (!Number.isInteger(hour) || hour > 23) return null;
+    if ((match[1] === "下午" || match[1] === "晚上") && hour < 12) hour += 12;
+    if (match[1] === "凌晨" && hour === 12) hour = 0;
+    const minute = match[4] ? 30 : Number(match[3] || match[5] || 0);
+    return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  };
+  for (const clause of clauses) {
+    if (/昨天|前天|昨晚/.test(clause)) continue;
+    result.wakeTime ||= clockBeforeAction(clause, "起床|離床|下床|開始活動");
+    const awakening = clockBeforeAction(
+      clause,
+      "醒來|醒了|醒著|清醒|睜眼|睜開眼",
+    );
+    const returnedToSleep =
+      /(?:醒來|醒了|醒著|清醒|睜眼|睜開眼)[^，。！？\n]{0,16}(?:又睡|再睡|睡回去|繼續睡)/.test(clause);
+    if (!returnedToSleep) result.finalWakeTime ||= awakening;
+  }
+  return result;
+}
+
+function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, latestMessage) {
   const raw = rawDraft && typeof rawDraft === "object" ? rawDraft : {};
   const existing = existingDraft && typeof existingDraft === "object" ? existingDraft : {};
   const safeText = (value, max = 1200) => String(value || "").trim().slice(0, max);
@@ -905,50 +1187,154 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft) {
     return /^([01]?\d|2[0-3]):[0-5]\d$/.test(text) ? text.padStart(5, "0") : null;
   };
   const validScore = (value) => {
+    if (value == null || value === "") return null;
     const score = Number(value);
     return Number.isInteger(score) && score >= 1 && score <= 5 ? score : null;
   };
+  const itemName = (item) =>
+    safeText(item && typeof item === "object" ? item.name : item, 100);
+  const dimensions = Array.isArray(emotionDimensions) ? emotionDimensions : [];
+  const dimensionById = new Map(dimensions.map((item) => [item.id, item]));
+  const dimensionByTerm = new Map();
+  for (const dimension of dimensions) {
+    dimensionByTerm.set(dimension.displayName, dimension);
+    for (const alias of dimension.aliases) dimensionByTerm.set(alias, dimension);
+  }
+  const resolveDimension = (item, rawText) => {
+    const requestedId = safeText(item?.normalizedDimensionId, 80);
+    const requestedName = safeText(item?.normalizedDimensionName, 80);
+    const byId = dimensionById.get(requestedId);
+    if (byId && (!requestedName || requestedName === byId.displayName)) return byId;
+    return dimensionByTerm.get(requestedName) || dimensionByTerm.get(rawText) || null;
+  };
+  const sleepFlagAliases = new Map([
+    ["maintInsomnia", "interrupted"],
+    ["earlyWake", "earlyWake"],
+    ["light", "lightSleep"],
+    ["lightSleep", "lightSleep"],
+    ["dreams", "dreams"],
+    ["lack", "insufficient"],
+    ["insufficient", "insufficient"],
+    ["fragile", "fragmented"],
+    ["fragmented", "fragmented"],
+    ["initInsomnia", "initInsomnia"],
+    ["interrupted", "interrupted"],
+    ["nocturia", "nocturia"],
+    ["good", "good"],
+    ["ok", "ok"],
+  ]);
+  const sleepFlagFromText = (value) => {
+    const text = safeText(value, 120);
+    if (/睡不著|難入睡|入睡困難|躺很久|翻來覆去|無法進入睡眠|闔眼.*張開/.test(text)) {
+      return "initInsomnia";
+    }
+    if (/半夜.*醒|夜裡.*醒|反覆醒|睡眠中斷|維持睡眠/.test(text)) return "interrupted";
+    if (/太早醒|提早醒|早醒/.test(text)) return "earlyWake";
+    if (/淺眠|睡很淺/.test(text)) return "lightSleep";
+    if (/多夢|惡夢|噩夢/.test(text)) return "dreams";
+    if (/睡眠不足|沒睡飽|睡不夠/.test(text)) return "insufficient";
+    if (/斷斷續續|睡睡醒醒/.test(text)) return "fragmented";
+    if (/夜尿|半夜.*上廁所/.test(text)) return "nocturia";
+    return null;
+  };
   const mergeNames = (first, second, max) =>
     [...new Set([...(Array.isArray(first) ? first : []), ...(Array.isArray(second) ? second : [])]
-      .map((item) => safeText(item, 100))
+      .map(itemName)
       .filter(Boolean))].slice(0, max);
   const emotionMap = new Map();
-  for (const item of Array.isArray(existing.emotions) ? existing.emotions : []) {
-    const name = safeText(item && item.name, 60);
-    const score = validScore(item && item.score);
-    if (name && score) emotionMap.set(name, { name, score, source: item.source || "existingRecord" });
+  const existingMentions = Array.isArray(existing.emotionMentions)
+    ? existing.emotionMentions
+    : (Array.isArray(existing.emotions) ? existing.emotions : []);
+  for (const item of existingMentions) {
+    const rawText = safeText(item?.rawText || itemName(item), 100);
+    const dimension = resolveDimension(item, rawText);
+    const score = validScore(item?.value ?? item?.score);
+    if (!rawText) continue;
+    const key = dimension?.id || `raw:${rawText}`;
+    emotionMap.set(key, {
+      rawText,
+      normalizedDimensionId: dimension?.id || null,
+      normalizedDimensionName: dimension?.displayName || null,
+      value: score,
+      mentioned: item?.mentioned !== false,
+      needsFollowUp: score == null,
+      needsConfirmation: !dimension || item?.needsConfirmation === true,
+      confidence: Math.max(0, Math.min(1, Number(item?.confidence) || 0)),
+      source: item?.source || "existingRecord",
+      timeContext: safeText(item?.timeContext, 40) || null,
+      evidence: safeText(item?.evidence, 300),
+    });
   }
-  for (const item of Array.isArray(raw.emotions) ? raw.emotions : []) {
-    const name = safeText(item && item.name, 60);
-    const score = validScore(item && item.score);
-    const source =
-      item?.source === "defaultPendingConfirmation"
-        ? "defaultPendingConfirmation"
-        : "explicitUserInput";
-    if (name && score) emotionMap.set(name, { name, score, source });
+  const rawMentions = Array.isArray(raw.emotionMentions)
+    ? raw.emotionMentions
+    : (Array.isArray(raw.emotions) ? raw.emotions : []);
+  for (const item of rawMentions) {
+    const rawText = safeText(item?.rawText || itemName(item), 100);
+    if (!rawText) continue;
+    const dimension = resolveDimension(item, rawText);
+    const score = validScore(item?.value ?? item?.score);
+    const key = dimension?.id || `raw:${rawText}`;
+    const previousEmotion = emotionMap.get(key);
+    const resolvedScore = score ?? previousEmotion?.value ?? null;
+    emotionMap.set(key, {
+      rawText,
+      normalizedDimensionId: dimension?.id || null,
+      normalizedDimensionName: dimension?.displayName || null,
+      value: resolvedScore,
+      mentioned: item?.mentioned !== false,
+      needsFollowUp: resolvedScore == null,
+      needsConfirmation: !dimension || item?.needsConfirmation === true,
+      confidence: Math.max(0, Math.min(1, Number(item?.confidence) || 0)),
+      source:
+        item?.source === "explicit" || item?.source === "explicitUserInput"
+          ? "explicitUserInput"
+          : item?.source || "aiExtracted",
+      timeContext: safeText(item?.timeContext, 40) || previousEmotion?.timeContext || null,
+      evidence: safeText(item?.evidence, 300) || previousEmotion?.evidence || "",
+    });
   }
   const oldSleep = existing.sleep && typeof existing.sleep === "object" ? existing.sleep : {};
   const nextSleep = raw.sleep && typeof raw.sleep === "object" ? raw.sleep : {};
+  const sleepFlags = new Set();
+  for (const flag of [...(Array.isArray(oldSleep.flags) ? oldSleep.flags : []), ...(Array.isArray(nextSleep.flags) ? nextSleep.flags : [])]) {
+    const normalized = sleepFlagAliases.get(safeText(flag, 40)) || sleepFlagFromText(flag);
+    if (normalized) sleepFlags.add(normalized);
+  }
+  const symptoms = [];
+  for (const item of [...(Array.isArray(existing.symptoms) ? existing.symptoms : []), ...(Array.isArray(raw.symptoms) ? raw.symptoms : [])]) {
+    const name = itemName(item);
+    if (!name) continue;
+    const sleepFlag = sleepFlagFromText(name);
+    if (sleepFlag) {
+      sleepFlags.add(sleepFlag);
+    } else if (!symptoms.includes(name)) {
+      symptoms.push(name);
+    }
+  }
+  const explicitSleepTimes = extractExplicitSleepTimes(latestMessage);
   const sleep = {
     sleepTime: validTime(nextSleep.sleepTime) || validTime(oldSleep.sleepTime),
-    wakeTime: validTime(nextSleep.wakeTime) || validTime(oldSleep.wakeTime),
-    finalWakeTime: validTime(nextSleep.finalWakeTime) || validTime(oldSleep.finalWakeTime),
+    wakeTime: explicitSleepTimes.wakeTime || validTime(nextSleep.wakeTime) || validTime(oldSleep.wakeTime),
+    finalWakeTime: explicitSleepTimes.finalWakeTime || validTime(nextSleep.finalWakeTime) || validTime(oldSleep.finalWakeTime),
     quality: validScore(nextSleep.quality) || validScore(oldSleep.quality),
     midWakeList: safeText(nextSleep.midWakeList, 300) || safeText(oldSleep.midWakeList, 300),
-    flags: mergeNames(oldSleep.flags, nextSleep.flags, 12),
+    flags: [...sleepFlags].slice(0, 12),
     naps: Array.isArray(nextSleep.naps) ? nextSleep.naps.slice(0, 6) : (Array.isArray(oldSleep.naps) ? oldSleep.naps.slice(0, 6) : []),
   };
-  const overallMood = validScore(raw.overallMood) || validScore(existing.overallMood);
+  const overallMood = validScore(raw.overallMood) ?? validScore(existing.overallMood);
+  const pendingEmotionFields = [...emotionMap.values()]
+    .filter((item) => item.value == null || item.normalizedDimensionId == null)
+    .map((item) => `${item.rawText}的正式情緒與強度`);
   return {
     date: safeText(raw.date || existing.date, 10),
     moodScale: 5,
     overallMood: overallMood,
-    emotions: [...emotionMap.values()].slice(0, 20),
-    symptoms: mergeNames(existing.symptoms, raw.symptoms, 30),
+    emotionMentions: [...emotionMap.values()].slice(0, 20),
+    symptoms: symptoms.slice(0, 30),
     sleep,
     events: mergeNames(existing.events, raw.events, 12),
     diaryText: safeText(raw.diaryText, 8000) || safeText(existing.diaryText, 8000),
-    missingFields: mergeNames([], raw.missingFields, 8),
+    missingFields: mergeNames([], [...(Array.isArray(raw.missingFields) ? raw.missingFields : []), ...pendingEmotionFields], 20),
   };
 }
 
@@ -1472,6 +1858,28 @@ exports.generateInneraAiChat = onCall(
     const history = Array.isArray(data.messages) ? data.messages : [];
     const existingRecordDraft =
       data.recordDraft && typeof data.recordDraft === "object" ? data.recordDraft : {};
+    const emotionDimensions = (Array.isArray(data.emotionDimensions)
+      ? data.emotionDimensions
+      : [])
+      .map((item) => {
+        const id = String(item?.id || "").trim().slice(0, 80);
+        const displayName = String(item?.displayName || "").trim().slice(0, 80);
+        const aliases = (Array.isArray(item?.aliases) ? item.aliases : [])
+          .map((alias) => String(alias || "").trim().slice(0, 80))
+          .filter(Boolean)
+          .slice(0, 20);
+        return id && displayName ? { id, displayName, aliases } : null;
+      })
+      .filter(Boolean)
+      .filter(
+        (item, index, items) =>
+          items.findIndex(
+            (candidate) =>
+              candidate.id === item.id ||
+              candidate.displayName === item.displayName,
+          ) === index,
+      )
+      .slice(0, 80);
     const contextSources = Array.isArray(data.contextSources)
       ? data.contextSources
           .map((item) => ({
@@ -1540,21 +1948,36 @@ exports.generateInneraAiChat = onCall(
         throw new HttpsError("internal", "缺少 OPENAI_API_KEY 設定");
       }
 
-      const safeHistory = history
+      const normalizedHistory = history
         .map((item) => {
           const role = item && item.role === "user" ? "user" : "assistant";
           const content = String((item && item.content) || "").trim().slice(0, 1600);
           if (!content) return null;
           return { role, content };
         })
-        .filter(Boolean)
-        .slice(-12);
+        .filter(Boolean);
+      const safeHistory = [];
+      let historyCharacters = 0;
+      for (const item of normalizedHistory.slice(-60).reverse()) {
+        if (safeHistory.length > 0 && historyCharacters + item.content.length > 48000) {
+          break;
+        }
+        safeHistory.unshift(item);
+        historyCharacters += item.content.length;
+      }
 
       const client = new OpenAI({ apiKey });
       const completion = await client.chat.completions.create({
         model: DEFAULT_AI_MODEL,
         temperature: 0.55,
-        response_format: { type: "json_object" },
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "innera_chat_response",
+            strict: true,
+            schema: inneraChatSchema,
+          },
+        },
         messages: [
           {
             role: "system",
@@ -1565,10 +1988,11 @@ exports.generateInneraAiChat = onCall(
               "Do not diagnose, claim causation, recommend medication changes, or invent records.",
               "Do not minimize self-harm, violence, or medical emergency risk.",
               "Return only JSON with reply, followUpQuestion, sources, suggestedActions, recordDraft, safetyLevel, requiresFixedSafetyUi.",
+              "When mode is not dailyRecord, return an empty recordDraft that still satisfies the schema; it will not be saved.",
               "sources must only reuse the supplied contextSources without private text.",
               "requiresFixedSafetyUi must be false unless an urgent risk needs emergency help.",
               mode === "dailyRecord"
-                ? "You are completing today's structured record. Every response must include recordDraft. All new mood scores use a 1 to 5 scale only: 1 lowest and 5 highest. Never ask for, output, or store a 10-point scale. Extract every emotion the user explicitly names into recordDraft.emotions. When the user names an emotion but gives no strength, include it with score 3 and source defaultPendingConfirmation, add its strength to missingFields, and clearly say it is a temporary 3/5 value the user can adjust before confirming. Extract symptoms, sleep, events, and diary text. Use only sleep values supplied for today's date; if today's sleep is absent, say it has not been recorded. Do not infer or refer to yesterday's sleep. Ask only one or two missing details already absent from recordDraft. If the user gives 8 or another score above 5, ask them to restate it on 1 to 5 and do not store that score."
+                ? `${DAILY_RECORD_CLASSIFICATION_PROMPT}\n正式情緒維度：${JSON.stringify(emotionDimensions)}`
                 : mode === "physicalHealth"
                   ? "Separate observations, missing information, what to keep recording, and when to seek care. Do not diagnose."
                   : mode === "recentReview"
@@ -1583,6 +2007,7 @@ exports.generateInneraAiChat = onCall(
               context,
               contextSources,
               recordDraft: existingRecordDraft,
+              emotionDimensions,
             }),
           },
           ...safeHistory,
@@ -1612,7 +2037,12 @@ exports.generateInneraAiChat = onCall(
           : [],
         recordDraft:
           mode === "dailyRecord"
-            ? normalizeInneraRecordDraft(parsed.recordDraft, existingRecordDraft)
+            ? normalizeInneraRecordDraft(
+                parsed.recordDraft,
+                existingRecordDraft,
+                emotionDimensions,
+                message,
+              )
             : null,
         safetyLevel: "normal",
         requiresFixedSafetyUi: false,
