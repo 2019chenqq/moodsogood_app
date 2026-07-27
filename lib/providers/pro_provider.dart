@@ -10,10 +10,14 @@ const bool kDebugUnlockAllProFeatures = false;
 const bool kAppStoreReviewScreenshotMode = bool.fromEnvironment(
     'APP_STORE_REVIEW_SCREENSHOT_MODE',
     defaultValue: false);
-const String kRevenueCatAndroidApiKey =
-    String.fromEnvironment('REVENUECAT_ANDROID_API_KEY');
-const String kRevenueCatIosApiKey =
-    String.fromEnvironment('REVENUECAT_IOS_API_KEY');
+const String kRevenueCatAndroidApiKey = String.fromEnvironment(
+  'REVENUECAT_ANDROID_API_KEY',
+  defaultValue: 'goog_XQOPKtoNIDcbyNCNCqDADwSfPKW',
+);
+const String kRevenueCatIosApiKey = String.fromEnvironment(
+  'REVENUECAT_IOS_API_KEY',
+  defaultValue: 'appl_ixKmvQvQMnrhkqjDhTuaHcHHXXG',
+);
 
 bool get isReviewScreenshotModeEnabled =>
     kAppStoreReviewScreenshotMode || kDebugMode;
@@ -21,10 +25,12 @@ bool get isReviewScreenshotModeEnabled =>
 typedef OnProUpgradeCallback = Future<void> Function();
 const String kRevenueCatEntitlementId = 'premium';
 bool _isRevenueCatConfigured = false;
+String? _revenueCatInitializationError;
 String? _revenueCatUserId;
 StreamSubscription<User?>? _revenueCatAuthSubscription;
 
 bool get isRevenueCatConfigured => _isRevenueCatConfigured;
+String? get revenueCatInitializationError => _revenueCatInitializationError;
 
 Future<void> initializeRevenueCat() async {
   if (kIsWeb || _isRevenueCatConfigured) return;
@@ -34,22 +40,49 @@ Future<void> initializeRevenueCat() async {
     TargetPlatform.iOS => kRevenueCatIosApiKey,
     _ => '',
   };
-  if (apiKey.trim().isEmpty) return;
-
-  if (kDebugMode) {
-    await Purchases.setLogLevel(LogLevel.debug);
+  if (apiKey.trim().isEmpty) {
+    _revenueCatInitializationError = 'RevenueCat API key 為空';
+    return;
   }
-  final currentUser = FirebaseAuth.instance.currentUser;
-  final configuration = PurchasesConfiguration(apiKey);
-  configuration.appUserID = currentUser?.uid;
-  await Purchases.configure(configuration);
-  _isRevenueCatConfigured = true;
-  _revenueCatUserId = currentUser?.uid;
 
-  _revenueCatAuthSubscription ??=
-      FirebaseAuth.instance.authStateChanges().listen((user) {
-    unawaited(_syncRevenueCatUser(user));
-  });
+  try {
+    if (await Purchases.isConfigured) {
+      _isRevenueCatConfigured = true;
+      _revenueCatInitializationError = null;
+      return;
+    }
+
+    if (kDebugMode) {
+      await Purchases.setLogLevel(LogLevel.debug);
+    }
+
+    User? currentUser;
+    try {
+      currentUser = FirebaseAuth.instance.currentUser;
+    } catch (_) {
+      // Billing must still initialize if Firebase Auth is temporarily unavailable.
+    }
+
+    final configuration = PurchasesConfiguration(apiKey);
+    configuration.appUserID = currentUser?.uid;
+    await Purchases.configure(configuration);
+    _isRevenueCatConfigured = await Purchases.isConfigured;
+    _revenueCatInitializationError = null;
+    _revenueCatUserId = currentUser?.uid;
+
+    try {
+      _revenueCatAuthSubscription ??=
+          FirebaseAuth.instance.authStateChanges().listen((user) {
+        unawaited(_syncRevenueCatUser(user));
+      });
+    } catch (_) {
+      // RevenueCat remains usable without Firebase identity synchronization.
+    }
+  } catch (error) {
+    _isRevenueCatConfigured = false;
+    _revenueCatInitializationError = error.toString();
+    rethrow;
+  }
 }
 
 Future<void> _syncRevenueCatUser(User? user) async {

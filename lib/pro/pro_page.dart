@@ -41,14 +41,26 @@ class _ProPageState extends State<ProPage> {
     });
 
     if (!isRevenueCatConfigured) {
+      try {
+        await initializeRevenueCat();
+      } catch (_) {
+        // The actionable initialization error is shown below.
+      }
+    }
+
+    if (!isRevenueCatConfigured) {
+      if (!mounted) return;
       setState(() {
-        _errorMessage = '目前為訂閱畫面預覽，尚未連接商店方案。';
+        final detail = revenueCatInitializationError;
+        _errorMessage =
+            detail == null ? '目前為訂閱畫面預覽，尚未連接商店方案。' : '商店連線初始化失敗：$detail';
       });
       return;
     }
 
     try {
       final offerings = await Purchases.getOfferings();
+      if (!mounted) return;
       setState(() {
         _offering = offerings.current;
       });
@@ -59,6 +71,7 @@ class _ProPageState extends State<ProPage> {
         });
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = '載入訂閱方案失敗：$e';
       });
