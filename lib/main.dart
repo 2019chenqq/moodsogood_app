@@ -88,6 +88,16 @@ Future<void> main() async {
     }
   }
 
+  try {
+    await initializeRevenueCat();
+    debugPrint(isRevenueCatConfigured
+        ? '💳 RevenueCat initialized'
+        : 'ℹ️ RevenueCat key not supplied; subscription preview only');
+  } catch (error, stackTrace) {
+    debugPrint('⚠️ RevenueCat initialization failed: $error');
+    debugPrint('$stackTrace');
+  }
+
   // 先載入主題設定
   final themeProvider = ThemeProvider();
   await themeProvider.loadTheme();

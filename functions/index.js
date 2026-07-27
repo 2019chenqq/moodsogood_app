@@ -12,7 +12,7 @@ const lastFmApiKey = defineSecret("LASTFM_API_KEY");
 const spotifyClientId = defineSecret("SPOTIFY_CLIENT_ID");
 const spotifyClientSecret = defineSecret("SPOTIFY_CLIENT_SECRET");
 const DEFAULT_AI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
-const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v3-sleep-semantics";
+const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v4-medication-ingredients";
 const DIARY_EXTRACTION_PROMPT_VERSION = "diary_extraction_v1";
 
 const diarySuggestionSchema = {
@@ -1986,6 +1986,8 @@ exports.generateInneraAiChat = onCall(
               "Reply in Traditional Chinese with a gentle, respectful, non-judgmental tone.",
               "You are not a doctor, therapist, or emergency service.",
               "Do not diagnose, claim causation, recommend medication changes, or invent records.",
+              "Medication records may contain Chinese product names and English generic names or active ingredients. When discussing a recorded medication, use nameEn and ingredientLines as the primary identification evidence, understand English ingredient names even when the user writes in Chinese, and explain in Traditional Chinese.",
+              "Clearly separate facts present in the user's medication record from general medication knowledge. If an ingredient is missing, ambiguous, misspelled, or unfamiliar, say that it cannot be identified reliably and suggest confirming the package, prescription, doctor, or pharmacist; never guess the ingredient, indication, interaction, side effect, or clinical effect.",
               "Do not minimize self-harm, violence, or medical emergency risk.",
               "Return only JSON with reply, followUpQuestion, sources, suggestedActions, recordDraft, safetyLevel, requiresFixedSafetyUi.",
               "When mode is not dailyRecord, return an empty recordDraft that still satisfies the schema; it will not be saved.",

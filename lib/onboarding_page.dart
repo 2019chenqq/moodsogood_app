@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'analytics_service.dart';
+import 'constants/healing_design_system.dart';
 
 /// 初次使用導覽頁面
 /// 展示應用的主要功能並引導用戶開始使用
@@ -31,7 +32,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
   Future<void> _completeOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('has_seen_onboarding', true);
-    
+
     if (mounted) {
       Navigator.of(context).pop(true);
     }
@@ -39,9 +40,10 @@ class _OnboardingPageState extends State<OnboardingPage> {
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async => false,
+    return PopScope(
+      canPop: false,
       child: Scaffold(
+        backgroundColor: HealingDesignSystem.adaptiveBackground(context),
         body: SafeArea(
           child: Column(
             children: [
@@ -58,8 +60,10 @@ class _OnboardingPageState extends State<OnboardingPage> {
                       height: 8,
                       decoration: BoxDecoration(
                         color: _currentPage == index
-                            ? Colors.blue
-                            : Colors.grey[300],
+                            ? HealingDesignSystem.adaptiveAccent(context)
+                            : HealingDesignSystem.adaptiveSecondaryText(
+                                context,
+                              ).withValues(alpha: 0.35),
                         borderRadius: BorderRadius.circular(4),
                       ),
                     ),
@@ -153,7 +157,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           const SizedBox(height: 40),
-          
+
           // 應用圖標或插圖
           Container(
             width: 120,
@@ -168,58 +172,60 @@ class _OnboardingPageState extends State<OnboardingPage> {
               color: Colors.blue,
             ),
           ),
-          
+
           const SizedBox(height: 40),
-          
+
           Text(
             '心域',
             style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: Colors.blue,
-            ),
+                  fontWeight: FontWeight.bold,
+                  color: HealingDesignSystem.adaptiveAccent(context),
+                ),
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           Text(
             '您的心理健康管家',
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              color: Colors.grey[600],
-            ),
+                  color: HealingDesignSystem.adaptiveSecondaryText(context),
+                ),
             textAlign: TextAlign.center,
           ),
-          
+
           const SizedBox(height: 32),
-          
+
           Text(
             '隨時記錄您的心情、睡眠和日常狀態，'
             '幫助您更好地了解和管理自己的心理健康。',
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: Colors.grey[700],
-              height: 1.6,
-            ),
+                  color: HealingDesignSystem.adaptivePrimaryText(context),
+                  height: 1.6,
+                ),
             textAlign: TextAlign.center,
           ),
-          
+
           const SizedBox(height: 60),
-          
+
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.blue[50],
+              color: HealingDesignSystem.adaptiveFill(context),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.blue[200]!),
+              border: Border.all(
+                color: HealingDesignSystem.adaptiveCardBorder(context),
+              ),
             ),
             child: Text(
               '完整的功能導覽只需 2 分鐘，'
               '跟著我們了解如何最好地使用此應用！',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Colors.blue[800],
-              ),
+                    color: HealingDesignSystem.adaptivePrimaryText(context),
+                  ),
               textAlign: TextAlign.center,
             ),
           ),
-          
+
           const SizedBox(height: 40),
         ],
       ),
@@ -234,26 +240,27 @@ class _OnboardingPageState extends State<OnboardingPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 20),
-          
+
           // 標題
           Text(
             '每日狀態紀錄',
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+                  fontWeight: FontWeight.bold,
+                  color: HealingDesignSystem.adaptivePrimaryText(context),
+                ),
           ),
-          
+
           const SizedBox(height: 8),
-          
+
           Text(
             '記錄您當前的心理和身體狀態',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Colors.grey[600],
-            ),
+                  color: HealingDesignSystem.adaptiveSecondaryText(context),
+                ),
           ),
-          
+
           const SizedBox(height: 32),
-          
+
           // 功能示意圖
           Container(
             width: double.infinity,
@@ -268,9 +275,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
               color: Colors.amber,
             ),
           ),
-          
+
           const SizedBox(height: 32),
-          
+
           // 功能列表
           _buildFeatureItem(
             icon: Icons.mood,
@@ -278,18 +285,18 @@ class _OnboardingPageState extends State<OnboardingPage> {
             description: '選擇您現在的心情，如平靜、開心、焦慮等。'
                 '幫助追蹤您的情緒模式。',
           ),
-          
+
           const SizedBox(height: 20),
-          
+
           _buildFeatureItem(
             icon: Icons.local_hospital,
             title: '症狀與藥物',
             description: '記錄身體症狀和服用的藥物，'
                 '例如安眠藥或其他治療藥物。',
           ),
-          
+
           const SizedBox(height: 20),
-          
+
           _buildFeatureItem(
             icon: Icons.bedtime,
             title: '睡眠追蹤',
@@ -311,26 +318,27 @@ class _OnboardingPageState extends State<OnboardingPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 20),
-          
+
           // 標題
           Text(
             '日記',
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+                  fontWeight: FontWeight.bold,
+                  color: HealingDesignSystem.adaptivePrimaryText(context),
+                ),
           ),
-          
+
           const SizedBox(height: 8),
-          
+
           Text(
             '記錄您的想法和感受',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Colors.grey[600],
-            ),
+                  color: HealingDesignSystem.adaptiveSecondaryText(context),
+                ),
           ),
-          
+
           const SizedBox(height: 32),
-          
+
           // 功能示意圖
           Container(
             width: double.infinity,
@@ -345,32 +353,32 @@ class _OnboardingPageState extends State<OnboardingPage> {
               color: Colors.purple,
             ),
           ),
-          
+
           const SizedBox(height: 32),
-          
+
           // 功能詳情
           _buildInfoCard(
             title: '自由書寫',
             description: '用日記的形式深入記錄您的想法、感受和經歷。'
                 '沒有字數限制，完全按照您的方式書寫。',
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           _buildInfoCard(
             title: '私密安全',
             description: '所有日記內容都被安全保存，'
                 '只有您可以訪問。',
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           _buildInfoCard(
             title: '情感表達',
             description: '日記是表達複雜情感和處理壓力的好方式。'
                 '持續寫日記可以幫助自我反思。',
           ),
-          
+
           const SizedBox(height: 40),
         ],
       ),
@@ -385,26 +393,27 @@ class _OnboardingPageState extends State<OnboardingPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 20),
-          
+
           // 標題
           Text(
             '統計分析',
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+                  fontWeight: FontWeight.bold,
+                  color: HealingDesignSystem.adaptivePrimaryText(context),
+                ),
           ),
-          
+
           const SizedBox(height: 8),
-          
+
           Text(
             '查看您的數據趨勢',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Colors.grey[600],
-            ),
+                  color: HealingDesignSystem.adaptiveSecondaryText(context),
+                ),
           ),
-          
+
           const SizedBox(height: 32),
-          
+
           // 功能示意圖
           Container(
             width: double.infinity,
@@ -419,9 +428,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
               color: Colors.green,
             ),
           ),
-          
+
           const SizedBox(height: 32),
-          
+
           // 功能詳情
           _buildFeatureItem(
             icon: Icons.timeline,
@@ -429,33 +438,33 @@ class _OnboardingPageState extends State<OnboardingPage> {
             description: '查看過去的所有記錄，'
                 '回顧您的進度和變化。',
           ),
-          
+
           const SizedBox(height: 20),
-          
+
           _buildFeatureItem(
             icon: Icons.show_chart,
             title: '數據可視化',
             description: '通過圖表和統計數據'
                 '更清晰地了解您的模式。',
           ),
-          
+
           const SizedBox(height: 20),
-          
+
           _buildFeatureItem(
             icon: Icons.insights,
             title: '趨勢分析',
             description: '識別與您的心理健康和睡眠相關的模式，'
                 '幫助您做出更好的決定。',
           ),
-          
+
           const SizedBox(height: 20),
-          
+
           _buildInfoCard(
             title: '💡 提示',
             description: '定期查看您的數據可以幫助您發現'
                 '可能影響您心理健康的觸發因素。',
           ),
-          
+
           const SizedBox(height: 40),
         ],
       ),
@@ -470,7 +479,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           const SizedBox(height: 40),
-          
+
           // 完成圖標
           Container(
             width: 120,
@@ -485,38 +494,41 @@ class _OnboardingPageState extends State<OnboardingPage> {
               color: Colors.green,
             ),
           ),
-          
+
           const SizedBox(height: 32),
-          
+
           Text(
             '準備好開始了嗎？',
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+                  fontWeight: FontWeight.bold,
+                  color: HealingDesignSystem.adaptivePrimaryText(context),
+                ),
             textAlign: TextAlign.center,
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           Text(
             '您已經了解了 心域 的主要功能。'
             '現在可以開始記錄您的心理健康之旅。',
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: Colors.grey[700],
-              height: 1.6,
-            ),
+                  color: HealingDesignSystem.adaptivePrimaryText(context),
+                  height: 1.6,
+                ),
             textAlign: TextAlign.center,
           ),
-          
+
           const SizedBox(height: 40),
-          
+
           // 建議列表
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: Colors.blue[50],
+              color: HealingDesignSystem.adaptiveFill(context),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.blue[200]!),
+              border: Border.all(
+                color: HealingDesignSystem.adaptiveCardBorder(context),
+              ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -524,9 +536,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
                 Text(
                   '快速開始提示：',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blue[900],
-                  ),
+                        fontWeight: FontWeight.bold,
+                        color: HealingDesignSystem.adaptivePrimaryText(context),
+                      ),
                 ),
                 const SizedBox(height: 12),
                 _buildTipItem('每天至少記錄一次您的情緒、身體狀態和睡眠狀態'),
@@ -539,18 +551,18 @@ class _OnboardingPageState extends State<OnboardingPage> {
               ],
             ),
           ),
-          
+
           const SizedBox(height: 40),
-          
+
           Text(
             '我們很高興您選擇 心域 來支持您的心理健康！',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Colors.grey[600],
-              fontStyle: FontStyle.italic,
-            ),
+                  color: HealingDesignSystem.adaptiveSecondaryText(context),
+                  fontStyle: FontStyle.italic,
+                ),
             textAlign: TextAlign.center,
           ),
-          
+
           const SizedBox(height: 40),
         ],
       ),
@@ -573,12 +585,13 @@ class _OnboardingPageState extends State<OnboardingPage> {
           width: 50,
           height: 50,
           decoration: BoxDecoration(
-            color: Colors.blue[100],
+            color: HealingDesignSystem.adaptiveAccent(context)
+                .withValues(alpha: 0.22),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(
             icon,
-            color: Colors.blue,
+            color: HealingDesignSystem.adaptiveAccent(context),
             size: 28,
           ),
         ),
@@ -590,16 +603,17 @@ class _OnboardingPageState extends State<OnboardingPage> {
               Text(
                 title,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+                      fontWeight: FontWeight.bold,
+                      color: HealingDesignSystem.adaptivePrimaryText(context),
+                    ),
               ),
               const SizedBox(height: 4),
               Text(
                 description,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.grey[600],
-                  height: 1.5,
-                ),
+                      color: HealingDesignSystem.adaptiveSecondaryText(context),
+                      height: 1.5,
+                    ),
               ),
             ],
           ),
@@ -614,10 +628,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
   }) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.grey[100],
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!),
+      decoration: HealingDesignSystem.adaptiveCardDecoration(
+        context,
+        radius: 12,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -625,16 +638,17 @@ class _OnboardingPageState extends State<OnboardingPage> {
           Text(
             title,
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+                  fontWeight: FontWeight.bold,
+                  color: HealingDesignSystem.adaptivePrimaryText(context),
+                ),
           ),
           const SizedBox(height: 8),
           Text(
             description,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Colors.grey[700],
-              height: 1.5,
-            ),
+                  color: HealingDesignSystem.adaptiveSecondaryText(context),
+                  height: 1.5,
+                ),
           ),
         ],
       ),
@@ -657,9 +671,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
           child: Text(
             text,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Colors.blue[900],
-              height: 1.4,
-            ),
+                  color: HealingDesignSystem.adaptivePrimaryText(context),
+                  height: 1.4,
+                ),
           ),
         ),
       ],

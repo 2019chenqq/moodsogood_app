@@ -1,20 +1,76 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// 🚧 開發/測試用開關：設為 true 時，所有使用者都能使用 Pro features
-/// 📌 正式上線前請改為 false
-const bool kDebugUnlockAllProFeatures = true;
-const bool kAppStoreReviewScreenshotMode =
-  bool.fromEnvironment('APP_STORE_REVIEW_SCREENSHOT_MODE', defaultValue: false);
+/// 🚧 開發/測試用開關：正式版必須維持 false，避免所有人直接解鎖 Pro。
+const bool kDebugUnlockAllProFeatures = false;
+const bool kAppStoreReviewScreenshotMode = bool.fromEnvironment(
+    'APP_STORE_REVIEW_SCREENSHOT_MODE',
+    defaultValue: false);
+const String kRevenueCatAndroidApiKey =
+    String.fromEnvironment('REVENUECAT_ANDROID_API_KEY');
+const String kRevenueCatIosApiKey =
+    String.fromEnvironment('REVENUECAT_IOS_API_KEY');
 
 bool get isReviewScreenshotModeEnabled =>
     kAppStoreReviewScreenshotMode || kDebugMode;
 
 typedef OnProUpgradeCallback = Future<void> Function();
 const String kRevenueCatEntitlementId = 'premium';
+bool _isRevenueCatConfigured = false;
+String? _revenueCatUserId;
+StreamSubscription<User?>? _revenueCatAuthSubscription;
+
+bool get isRevenueCatConfigured => _isRevenueCatConfigured;
+
+Future<void> initializeRevenueCat() async {
+  if (kIsWeb || _isRevenueCatConfigured) return;
+
+  final apiKey = switch (defaultTargetPlatform) {
+    TargetPlatform.android => kRevenueCatAndroidApiKey,
+    TargetPlatform.iOS => kRevenueCatIosApiKey,
+    _ => '',
+  };
+  if (apiKey.trim().isEmpty) return;
+
+  if (kDebugMode) {
+    await Purchases.setLogLevel(LogLevel.debug);
+  }
+  final currentUser = FirebaseAuth.instance.currentUser;
+  final configuration = PurchasesConfiguration(apiKey);
+  configuration.appUserID = currentUser?.uid;
+  await Purchases.configure(configuration);
+  _isRevenueCatConfigured = true;
+  _revenueCatUserId = currentUser?.uid;
+
+  _revenueCatAuthSubscription ??=
+      FirebaseAuth.instance.authStateChanges().listen((user) {
+    unawaited(_syncRevenueCatUser(user));
+  });
+}
+
+Future<void> _syncRevenueCatUser(User? user) async {
+  if (!isRevenueCatConfigured) return;
+
+  try {
+    if (user != null && user.uid != _revenueCatUserId) {
+      await Purchases.logIn(user.uid);
+      _revenueCatUserId = user.uid;
+      return;
+    }
+
+    if (user == null && _revenueCatUserId != null) {
+      await Purchases.logOut();
+      _revenueCatUserId = null;
+    }
+  } catch (error, stackTrace) {
+    debugPrint('RevenueCat user sync failed: $error');
+    debugPrint('$stackTrace');
+  }
+}
 
 class ProProvider extends ChangeNotifier {
   bool _loading = true;
@@ -23,6 +79,9 @@ class ProProvider extends ChangeNotifier {
   bool _remoteIsPro = false; // Firestore / 訂閱同步來的
   bool? _debugOverrideIsPro; // null = 不覆蓋
   bool? _reviewOverrideIsPro; // App Store 審核截圖模式專用
+  late final CustomerInfoUpdateListener _customerInfoListener =
+      _handleCustomerInfoUpdate;
+  bool _isListeningToCustomerInfo = false;
 
   /// 檢查使用者是否為 Pro
   /// 如果 kDebugUnlockAllProFeatures = true，則所有人都是 Pro
@@ -31,7 +90,7 @@ class ProProvider extends ChangeNotifier {
       : (isReviewScreenshotModeEnabled
           ? (_reviewOverrideIsPro ?? _debugOverrideIsPro ?? _remoteIsPro)
           : (_debugOverrideIsPro ?? _remoteIsPro));
-  
+
   bool get loading => _loading;
   bool get isMigrating => _isMigrating;
 
@@ -44,12 +103,23 @@ class ProProvider extends ChangeNotifier {
     _loading = true;
     notifyListeners();
 
+    if (isRevenueCatConfigured) {
+      Purchases.addCustomerInfoUpdateListener(_customerInfoListener);
+      _isListeningToCustomerInfo = true;
+      await refreshFromRevenueCat();
+    }
     _loading = false;
     notifyListeners();
   }
 
   bool _isEntitlementActive(CustomerInfo info) {
     return info.entitlements.all[kRevenueCatEntitlementId]?.isActive ?? false;
+  }
+
+  void _handleCustomerInfoUpdate(CustomerInfo info) {
+    _remoteIsPro = _isEntitlementActive(info);
+    unawaited(_syncProStatusToFirestore(_remoteIsPro));
+    notifyListeners();
   }
 
   Future<void> _syncProStatusToFirestore(bool isProNow) async {
@@ -65,6 +135,7 @@ class ProProvider extends ChangeNotifier {
   }
 
   Future<void> refreshFromRevenueCat() async {
+    if (!isRevenueCatConfigured) return;
     try {
       final info = await Purchases.getCustomerInfo();
       _remoteIsPro = _isEntitlementActive(info);
@@ -95,7 +166,7 @@ class ProProvider extends ChangeNotifier {
       _debugOverrideIsPro = true;
       notifyListeners();
     } catch (e) {
-      print('升級失敗：$e');
+      debugPrint('升級失敗：$e');
       _isMigrating = false;
       notifyListeners();
       rethrow;
@@ -125,7 +196,9 @@ class ProProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (_isListeningToCustomerInfo) {
+      Purchases.removeCustomerInfoUpdateListener(_customerInfoListener);
+    }
     super.dispose();
   }
 }
-

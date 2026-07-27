@@ -1,6 +1,4 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../models/daily_record.dart';
 import 'export_config.dart';
 import 'export_metrics.dart';
@@ -19,6 +17,7 @@ class PDFExportService {
     required ExportConfig config,
     required String outputDir,
     List<String>? medications, // 用藥清單
+    List<String>? followUpNotes,
   }) async {
     try {
       debugPrint('🚀 開始 PDF 導出流程...');
@@ -40,6 +39,7 @@ class PDFExportService {
         config: config,
         aiSummary: aiSummary,
         medications: medications ?? [],
+        followUpNotes: followUpNotes ?? [],
         records: records,
       );
 
@@ -81,6 +81,10 @@ class PDFExportService {
     // 第 1 頁：總覽摘要
     if (!SummaryRuleEngine.shouldSkipPage('overview', metrics)) {
       pages.add(builder.buildOverviewPage());
+    }
+
+    if (builder.followUpNotes.isNotEmpty) {
+      pages.add(builder.buildFollowUpPage());
     }
 
     // 第 2 頁：情緒趨勢
@@ -136,15 +140,6 @@ class PDFExportService {
       debugPrint('❌ PDF 生成失敗: $e');
       rethrow;
     }
-  }
-
-  /// STEP 7: 生成檔名
-  static String _generateFileName(ExportConfig config) {
-    final formatter = DateFormat('yyyyMMdd');
-    final startStr = formatter.format(config.startDate);
-    final endStr = formatter.format(config.endDate);
-
-    return '心域_醫師摘要_$startStr-$endStr.pdf';
   }
 }
 

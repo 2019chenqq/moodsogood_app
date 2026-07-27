@@ -487,6 +487,16 @@ class InneraAiContextService {
     return {
       'id': med['id'],
       'name': _limitText(med['name'] ?? med['nameZh'] ?? med['nameEn'], 80),
+      if ((med['nameZh'] ?? '').toString().trim().isNotEmpty)
+        'nameZh': _limitText(med['nameZh'], 80),
+      if ((med['nameEn'] ?? '').toString().trim().isNotEmpty)
+        'nameEn': _limitText(med['nameEn'], 120),
+      if (_stringList(med['ingredientLines']).isNotEmpty)
+        'ingredientLines': _stringList(
+          med['ingredientLines'],
+        ).take(8).map((line) => _limitText(line, 160)).toList(),
+      if ((med['compoundType'] ?? '').toString().trim().isNotEmpty)
+        'compoundType': _limitText(med['compoundType'], 40),
       'dose': med['dose'],
       'dosePerUnit': med['dosePerUnit'],
       'pillCount': med['pillCount'],

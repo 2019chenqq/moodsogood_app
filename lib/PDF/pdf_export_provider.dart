@@ -19,7 +19,7 @@ class PDFExportProvider extends ChangeNotifier {
     required ExportConfig config,
     required String outputDir,
     List<String>? medications,
-    required BuildContext context,
+    List<String>? followUpNotes,
   }) async {
     try {
       isExporting = true;
@@ -35,6 +35,7 @@ class PDFExportProvider extends ChangeNotifier {
         config: config,
         outputDir: outputDir,
         medications: medications,
+        followUpNotes: followUpNotes,
       );
 
       lastResult = result;
@@ -60,7 +61,7 @@ class PDFExportProvider extends ChangeNotifier {
     required List<DailyRecord> records,
     required String outputDir,
     List<String>? medications,
-    required BuildContext context,
+    List<String>? followUpNotes,
   }) async {
     final config = ExportConfig.defaultConfig();
     return exportRecordsToPDF(
@@ -68,7 +69,7 @@ class PDFExportProvider extends ChangeNotifier {
       config: config,
       outputDir: outputDir,
       medications: medications,
-      context: context,
+      followUpNotes: followUpNotes,
     );
   }
 
@@ -105,9 +106,9 @@ class PDFExportExample {
       config: config,
       outputDir: '/storage/emulated/0/Documents',
       medications: ['阿司匹林', '布洛芬'],
-      context: context,
     );
 
+    if (!context.mounted) return;
     if (result?.success == true) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('PDF 已保存: ${result!.filePath}')),
@@ -143,7 +144,6 @@ class PDFExportExample {
       config: config,
       outputDir: '/storage/emulated/0/Documents',
       medications: ['用藥1', '用藥2'],
-      context: context,
     );
 
     debugPrint('導出結果: ${result?.toString()}');
@@ -187,12 +187,15 @@ class PDFExportExample {
 
     // 在背景執行導出
     final config = ExportConfig.defaultConfig();
-    context.read<PDFExportProvider>().exportRecordsToPDF(
-      records: records,
-      config: config,
-      outputDir: '/storage/emulated/0/Documents',
-      context: context,
-    ).then((result) {
+    context
+        .read<PDFExportProvider>()
+        .exportRecordsToPDF(
+          records: records,
+          config: config,
+          outputDir: '/storage/emulated/0/Documents',
+        )
+        .then((result) {
+      if (!context.mounted) return;
       Navigator.pop(context);
       if (result?.success == true) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -221,12 +224,12 @@ class PDFExportButton extends StatelessWidget {
   final Function(String)? onError;
 
   const PDFExportButton({
-    Key? key,
+    super.key,
     required this.records,
     this.medications,
     this.onSuccess,
     this.onError,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -255,9 +258,9 @@ class PDFExportButton extends StatelessWidget {
         records: records,
         outputDir: '/storage/emulated/0/Documents',
         medications: medications,
-        context: context,
       );
 
+      if (!context.mounted) return;
       if (result?.success == true) {
         onSuccess?.call();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -282,6 +285,7 @@ class PDFExportButton extends StatelessWidget {
       }
     } catch (e) {
       onError?.call(e.toString());
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('導出異常: $e'),

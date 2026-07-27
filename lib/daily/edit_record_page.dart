@@ -213,7 +213,10 @@ AnalyticsService.logPage('edit_record_page');
     _midWakeCtrl = TextEditingController(text: (sleep['midWakeList'] ?? '').toString());
     _sleepTime = DateHelper.parseTime(sleep['sleepTime']);
     _wakeTime  = DateHelper.parseTime(sleep['wakeTime']);
-    _sleepQuality = (sleep['quality'] is int) ? sleep['quality'] as int : null;
+    final savedSleepQuality = sleep['quality'];
+    _sleepQuality = savedSleepQuality is num
+        ? savedSleepQuality.round().clamp(1, 5).toInt()
+        : null;
     
     debugPrint('🛏️ 編輯頁初始化睡眠：sleepTime=$_sleepTime, wakeTime=$_wakeTime, sleep=$sleep');
   }
@@ -401,10 +404,10 @@ Widget build(BuildContext context) {
                 ),
                 // 自覺睡眠品質
                 ListTile(
-                  title: Text('自覺睡眠品質（1~10）', style: HealingDesignSystem.bodyMedium.copyWith(color: HealingDesignSystem.adaptivePrimaryText(context))),
+                  title: Text('自覺睡眠品質（1~5）', style: HealingDesignSystem.bodyMedium.copyWith(color: HealingDesignSystem.adaptivePrimaryText(context))),
                   trailing: Text(_sleepQuality?.toString() ?? '-', style: HealingDesignSystem.bodyMedium.copyWith(color: HealingDesignSystem.adaptivePrimaryText(context))),
                   onTap: () async {
-                    final v = await _pickQuality(context, _sleepQuality ?? 5);
+                    final v = await _pickQuality(context, _sleepQuality ?? 3);
                     if (v != null) setState(() => _sleepQuality = v);
                   },
                 ),
@@ -662,11 +665,11 @@ Widget build(BuildContext context) {
   }
 
   Future<int?> _pickQuality(BuildContext context, int initial) async {
-    int temp = initial.clamp(1, 10);
+    int temp = initial.clamp(1, 5);
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('自覺睡眠品質（1~10）'),
+        title: const Text('自覺睡眠品質（1~5）'),
         content: StatefulBuilder(
           builder: (_, setLocal) => Column(
             mainAxisSize: MainAxisSize.min,
@@ -674,7 +677,7 @@ Widget build(BuildContext context) {
               Text('$temp', style: Theme.of(context).textTheme.headlineSmall),
               Slider(
                 value: temp.toDouble(),
-                min: 1, max: 10, divisions: 9,
+                min: 1, max: 5, divisions: 4,
                 label: '$temp',
                 onChanged: (v) => setLocal(() => temp = v.round()),
               ),

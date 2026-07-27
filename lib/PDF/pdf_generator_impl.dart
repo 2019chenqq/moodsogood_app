@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -20,14 +21,18 @@ class PDFGeneratorImpl {
     try {
       debugPrint('📄 開始生成 PDF...');
 
+      final fontData =
+          await rootBundle.load('assets/font/Iansui/Iansui-Regular.ttf');
+      final chineseFont = pw.Font.ttf(fontData);
+
       // 1. 創建 PDF 文檔
       final pdf = pw.Document(
         pageMode: PdfPageMode.outlines,
-        theme: pw.ThemeData(
-          defaultTextStyle: pw.TextStyle(
-            font: pw.Font.helvetica(),
-            fontSize: 11,
-          ),
+        theme: pw.ThemeData.withFont(
+          base: chineseFont,
+          bold: chineseFont,
+          italic: chineseFont,
+          boldItalic: chineseFont,
         ),
       );
 
@@ -115,7 +120,7 @@ class PDFGeneratorImpl {
       return pw.Text('無表格數據');
     }
 
-    return pw.Table.fromTextArray(
+    return pw.TableHelper.fromTextArray(
       data: data,
       border: pw.TableBorder.all(),
       headerStyle: pw.TextStyle(
@@ -248,7 +253,7 @@ class AdvancedPDFGenerator {
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
                   pw.Text(
-                    '${emotion.name}',
+                    emotion.name,
                     style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
                   ),
                   pw.Text(

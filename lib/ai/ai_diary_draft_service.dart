@@ -44,6 +44,25 @@ class AiDiaryDraftService {
   final FirebaseAuth _auth;
   final DiaryRepository _diaryRepository;
 
+  static String originalUserContent(List<InneraAiMessage> messages) => messages
+      .where(
+        (item) =>
+            item.role == InneraAiMessageRole.user &&
+            !item.isLoading &&
+            !item.isError,
+      )
+      .map((item) => item.text.trim())
+      .where((text) => text.isNotEmpty)
+      .join('\n\n');
+
+  static String combineSuggestionValues(
+    Iterable<DiaryDraftSuggestion> suggestions,
+  ) =>
+      suggestions
+          .map((item) => item.value.trim())
+          .where((value) => value.isNotEmpty)
+          .join('\n');
+
   Future<AiDiaryDraft> generate({
     required List<InneraAiMessage> messages,
     String? requestedField,

@@ -5,6 +5,7 @@ import '../constants/healing_design_system.dart';
 import '../utils/firebase_sync_config.dart';
 import 'medication_local_db.dart';
 import 'medication_reminder_service.dart';
+import 'medication_dose_units.dart';
 import '../analytics_service.dart';
 
 // 你已經有的新增藥物頁（路徑依你的專案調整）
@@ -137,61 +138,6 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
   Future<List<Map<String, dynamic>>> _getMedsForAdjustment(String uid) async {
     final all = await MedicationLocalDB().getMedicationsForDisplay(uid);
     return all;
-  }
-
-  _MedDraft _ensureUiDraft(
-    String docId,
-    Map<String, dynamic> baseData,
-  ) {
-    return _draftByDocId.putIfAbsent(docId, () {
-      final oldDose = (baseData['dose'] is num)
-          ? (baseData['dose'] as num).toDouble()
-          : 0.0;
-
-      final unit = (baseData['unit'] as String?) ?? 'mg';
-      final name = (baseData['name'] as String?) ?? '未命名藥物';
-      final oldTimes = _readTimes(baseData['times']);
-
-      return _MedDraft(
-        name: name,
-        unit: unit,
-        oldDose: oldDose,
-        oldTimes: oldTimes,
-        type: MedChangeType.unchanged,
-        newDose: oldDose, // 預設 = 原劑量
-        newTimes: List<String>.from(oldTimes),
-      );
-    });
-  }
-
-  double? _toDouble(dynamic v) {
-    if (v == null) return null;
-    if (v is num) return v.toDouble();
-    return double.tryParse(v.toString());
-  }
-
-  String _toStr(dynamic v, [String fallback = '']) {
-    final s = (v ?? '').toString().trim();
-    return s.isEmpty ? fallback : s;
-  }
-
-  List<String> _readTimes(dynamic raw) {
-    if (raw is List) {
-      final normalized = raw
-          .whereType<String>()
-          .map((t) => t.trim())
-          .where((t) => t.isNotEmpty)
-          .toSet()
-          .toList();
-      normalized.sort((a, b) => kAdjustmentTimeSlots
-          .indexOf(a)
-          .compareTo(kAdjustmentTimeSlots.indexOf(b)));
-      return normalized;
-    }
-    if (raw is String && raw.trim().isNotEmpty) {
-      return _readTimes(raw.split(','));
-    }
-    return <String>[];
   }
 
   String _timesLabel(List<String> times) {
@@ -418,7 +364,7 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
           ),
           surfaceTintColor: Colors.transparent,
           color: isResumed
-              ? HealingDesignSystem.primaryBlue.withOpacity(0.12)
+              ? HealingDesignSystem.primaryBlue.withValues(alpha: 0.12)
               : HealingDesignSystem.adaptiveSurface(context),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -468,7 +414,8 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
                   style: isResumed
                       ? OutlinedButton.styleFrom(
                           foregroundColor: cs.error,
-                          side: BorderSide(color: cs.error.withOpacity(0.6)),
+                          side: BorderSide(
+                              color: cs.error.withValues(alpha: 0.6)),
                         )
                       : null,
                   child: Text(isResumed ? '取消' : '恢復使用'),
@@ -477,7 +424,7 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
             ),
           ),
         );
-      }).toList(),
+      }),
     ];
   }
 
@@ -490,14 +437,20 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
     final docId = (med['id'] as String?) ?? '';
 
     final name = (med['name'] as String?) ?? '未命名藥物';
-    final unit = (med['unit'] as String?) ?? 'mg';
+    final unit = draft.unit;
     final dose = med['dose'];
-    final doseStr = _doseToString(dose, unit);
+    final medType = (med['type'] ?? '').toString();
+    final usesPillDose = medType != 'drops' && medType != 'injection';
+    final doseStr = usesPillDose
+        ? '${_formatNumber(draft.oldDosePerUnit)} $unit × '
+            '${_formatNumber(draft.oldPillCount)} 顆 = '
+            '${_doseToString(dose, unit)}'
+        : _doseToString(dose, unit);
 
     final times = (med['times'] as List?)?.whereType<String>().toList() ??
         const <String>[];
     final isActive = (med['isActive'] as bool?) ?? true;
-    final isInjectionMed = (med['type'] as String?) == 'injection';
+    final isInjectionMed = medType == 'injection';
 
     // 卡片視覺：有變動就稍微凸顯
     final changed = draft.type != MedChangeType.unchanged;
@@ -563,7 +516,8 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: HealingDesignSystem.primaryBlue.withOpacity(0.14),
+                      color: HealingDesignSystem.primaryBlue
+                          .withValues(alpha: 0.14),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
@@ -592,6 +546,8 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
                   onTap: () => setState(() {
                     draft.type = MedChangeType.unchanged;
                     draft.newDose = null;
+                    draft.newDosePerUnit = draft.oldDosePerUnit;
+                    draft.newPillCount = draft.oldPillCount;
                     draft.newTimes = List<String>.from(draft.oldTimes);
                     draft.stopReason = null;
                   }),
@@ -604,6 +560,8 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
                     draft.type = MedChangeType.doseChanged;
                     // 預設帶入目前劑量
                     draft.newDose ??= _doseToDouble(dose);
+                    draft.newDosePerUnit ??= draft.oldDosePerUnit;
+                    draft.newPillCount ??= draft.oldPillCount;
                     draft.newTimes ??= List<String>.from(draft.oldTimes);
                   }),
                 ),
@@ -648,16 +606,27 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
             if (draft.type == MedChangeType.doseChanged) ...[
               const SizedBox(height: 10),
               _InlineEditRow(
-                title: '新劑量',
-                valueText: draft.newDose == null
-                    ? '點擊輸入'
-                    : _doseToString(draft.newDose, unit),
-                onTap: () =>
-                    _editDose(docId: med['id'] as String? ?? '', unit: unit),
+                title: usesPillDose ? '調整後用量' : '新劑量',
+                valueText: usesPillDose
+                    ? _oralDoseSummary(draft, unit)
+                    : draft.newDose == null
+                        ? '點擊輸入'
+                        : _doseToString(draft.newDose, unit),
+                onTap: () => usesPillDose
+                    ? _editOralDose(
+                        docId: med['id'] as String? ?? '',
+                        unit: unit,
+                      )
+                    : _editDose(
+                        docId: med['id'] as String? ?? '',
+                        unit: unit,
+                      ),
               ),
               const SizedBox(height: 8),
               Text(
-                '建議填「調整後」的劑量（支援 0.5 / 1.25 這類小數）',
+                usesPillDose
+                    ? '請填調整後的每顆劑量與一次顆數，系統會自動計算總劑量。'
+                    : '建議填「調整後」的劑量（支援 0.5 / 1.25 這類小數）',
                 style: Theme.of(context)
                     .textTheme
                     .bodySmall
@@ -707,7 +676,6 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
     required bool selected,
     required VoidCallback onTap,
   }) {
-    final cs = Theme.of(context).colorScheme;
     return InkWell(
       borderRadius: BorderRadius.circular(999),
       onTap: onTap,
@@ -715,12 +683,12 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: selected
-              ? HealingDesignSystem.primaryBlue.withOpacity(0.16)
+              ? HealingDesignSystem.primaryBlue.withValues(alpha: 0.16)
               : HealingDesignSystem.adaptiveFill(context),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
             color: selected
-                ? HealingDesignSystem.primaryBlue.withOpacity(0.35)
+                ? HealingDesignSystem.primaryBlue.withValues(alpha: 0.35)
                 : HealingDesignSystem.lineColor,
           ),
         ),
@@ -749,49 +717,224 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
 
     final ctrl = TextEditingController(text: initText);
     double? picked;
+    var pickedUnit = kMedicationDoseUnits.contains(unit) ? unit : 'mg';
 
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) {
-        void submit() {
-          final raw = ctrl.text.trim().replaceAll(',', '.');
-          final v = double.tryParse(raw);
-          if (v == null || v < 0) return;
-          picked = v;
-          Navigator.of(dialogContext).pop();
-        }
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          void submit() {
+            final raw = ctrl.text.trim().replaceAll(',', '.');
+            final v = double.tryParse(raw);
+            if (v == null || v < 0) return;
+            picked = v;
+            Navigator.of(dialogContext).pop();
+          }
 
-        return AlertDialog(
-          title: const Text('輸入調整後劑量'),
-          content: TextField(
-            controller: ctrl,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            autofocus: true,
-            onSubmitted: (_) => submit(),
-            decoration: InputDecoration(
-              suffixText: unit,
-              hintText: '例如 0.5、1.25、25',
+          return AlertDialog(
+            title: const Text('輸入調整後劑量'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: ctrl,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  autofocus: true,
+                  onSubmitted: (_) => submit(),
+                  decoration: InputDecoration(
+                    suffixText: pickedUnit,
+                    hintText: '例如 0.5、1.25、25',
+                  ),
+                ),
+                const SizedBox(height: 14),
+                DropdownButtonFormField<String>(
+                  initialValue: pickedUnit,
+                  decoration: const InputDecoration(labelText: '劑量單位'),
+                  items: kMedicationDoseUnits
+                      .map(
+                        (value) => DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setDialogState(() => pickedUnit = value);
+                    }
+                  },
+                ),
+              ],
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: submit,
-              child: const Text('確定'),
-            ),
-          ],
-        );
-      },
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: submit,
+                child: const Text('確定'),
+              ),
+            ],
+          );
+        },
+      ),
     );
 
     if (picked == null) return;
 
     setState(() {
       draft.newDose = picked;
+      draft.unit = pickedUnit;
     });
+  }
+
+  Future<void> _editOralDose({
+    required String docId,
+    required String unit,
+  }) async {
+    final draft = _draftByDocId[docId]!;
+    final dosePerUnitController = TextEditingController(
+      text: _formatNumber(draft.newDosePerUnit ?? draft.oldDosePerUnit),
+    );
+    final pillCountController = TextEditingController(
+      text: _formatNumber(draft.newPillCount ?? draft.oldPillCount),
+    );
+    double? pickedDosePerUnit;
+    double? pickedPillCount;
+    var pickedUnit = kMedicationDoseUnits.contains(unit) ? unit : 'mg';
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          double? readNumber(TextEditingController controller) {
+            return double.tryParse(
+              controller.text.trim().replaceAll(',', '.'),
+            );
+          }
+
+          final dosePerUnit = readNumber(dosePerUnitController);
+          final pillCount = readNumber(pillCountController);
+          final isValid = dosePerUnit != null &&
+              dosePerUnit >= 0 &&
+              pillCount != null &&
+              pillCount > 0;
+          final totalDose = isValid ? _round1(dosePerUnit * pillCount) : null;
+
+          void submit() {
+            if (!isValid) return;
+            pickedDosePerUnit = dosePerUnit;
+            pickedPillCount = pillCount;
+            Navigator.pop(dialogContext);
+          }
+
+          return AlertDialog(
+            title: const Text('調整後用量'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: dosePerUnitController,
+                  autofocus: true,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  onChanged: (_) => setDialogState(() {}),
+                  decoration: InputDecoration(
+                    labelText: '每顆劑量',
+                    hintText: '例如 25',
+                    suffixText: pickedUnit,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                DropdownButtonFormField<String>(
+                  initialValue: pickedUnit,
+                  decoration: const InputDecoration(labelText: '劑量單位'),
+                  items: kMedicationDoseUnits
+                      .map(
+                        (value) => DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setDialogState(() => pickedUnit = value);
+                    }
+                  },
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: pillCountController,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  onChanged: (_) => setDialogState(() {}),
+                  onSubmitted: (_) => submit(),
+                  decoration: const InputDecoration(
+                    labelText: '一次顆數',
+                    hintText: '例如 0.5、1、2',
+                    suffixText: '顆',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  totalDose == null
+                      ? '請輸入有效的劑量與顆數'
+                      : '每次總量：${_formatNumber(dosePerUnit!)} $pickedUnit × '
+                          '${_formatNumber(pillCount!)} 顆 = '
+                          '${_formatNumber(totalDose)} $pickedUnit',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: totalDose == null
+                            ? Theme.of(context).colorScheme.error
+                            : HealingDesignSystem.adaptivePrimaryText(context),
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: isValid ? submit : null,
+                child: const Text('確定'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    dosePerUnitController.dispose();
+    pillCountController.dispose();
+    if (pickedDosePerUnit == null || pickedPillCount == null) return;
+
+    setState(() {
+      draft.newDosePerUnit = pickedDosePerUnit;
+      draft.newPillCount = pickedPillCount;
+      draft.newDose = _round1(pickedDosePerUnit! * pickedPillCount!);
+      draft.unit = pickedUnit;
+    });
+  }
+
+  String _oralDoseSummary(_MedDraft draft, String unit) {
+    final dosePerUnit = draft.newDosePerUnit;
+    final pillCount = draft.newPillCount;
+    if (dosePerUnit == null || pillCount == null) return '點擊輸入';
+    final totalDose = _round1(dosePerUnit * pillCount);
+    return '${_formatNumber(dosePerUnit)} $unit × '
+        '${_formatNumber(pillCount)} 顆 = '
+        '${_formatNumber(totalDose)} $unit';
+  }
+
+  String _formatNumber(double value) {
+    if (value % 1 == 0) return value.toInt().toString();
+    return value.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
   }
 
   Future<void> _editTimes({
@@ -861,6 +1004,7 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
     if (uid == null) return;
 
     final before = await _getMedsForAdjustment(uid);
+    if (!mounted) return;
     final beforeIds = before
         .map((m) => (m['id'] as String?) ?? '')
         .where((id) => id.isNotEmpty)
@@ -874,6 +1018,7 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
     if (added != true) return;
 
     final after = await _getMedsForAdjustment(uid);
+    if (!mounted) return;
     final afterMap = <String, Map<String, dynamic>>{
       for (final m in after)
         if (((m['id'] as String?) ?? '').isNotEmpty) (m['id'] as String): m,
@@ -943,6 +1088,17 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
         );
         return;
       }
+      if (d.type == MedChangeType.doseChanged &&
+          d.usesPillDose &&
+          (d.newDosePerUnit == null ||
+              d.newDosePerUnit! < 0 ||
+              d.newPillCount == null ||
+              d.newPillCount! <= 0)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('請填入調整後的每顆劑量與一次顆數。')),
+        );
+        return;
+      }
     }
 
     setState(() => _saving = true);
@@ -969,9 +1125,19 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
           'type': itemType, // added/injected/doseChanged/stopped/resumed
           'oldDose': isAddedThisSession ? null : d.oldDose,
           'newDose': isAddedThisSession ? (d.newDose ?? d.oldDose) : d.newDose,
+          'oldDosePerUnit': isAddedThisSession ? null : d.oldDosePerUnit,
+          'newDosePerUnit': isAddedThisSession
+              ? (d.newDosePerUnit ?? d.oldDosePerUnit)
+              : d.newDosePerUnit,
+          'oldPillCount': isAddedThisSession ? null : d.oldPillCount,
+          'newPillCount': isAddedThisSession
+              ? (d.newPillCount ?? d.oldPillCount)
+              : d.newPillCount,
           'oldTimes': isAddedThisSession ? null : d.oldTimes,
           'newTimes': d.newTimes,
           'unit': d.unit,
+          'oldUnit': isAddedThisSession ? null : d.oldUnit,
+          'newUnit': d.unit,
           'stopReason': d.stopReason,
         };
       }).toList();
@@ -1033,8 +1199,7 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
         if (d.type == MedChangeType.doseChanged) {
           patch.addAll(
             _buildDoseFieldsForDoseChanged(
-              newDose: d.newDose,
-              baseMed: localMedById[medDocId],
+              draft: d,
             ),
           );
           if (d.newTimes != null) {
@@ -1079,8 +1244,7 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
           if (d.type == MedChangeType.doseChanged) {
             updated.addAll(
               _buildDoseFieldsForDoseChanged(
-                newDose: d.newDose,
-                baseMed: localMed,
+                draft: d,
               ),
             );
             if (d.newTimes != null) {
@@ -1215,28 +1379,22 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
   double _round1(double v) => double.parse(v.toStringAsFixed(1));
 
   Map<String, dynamic> _buildDoseFieldsForDoseChanged({
-    required double? newDose,
-    required Map<String, dynamic>? baseMed,
+    required _MedDraft draft,
   }) {
-    if (newDose == null) return const <String, dynamic>{};
+    if (draft.newDose == null) return const <String, dynamic>{};
 
-    final normalizedDose = _round1(newDose);
-    final type = (baseMed?['type'] ?? '').toString();
+    final normalizedDose = _round1(draft.newDose!);
 
     final out = <String, dynamic>{
       'dose': normalizedDose,
+      'unit': draft.unit,
     };
 
-    // 口服藥在回診只改「總劑量」時，同步換算每顆劑量，避免卡片/打卡顯示不一致。
-    if (type != 'drops' && type != 'injection') {
-      final rawPillCount = baseMed?['pillCount'];
-      final pillCount = rawPillCount is num
-          ? rawPillCount.toDouble()
-          : double.tryParse(rawPillCount?.toString() ?? '');
-      final safePillCount =
-          (pillCount != null && pillCount > 0) ? pillCount : 1.0;
-      out['pillCount'] = _round1(safePillCount);
-      out['dosePerUnit'] = _round1(normalizedDose / safePillCount);
+    if (draft.usesPillDose &&
+        draft.newDosePerUnit != null &&
+        draft.newPillCount != null) {
+      out['dosePerUnit'] = _round1(draft.newDosePerUnit!);
+      out['pillCount'] = _round1(draft.newPillCount!);
     }
 
     return out;
@@ -1251,39 +1409,72 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
 
 class _MedDraft {
   String name;
+  String oldUnit;
   String unit;
+  String medType;
   double oldDose;
+  double oldDosePerUnit;
+  double oldPillCount;
   List<String> oldTimes;
   MedChangeType type;
   double? newDose;
+  double? newDosePerUnit;
+  double? newPillCount;
   List<String>? newTimes;
   String? stopReason;
 
+  bool get usesPillDose => medType != 'drops' && medType != 'injection';
+
   _MedDraft({
     required this.name,
+    required this.oldUnit,
     required this.unit,
+    required this.medType,
     required this.oldDose,
+    required this.oldDosePerUnit,
+    required this.oldPillCount,
     required this.oldTimes,
     required this.type,
     this.newDose,
+    this.newDosePerUnit,
+    this.newPillCount,
     this.newTimes,
   });
 
   factory _MedDraft.fromMap(Map<String, dynamic> m) {
     final name = (m['name'] as String?) ?? '未命名藥物';
     final unit = (m['unit'] as String?) ?? 'mg';
+    final medType = (m['type'] ?? '').toString();
     final dose = m['dose'];
     final oldDose =
         (dose is int) ? dose.toDouble() : (dose is double ? dose : 0.0);
+    final rawPillCount = m['pillCount'];
+    final parsedPillCount = rawPillCount is num
+        ? rawPillCount.toDouble()
+        : double.tryParse(rawPillCount?.toString() ?? '');
+    final oldPillCount =
+        parsedPillCount != null && parsedPillCount > 0 ? parsedPillCount : 1.0;
+    final rawDosePerUnit = m['dosePerUnit'];
+    final parsedDosePerUnit = rawDosePerUnit is num
+        ? rawDosePerUnit.toDouble()
+        : double.tryParse(rawDosePerUnit?.toString() ?? '');
+    final oldDosePerUnit = parsedDosePerUnit ?? (oldDose / oldPillCount);
     final oldTimes =
         (m['times'] as List?)?.whereType<String>().toList() ?? <String>[];
 
     return _MedDraft(
       name: name,
+      oldUnit: unit,
       unit: unit,
+      medType: medType,
       oldDose: oldDose,
+      oldDosePerUnit: oldDosePerUnit,
+      oldPillCount: oldPillCount,
       oldTimes: oldTimes,
       type: MedChangeType.unchanged,
+      newDose: oldDose,
+      newDosePerUnit: oldDosePerUnit,
+      newPillCount: oldPillCount,
       newTimes: List<String>.from(oldTimes),
     );
   }

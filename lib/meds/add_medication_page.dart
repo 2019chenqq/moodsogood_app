@@ -8,6 +8,7 @@ import '../constants/healing_design_system.dart';
 import '../utils/firebase_sync_config.dart';
 import 'medication_local_db.dart';
 import 'medication_reminder_service.dart';
+import 'medication_dose_units.dart';
 import '../analytics_service.dart';
 
 const double kMaxDose = 50000;
@@ -1513,12 +1514,14 @@ class _UnitPicker extends StatelessWidget {
   Widget build(BuildContext context) {
     return DropdownButton<String>(
       value: value,
-      items: const [
-        DropdownMenuItem(value: 'mg', child: Text('mg')),
-        DropdownMenuItem(value: 'g', child: Text('g')),
-        DropdownMenuItem(value: 'mL', child: Text('mL')),
-        DropdownMenuItem(value: 'IU', child: Text('IU')),
-      ],
+      items: kMedicationDoseUnits
+          .map(
+            (unit) => DropdownMenuItem<String>(
+              value: unit,
+              child: Text(unit),
+            ),
+          )
+          .toList(),
       onChanged: (v) {
         if (v != null) onChanged(v);
       },

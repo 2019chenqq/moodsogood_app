@@ -17,12 +17,14 @@ import '../analytics_service.dart';
 class ExportReportPage extends StatefulWidget {
   final List<DailyRecord> records;
   final List<String>? medications;
+  final List<String>? followUpNotes;
 
   const ExportReportPage({
-    Key? key,
+    super.key,
     required this.records,
     this.medications,
-  }) : super(key: key);
+    this.followUpNotes,
+  });
 
   @override
   State<ExportReportPage> createState() => _ExportReportPageState();
@@ -131,6 +133,7 @@ class _ExportReportPageState extends State<ExportReportPage> {
       // 獲取正確的輸出目錄
       final outputDir = await _getOutputDirectory();
       debugPrint('📂 PDF 將保存到: $outputDir');
+      if (!mounted) return;
 
       // 過濾指定日期範圍的記錄
       final filteredRecords = widget.records
@@ -144,7 +147,7 @@ class _ExportReportPageState extends State<ExportReportPage> {
         config: config,
         outputDir: outputDir,
         medications: widget.medications,
-        context: context,
+        followUpNotes: widget.followUpNotes,
       );
 
       if (result?.success == true) {
@@ -186,12 +189,12 @@ class _ExportReportPageState extends State<ExportReportPage> {
     try {
       // 優先使用內部存儲的 Documents 文件夾
       final dir = Directory('/storage/emulated/0/Documents');
-      
+
       // 確保目錄存在
       if (!await dir.exists()) {
         await dir.create(recursive: true);
       }
-      
+
       debugPrint('📂 使用 Documents 文件夾: ${dir.path}');
       return dir.path;
     } catch (e) {
@@ -200,11 +203,11 @@ class _ExportReportPageState extends State<ExportReportPage> {
         // 備選方案：使用應用程式文件夾
         final appDir = await getApplicationDocumentsDirectory();
         final pdfDir = Directory('${appDir.path}/PDF');
-        
+
         if (!await pdfDir.exists()) {
           await pdfDir.create(recursive: true);
         }
-        
+
         debugPrint('📂 使用應用文件夾: ${pdfDir.path}');
         return pdfDir.path;
       } catch (e) {
@@ -234,7 +237,8 @@ class _ExportReportPageState extends State<ExportReportPage> {
                 children: [
                   Row(
                     children: const [
-                      Icon(Icons.calendar_today, size: 16, color: Colors.black87),
+                      Icon(Icons.calendar_today,
+                          size: 16, color: Colors.black87),
                       SizedBox(width: 6),
                       Text(
                         '選擇報告期間',
@@ -359,7 +363,8 @@ class _ExportReportPageState extends State<ExportReportPage> {
                         width: double.infinity,
                         height: 56,
                         child: ElevatedButton.icon(
-                          onPressed: provider.isExporting ? null : _handleExport,
+                          onPressed:
+                              provider.isExporting ? null : _handleExport,
                           icon: provider.isExporting
                               ? const SizedBox(
                                   width: 20,
@@ -401,8 +406,7 @@ class _ExportReportPageState extends State<ExportReportPage> {
                                 Expanded(
                                   child: Text(
                                     provider.error!,
-                                    style:
-                                        const TextStyle(color: Colors.red),
+                                    style: const TextStyle(color: Colors.red),
                                   ),
                                 ),
                               ],
@@ -595,7 +599,8 @@ class _ExportReportPageState extends State<ExportReportPage> {
                     ),
                     Text(
                       '平均: ${e.averageScore.toStringAsFixed(1)}/10 | 趨勢: ${e.trendDescription}',
-                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                      style:
+                          TextStyle(fontSize: 11, color: Colors.grey.shade600),
                     ),
                   ],
                 ),

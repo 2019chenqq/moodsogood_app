@@ -40,6 +40,13 @@ class _ProPageState extends State<ProPage> {
       _statusMessage = null;
     });
 
+    if (!isRevenueCatConfigured) {
+      setState(() {
+        _errorMessage = '目前為訂閱畫面預覽，尚未連接商店方案。';
+      });
+      return;
+    }
+
     try {
       final offerings = await Purchases.getOfferings();
       setState(() {
@@ -48,8 +55,7 @@ class _ProPageState extends State<ProPage> {
 
       if (_offering == null) {
         setState(() {
-          _errorMessage =
-              '目前找不到可用訂閱方案。請到 RevenueCat 檢查 Offering / Package 設定。';
+          _errorMessage = '目前找不到可用訂閱方案。請到 RevenueCat 檢查 Offering / Package 設定。';
         });
       }
     } catch (e) {
@@ -67,14 +73,14 @@ class _ProPageState extends State<ProPage> {
     });
 
     try {
-      final purchaseResult = await Purchases.purchasePackage(package);
-      final isActive = purchaseResult
-              .customerInfo
-              .entitlements
-              .all[kRevenueCatEntitlementId]
-              ?.isActive ??
+      final purchaseResult = await Purchases.purchase(
+        PurchaseParams.package(package),
+      );
+      final isActive = purchaseResult.customerInfo.entitlements
+              .all[kRevenueCatEntitlementId]?.isActive ??
           false;
 
+      if (!mounted) return;
       await context.read<ProProvider>().refreshFromRevenueCat();
 
       if (!mounted) return;
@@ -122,6 +128,7 @@ class _ProPageState extends State<ProPage> {
 
     try {
       await Purchases.restorePurchases();
+      if (!mounted) return;
       await context.read<ProProvider>().refreshFromRevenueCat();
       if (!mounted) return;
 
@@ -185,7 +192,7 @@ class _ProPageState extends State<ProPage> {
                 ),
                 SizedBox(height: 12),
                 Text(
-                  '升級到 Pro 以解鎖所有功能。',
+                  '解鎖心域 AI，協助整理與回顧你授權的紀錄。',
                   style: TextStyle(
                     color: Colors.white70,
                     fontSize: 16,
@@ -202,38 +209,43 @@ class _ProPageState extends State<ProPage> {
           const SizedBox(height: 16),
           _buildFeatureComparison(
             context,
-            Icons.cloud,
-            '資料存儲',
-            free: '本地存儲',
-            pro: 'Firebase 雲端',
+            Icons.chat_bubble_outline_rounded,
+            '心域 AI 對話',
+            free: '無法使用',
+            pro: '可使用',
           ),
           _buildFeatureComparison(
             context,
-            Icons.calendar_today,
-            '資料保留期',
-            free: '最近 2 年',
-            pro: '永久保存',
+            Icons.auto_graph_rounded,
+            '近期紀錄回顧',
+            free: '自行查看紀錄',
+            pro: 'AI 協助整理脈絡',
           ),
           _buildFeatureComparison(
             context,
-            Icons.sync_alt,
-            '多設備同步',
-            free: '不支持',
-            pro: '支持',
+            Icons.edit_note_rounded,
+            '每日紀錄整理',
+            free: '手動輸入',
+            pro: 'AI 協助建立草稿',
           ),
           _buildFeatureComparison(
             context,
-            Icons.bar_chart,
-            '查看歷程',
-            free: '最近 30 天',
-            pro: '全部歷程',
+            Icons.medical_information_outlined,
+            '回診專區 Beta',
+            free: '免費使用',
+            pro: '免費使用',
           ),
-          _buildFeatureComparison(
-            context,
-            Icons.trending_up,
-            '情緒趨勢圖',
-            free: '最近 30 天',
-            pro: '全部趨勢',
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.blueGrey.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Text(
+              '重要提醒：心域 AI 僅提供自我覺察與紀錄整理輔助，可能產生不完整或不正確的內容。它不能診斷疾病、判定病因、調整藥物，也不取代醫師、心理師或其他專業人員的評估與治療。',
+              style: TextStyle(fontSize: 13, height: 1.55),
+            ),
           ),
           const SizedBox(height: 20),
           if (_errorMessage != null)
@@ -301,7 +313,7 @@ class _ProPageState extends State<ProPage> {
           ),
           const SizedBox(height: 20),
           Text(
-            '提示\n• 首次購買後可立即使用所有 Pro 功能\n• 可在 $_storeName 帳戶設定中管理訂閱\n• 取消訂閱後，您仍可使用已同步到雲端的數據',
+            '提示\n• 完成購買後可立即使用心域 AI\n• 訂閱會依商店顯示的週期自動續訂，除非你在目前週期結束前取消\n• 可在 $_storeName 帳戶設定中管理或取消訂閱\n• 回診專區 Beta 目前免費；回診摘要仍在開發中，未列入本次付費權益',
             style:
                 const TextStyle(color: Colors.grey, fontSize: 12, height: 1.6),
           ),

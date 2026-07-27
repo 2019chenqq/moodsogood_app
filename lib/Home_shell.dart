@@ -11,6 +11,6 @@ class HomeShell extends m.StatelessWidget {
 
   @override
   m.Widget build(m.BuildContext context) {
-    return const RecordHubPage();
+    return const HomeHubPage();
   }
 }

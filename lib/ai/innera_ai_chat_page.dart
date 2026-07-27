@@ -548,6 +548,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
           builder: (context) => AiDiaryDraftSheet(
             draft: draft,
             existingDiary: existing,
+            originalContent: AiDiaryDraftService.originalUserContent(_messages),
           ),
         );
         if (result is DiaryDraftConfirmation) {

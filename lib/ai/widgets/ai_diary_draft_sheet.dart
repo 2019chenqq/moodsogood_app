@@ -11,16 +11,25 @@ class AiDiaryDraftSheet extends StatefulWidget {
     super.key,
     required this.draft,
     required this.existingDiary,
+    required this.originalContent,
   });
 
   final AiDiaryDraft draft;
   final DiaryEntry? existingDiary;
+  final String originalContent;
 
   @override
   State<AiDiaryDraftSheet> createState() => _AiDiaryDraftSheetState();
 }
 
 class _AiDiaryDraftSheetState extends State<AiDiaryDraftSheet> {
+  static const _multiSelectFields = <String>{
+    'highlight',
+    'proudOf',
+    'selfCare',
+    'gratitude',
+  };
+
   static const _labels = <String, String>{
     'title': '標題',
     'content': '內容',
@@ -36,22 +45,27 @@ class _AiDiaryDraftSheetState extends State<AiDiaryDraftSheet> {
   late final Map<String, String> _initialValues;
   late final Map<String, bool> _included;
   late final Map<String, DiaryFieldMerge> _mergeChoices;
+  late final Map<String, Set<String>> _selectedSuggestions;
   late List<VerifiedSongRecommendation> _songs;
   String? _selectedSongId;
+  bool _useOriginalContent = true;
   bool _searchingSongs = false;
 
   @override
   void initState() {
     super.initState();
+    final originalContent = widget.originalContent.trim();
+    final aiContent = widget.draft.content?.value ?? '';
+    _useOriginalContent = originalContent.isNotEmpty;
     final values = <String, String>{
       'title': _first(widget.draft.titleSuggestions),
-      'content': widget.draft.content?.value ?? '',
+      'content': originalContent.isNotEmpty ? originalContent : aiContent,
       'metaphor': _first(widget.draft.emotionMetaphorSuggestions),
-      'highlight': _first(widget.draft.memorableMomentSuggestions),
-      'proudOf': _first(widget.draft.didWellSuggestions),
+      'highlight': _all(widget.draft.memorableMomentSuggestions),
+      'proudOf': _all(widget.draft.didWellSuggestions),
       'themeSong': '',
-      'selfCare': _first(widget.draft.selfCareSuggestions),
-      'gratitude': _first(widget.draft.gratitudeSuggestions),
+      'selfCare': _all(widget.draft.selfCareSuggestions),
+      'gratitude': _all(widget.draft.gratitudeSuggestions),
     };
     _initialValues = Map.of(values);
     _controllers = values.map(
@@ -60,6 +74,17 @@ class _AiDiaryDraftSheetState extends State<AiDiaryDraftSheet> {
     _included = values.map((key, value) => MapEntry(key, value.isNotEmpty));
     _mergeChoices = {
       for (final key in _labels.keys) key: DiaryFieldMerge.keepExisting,
+    };
+    _selectedSuggestions = {
+      'highlight': widget.draft.memorableMomentSuggestions
+          .map((item) => item.value)
+          .toSet(),
+      'proudOf':
+          widget.draft.didWellSuggestions.map((item) => item.value).toSet(),
+      'selfCare':
+          widget.draft.selfCareSuggestions.map((item) => item.value).toSet(),
+      'gratitude':
+          widget.draft.gratitudeSuggestions.map((item) => item.value).toSet(),
     };
     _songs = List.of(widget.draft.songRecommendations);
   }
@@ -122,13 +147,7 @@ class _AiDiaryDraftSheetState extends State<AiDiaryDraftSheet> {
                     widget.draft.titleSuggestions,
                     maxLines: 1,
                   ),
-                  _field(
-                    'content',
-                    widget.draft.content == null
-                        ? const []
-                        : [widget.draft.content!],
-                    maxLines: 7,
-                  ),
+                  _contentField(),
                   _field(
                     'metaphor',
                     widget.draft.emotionMetaphorSuggestions,
@@ -205,7 +224,30 @@ class _AiDiaryDraftSheetState extends State<AiDiaryDraftSheet> {
               onChanged: (value) =>
                   setState(() => _included[key] = value == true),
             ),
-            if (suggestions.length > 1)
+            if (_multiSelectFields.contains(key) && suggestions.isNotEmpty)
+              ...suggestions.map(
+                (item) => CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value:
+                      _selectedSuggestions[key]?.contains(item.value) ?? false,
+                  title: Text(item.value),
+                  subtitle: _source(item),
+                  onChanged: !enabled
+                      ? null
+                      : (selected) => setState(() {
+                            final values = _selectedSuggestions[key]!;
+                            if (selected == true) {
+                              values.add(item.value);
+                            } else {
+                              values.remove(item.value);
+                            }
+                            _controllers[key]!.text = values.join('\n');
+                          }),
+                ),
+              )
+            else if (suggestions.length > 1)
               ...suggestions.map(
                 (item) => ListTile(
                   contentPadding: EdgeInsets.zero,
@@ -271,6 +313,131 @@ class _AiDiaryDraftSheetState extends State<AiDiaryDraftSheet> {
         ),
       ),
     );
+  }
+
+  Widget _contentField() {
+    final key = 'content';
+    final existing = _existingValue(key);
+    final enabled = _included[key] ?? false;
+    final original = widget.originalContent.trim();
+    final aiContent = widget.draft.content?.value.trim() ?? '';
+    return Card(
+      color: HealingDesignSystem.adaptiveSurface(context),
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              value: enabled,
+              title: Text(
+                _labels[key]!,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              secondary: IconButton(
+                onPressed: () => Navigator.pop(context, 'regenerate:$key'),
+                icon: const Icon(Icons.refresh_rounded),
+                tooltip: '重新產生 AI 整理稿',
+              ),
+              onChanged: (value) =>
+                  setState(() => _included[key] = value == true),
+            ),
+            RadioGroup<bool>(
+              groupValue: _useOriginalContent,
+              onChanged: (useOriginal) {
+                if (!enabled || useOriginal == null) return;
+                _selectContent(
+                  useOriginal,
+                  useOriginal ? original : aiContent,
+                );
+              },
+              child: Column(
+                children: [
+                  if (original.isNotEmpty)
+                    RadioListTile<bool>(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      enabled: enabled,
+                      value: true,
+                      title: Text('保留完整原稿（${original.runes.length} 字）'),
+                      subtitle: Text(
+                        original,
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  if (aiContent.isNotEmpty)
+                    RadioListTile<bool>(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      enabled: enabled,
+                      value: false,
+                      title: Text('使用 AI 整理稿（${aiContent.runes.length} 字）'),
+                      subtitle: Text(
+                        aiContent,
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _controllers[key],
+              enabled: enabled,
+              minLines: 5,
+              maxLines: 14,
+              decoration: const InputDecoration(
+                labelText: '儲存內容（可再修改）',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            if (existing.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                '今日已有內容：$existing',
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+              DropdownButtonFormField<DiaryFieldMerge>(
+                initialValue: _mergeChoices[key],
+                decoration: const InputDecoration(labelText: '如何處理已有內容'),
+                items: const [
+                  DropdownMenuItem(
+                    value: DiaryFieldMerge.keepExisting,
+                    child: Text('保留原內容（預設）'),
+                  ),
+                  DropdownMenuItem(
+                    value: DiaryFieldMerge.replace,
+                    child: Text('使用本次內容取代'),
+                  ),
+                  DropdownMenuItem(
+                    value: DiaryFieldMerge.append,
+                    child: Text('合併原內容與本次內容'),
+                  ),
+                ],
+                onChanged: enabled
+                    ? (value) => setState(() {
+                          if (value != null) _mergeChoices[key] = value;
+                        })
+                    : null,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _selectContent(bool useOriginal, String value) {
+    setState(() {
+      _useOriginalContent = useOriginal;
+      _controllers['content']!.text = value;
+    });
   }
 
   Widget _songField() {
@@ -545,4 +712,7 @@ class _AiDiaryDraftSheetState extends State<AiDiaryDraftSheet> {
 
   static String _first(List<DiaryDraftSuggestion> values) =>
       values.isEmpty ? '' : values.first.value;
+
+  static String _all(List<DiaryDraftSuggestion> values) =>
+      AiDiaryDraftService.combineSuggestionValues(values);
 }

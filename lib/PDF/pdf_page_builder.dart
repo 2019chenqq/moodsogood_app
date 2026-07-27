@@ -13,6 +13,7 @@ class PDFPageBuilder {
   final ExportConfig config;
   final String aiSummary;
   final List<String> medications;
+  final List<String> followUpNotes;
   final List<DailyRecord> records;
 
   PDFPageBuilder({
@@ -20,8 +21,17 @@ class PDFPageBuilder {
     required this.config,
     required this.aiSummary,
     required this.medications,
+    this.followUpNotes = const [],
     required this.records,
   });
+
+  PDFPageContent buildFollowUpPage() {
+    return PDFPageContent(
+      title: '回診準備摘要',
+      content: followUpNotes.join('\n'),
+      orientation: 'portrait',
+    );
+  }
 
   /// 第 1 頁：總覽摘要
   PDFPageContent buildOverviewPage() {
@@ -152,9 +162,11 @@ class PDFPageBuilder {
     contentParts.add('😴 睡眠統計');
     contentParts.add('');
     contentParts.add('平均睡眠時數: ${sleep.averageDuration.toStringAsFixed(1)} 小時');
-    contentParts.add('最短: ${sleep.minDuration.toStringAsFixed(1)}h | 最長: ${sleep.maxDuration.toStringAsFixed(1)}h');
+    contentParts.add(
+        '最短: ${sleep.minDuration.toStringAsFixed(1)}h | 最長: ${sleep.maxDuration.toStringAsFixed(1)}h');
     contentParts.add('短睡眠天數 (<5h): ${sleep.shortSleepDays}');
-    contentParts.add('睡眠波動 (標準差): ${sleep.standardDeviation.toStringAsFixed(2)}');
+    contentParts
+        .add('睡眠波動 (標準差): ${sleep.standardDeviation.toStringAsFixed(2)}');
     contentParts.add('波動級別: ${sleep.volatilityDescription}');
     contentParts.add('');
 
@@ -282,7 +294,8 @@ class PDFPageBuilder {
       contentParts.add('高頻關鍵詞: ${metrics.textMetrics!.topKeyword}');
       contentParts.add('出現次數: ${metrics.textMetrics!.topKeywordCount}');
       if (metrics.textMetrics!.primaryTheme != null) {
-        contentParts.add('主要主題: ${_getThemeLabel(metrics.textMetrics!.primaryTheme!)}');
+        contentParts
+            .add('主要主題: ${_getThemeLabel(metrics.textMetrics!.primaryTheme!)}');
       }
     }
 
