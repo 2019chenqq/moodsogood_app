@@ -6,7 +6,9 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../settings_page.dart';
+import '../ai/innera_ai_home_page.dart';
 import '../pages/feedback_page.dart';
+import '../pages/follow_up_hub_page.dart';
 import '../pages/hub_pages.dart';
 import '../pages/life_overview_page.dart';
 import '../pages/profile_page.dart';
@@ -218,6 +220,19 @@ class _MainDrawerState extends State<MainDrawer> {
             ),
             // 主要分區
             ListTile(
+              leading: Icon(Icons.home_outlined,
+                  color: HealingDesignSystem.primaryBlue),
+              title: Text('首頁', style: drawerTitleStyle),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (_) => const HomeHubPage()),
+                  (route) => false,
+                );
+              },
+            ),
+            ListTile(
               leading:
                   Icon(Icons.edit_note, color: HealingDesignSystem.primaryBlue),
               title: Text('紀錄系統', style: drawerTitleStyle),
@@ -230,6 +245,18 @@ class _MainDrawerState extends State<MainDrawer> {
               },
             ),
             ListTile(
+              leading: Icon(Icons.auto_awesome_rounded,
+                  color: HealingDesignSystem.primaryBlue),
+              title: Text('心域 AI', style: drawerTitleStyle),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const InneraAiHomePage()),
+                );
+              },
+            ),
+            ListTile(
               leading: Icon(Icons.calendar_month,
                   color: HealingDesignSystem.primaryBlue),
               title: Text('生活軌跡', style: drawerTitleStyle),
@@ -238,6 +265,18 @@ class _MainDrawerState extends State<MainDrawer> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const LifeOverviewPage()),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.medical_information_outlined,
+                  color: HealingDesignSystem.primaryBlue),
+              title: Text('回診專區', style: drawerTitleStyle),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const FollowUpHubPage()),
                 );
               },
             ),

@@ -196,7 +196,8 @@ class _RecordAdjustmentHistoryPageState
       if (it is! Map) return '';
       final name = (it['name'] ?? '未命名藥物').toString();
       final type = (it['type'] ?? 'unchanged').toString();
-      final unit = (it['unit'] ?? '').toString();
+      final unit = (it['newUnit'] ?? it['unit'] ?? '').toString();
+      final oldUnit = (it['oldUnit'] ?? it['unit'] ?? '').toString();
       final oldDose = it['oldDose'];
       final newDose = it['newDose'];
       final oldTimes = _timesToText(it['oldTimes']);
@@ -225,9 +226,10 @@ class _RecordAdjustmentHistoryPageState
 
           if ((oldDosePerUnit != null && oldPillCount != null) &&
               (oldDosePerUnit != newDosePerUnit ||
-                  oldPillCount != newPillCount)) {
+                  oldPillCount != newPillCount ||
+                  oldUnit != unit)) {
             doseText =
-                '$doseText；原本 ${oldDosePerUnit ?? ''}$unit × ${oldPillCount ?? ''}顆';
+                '$doseText；原本 ${oldDosePerUnit ?? ''}$oldUnit × ${oldPillCount ?? ''}顆';
           }
 
           if (oldTimes != newTimes && newTimes.isNotEmpty) {
@@ -276,7 +278,9 @@ class _RecordAdjustmentHistoryPageState
 
                   final name = (it['name'] ?? '未命名藥物').toString();
                   final type = (it['type'] ?? 'unchanged').toString();
-                  final unit = (it['unit'] ?? '').toString();
+                  final unit = (it['newUnit'] ?? it['unit'] ?? '').toString();
+                  final oldUnit =
+                      (it['oldUnit'] ?? it['unit'] ?? '').toString();
                   final oldDose = it['oldDose'];
                   final newDose = it['newDose'];
                   final oldTimes = _timesToText(it['oldTimes']);
@@ -300,9 +304,10 @@ class _RecordAdjustmentHistoryPageState
                       if (oldDosePerUnit != null &&
                           oldPillCount != null &&
                           (oldDosePerUnit != newDosePerUnit ||
-                              oldPillCount != newPillCount)) {
+                              oldPillCount != newPillCount ||
+                              oldUnit != unit)) {
                         line =
-                            '$line；原本 ${oldDosePerUnit ?? ''}$unit × ${oldPillCount ?? ''}顆';
+                            '$line；原本 ${oldDosePerUnit ?? ''}$oldUnit × ${oldPillCount ?? ''}顆';
                       }
                     } else {
                       line = '調整：${oldDose ?? ''} → ${newDose ?? ''} $unit';

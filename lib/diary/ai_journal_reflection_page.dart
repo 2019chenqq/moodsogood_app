@@ -471,7 +471,7 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
       final result = <String, dynamic>{
         'date': _docId,
         'mode': 'basic',
-        'moodScale': _diaryData?['diaryMoodScale'] ?? 10,
+        'moodScale': 5,
         'diaryText': diaryText,
         'emotions': emotions,
         'allowedAnalysisScope': [
@@ -666,7 +666,7 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
         'overallMood': _diaryData?['overallMood'],
         'overallHealth': _diaryData?['overallHealth'],
         'overallSleepQuality': _diaryData?['overallSleepQuality'],
-        'moodScale': _diaryData?['diaryMoodScale'] ?? 10,
+        'moodScale': 5,
       };
 
       final diarySections = <MapEntry<String, String>>[
@@ -710,7 +710,7 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
       final dailyRecordForAi = {
         if (_diaryData?['overallMood'] != null)
           'overallMood': _diaryData!['overallMood'],
-        'moodScale': _diaryData?['diaryMoodScale'] ?? 10,
+        'moodScale': 5,
       };
       final result = await generateAIReflection(
         aiInput: aiInput,
@@ -1779,7 +1779,7 @@ class _OverallMoodCard extends m.StatelessWidget {
                     ),
                   ),
                   m.TextSpan(
-                    text: ' / 10',
+                    text: ' / 5',
                     style: m.TextStyle(
                       fontSize: 13,
                       fontWeight: m.FontWeight.w600,

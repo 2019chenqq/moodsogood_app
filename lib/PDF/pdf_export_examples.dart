@@ -261,7 +261,6 @@ class _AdvancedPDFExportPageState extends State<AdvancedPDFExportPage> {
       records: widget.allRecords,
       config: config,
       outputDir: '/storage/emulated/0/Documents',
-      context: context,
     );
 
     if (mounted) {

@@ -3,19 +3,9 @@ import '../daily_record_helpers.dart';
 import '../../constants/healing_design_system.dart';
 import '../../widgets/emotion_slider.dart';
 import '../../analytics_service.dart';
+import '../emotion_dimensions.dart';
 
-const Map<String, List<String>> kEmotionCheckboxCategories = {
-  '喜悅': ['快樂', '興奮', '愉悅', '滿足', '自在', '平靜', '放鬆', '安心', '期待', '自信', '感恩', '幸福', '有希望'],
-  '厭惡': ['厭倦', '無聊', '反感', '煩悶', '排斥', '討厭'],
-  '悲傷': ['低落', '憂鬱', '孤單', '絕望', '沮喪', '難過', '失落', '空虛', '無助', '麻木'],
-  '恐懼': ['緊張', '擔心', '惶恐', '焦慮', '害怕', '警覺', '恐懼', '忐忑不安'],
-  '憤怒': ['生氣', '憤怒', '暴躁', '忌妒', '煩躁', '不耐煩', '惱羞成怒'],
-  '危險警訊': ['自殺意念'],
-};
-
-final List<String> kEmotionCheckboxNames = List.unmodifiable(
-  kEmotionCheckboxCategories.values.expand((emotions) => emotions),
-);
+export '../emotion_dimensions.dart';
 
 /// 新版：分類選擇 + 已選情緒評分
 /// TOP: 三大類情緒（整體狀態、壓力情緒、低落警訊）以 Chip 方式選擇

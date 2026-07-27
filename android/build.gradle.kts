@@ -36,6 +36,25 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+// home_widget 0.8.1 ships Java 11 bytecode but declares Kotlin JVM 1.8.
+// Configure only that plugin; do not override Android compilation globally.
+project(":home_widget") {
+    afterEvaluate {
+        extensions.findByType<com.android.build.gradle.LibraryExtension>()
+            ?.compileOptions {
+                sourceCompatibility = JavaVersion.VERSION_11
+                targetCompatibility = JavaVersion.VERSION_11
+            }
+        tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+            compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+        }
+        tasks.withType<org.gradle.api.tasks.compile.JavaCompile>().configureEach {
+            sourceCompatibility = JavaVersion.VERSION_11.toString()
+            targetCompatibility = JavaVersion.VERSION_11.toString()
+        }
+    }
+}
+
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:tutorial_coach_mark/tutorial_coach_mark.dart';
 import '../widgets/main_drawer.dart';
+import '../ai/innera_ai_home_page.dart';
 import '../daily/daily_record_screen.dart';
 import '../daily/daily_record_history.dart';
 import '../diary/diary_home_page.dart';
@@ -9,6 +10,118 @@ import '../meds/medication_checkin_page.dart';
 import '../community/community_home_page.dart';
 import '../analytics_service.dart';
 import '../tutorial/app_tutorial_service.dart';
+import '../settings_page.dart';
+import 'feedback_page.dart';
+import 'follow_up_hub_page.dart';
+import 'life_overview_page.dart';
+import 'profile_page.dart';
+
+class HomeHubPage extends StatelessWidget {
+  const HomeHubPage({super.key});
+
+  void _push(BuildContext context, Widget page) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => page),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      drawer: const MainDrawer(),
+      appBar: AppBar(
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu),
+            tooltip: '選單',
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
+        title: const Text('首頁'),
+      ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Theme.of(context).colorScheme.primary.withValues(alpha: 0.05),
+              Theme.of(context).colorScheme.secondary.withValues(alpha: 0.03),
+            ],
+          ),
+        ),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          children: [
+            _RecordEntryCard(
+              icon: Icons.auto_awesome_rounded,
+              title: '心域 AI',
+              subtitle: '說說現在的狀態，或讓 AI 協助回顧近期紀錄',
+              color: const Color(0xFF7DB7D8),
+              onTap: () => _push(context, const InneraAiHomePage()),
+              actionLabel: '開始對話',
+            ),
+            const SizedBox(height: 12),
+            _RecordEntryCard(
+              icon: Icons.edit_note_rounded,
+              title: '紀錄系統',
+              subtitle: '記錄每日狀態、日記、用藥與服藥情形',
+              color: const Color.fromARGB(255, 129, 199, 132),
+              onTap: () => _push(context, const RecordHubPage()),
+              actionLabel: '開始記錄',
+            ),
+            const SizedBox(height: 12),
+            _RecordEntryCard(
+              icon: Icons.medical_information_outlined,
+              title: '回診專區',
+              subtitle: '整理調藥、醫囑、待討論問題與近期趨勢',
+              color: const Color(0xFF26A69A),
+              onTap: () => _push(context, const FollowUpHubPage()),
+              actionLabel: '前往專區',
+            ),
+            const SizedBox(height: 12),
+            _RecordEntryCard(
+              icon: Icons.calendar_month_outlined,
+              title: '生活軌跡',
+              subtitle: '從日曆回顧每天的紀錄與生活變化',
+              color: const Color(0xFF5C9BD5),
+              onTap: () => _push(context, const LifeOverviewPage()),
+              actionLabel: '查看軌跡',
+            ),
+            const SizedBox(height: 12),
+            _RecordEntryCard(
+              icon: Icons.person_outline_rounded,
+              title: '個人資料',
+              subtitle: '查看與更新個人基本資料',
+              color: const Color(0xFF9575CD),
+              onTap: () => _push(context, const ProfilePage()),
+              actionLabel: '查看資料',
+            ),
+            const SizedBox(height: 12),
+            _RecordEntryCard(
+              icon: Icons.settings_outlined,
+              title: '設定',
+              subtitle: '調整提醒、外觀、安全與其他使用偏好',
+              color: const Color(0xFF78909C),
+              onTap: () => _push(context, const SettingsPage()),
+              actionLabel: '開啟設定',
+            ),
+            const SizedBox(height: 12),
+            _RecordEntryCard(
+              icon: Icons.help_outline_rounded,
+              title: '幫助與回饋',
+              subtitle: '取得使用協助，或告訴我們你的建議',
+              color: const Color(0xFFFFA25B),
+              onTap: () => _push(context, const FeedbackPage()),
+              actionLabel: '取得協助',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class RecordHubPage extends StatefulWidget {
   const RecordHubPage({super.key});
@@ -129,8 +242,8 @@ class _RecordHubPageState extends State<RecordHubPage> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Theme.of(context).colorScheme.primary.withOpacity(0.05),
-              Theme.of(context).colorScheme.secondary.withOpacity(0.03),
+              Theme.of(context).colorScheme.primary.withValues(alpha: 0.05),
+              Theme.of(context).colorScheme.secondary.withValues(alpha: 0.03),
             ],
           ),
         ),
@@ -288,6 +401,7 @@ class _RecordEntryCard extends StatefulWidget {
     required this.subtitle,
     required this.color,
     required this.onTap,
+    this.actionLabel,
   });
 
   final IconData icon;
@@ -295,6 +409,7 @@ class _RecordEntryCard extends StatefulWidget {
   final String subtitle;
   final Color color;
   final VoidCallback onTap;
+  final String? actionLabel;
 
   @override
   State<_RecordEntryCard> createState() => _RecordEntryCardState();
@@ -347,7 +462,7 @@ class _RecordEntryCardState extends State<_RecordEntryCard>
         scale: _scaleAnimation,
         child: Card(
           elevation: 4,
-          shadowColor: widget.color.withOpacity(0.4),
+          shadowColor: widget.color.withValues(alpha: 0.4),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
@@ -358,12 +473,12 @@ class _RecordEntryCardState extends State<_RecordEntryCard>
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  widget.color.withOpacity(0.15),
-                  widget.color.withOpacity(0.05),
+                  widget.color.withValues(alpha: 0.15),
+                  widget.color.withValues(alpha: 0.05),
                 ],
               ),
               border: Border.all(
-                color: widget.color.withOpacity(0.2),
+                color: widget.color.withValues(alpha: 0.2),
                 width: 1.5,
               ),
             ),
@@ -381,13 +496,13 @@ class _RecordEntryCardState extends State<_RecordEntryCard>
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      widget.color.withOpacity(0.3),
-                      widget.color.withOpacity(0.15),
+                      widget.color.withValues(alpha: 0.3),
+                      widget.color.withValues(alpha: 0.15),
                     ],
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: widget.color.withOpacity(0.2),
+                      color: widget.color.withValues(alpha: 0.2),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -408,14 +523,30 @@ class _RecordEntryCardState extends State<_RecordEntryCard>
               ),
               subtitle: Padding(
                 padding: const EdgeInsets.only(top: 6),
-                child: Text(
-                  widget.subtitle,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withOpacity(0.7),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.subtitle,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withValues(alpha: 0.7),
+                          ),
+                    ),
+                    if (widget.actionLabel != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        widget.actionLabel!,
+                        style:
+                            Theme.of(context).textTheme.labelMedium?.copyWith(
+                                  color: widget.color,
+                                  fontWeight: FontWeight.w800,
+                                ),
                       ),
+                    ],
+                  ],
                 ),
               ),
               trailing: Container(
@@ -423,7 +554,7 @@ class _RecordEntryCardState extends State<_RecordEntryCard>
                 height: 36,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: widget.color.withOpacity(0.1),
+                  color: widget.color.withValues(alpha: 0.1),
                 ),
                 child: Icon(
                   Icons.arrow_forward_ios,

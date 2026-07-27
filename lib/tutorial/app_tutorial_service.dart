@@ -1,13 +1,13 @@
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AppTutorialService {
   static const String hasSeenDailyRecordTutorial = 'hasSeenDailyRecordTutorial';
+  static const bool _isDailyRecordTutorialEnabled = false;
 
   const AppTutorialService._();
 
   static Future<bool> shouldShowDailyRecordTutorial() async {
-    if (!kReleaseMode) return true;
+    if (!_isDailyRecordTutorialEnabled) return false;
 
     final prefs = await SharedPreferences.getInstance();
     return !(prefs.getBool(hasSeenDailyRecordTutorial) ?? false);

@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../utils/encryption_service.dart';
 import '../utils/secure_storage_service.dart';
+import 'diary_image_encryption_service.dart';
 
 class DiaryEntry {
   final int? id;
@@ -19,6 +20,15 @@ class DiaryEntry {
   final String? proudOf;
   final String? selfCare;
   final String? gratitude;
+  final String? themeSongProvider;
+  final String? themeSongProviderId;
+  final String? themeSongTitle;
+  final String? themeSongArtist;
+  final String? themeSongAlbum;
+  final String? themeSongArtworkUrl;
+  final String? themeSongExternalUrl;
+  final String? themeSongIsrc;
+  final String? themeSongRecommendationReason;
   final List<String> imageUrls;
 
   DiaryEntry({
@@ -34,6 +44,15 @@ class DiaryEntry {
     this.proudOf,
     this.selfCare,
     this.gratitude,
+    this.themeSongProvider,
+    this.themeSongProviderId,
+    this.themeSongTitle,
+    this.themeSongArtist,
+    this.themeSongAlbum,
+    this.themeSongArtworkUrl,
+    this.themeSongExternalUrl,
+    this.themeSongIsrc,
+    this.themeSongRecommendationReason,
     this.imageUrls = const [],
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -55,6 +74,15 @@ class DiaryEntry {
     String? proudOf,
     String? selfCare,
     String? gratitude,
+    String? themeSongProvider,
+    String? themeSongProviderId,
+    String? themeSongTitle,
+    String? themeSongArtist,
+    String? themeSongAlbum,
+    String? themeSongArtworkUrl,
+    String? themeSongExternalUrl,
+    String? themeSongIsrc,
+    String? themeSongRecommendationReason,
     List<String>? imageUrls,
   }) {
     return DiaryEntry(
@@ -72,6 +100,16 @@ class DiaryEntry {
       proudOf: proudOf ?? this.proudOf,
       selfCare: selfCare ?? this.selfCare,
       gratitude: gratitude ?? this.gratitude,
+      themeSongProvider: themeSongProvider ?? this.themeSongProvider,
+      themeSongProviderId: themeSongProviderId ?? this.themeSongProviderId,
+      themeSongTitle: themeSongTitle ?? this.themeSongTitle,
+      themeSongArtist: themeSongArtist ?? this.themeSongArtist,
+      themeSongAlbum: themeSongAlbum ?? this.themeSongAlbum,
+      themeSongArtworkUrl: themeSongArtworkUrl ?? this.themeSongArtworkUrl,
+      themeSongExternalUrl: themeSongExternalUrl ?? this.themeSongExternalUrl,
+      themeSongIsrc: themeSongIsrc ?? this.themeSongIsrc,
+      themeSongRecommendationReason:
+          themeSongRecommendationReason ?? this.themeSongRecommendationReason,
       imageUrls: imageUrls ?? this.imageUrls,
     );
   }
@@ -91,6 +129,15 @@ class DiaryEntry {
         'proudOf': proudOf,
         'selfCare': selfCare,
         'gratitude': gratitude,
+        'themeSongProvider': themeSongProvider,
+        'themeSongProviderId': themeSongProviderId,
+        'themeSongTitle': themeSongTitle,
+        'themeSongArtist': themeSongArtist,
+        'themeSongAlbum': themeSongAlbum,
+        'themeSongArtworkUrl': themeSongArtworkUrl,
+        'themeSongExternalUrl': themeSongExternalUrl,
+        'themeSongIsrc': themeSongIsrc,
+        'themeSongRecommendationReason': themeSongRecommendationReason,
         'imageUrls': imageUrls,
       };
 }
@@ -153,7 +200,26 @@ class DiaryRepository {
       'proudOf': encryption.encryptData(entry.proudOf ?? ''),
       'selfCare': encryption.encryptData(entry.selfCare ?? ''),
       'gratitude': encryption.encryptData(entry.gratitude ?? ''),
-      'imageUrls': entry.imageUrls,
+      'themeSongProvider':
+          encryption.encryptData(entry.themeSongProvider ?? ''),
+      'themeSongProviderId':
+          encryption.encryptData(entry.themeSongProviderId ?? ''),
+      'themeSongTitle': encryption.encryptData(entry.themeSongTitle ?? ''),
+      'themeSongArtist': encryption.encryptData(entry.themeSongArtist ?? ''),
+      'themeSongAlbum': encryption.encryptData(entry.themeSongAlbum ?? ''),
+      'themeSongArtworkUrl':
+          encryption.encryptData(entry.themeSongArtworkUrl ?? ''),
+      'themeSongExternalUrl':
+          encryption.encryptData(entry.themeSongExternalUrl ?? ''),
+      'themeSongIsrc': encryption.encryptData(entry.themeSongIsrc ?? ''),
+      'themeSongRecommendationReason':
+          encryption.encryptData(entry.themeSongRecommendationReason ?? ''),
+      'imageUrls': DiaryImageEncryptionService.encodeImageSources(
+        entry.imageUrls,
+        encryption,
+      ),
+      'imageRefsEncrypted': true,
+      'imageEncryptionVersion': DiaryImageEncryptionService.migrationVersion,
       'overallMood': entry.moodScore,
       'updatedAt': FieldValue.serverTimestamp(),
       'isEncrypted': true,
@@ -164,7 +230,25 @@ class DiaryRepository {
   Future<int> delete(int id) => deleteByDate(_dateFromInt(id));
 
   Future<int> deleteByDate(DateTime date) async {
-    await _entries.doc(_dateId(date)).delete();
+    final ref = _entries.doc(_dateId(date));
+    final snapshot = await ref.get();
+    var imageSources = const <String>[];
+    final data = snapshot.data();
+    if (data != null) {
+      final key = await SecureStorageService.getOrRecoverKey();
+      if (key != null) {
+        imageSources = DiaryImageEncryptionService.decodeImageSources(
+          data,
+          EncryptionService(key),
+        );
+      }
+    }
+    await ref.delete();
+    for (final source in imageSources) {
+      try {
+        await DiaryImageEncryptionService.deleteSource(source);
+      } catch (_) {}
+    }
     return 1;
   }
 
@@ -195,10 +279,19 @@ class DiaryRepository {
         proudOf: text('proudOf'),
         selfCare: text('selfCare'),
         gratitude: text('gratitude'),
-        imageUrls: (data['imageUrls'] as List<dynamic>?)
-                ?.map((e) => e.toString())
-                .toList() ??
-            [],
+        themeSongProvider: text('themeSongProvider'),
+        themeSongProviderId: text('themeSongProviderId'),
+        themeSongTitle: text('themeSongTitle'),
+        themeSongArtist: text('themeSongArtist'),
+        themeSongAlbum: text('themeSongAlbum'),
+        themeSongArtworkUrl: text('themeSongArtworkUrl'),
+        themeSongExternalUrl: text('themeSongExternalUrl'),
+        themeSongIsrc: text('themeSongIsrc'),
+        themeSongRecommendationReason: text('themeSongRecommendationReason'),
+        imageUrls: DiaryImageEncryptionService.decodeImageSources(
+          data,
+          encryption,
+        ),
         moodScore: (data['overallMood'] as num?)?.toDouble(),
         createdAt: _asDate(data['createdAt']),
         updatedAt: _asDate(data['updatedAt']),

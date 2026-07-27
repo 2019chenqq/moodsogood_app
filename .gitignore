@@ -88,6 +88,7 @@ pnpm-debug.log*
 .env
 .env.local
 .env.*.local
+.revenuecat.production.json
 
 # VS Code / OS
 .DS_Store

@@ -303,6 +303,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       medicines: (existing?['medicines'] as List?)
           ?.map((e) => (e as Map).cast<String, dynamic>())
           .toList(),
+      moodScale: (existing?['moodScale'] as num?)?.toInt() == 10 ? 10 : 5,
       periodData: {
         'isPeriod': isPeriod,
         'periodStartId': isPeriod ? startId : null,
@@ -958,18 +959,20 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     List<Emotion> emotions = [];
     if (data['emotions'] != null) {
       try {
-        Map<String, dynamic> emotionMap;
-        if (data['emotions'] is String) {
-          emotionMap = jsonDecode(data['emotions']) as Map<String, dynamic>;
-        } else if (data['emotions'] is Map) {
-          emotionMap = data['emotions'] as Map<String, dynamic>;
+        final rawEmotions = data['emotions'];
+        if (rawEmotions is List) {
+          emotions = rawEmotions
+              .whereType<Map>()
+              .map((item) => Emotion.fromMap(Map<String, dynamic>.from(item)))
+              .toList();
         } else {
-          throw TypeError();
+          final emotionMap = rawEmotions is String
+              ? jsonDecode(rawEmotions) as Map<String, dynamic>
+              : (rawEmotions as Map).cast<String, dynamic>();
+          emotionMap.forEach((name, value) {
+            emotions.add(Emotion(name: name, value: value as int?));
+          });
         }
-        debugPrint('✅ Parsed emotions from JSON: $emotionMap');
-        emotionMap.forEach((name, value) {
-          emotions.add(Emotion(name: name, value: value as int?));
-        });
         debugPrint('✅ Total emotions parsed: ${emotions.length}');
       } catch (e) {
         debugPrint('❌ Failed to parse emotions: $e');
@@ -1048,6 +1051,13 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
             _emotions[i] = EmotionItem(_emotions[i].name);
           }
         }
+        for (final savedEmotion in emotions) {
+          if (!_emotions.any((item) => item.name == savedEmotion.name)) {
+            _emotions.add(
+              EmotionItem(savedEmotion.name, value: savedEmotion.value),
+            );
+          }
+        }
         debugPrint('✅ Applied ${emotions.length} emotions to UI');
       }
 
@@ -1116,6 +1126,13 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
             );
           } else {
             _emotions[i] = EmotionItem(_emotions[i].name);
+          }
+        }
+        for (final savedEmotion in record.emotions) {
+          if (!_emotions.any((item) => item.name == savedEmotion.name)) {
+            _emotions.add(
+              EmotionItem(savedEmotion.name, value: savedEmotion.value),
+            );
           }
         }
       }

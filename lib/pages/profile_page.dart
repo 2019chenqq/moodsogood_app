@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -6,6 +5,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../analytics_service.dart';
+import '../constants/healing_design_system.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({
@@ -45,7 +45,6 @@ class _ProfilePageState extends State<ProfilePage> {
   final _firestore = FirebaseFirestore.instance;
 
   String? _photoUrl;
-  String _displayName = '使用者';
   String _email = '';
   String? _sexAssignedAtBirth;
   String? _genderIdentity;
@@ -156,7 +155,6 @@ class _ProfilePageState extends State<ProfilePage> {
     if (mounted) {
       setState(() {
         _photoUrl = user?.photoURL;
-        _displayName = name;
         _email = user?.email ?? '';
         _sexAssignedAtBirth = sexAssignedAtBirth;
         _genderIdentity = genderIdentity;
@@ -270,9 +268,7 @@ class _ProfilePageState extends State<ProfilePage> {
       );
       await user.updateDisplayName(newName);
       if (mounted) {
-        setState(() {
-          _displayName = newName;
-        });
+        setState(() {});
         widget.onCompleted?.call();
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('個人資料已更新！')));
@@ -288,19 +284,30 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
+    final appBarForeground =
+        HealingDesignSystem.adaptiveAppBarForeground(context);
+
     return PopScope(
       canPop: !widget.requireCompletion,
       child: Scaffold(
+        backgroundColor: HealingDesignSystem.adaptiveBackground(context),
         appBar: AppBar(
-          title: const Text('個人資料'),
+          title: Text(
+            '個人資料',
+            style: TextStyle(color: appBarForeground),
+          ),
           automaticallyImplyLeading: !widget.requireCompletion,
-          backgroundColor: _primaryColor,
-          foregroundColor: Colors.white,
+          backgroundColor:
+              HealingDesignSystem.adaptiveAppBarBackground(context),
+          foregroundColor: appBarForeground,
+          surfaceTintColor: Colors.transparent,
           actions: [
             TextButton(
               onPressed: _saveProfile,
-              child: const Text('儲存',
-                  style: TextStyle(color: Colors.white, fontSize: 16)),
+              child: Text(
+                '儲存',
+                style: TextStyle(color: appBarForeground, fontSize: 16),
+              ),
             ),
           ],
         ),
@@ -319,7 +326,8 @@ class _ProfilePageState extends State<ProfilePage> {
                         children: [
                           CircleAvatar(
                             radius: 56,
-                            backgroundColor: _primaryColor.withOpacity(0.2),
+                            backgroundColor:
+                                _primaryColor.withValues(alpha: 0.2),
                             backgroundImage: _photoUrl != null && !_isUploading
                                 ? NetworkImage(_photoUrl!)
                                 : null,
@@ -346,8 +354,12 @@ class _ProfilePageState extends State<ProfilePage> {
                     const SizedBox(height: 8),
                     Text(
                       _email,
-                      style:
-                          TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                      style: TextStyle(
+                        color: HealingDesignSystem.adaptiveSecondaryText(
+                          context,
+                        ),
+                        fontSize: 13,
+                      ),
                     ),
                     const SizedBox(height: 32),
 
@@ -426,12 +438,19 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildDateField() {
+    final primaryText = HealingDesignSystem.adaptivePrimaryText(context);
+    final secondaryText = HealingDesignSystem.adaptiveSecondaryText(context);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           '生日',
-          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+          style: TextStyle(
+            color: primaryText,
+            fontWeight: FontWeight.w600,
+            fontSize: 15,
+          ),
         ),
         const SizedBox(height: 8),
         InkWell(
@@ -452,24 +471,37 @@ class _ProfilePageState extends State<ProfilePage> {
           child: InputDecorator(
             decoration: InputDecoration(
               hintText: '請選擇生日',
-              hintStyle: TextStyle(color: Colors.grey.shade400),
+              hintStyle: TextStyle(color: secondaryText),
               filled: true,
-              fillColor: Colors.grey.shade100,
+              fillColor: HealingDesignSystem.adaptiveFill(context),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
+                borderSide: BorderSide(
+                  color: HealingDesignSystem.adaptiveCardBorder(context),
+                ),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: HealingDesignSystem.adaptiveCardBorder(context),
+                ),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: _primaryColor, width: 1.5),
+                borderSide: BorderSide(
+                  color: HealingDesignSystem.adaptiveAccent(context),
+                  width: 1.5,
+                ),
               ),
-              suffixIcon: const Icon(Icons.calendar_month),
+              suffixIcon: Icon(
+                Icons.calendar_month,
+                color: HealingDesignSystem.adaptiveSecondaryText(context),
+              ),
             ),
             child: Text(
               _birthday == null ? '請選擇生日' : _formatBirthday(_birthday!),
               style: TextStyle(
-                color:
-                    _birthday == null ? Colors.grey.shade500 : Colors.black87,
+                color: _birthday == null ? secondaryText : primaryText,
               ),
             ),
           ),
@@ -485,35 +517,58 @@ class _ProfilePageState extends State<ProfilePage> {
     required List<String> items,
     required ValueChanged<String?> onChanged,
   }) {
+    final primaryText = HealingDesignSystem.adaptivePrimaryText(context);
+    final secondaryText = HealingDesignSystem.adaptiveSecondaryText(context);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+          style: TextStyle(
+            color: primaryText,
+            fontWeight: FontWeight.w600,
+            fontSize: 15,
+          ),
         ),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
-          value: value,
+          initialValue: value,
+          dropdownColor: HealingDesignSystem.adaptiveSurface(context),
+          style: TextStyle(color: primaryText),
           items: items
               .map((item) => DropdownMenuItem<String>(
                     value: item,
-                    child: Text(item),
+                    child: Text(
+                      item,
+                      style: TextStyle(color: primaryText),
+                    ),
                   ))
               .toList(),
           onChanged: onChanged,
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: TextStyle(color: Colors.grey.shade400),
+            hintStyle: TextStyle(color: secondaryText),
             filled: true,
-            fillColor: Colors.grey.shade100,
+            fillColor: HealingDesignSystem.adaptiveFill(context),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
+              borderSide: BorderSide(
+                color: HealingDesignSystem.adaptiveCardBorder(context),
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: HealingDesignSystem.adaptiveCardBorder(context),
+              ),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: _primaryColor, width: 1.5),
+              borderSide: BorderSide(
+                color: HealingDesignSystem.adaptiveAccent(context),
+                width: 1.5,
+              ),
             ),
           ),
         ),
@@ -528,30 +583,52 @@ class _ProfilePageState extends State<ProfilePage> {
     int maxLines = 1,
     int? maxLength,
   }) {
+    final primaryText = HealingDesignSystem.adaptivePrimaryText(context);
+    final secondaryText = HealingDesignSystem.adaptiveSecondaryText(context);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label,
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+        Text(
+          label,
+          style: TextStyle(
+            color: primaryText,
+            fontWeight: FontWeight.w600,
+            fontSize: 15,
+          ),
+        ),
         const SizedBox(height: 8),
         TextField(
           controller: controller,
           maxLines: maxLines,
           maxLength: maxLength,
+          style: TextStyle(color: primaryText),
+          cursorColor: HealingDesignSystem.adaptiveAccent(context),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: TextStyle(color: Colors.grey.shade400),
+            hintStyle: TextStyle(color: secondaryText),
             filled: true,
-            fillColor: Colors.grey.shade100,
+            fillColor: HealingDesignSystem.adaptiveFill(context),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
+              borderSide: BorderSide(
+                color: HealingDesignSystem.adaptiveCardBorder(context),
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: HealingDesignSystem.adaptiveCardBorder(context),
+              ),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: _primaryColor, width: 1.5),
+              borderSide: BorderSide(
+                color: HealingDesignSystem.adaptiveAccent(context),
+                width: 1.5,
+              ),
             ),
-            counterStyle: TextStyle(color: Colors.grey.shade400),
+            counterStyle: TextStyle(color: secondaryText),
           ),
         ),
       ],

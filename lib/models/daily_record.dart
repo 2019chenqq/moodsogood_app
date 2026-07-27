@@ -159,7 +159,7 @@ class DailyRecord {
 
   final double? overallMood;
 
-  /// 情緒量表版本：5 = 新版 5 點量表，10 = 舊版 10 點量表（預設）
+  /// 情緒量表版本：5 = 新版 5 點量表，10 = 舊版歷史紀錄。
   final int moodScale;
 
   final bool isPeriod; // 是否是生理期的一天
@@ -175,12 +175,19 @@ class DailyRecord {
     this.symptoms = const [],
     this.sleep = const SleepData(),
     this.overallMood,
-    this.moodScale = 10, // 預設 10 點量表（相容舊資料）
+    this.moodScale = 5,
     this.isPeriod = false,
     this.periodStartId,
     this.periodEndId,
     this.updatedAt,
   });
+
+  /// New records always use the current five-point scale.
+  static int resolveMoodScaleForNewRecord() => 5;
+
+  /// Only explicitly marked legacy records retain the ten-point scale.
+  static int resolveStoredRecordMoodScale(Map<String, dynamic> record) =>
+      (record['moodScale'] as num?)?.toInt() == 10 ? 10 : 5;
 
   Map<String, dynamic> toFirestore() {
     return {
@@ -211,7 +218,9 @@ class DailyRecord {
           (data['symptoms'] as List?)?.map((e) => e.toString()).toList() ?? [],
       sleep: SleepData.fromMap(data['sleep'] as Map<String, dynamic>?),
       overallMood: _parseOverallMood(data['overallMood'], emotions),
-      moodScale: (data['moodScale'] as num?)?.toInt() ?? 10,
+      moodScale: data.containsKey('moodScale')
+          ? resolveStoredRecordMoodScale(data)
+          : 10,
       isPeriod: data['isPeriod'] == true,
       periodStartId: data['periodStartId'] as String?,
       periodEndId: data['periodEndId'] as String?,
