@@ -57,6 +57,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   bool _didStartTutorial = false;
   bool _isDisposingTutorial = false;
   bool _showTutorialScorePreview = false;
+  int _recordLoadGeneration = 0;
 
   // ——— 目前紀錄日期與時間（給頁首顯示；docId 只吃日期） ———
   DateTime _recordDate = DateTime.now();
@@ -443,6 +444,12 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
 
   void _resetForm({bool keepPeriodStatus = false}) {
     setState(() {
+      // 🔹 情緒（包含移除前一個日期才有的自訂情緒）
+      _emotions
+        ..clear()
+        ..addAll(emotionItemsForRecord(const <Emotion>[]));
+      _lastSuicidalValue = null;
+
       // 🔹 症狀
       _symptoms.clear();
       _symptoms.add(SymptomItem(name: ''));
@@ -907,6 +914,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     }
 
     final docId = DateHelper.toId(date);
+    final loadGeneration = ++_recordLoadGeneration;
+    _resetForm();
     debugPrint(
         '🔄 _loadExistingData called: uid=$uid, date=$date (ISO: ${date.toIso8601String()}), docId=$docId');
 
@@ -917,6 +926,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       var localData = await repo.getDailyRecord(userId: uid, date: date);
 
       if (localData != null) {
+        if (!_isCurrentRecordLoad(loadGeneration, docId)) return;
         debugPrint('✅ Loaded record from local SQLite: $docId');
         _applyLocalRecordData(localData, date);
         return;
@@ -932,6 +942,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
           .doc(docId)
           .get();
 
+      if (!_isCurrentRecordLoad(loadGeneration, docId)) return;
       if (doc.exists && doc.data() != null) {
         debugPrint('✅ Loaded record from Firebase: $docId');
         // A. 這一天已經有紀錄 → 完整讀取
@@ -942,6 +953,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
             '⚠️  No record found in Firebase either, loading period state...');
         // B. 今日沒有紀錄 → 自動推算生理期（看昨天）
         await _loadPeriodState(date);
+        if (!_isCurrentRecordLoad(loadGeneration, docId)) return;
 
         // C. 清空其他欄位，但保留剛推算的 _isPeriod
         _resetForm(keepPeriodStatus: true);
@@ -950,6 +962,11 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       debugPrint('❌ 讀取資料錯誤: $e\nStacktrace: $st');
     }
   }
+
+  bool _isCurrentRecordLoad(int generation, String docId) =>
+      mounted &&
+      generation == _recordLoadGeneration &&
+      DateHelper.toId(_recordDate) == docId;
 
   /// 從本地 SQLite 記錄應用數據
   void _applyLocalRecordData(Map<String, dynamic> data, DateTime date) {
@@ -1038,36 +1055,20 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     debugPrint('🎨 Applying parsed data to UI...');
     setState(() {
       // 應用情緒
-      if (emotions.isNotEmpty) {
-        for (var i = 0; i < _emotions.length; i++) {
-          final savedEmotion =
-              emotions.where((e) => e.name == _emotions[i].name).firstOrNull;
-          if (savedEmotion != null) {
-            _emotions[i] = EmotionItem(
-              _emotions[i].name,
-              value: savedEmotion.value,
-            );
-          } else {
-            _emotions[i] = EmotionItem(_emotions[i].name);
-          }
-        }
-        for (final savedEmotion in emotions) {
-          if (!_emotions.any((item) => item.name == savedEmotion.name)) {
-            _emotions.add(
-              EmotionItem(savedEmotion.name, value: savedEmotion.value),
-            );
-          }
-        }
-        debugPrint('✅ Applied ${emotions.length} emotions to UI');
-      }
+      _emotions
+        ..clear()
+        ..addAll(emotionItemsForRecord(emotions));
+      debugPrint('✅ Applied ${emotions.length} emotions to UI');
 
       // 應用症狀
-      if (symptoms.isNotEmpty) {
-        _symptoms
-          ..clear()
-          ..addAll(symptoms.map((n) => SymptomItem(name: n)));
-        debugPrint('✅ Applied ${symptoms.length} symptoms to UI');
-      }
+      _symptoms
+        ..clear()
+        ..addAll(
+          symptoms.isEmpty
+              ? [SymptomItem(name: '')]
+              : symptoms.map((n) => SymptomItem(name: n)),
+        );
+      debugPrint('✅ Applied ${symptoms.length} symptoms to UI');
 
       // 應用睡眠數據
       tookHypnotic = sleepData.tookHypnotic;
@@ -1114,34 +1115,17 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
 
     setState(() {
       // --- 情緒 ---
-      if (record.emotions.isNotEmpty) {
-        for (var i = 0; i < _emotions.length; i++) {
-          final savedEmotion = record.emotions
-              .where((e) => e.name == _emotions[i].name)
-              .firstOrNull;
-          if (savedEmotion != null) {
-            _emotions[i] = EmotionItem(
-              _emotions[i].name,
-              value: savedEmotion.value,
-            );
-          } else {
-            _emotions[i] = EmotionItem(_emotions[i].name);
-          }
-        }
-        for (final savedEmotion in record.emotions) {
-          if (!_emotions.any((item) => item.name == savedEmotion.name)) {
-            _emotions.add(
-              EmotionItem(savedEmotion.name, value: savedEmotion.value),
-            );
-          }
-        }
-      }
+      _emotions
+        ..clear()
+        ..addAll(emotionItemsForRecord(record.emotions));
       // --- 症狀 ---
-      if (record.symptoms.isNotEmpty) {
-        _symptoms
-          ..clear()
-          ..addAll(record.symptoms.map((n) => SymptomItem(name: n)));
-      }
+      _symptoms
+        ..clear()
+        ..addAll(
+          record.symptoms.isEmpty
+              ? [SymptomItem(name: '')]
+              : record.symptoms.map((n) => SymptomItem(name: n)),
+        );
 
       // --- 睡眠 ---
       tookHypnotic = s.tookHypnotic;

@@ -1,8 +1,19 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const OpenAI = require("openai");
 const crypto = require("crypto");
+const { buildSleepTimeStats } = require("./sleep_review_stats");
+const { buildEmotionStats } = require("./emotion_review_stats");
+const {
+  AI_QUOTED_POINTS,
+  createAiUsageTracker,
+} = require("./ai_usage");
+const {
+  previousTaipeiDayRange,
+  summarizeAiUsageEvents,
+} = require("./ai_usage_aggregation");
 
 // 初始化 Admin SDK (擁有繞過 Security Rules 的最高權限)
 admin.initializeApp();
@@ -12,8 +23,68 @@ const lastFmApiKey = defineSecret("LASTFM_API_KEY");
 const spotifyClientId = defineSecret("SPOTIFY_CLIENT_ID");
 const spotifyClientSecret = defineSecret("SPOTIFY_CLIENT_SECRET");
 const DEFAULT_AI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
-const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v4-medication-ingredients";
+const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v5-shared-daily-record";
 const DIARY_EXTRACTION_PROMPT_VERSION = "diary_extraction_v1";
+
+exports.aggregateDailyAiUsage = onSchedule(
+  {
+    schedule: "0 1 * * *",
+    timeZone: "Asia/Taipei",
+    region: "us-central1",
+    retryCount: 3,
+    maxInstances: 1,
+  },
+  async (event) => {
+    const scheduledAt = new Date(event?.scheduleTime || Date.now());
+    const referenceTime = Number.isNaN(scheduledAt.getTime())
+      ? new Date()
+      : scheduledAt;
+    const range = previousTaipeiDayRange(referenceTime);
+    const snapshot = await db
+      .collection("ai_usage_events")
+      .where(
+        "createdAt",
+        ">=",
+        admin.firestore.Timestamp.fromDate(range.start),
+      )
+      .where(
+        "createdAt",
+        "<",
+        admin.firestore.Timestamp.fromDate(range.end),
+      )
+      .select(
+        "feature",
+        "status",
+        "quotedPoints",
+        "estimatedCostMicroUsd",
+        "inputTokens",
+        "cachedInputTokens",
+        "outputTokens",
+        "totalTokens",
+      )
+      .get();
+    const summary = summarizeAiUsageEvents(
+      snapshot.docs.map((doc) => doc.data()),
+      range.dateKey,
+    );
+
+    await db.collection("ai_usage_daily").doc(range.dateKey).set({
+      ...summary,
+      periodStart: admin.firestore.Timestamp.fromDate(range.start),
+      periodEnd: admin.firestore.Timestamp.fromDate(range.end),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    console.log("Daily AI usage summary updated", {
+      date: range.dateKey,
+      eventCount: summary.eventCount,
+      succeededCount: summary.succeededCount,
+      failedCount: summary.failedCount,
+      estimatedCostMicroUsd: summary.estimatedCostMicroUsd,
+      quotedPoints: summary.quotedPoints,
+    });
+  },
+);
 
 const diarySuggestionSchema = {
   type: "object",
@@ -402,7 +473,7 @@ const DAILY_RECORD_CLASSIFICATION_PROMPT = `
 分類優先順序：
 1. 睡眠時間、入睡、夜醒、早醒、睡眠品質優先放入 sleep。
 2. 明確情緒詞先保留為 emotionMentions.rawText，再嘗試映射到系統提供的正式情緒維度。
-3. 身體不適或不屬於睡眠欄位的狀況才放入 symptoms。
+3. 身體感受、食慾、能量與行動狀態放入 symptoms。
 4. 同一句可以拆到多個欄位。
 5. 情緒沒有明確 1～5 分時仍必須保留，value=null、mentioned=true、needsFollowUp=true。
 6. 使用者明確說出的情緒 source=explicit。每筆保留 rawText、confidence、needsConfirmation、timeContext 和 evidence。
@@ -410,6 +481,7 @@ const DAILY_RECORD_CLASSIFICATION_PROMPT = `
 8. 不得把入睡困難放入 symptoms。
 9. normalizedDimensionId 與 normalizedDimensionName 只能使用請求中 emotionDimensions 的成對值。
 10. 無法可靠映射時兩者都輸出 null、needsConfirmation=true；不得建立新維度，也不得使用「無聊程度、空虛程度、興奮程度、焦慮程度」等舊名稱。
+11. 疲倦、疲憊、動力不足、沒有動力、食慾增加、食慾下降、想吐、噁心都屬於 symptoms，絕對不得放入 emotionMentions 或要求情緒分數。
 
 睡眠 flags：入睡困難=initInsomnia；半夜反覆醒／維持睡眠困難=interrupted；
 太早醒=earlyWake；淺眠=lightSleep；多夢／惡夢=dreams；睡眠不足=insufficient；
@@ -426,6 +498,9 @@ const DAILY_RECORD_CLASSIFICATION_PROMPT = `
 正確：symptoms=[{"name":"疲倦","source":"explicit"}]；
 sleep.flags=["initInsomnia"]。不得把入睡困難放進 symptoms。
 
+輸入：最近完全沒有動力，食慾增加，吃完又會想吐。
+正確：symptoms 包含「動力不足、食慾增加、想吐」；emotionMentions 不得包含這三項。
+
 範例二：
 輸入：我下午很無聊，也覺得很空虛，但早上看到比賽消息時很興奮。整體心情大概3分。
 正確：overallMood=3；emotionMentions 保留 rawText=無聊、空虛、興奮，
@@ -436,8 +511,9 @@ sleep.flags=["initInsomnia"]。不得把入睡困難放進 symptoms。
 正確：rawText=焦慮、value=4、source=explicit，映射到正式維度「焦慮」；
 但昨天的睡眠不得寫入今天的 sleep。
 
-每次最多補問一至兩個最重要的缺漏。已辨識但無分數的情緒可以詢問強度，
+dailyRecord 模式每次最多補問一至兩個最重要的缺漏。已辨識但無分數的情緒可以詢問強度，
 但不得忽略、不得填暫定 3 分，也不得自動套用 overallMood。
+其他模式只需安靜更新 recordDraft，不得為了補欄位而追加問題或改變原本的對話方向。
 `;
 
 const ALLOWED_MUSIC_TAGS = new Set([
@@ -1056,6 +1132,18 @@ exports.generateAiJournalReflection = onCall(
 
     const crisisDetected = detectCrisis(trimmedDiary);
     const emotionModel = buildEmotionModel(safeDailyRecord, safeDiaryFields, trimmedDiary);
+    const usageTracker = createAiUsageTracker({
+      db,
+      admin,
+      uid: request.auth.uid,
+      requestId: request.data?.requestId,
+      feature: "journal_reflection",
+      model: DEFAULT_AI_MODEL,
+      promptVersion: "journal_reflection_v1",
+      quotedPoints: AI_QUOTED_POINTS.journal_reflection,
+    });
+    await usageTracker.start();
+    let completion;
 
     try {
       const apiKey = openAiApiKey.value();
@@ -1063,7 +1151,7 @@ exports.generateAiJournalReflection = onCall(
         throw new HttpsError("internal", "缺少 OPENAI_API_KEY 設定");
       }
       const client = new OpenAI({ apiKey });
-      const completion = await client.chat.completions.create({
+      completion = await client.chat.completions.create({
         model: DEFAULT_AI_MODEL,
         temperature: 0.7,
         response_format: {
@@ -1138,8 +1226,10 @@ exports.generateAiJournalReflection = onCall(
         throw new Error("AI 回傳內容不完整或未解讀情緒名稱分數");
       }
 
+      await usageTracker.succeed(completion);
       return normalized;
     } catch (error) {
+      await usageTracker.fail(error, completion);
       console.error("generateAiJournalReflection failed:", error);
       throw new HttpsError("internal", "AI 生成失敗，請稍後再試");
     }
@@ -1193,6 +1283,22 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
   };
   const itemName = (item) =>
     safeText(item && typeof item === "object" ? item.name : item, 100);
+  const symptomPatterns = [
+    ["疲倦", /疲倦|疲憊|很累|好累|很倦|倦怠/],
+    ["動力不足", /動力不足|沒有動力|沒動力|缺乏動力|提不起勁/],
+    ["食慾增加", /食慾增加|食慾變大|食量增加|吃得比平常多|一直想吃/],
+    ["食慾下降", /食慾下降|食慾不振|沒有食慾|沒胃口|吃不下/],
+    ["想吐", /想吐|噁心|反胃/],
+    ["頭痛", /頭痛|頭疼/],
+    ["心悸", /心悸|心跳很快/],
+    ["胃痛", /胃痛|胃不舒服/],
+  ];
+  const symptomNamesFromText = (value) => {
+    const text = safeText(value, 500);
+    return symptomPatterns
+      .filter(([, pattern]) => pattern.test(text))
+      .map(([name]) => name);
+  };
   const dimensions = Array.isArray(emotionDimensions) ? emotionDimensions : [];
   const dimensionById = new Map(dimensions.map((item) => [item.id, item]));
   const dimensionByTerm = new Map();
@@ -1242,11 +1348,19 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
       .map(itemName)
       .filter(Boolean))].slice(0, max);
   const emotionMap = new Map();
+  const migratedEmotionSymptoms = new Set();
   const existingMentions = Array.isArray(existing.emotionMentions)
     ? existing.emotionMentions
     : (Array.isArray(existing.emotions) ? existing.emotions : []);
   for (const item of existingMentions) {
     const rawText = safeText(item?.rawText || itemName(item), 100);
+    const symptomNames = symptomNamesFromText(
+      `${rawText} ${safeText(item?.evidence, 300)}`,
+    );
+    if (symptomNames.length > 0) {
+      for (const name of symptomNames) migratedEmotionSymptoms.add(name);
+      continue;
+    }
     const dimension = resolveDimension(item, rawText);
     const score = validScore(item?.value ?? item?.score);
     if (!rawText) continue;
@@ -1271,6 +1385,13 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
   for (const item of rawMentions) {
     const rawText = safeText(item?.rawText || itemName(item), 100);
     if (!rawText) continue;
+    const symptomNames = symptomNamesFromText(
+      `${rawText} ${safeText(item?.evidence, 300)}`,
+    );
+    if (symptomNames.length > 0) {
+      for (const name of symptomNames) migratedEmotionSymptoms.add(name);
+      continue;
+    }
     const dimension = resolveDimension(item, rawText);
     const score = validScore(item?.value ?? item?.score);
     const key = dimension?.id || `raw:${rawText}`;
@@ -1300,15 +1421,22 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
     const normalized = sleepFlagAliases.get(safeText(flag, 40)) || sleepFlagFromText(flag);
     if (normalized) sleepFlags.add(normalized);
   }
-  const symptoms = [];
+  const symptoms = [...migratedEmotionSymptoms];
   for (const item of [...(Array.isArray(existing.symptoms) ? existing.symptoms : []), ...(Array.isArray(raw.symptoms) ? raw.symptoms : [])]) {
     const name = itemName(item);
     if (!name) continue;
     const sleepFlag = sleepFlagFromText(name);
     if (sleepFlag) {
       sleepFlags.add(sleepFlag);
-    } else if (!symptoms.includes(name)) {
-      symptoms.push(name);
+    } else {
+      const canonicalNames = symptomNamesFromText(name);
+      if (canonicalNames.length > 0) {
+        for (const canonicalName of canonicalNames) {
+          if (!symptoms.includes(canonicalName)) symptoms.push(canonicalName);
+        }
+      } else if (!symptoms.includes(name)) {
+        symptoms.push(name);
+      }
     }
   }
   const explicitSleepTimes = extractExplicitSleepTimes(latestMessage);
@@ -1366,13 +1494,26 @@ exports.generateInneraDiaryDraft = onCall(
       throw new HttpsError("invalid-argument", "紀錄日期格式錯誤");
     }
 
+    const usageTracker = createAiUsageTracker({
+      db,
+      admin,
+      uid: request.auth.uid,
+      requestId: data.requestId,
+      feature: "diary_draft",
+      model: DEFAULT_AI_MODEL,
+      promptVersion: DIARY_EXTRACTION_PROMPT_VERSION,
+      quotedPoints: AI_QUOTED_POINTS.diary_draft,
+    });
+    await usageTracker.start();
+    let completion;
+
     try {
       const apiKey = openAiApiKey.value();
       if (!apiKey) {
         throw new HttpsError("failed-precondition", "缺少 OPENAI_API_KEY 設定");
       }
       const client = new OpenAI({ apiKey });
-      const completion = await client.chat.completions.create({
+      completion = await client.chat.completions.create({
         model: DEFAULT_AI_MODEL,
         temperature: 0.2,
         response_format: {
@@ -1427,7 +1568,7 @@ exports.generateInneraDiaryDraft = onCall(
       ).trim();
       if (!rawText) throw new Error("Empty diary extraction response");
       const parsed = JSON.parse(stripMarkdownFence(rawText));
-      return {
+      const result = {
         id: recordDate,
         recordDate,
         promptVersion: DIARY_EXTRACTION_PROMPT_VERSION,
@@ -1438,7 +1579,10 @@ exports.generateInneraDiaryDraft = onCall(
         conversationMessageCount: messages.length,
         parseSucceeded: true,
       };
+      await usageTracker.succeed(completion);
+      return result;
     } catch (error) {
+      await usageTracker.fail(error, completion);
       console.error("generateInneraDiaryDraft failed", {
         name: error?.name,
         message: error?.message,
@@ -1676,9 +1820,21 @@ exports.recommendInneraSongs = onCall(
         provider: track.provider,
       }));
       let selected = [];
+      let selection;
+      const usageTracker = createAiUsageTracker({
+        db,
+        admin,
+        uid: request.auth.uid,
+        requestId: request.data?.requestId,
+        feature: "song_recommendation",
+        model: DEFAULT_AI_MODEL,
+        promptVersion: "song_selection_v1",
+        quotedPoints: AI_QUOTED_POINTS.song_recommendation,
+      });
+      await usageTracker.start();
       try {
         const ai = new OpenAI({ apiKey: openAiApiKey.value() });
-        const selection = await ai.chat.completions.create({
+        selection = await ai.chat.completions.create({
           model: DEFAULT_AI_MODEL,
           temperature: 0.2,
           response_format: {
@@ -1742,7 +1898,9 @@ exports.recommendInneraSongs = onCall(
             (candidate) => candidate.candidateId === item.candidateId,
           ),
         );
+        await usageTracker.succeed(selection);
       } catch (error) {
+        await usageTracker.fail(error, selection);
         console.warn("Song AI selection failed; using ranked verified tracks", {
           message: error?.message,
         });
@@ -1852,12 +2010,17 @@ exports.generateInneraAiChat = onCall(
 
     const data = request.data || {};
     const mode = String(data.mode || "emotionalSupport").trim();
+    const supportsDailyRecordDraft = mode !== "recentReview";
     const message = String(data.message || "").trim().slice(0, 2000);
     const context =
       data.context && typeof data.context === "object" ? { ...data.context } : {};
     const history = Array.isArray(data.messages) ? data.messages : [];
     const existingRecordDraft =
-      data.recordDraft && typeof data.recordDraft === "object" ? data.recordDraft : {};
+      supportsDailyRecordDraft &&
+      data.recordDraft &&
+      typeof data.recordDraft === "object"
+        ? data.recordDraft
+        : {};
     const emotionDimensions = (Array.isArray(data.emotionDimensions)
       ? data.emotionDimensions
       : [])
@@ -1903,6 +2066,10 @@ exports.generateInneraAiChat = onCall(
       // Older app versions may still send this field. Daily-record AI uses only today.
       delete context.yesterdaySleep;
     }
+    if (mode === "recentReview") {
+      context.sleepTimeStats = buildSleepTimeStats(context.recentDailyRecords);
+      context.emotionStats = buildEmotionStats(context.recentDailyRecords);
+    }
     if (!message) {
       throw new HttpsError("invalid-argument", "請輸入想和心域 AI 說的內容");
     }
@@ -1942,6 +2109,22 @@ exports.generateInneraAiChat = onCall(
       };
     }
 
+    const usageFeature =
+      mode === "recentReview" ? "recent_review" : "innera_chat";
+    const usageTracker = createAiUsageTracker({
+      db,
+      admin,
+      uid: request.auth.uid,
+      requestId: data.requestId,
+      feature: usageFeature,
+      model: DEFAULT_AI_MODEL,
+      promptVersion: INNERA_AI_PROMPT_VERSION,
+      quotedPoints: AI_QUOTED_POINTS[usageFeature],
+      metadata: { mode },
+    });
+    await usageTracker.start();
+    let completion;
+
     try {
       const apiKey = openAiApiKey.value();
       if (!apiKey) {
@@ -1967,7 +2150,7 @@ exports.generateInneraAiChat = onCall(
       }
 
       const client = new OpenAI({ apiKey });
-      const completion = await client.chat.completions.create({
+      completion = await client.chat.completions.create({
         model: DEFAULT_AI_MODEL,
         temperature: 0.55,
         response_format: {
@@ -1990,15 +2173,29 @@ exports.generateInneraAiChat = onCall(
               "Clearly separate facts present in the user's medication record from general medication knowledge. If an ingredient is missing, ambiguous, misspelled, or unfamiliar, say that it cannot be identified reliably and suggest confirming the package, prescription, doctor, or pharmacist; never guess the ingredient, indication, interaction, side effect, or clinical effect.",
               "Do not minimize self-harm, violence, or medical emergency risk.",
               "Return only JSON with reply, followUpQuestion, sources, suggestedActions, recordDraft, safetyLevel, requiresFixedSafetyUi.",
-              "When mode is not dailyRecord, return an empty recordDraft that still satisfies the schema; it will not be saved.",
+              ...(supportsDailyRecordDraft
+                ? [
+                    "Daily record, emotional support, and physical health modes support the shared daily record. Update recordDraft only with facts the user explicitly states about today.",
+                    "Do not copy historical context, general questions, guesses, or assistant content into today's recordDraft.",
+                    "Outside dailyRecord mode, keep the selected mode's conversation goal primary and update recordDraft silently; do not change the topic or ask form-like questions just to complete the record.",
+                    `${DAILY_RECORD_CLASSIFICATION_PROMPT}\n正式情緒維度：${JSON.stringify(emotionDimensions)}`,
+                  ]
+                : [
+                    "Recent review mode never reads, creates, or updates today's recordDraft. Return recordDraft as null.",
+                    "Focus on dailyRecordStats, recentDailyRecords, and recentDiaries across the supplied date range. Do not reduce the review to today only.",
+                    "When at least two distinct dates are available, cite cross-date evidence and summarize recurring patterns or changes. If the data covers only one day, state that a trend cannot be determined.",
+                    "For bedtime claims, sleepTimeStats and its bedtimeEvidence are authoritative. Never infer a late bedtime from fatigue, dreams, low sleep quality, sleep flags, wake time, or previous assistant messages.",
+                    "Only say that sleeping after midnight is frequent when sleepTimeStats.frequentAfterMidnightSleep is true. State afterMidnightSleepDays / validSleepTimeDays and relevant dates; otherwise do not describe the user as often or generally sleeping late.",
+                    "If a previous assistant claim conflicts with the supplied records or computed stats, correct it explicitly. Previous assistant text is conversation context, not record evidence.",
+                    "For emotion frequency claims, emotionStats is authoritative. A value of 4 or 5 is intensity on that date, not evidence that the emotion occurred frequently.",
+                    "Use emotionStats.emotions occurrenceDays, dates, and frequent fields. Only describe an emotion as frequent or dominant when its computed frequency supports that wording, and state the count. Prefer mostFrequentEmotions when summarizing the main emotions.",
+                  ]),
               "sources must only reuse the supplied contextSources without private text.",
               "requiresFixedSafetyUi must be false unless an urgent risk needs emergency help.",
-              mode === "dailyRecord"
-                ? `${DAILY_RECORD_CLASSIFICATION_PROMPT}\n正式情緒維度：${JSON.stringify(emotionDimensions)}`
-                : mode === "physicalHealth"
+              mode === "physicalHealth"
                   ? "Separate observations, missing information, what to keep recording, and when to seek care. Do not diagnose."
                   : mode === "recentReview"
-                    ? "Separate record facts, possible relationships, and directions to notice. Missing data does not mean an event did not occur."
+                    ? "Separate record facts, possible relationships, and directions to notice. State the actual recorded-day count and covered period. Missing data does not mean an event did not occur."
                     : "Respond to emotions first. Ask at most one open question and encourage real-world support when appropriate.",
             ].join("\n"),
           },
@@ -2008,8 +2205,12 @@ exports.generateInneraAiChat = onCall(
               mode,
               context,
               contextSources,
-              recordDraft: existingRecordDraft,
-              emotionDimensions,
+              ...(supportsDailyRecordDraft
+                ? {
+                    recordDraft: existingRecordDraft,
+                    emotionDimensions,
+                  }
+                : {}),
             }),
           },
           ...safeHistory,
@@ -2030,22 +2231,21 @@ exports.generateInneraAiChat = onCall(
         throw new Error("Missing AI reply");
       }
 
-      return {
+      const result = {
         reply,
         followUpQuestion: String(parsed.followUpQuestion || "").trim().slice(0, 600),
         sources: contextSources,
         suggestedActions: Array.isArray(parsed.suggestedActions)
           ? parsed.suggestedActions.map((item) => String(item).trim()).filter(Boolean).slice(0, 4)
           : [],
-        recordDraft:
-          mode === "dailyRecord"
-            ? normalizeInneraRecordDraft(
-                parsed.recordDraft,
-                existingRecordDraft,
-                emotionDimensions,
-                message,
-              )
-            : null,
+        recordDraft: supportsDailyRecordDraft
+          ? normalizeInneraRecordDraft(
+              parsed.recordDraft,
+              existingRecordDraft,
+              emotionDimensions,
+              message,
+            )
+          : null,
         safetyLevel: "normal",
         requiresFixedSafetyUi: false,
         model: DEFAULT_AI_MODEL,
@@ -2053,7 +2253,10 @@ exports.generateInneraAiChat = onCall(
         inputTokens: completion.usage?.prompt_tokens ?? null,
         outputTokens: completion.usage?.completion_tokens ?? null,
       };
+      await usageTracker.succeed(completion);
+      return result;
     } catch (error) {
+      await usageTracker.fail(error, completion);
       console.error("generateInneraAiChat failed", {
         name: error?.name,
         message: error?.message,

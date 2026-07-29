@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../daily/emotion_dimensions.dart';
 import 'ai_callable_diagnostics.dart';
+import 'ai_request_id.dart';
 import 'innera_ai_context_service.dart';
 import 'innera_ai_message.dart';
 import 'innera_ai_mode.dart';
@@ -113,6 +114,7 @@ class InneraAiService {
 
     final messages = _historyPayload(history, userMessage);
     final payload = <String, dynamic>{
+      'requestId': createAiRequestId(),
       'mode': mode.systemPromptKey,
       'message': userMessage,
       'messages': messages,

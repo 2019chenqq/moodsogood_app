@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/daily_record.dart';
+import 'emotion_dimensions.dart';
 
 // Sentinel to distinguish between "not provided" and explicit null when copying.
 const _unset = Object();
@@ -15,9 +16,7 @@ Future<List<DailyRecord>> loadAllRecords(String uid) async {
       .collection('dailyRecords')
       .get();
 
-  return snap.docs
-    .map((d) => DailyRecord.fromFirestore(d))
-    .toList();
+  return snap.docs.map((d) => DailyRecord.fromFirestore(d)).toList();
 }
 
 double? overallFrom(Map<String, dynamic> data) {
@@ -31,9 +30,10 @@ double? overallFrom(Map<String, dynamic> data) {
       if (vv is num) return vv.toDouble();
     }
   }
-  final vals = emos.map((m) => m['value']).where((x) => x is num).cast<num>().toList();
+  final vals =
+      emos.map((m) => m['value']).where((x) => x is num).cast<num>().toList();
   if (vals.isEmpty) return null;
-  return vals.reduce((a,b)=>a+b)/vals.length;
+  return vals.reduce((a, b) => a + b) / vals.length;
 }
 
 String formatDocDateTime(Map<String, dynamic> data, String docId) {
@@ -54,10 +54,10 @@ String formatDocDateTime(Map<String, dynamic> data, String docId) {
 
   // 顯示樣式（只日期與時間）
   return '${t.year.toString().padLeft(4, '0')}-'
-         '${t.month.toString().padLeft(2, '0')}-'
-         '${t.day.toString().padLeft(2, '0')} '
-         '${t.hour.toString().padLeft(2, '0')}:'
-         '${t.minute.toString().padLeft(2, '0')}';
+      '${t.month.toString().padLeft(2, '0')}-'
+      '${t.day.toString().padLeft(2, '0')} '
+      '${t.hour.toString().padLeft(2, '0')}:'
+      '${t.minute.toString().padLeft(2, '0')}';
 }
 
 // ============================================================
@@ -73,6 +73,26 @@ class EmotionItem {
     final int? nextValue = value == _unset ? this.value : value as int?;
     return EmotionItem(name ?? this.name, value: nextValue);
   }
+}
+
+/// Creates a date-isolated emotion form. Custom emotions are appended only
+/// when they exist in the record for the date currently being loaded.
+List<EmotionItem> emotionItemsForRecord(Iterable<Emotion> savedEmotions) {
+  final savedByName = <String, Emotion>{};
+  for (final emotion in savedEmotions) {
+    final name = emotion.name.trim();
+    if (name.isNotEmpty) savedByName[name] = emotion;
+  }
+
+  final result = kEmotionCheckboxNames
+      .map((name) => EmotionItem(name, value: savedByName.remove(name)?.value))
+      .toList();
+  result.addAll(
+    savedByName.values.map(
+      (emotion) => EmotionItem(emotion.name, value: emotion.value),
+    ),
+  );
+  return result;
 }
 
 class SymptomItem {

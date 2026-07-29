@@ -1039,8 +1039,8 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
             CountTextField(
               controller: _metaphorCtrl,
               icon: m.Icons.mood,
-              label: '今天的情緒像…',
-              hint: '例：潮汐、霧氣、烈陽、厚被…',
+              label: '今天的感受比較像…',
+              hint: '可以寫一個貼近此刻的畫面，也可以留白',
               minLines: 1,
               maxLines: 3,
               onAnyChanged: _onAnyFieldChanged,

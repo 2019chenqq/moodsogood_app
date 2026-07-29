@@ -453,7 +453,7 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
         MapEntry('內容', _safeText(diary['content'])),
         MapEntry('今日主題曲', _safeText(diary['themeSong'])),
         MapEntry('最想記錄的瞬間', _safeText(diary['highlight'])),
-        MapEntry('今天情緒像', _safeText(diary['metaphor'])),
+        MapEntry('今天的感受意象', _safeText(diary['metaphor'])),
         MapEntry('為自己感到驕傲', _safeText(diary['conceited'])),
         MapEntry('做得不錯的地方', _safeText(diary['proudOf'])),
         MapEntry('可多照顧自己的地方', _safeText(diary['selfCare'])),
@@ -677,7 +677,7 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
         MapEntry(
             '最想記錄的瞬間', (diaryFieldsForAi['highlight'] ?? '').toString().trim()),
         MapEntry(
-            '今天情緒像', (diaryFieldsForAi['metaphor'] ?? '').toString().trim()),
+            '今天的感受意象', (diaryFieldsForAi['metaphor'] ?? '').toString().trim()),
         MapEntry(
             '為自己感到驕傲', (diaryFieldsForAi['conceited'] ?? '').toString().trim()),
         MapEntry(

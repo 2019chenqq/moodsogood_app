@@ -5,11 +5,24 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../diary/diary_repository.dart';
 import 'ai_callable_diagnostics.dart';
 import 'ai_diary_draft.dart';
+import 'ai_request_id.dart';
 import 'diary_extraction_prompt.dart';
 import 'emotion_metaphor_library.dart';
 import 'innera_ai_message.dart';
 
 enum DiaryFieldMerge { keepExisting, replace, append }
+
+class InneraSongSearchException implements Exception {
+  const InneraSongSearchException(this.code);
+
+  final String code;
+
+  String get userMessage => switch (code) {
+        'music_service_not_configured' => 'Spotify 搜尋服務尚未完成設定，請稍後再試。',
+        'rate_limit' => 'Spotify 搜尋次數暫時達到上限，請稍後再試。',
+        _ => 'Spotify 搜尋服務目前無法連線，請稍後再試。',
+      };
+}
 
 class DiaryDraftConfirmation {
   const DiaryDraftConfirmation({
@@ -87,6 +100,7 @@ class AiDiaryDraftService {
     final result =
         await _functions.httpsCallable(AiCallableEndpoints.diaryDraft).call({
       'messages': conversation,
+      'requestId': createAiRequestId(),
       'recordDate': _dateKey(DateTime.now()),
       'promptVersion': DiaryExtractionPrompt.version,
       if (requestedField != null) 'requestedField': requestedField,
@@ -102,6 +116,8 @@ class AiDiaryDraftService {
     final map = _jsonSafe(draft.toMap());
     map['emotionMetaphorSuggestions'] = EmotionMetaphorLibrary.recommend(
       draft.emotionAnalysis,
+      variationSeed: '${draft.createdAt.toIso8601String()}|'
+          '${originalUserContent(messages)}',
     ).map((item) => item.toMap()).toList();
     draft = AiDiaryDraft.fromMap(map);
     final keepCurrentSongs = currentDraft != null &&
@@ -119,6 +135,7 @@ class AiDiaryDraftService {
         final songResult = await _functions
             .httpsCallable(AiCallableEndpoints.recommendSongs)
             .call({
+          'requestId': createAiRequestId(),
           'profile': draft.songRecommendationProfile.toMap(),
           'market': 'TW',
         }).timeout(const Duration(seconds: 45));
@@ -152,6 +169,10 @@ class AiDiaryDraftService {
     final data = result.data is Map
         ? Map<String, dynamic>.from(result.data as Map)
         : const <String, dynamic>{};
+    final errorCode = data['error']?.toString().trim() ?? '';
+    if (errorCode.isNotEmpty) {
+      throw InneraSongSearchException(errorCode);
+    }
     return (data['tracks'] as List?)
             ?.whereType<Map>()
             .map((item) => VerifiedSongRecommendation.fromMap(
