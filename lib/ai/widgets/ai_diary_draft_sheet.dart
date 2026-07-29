@@ -1,8 +1,10 @@
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../constants/healing_design_system.dart';
 import '../../diary/diary_repository.dart';
+import '../ai_callable_diagnostics.dart';
 import '../ai_diary_draft.dart';
 import '../ai_diary_draft_service.dart';
 
@@ -33,7 +35,7 @@ class _AiDiaryDraftSheetState extends State<AiDiaryDraftSheet> {
   static const _labels = <String, String>{
     'title': '標題',
     'content': '內容',
-    'metaphor': '今天的情緒像',
+    'metaphor': '今天的感受比較像…',
     'highlight': '今天最想記錄的瞬間',
     'proudOf': '我做得不錯的地方',
     'themeSong': '今日主題曲',
@@ -215,7 +217,11 @@ class _AiDiaryDraftSheetState extends State<AiDiaryDraftSheet> {
                 _labels[key]!,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
-              subtitle: suggestions.isEmpty ? const Text('對話資訊不足，保持空白') : null,
+              subtitle: suggestions.isEmpty
+                  ? const Text('對話資訊不足，保持空白')
+                  : key == 'metaphor'
+                      ? const Text('這是依今天對話提供的意象，可自行修改或不選')
+                      : null,
               secondary: IconButton(
                 onPressed: () => Navigator.pop(context, 'regenerate:$key'),
                 icon: const Icon(Icons.refresh_rounded),
@@ -661,48 +667,50 @@ class _AiDiaryDraftSheetState extends State<AiDiaryDraftSheet> {
   }
 
   Future<void> _searchSongs() async {
-    final controller = TextEditingController();
     final query = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('自己搜尋歌曲'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: '歌名、歌手或關鍵字',
-            border: OutlineInputBorder(),
-          ),
-          onSubmitted: (value) => Navigator.pop(context, value.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('搜尋'),
-          ),
-        ],
-      ),
+      builder: (context) => const _SongSearchDialog(),
     );
-    controller.dispose();
     if (query == null || query.isEmpty || !mounted) return;
     setState(() => _searchingSongs = true);
     try {
       final results = await AiDiaryDraftService().searchSongs(query);
       if (!mounted) return;
-      setState(() => _songs = results);
       if (results.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('找不到可用的 Spotify 歌曲結果。')),
         );
+      } else {
+        setState(() {
+          _songs = results;
+          _selectedSongId = null;
+          _included['themeSong'] = false;
+          _controllers['themeSong']!.clear();
+        });
       }
-    } catch (_) {
+    } on InneraSongSearchException catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('歌曲搜尋暫時無法使用，其他欄位仍可正常儲存。')),
+          SnackBar(content: Text(error.userMessage)),
+        );
+      }
+    } on FirebaseFunctionsException catch (error, stackTrace) {
+      logAiCallableFailure(
+        functionName: AiCallableEndpoints.searchSongs,
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('歌曲搜尋後端暫時無法使用，其他欄位仍可正常儲存。')),
+        );
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Innera song search failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('歌曲搜尋發生錯誤，其他欄位仍可正常儲存。')),
         );
       }
     } finally {
@@ -715,4 +723,54 @@ class _AiDiaryDraftSheetState extends State<AiDiaryDraftSheet> {
 
   static String _all(List<DiaryDraftSuggestion> values) =>
       AiDiaryDraftService.combineSuggestionValues(values);
+}
+
+class _SongSearchDialog extends StatefulWidget {
+  const _SongSearchDialog();
+
+  @override
+  State<_SongSearchDialog> createState() => _SongSearchDialogState();
+}
+
+class _SongSearchDialogState extends State<_SongSearchDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final query = _controller.text.trim();
+    if (query.isEmpty) return;
+    Navigator.of(context).pop(query);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('自己搜尋歌曲'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        textInputAction: TextInputAction.search,
+        decoration: const InputDecoration(
+          labelText: '歌名、歌手或關鍵字',
+          border: OutlineInputBorder(),
+        ),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('搜尋'),
+        ),
+      ],
+    );
+  }
 }

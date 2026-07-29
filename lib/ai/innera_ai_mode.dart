@@ -8,16 +8,18 @@ enum InneraAiMode {
 }
 
 extension InneraAiModeX on InneraAiMode {
+  bool get supportsDailyRecordDraft => this != InneraAiMode.recentReview;
+
   String get title {
     switch (this) {
       case InneraAiMode.dailyRecord:
-        return '幫我記錄今天';
+        return '今日記錄';
       case InneraAiMode.emotionalSupport:
         return '我想聊聊';
-      case InneraAiMode.physicalHealth:
-        return '身體有些不舒服';
       case InneraAiMode.recentReview:
-        return '回顧最近的狀態';
+        return '狀態回顧';
+      case InneraAiMode.physicalHealth:
+        return '身體不適聊聊';
     }
   }
 

@@ -56,6 +56,16 @@ service cloud.firestore {
       allow update: if false;
     }
 
+    // AI usage and cost records are written only by the Admin SDK in Functions.
+    match /ai_usage_events/{eventId} {
+      allow read, write: if false;
+    }
+
+    // Daily AI summaries are also server-only operational billing data.
+    match /ai_usage_daily/{dateId} {
+      allow read, write: if false;
+    }
+
     // =========================
     // 其他所有路徑：預設全部拒絕
     // =========================

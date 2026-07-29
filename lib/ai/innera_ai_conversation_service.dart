@@ -98,21 +98,18 @@ class InneraAiConversationService {
     );
   }
 
-  /// Clears only the unconfirmed AI session. Official DailyRecord and diary
-  /// documents are intentionally left untouched.
+  /// Clears the selected chat session and, when requested, the shared
+  /// unconfirmed record draft in one atomic batch. Official DailyRecord and
+  /// diary documents are intentionally left untouched.
   Future<void> resetToday({
     required InneraAiMode mode,
+    bool deleteRecordDraft = false,
   }) async {
     final uid = _requireUid();
     final dateKey = _todayKey();
     final batch = _firestore.batch();
     batch.delete(_conversationRef(uid, dateKey, mode));
-    final legacyRef = _legacyConversationRef(uid, dateKey);
-    final legacySnapshot = await legacyRef.get();
-    if (legacySnapshot.data()?['mode'] == mode.name) {
-      batch.delete(legacyRef);
-    }
-    if (mode == InneraAiMode.dailyRecord) {
+    if (deleteRecordDraft) {
       batch.delete(
         _firestore
             .collection('users')
@@ -120,6 +117,11 @@ class InneraAiConversationService {
             .collection('aiRecordDrafts')
             .doc(dateKey),
       );
+    }
+    final legacyRef = _legacyConversationRef(uid, dateKey);
+    final legacySnapshot = await legacyRef.get();
+    if (legacySnapshot.data()?['mode'] == mode.name) {
+      batch.delete(legacyRef);
     }
     await batch.commit();
   }

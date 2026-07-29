@@ -9,6 +9,22 @@ enum AiDraftSource {
   defaultPendingConfirmation,
 }
 
+const _symptomPatterns = <String, String>{
+  '疲倦': r'疲倦|疲憊|很累|好累|很倦|倦怠',
+  '動力不足': r'動力不足|沒有動力|沒動力|缺乏動力|提不起勁',
+  '食慾增加': r'食慾增加|食慾變大|食量增加|吃得比平常多|一直想吃',
+  '食慾下降': r'食慾下降|食慾不振|沒有食慾|沒胃口|吃不下',
+  '想吐': r'想吐|噁心|反胃',
+  '頭痛': r'頭痛|頭疼',
+  '心悸': r'心悸|心跳很快',
+  '胃痛': r'胃痛|胃不舒服',
+};
+
+Set<String> _symptomNamesFromText(String text) => {
+      for (final rule in _symptomPatterns.entries)
+        if (RegExp(rule.value).hasMatch(text)) rule.key,
+    };
+
 class AiEmotionDraft {
   const AiEmotionDraft({
     String? name,
@@ -262,6 +278,9 @@ class InneraAiRecordDraft {
 
   factory InneraAiRecordDraft.fromMap(Map<String, dynamic> map) {
     final emotionByName = <String, AiEmotionDraft>{};
+    final symptomSet = <String>{
+      ..._sanitizeSymptoms(_strings(map['symptoms'])),
+    };
     final rawEmotions = map['emotionMentions'] is List
         ? map['emotionMentions'] as List
         : (map['emotions'] as List?) ?? const [];
@@ -274,13 +293,21 @@ class InneraAiRecordDraft {
               'needsFollowUp': true,
               'needsConfirmation': true,
             });
-      if (parsed != null) emotionByName[parsed.dedupeKey] = parsed;
+      if (parsed == null) continue;
+      final migratedSymptoms = _symptomNamesFromText(
+        '${parsed.rawText} ${parsed.evidence ?? ''}',
+      );
+      if (migratedSymptoms.isNotEmpty) {
+        symptomSet.addAll(migratedSymptoms);
+        continue;
+      }
+      emotionByName[parsed.dedupeKey] = parsed;
     }
     return InneraAiRecordDraft(
       dateKey: (map['dateKey'] ?? map['date'] ?? '').toString(),
       overallMood: _doubleInRange(map['overallMood']),
       emotions: emotionByName.values.toList(),
-      symptoms: _sanitizeSymptoms(_strings(map['symptoms'])),
+      symptoms: symptomSet.toList(),
       sleep: AiSleepDraft.fromMap(_map(map['sleep'])),
       events: _strings(map['events']),
       rawUserEntries: _strings(map['rawUserEntries']),
@@ -332,9 +359,18 @@ class InneraAiRecordDraft {
   }) {
     if (patch == null) return _withRawEntry(rawUserEntry);
     final parsed = InneraAiRecordDraft.fromMap({...patch, 'dateKey': dateKey});
-    final emotionByName = <String, AiEmotionDraft>{
-      for (final emotion in emotions) emotion.dedupeKey: emotion,
-    };
+    final symptomSet = <String>{...symptoms, ...parsed.symptoms};
+    final emotionByName = <String, AiEmotionDraft>{};
+    for (final emotion in emotions) {
+      final migratedSymptoms = _symptomNamesFromText(
+        '${emotion.rawText} ${emotion.evidence ?? ''}',
+      );
+      if (migratedSymptoms.isNotEmpty) {
+        symptomSet.addAll(migratedSymptoms);
+      } else {
+        emotionByName[emotion.dedupeKey] = emotion;
+      }
+    }
     for (final emotion in parsed.emotions) {
       final existing = emotionByName[emotion.dedupeKey];
       emotionByName[emotion.dedupeKey] =
@@ -350,7 +386,7 @@ class InneraAiRecordDraft {
       dateKey: dateKey,
       overallMood: parsed.overallMood ?? overallMood,
       emotions: emotionByName.values.toList(),
-      symptoms: _sanitizeSymptoms({...symptoms, ...parsed.symptoms}.toList()),
+      symptoms: _sanitizeSymptoms(symptomSet.toList()),
       sleep: sleep.merge(parsed.sleep),
       events: {...events, ...parsed.events}.toList(),
       rawUserEntries: entries,
@@ -370,9 +406,18 @@ class InneraAiRecordDraft {
     final text = rawUserEntry.trim();
     if (text.isEmpty) return this;
 
-    final emotionByName = <String, AiEmotionDraft>{
-      for (final emotion in emotions) emotion.dedupeKey: emotion,
-    };
+    final symptomSet = <String>{..._sanitizeSymptoms(symptoms)};
+    final emotionByName = <String, AiEmotionDraft>{};
+    for (final emotion in emotions) {
+      final migratedSymptoms = _symptomNamesFromText(
+        '${emotion.rawText} ${emotion.evidence ?? ''}',
+      );
+      if (migratedSymptoms.isNotEmpty) {
+        symptomSet.addAll(migratedSymptoms);
+      } else {
+        emotionByName[emotion.dedupeKey] = emotion;
+      }
+    }
     final clauses = text.split(RegExp(r'[，。！？；\n]'));
     for (final clause in clauses) {
       for (final dimension in kEmotionDimensions) {
@@ -431,17 +476,7 @@ class InneraAiRecordDraft {
     }
     final explicitSleepTimes = _explicitSleepTimes(clauses);
 
-    final symptomSet = <String>{..._sanitizeSymptoms(symptoms)};
-    const symptomRules = <String, String>{
-      '疲倦': r'疲倦|疲憊|很累|好累|很倦',
-      '想吐': r'想吐|噁心',
-      '頭痛': r'頭痛|頭疼',
-      '心悸': r'心悸|心跳很快',
-      '胃痛': r'胃痛|胃不舒服',
-    };
-    for (final rule in symptomRules.entries) {
-      if (RegExp(rule.value).hasMatch(text)) symptomSet.add(rule.key);
-    }
+    symptomSet.addAll(_symptomNamesFromText(text));
 
     return InneraAiRecordDraft(
       dateKey: dateKey,
