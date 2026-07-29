@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../firebase_options.dart';
+import '../ai/ai_request_id.dart';
 
 class AiJournalReflectionHttpClient {
   AiJournalReflectionHttpClient({http.Client? httpClient})
@@ -25,7 +26,10 @@ class AiJournalReflectionHttpClient {
   Future<Map<String, dynamic>> generate({
     required Map<String, dynamic> payload,
   }) async {
-    final sanitizedPayload = sanitizeForJson(payload);
+    final sanitizedPayload = Map<String, dynamic>.from(
+      sanitizeForJson(payload) as Map,
+    );
+    sanitizedPayload['requestId'] = createAiRequestId();
     final requestBody = jsonEncode(<String, dynamic>{
       'data': sanitizedPayload,
     });

@@ -89,9 +89,18 @@ class AiRecordDraftCard extends StatelessWidget {
                         dimension: 16,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.auto_awesome_rounded, size: 18),
+                    : Icon(
+                        draft.confirmed
+                            ? Icons.playlist_add_rounded
+                            : Icons.auto_awesome_rounded,
+                        size: 18,
+                      ),
                 label: Text(
-                  isExtractingDiary ? '正在整理…' : '整理成今日紀錄',
+                  isExtractingDiary
+                      ? '正在整理…'
+                      : draft.confirmed
+                          ? '再次加入／補充每日紀錄'
+                          : '加入每日紀錄',
                 ),
               ),
             ),

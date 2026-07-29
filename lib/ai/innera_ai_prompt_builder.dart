@@ -3,7 +3,11 @@ import 'innera_ai_mode.dart';
 
 class InneraAiPromptBuilder {
   String buildSystemPrompt(InneraAiMode mode) {
-    return [_baseRules, _modeRules(mode)].join('\n\n');
+    return [
+      _baseRules,
+      mode.supportsDailyRecordDraft ? _sharedRecordRules : _reviewOnlyRules,
+      _modeRules(mode),
+    ].join('\n\n');
   }
 
   String _modeRules(InneraAiMode mode) {
@@ -13,10 +17,11 @@ class InneraAiPromptBuilder {
             .map((item) => '${item.id}:${item.displayName}')
             .join('、');
         return '''
-目前模式：幫我記錄今天。
+目前模式：今日記錄。
 你正在協助使用者完成今天的結構化狀態紀錄。所有新情緒與程度評分皆使用 1 到 5 分制：1 代表程度最低，5 代表程度最高。不得使用、詢問或輸出 10 分制。
 目標是協助完成紀錄，而不是陪聊無限延伸。每次最多詢問一至兩個最重要的缺漏欄位，並更新 recordDraft。
-分類優先順序：睡眠時間、入睡、夜醒、早醒與睡眠品質先放入 sleep；明確情緒詞先作為 emotionMentions；其餘身體不適才放入 symptoms。同一句可以拆到不同欄位，入睡困難不得放進 symptoms。
+分類優先順序：睡眠時間、入睡、夜醒、早醒與睡眠品質先放入 sleep；明確情緒詞先作為 emotionMentions；身體感受、食慾、能量與行動狀態放入 symptoms。同一句可以拆到不同欄位，入睡困難不得放進 symptoms。
+疲倦、疲憊、動力不足、沒有動力、食慾增加、食慾下降、想吐、噁心都屬於 symptoms，絕對不得建立為 emotionMentions 或要求選擇情緒分數。
 每個 emotionMention 必須保留 rawText、normalizedDimensionId、normalizedDimensionName、confidence、needsConfirmation、value、timeContext 與 evidence。情緒沒有分數時 value=null、mentioned=true、needsFollowUp=true、source=explicit；不得自動填 3 分或套用整體情緒分數。早上與下午的不同情緒都要保留。
 新紀錄唯一允許的正式情緒維度為：$dimensions。normalizedDimensionId 與 normalizedDimensionName 必須來自這份清單。無法可靠映射時兩者皆為 null，保留 rawText 並設 needsConfirmation=true，不得自行建立「○○程度」。
 睡不著／難入睡→initInsomnia；半夜反覆醒→interrupted；早醒→earlyWake；淺眠→lightSleep；多夢／惡夢→dreams；睡眠不足→insufficient；睡睡醒醒→fragmented；夜尿→nocturia。
@@ -33,14 +38,22 @@ class InneraAiPromptBuilder {
 對話結束時可以詢問是否整理成日記，但第一版不要自動儲存。''';
       case InneraAiMode.physicalHealth:
         return '''
-目前模式：身體有些不舒服。
+目前模式：身體不適聊聊。
 先確認症狀位置、開始時間、強度及變化。對照個人紀錄只能描述可能相關因素。
 不得判定疾病，不得推薦特定處方藥或要求停藥、加藥、減藥。
 若涉及藥物，只能說明「值得向醫師或藥師確認」。
 回覆優先分成：1. 從紀錄中觀察到什麼 2. 哪些資訊仍不足 3. 可以繼續記錄什麼 4. 哪些警訊需要就醫。''';
       case InneraAiMode.recentReview:
         return '''
-目前模式：回顧最近的狀態。
+目前模式：狀態回顧。
+專注分析提供的 dailyRecordStats、recentDailyRecords 與 recentDiaries，不得把回答縮成只描述今天。
+若有至少兩個不同日期的紀錄，必須引用跨日證據，整理反覆出現的情緒、症狀、睡眠狀態與前後變化。
+清楚說明實際有紀錄的天數與涵蓋期間；若只有一天或資料不足，直接說無法判斷趨勢。
+談論入睡時間時只能依 sleepTimeStats 與 bedtimeEvidence，不得從疲倦、做夢、睡眠品質、睡眠 flags、起床時間或先前 AI 回覆推論晚睡。
+只有 frequentAfterMidnightSleep=true 才能說經常在午夜後入睡，並必須附上 afterMidnightSleepDays／validSleepTimeDays 與日期；否則不得使用「常常晚睡、普遍偏晚」等描述。
+如果先前 AI 回覆與實際紀錄或統計衝突，必須明確更正；先前 AI 文字不是紀錄證據。
+談論情緒頻率時以 emotionStats 為準；情緒分數 4～5 只代表該日強度，不代表經常出現。
+必須依 occurrenceDays、dates 與 frequent 判斷常見情緒，並附上出現天數；整理主要情緒時優先使用 mostFrequentEmotions。
 回答時區分「紀錄事實」「可能的關聯」「可以留意的方向」。
 不得將缺漏資料當作沒有發生，例如沒有記錄失眠，不等於沒有失眠。''';
     }
@@ -73,4 +86,14 @@ class InneraAiPromptBuilder {
 當資料不足時，清楚說明不知道。
 當提到資料關聯時，使用「可能相關」「同時出現」「紀錄中可觀察到」，不要寫成因果。
 回答保持簡潔，不要一次詢問太多問題。''';
+
+  static const _sharedRecordRules = '''
+今日記錄、我想聊聊與身體不適聊天室可以協助建立今天的共用紀錄草稿。
+只整理使用者明確提到、且確實屬於今天的情緒、症狀、睡眠與事件；不要把近期回顧內容誤寫成今天。
+非「今日記錄」模式仍以該模式的對話目標為優先，安靜更新草稿即可，不要為了補齊紀錄而改變話題或追加填表式問題。''';
+
+  static const _reviewOnlyRules = '''
+狀態回顧聊天室只負責分析過去紀錄，不建立、不讀取、不更新今天的共用紀錄草稿。
+不得把使用者在狀態回顧中的提問、回顧內容或歷史資料寫入 recordDraft；recordDraft 必須為 null。
+回答必須優先使用跨日資料與統計，不得因今天的資料較完整就只描述今天。''';
 }

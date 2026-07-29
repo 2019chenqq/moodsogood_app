@@ -53,6 +53,55 @@ void main() {
       expect(draft.sleep.flags, contains('initInsomnia'));
     });
 
+    test('moves physical and behavioral states out of AI emotions', () {
+      final draft = InneraAiRecordDraft.fromMap({
+        'dateKey': '2026-07-29',
+        'emotionMentions': [
+          {'rawText': '疲倦'},
+          {'rawText': '動力不足'},
+          {'rawText': '食慾增加'},
+          {'rawText': '想吐'},
+          {'rawText': '煩躁', 'value': 5},
+        ],
+        'symptoms': ['疲倦', '想吐'],
+      });
+
+      expect(draft.emotions.map((item) => item.name), ['煩躁']);
+      expect(
+        draft.symptoms,
+        containsAll(['疲倦', '動力不足', '食慾增加', '想吐']),
+      );
+      expect(draft.symptoms.toSet(), hasLength(4));
+    });
+
+    test('extracts motivation appetite and nausea as symptoms', () {
+      final draft = InneraAiRecordDraft.empty(DateTime(2026, 7, 29))
+          .mergeExplicitRecordFacts('以前喜歡畫畫，現在完全沒有動力；食慾增加，吃完又會想吐。');
+
+      expect(
+        draft.symptoms,
+        containsAll(['動力不足', '食慾增加', '想吐']),
+      );
+      expect(draft.emotions, isEmpty);
+    });
+
+    test('cleans symptom-like emotions already held by an open draft', () {
+      final openDraft = InneraAiRecordDraft(
+        dateKey: '2026-07-29',
+        emotions: const [
+          AiEmotionDraft(rawText: '動力不足'),
+          AiEmotionDraft(rawText: '食慾增加'),
+          AiEmotionDraft(rawText: '煩躁', score: 5),
+        ],
+        updatedAt: DateTime(2026, 7, 29),
+      );
+
+      final updated = openDraft.mergePatch({'symptoms': []});
+
+      expect(updated.emotions.map((item) => item.name), ['煩躁']);
+      expect(updated.symptoms, containsAll(['動力不足', '食慾增加']));
+    });
+
     test('keeps mentioned boredom and emptiness with null scores', () {
       final draft = InneraAiRecordDraft.empty(DateTime(2026, 7, 23))
           .mergeExplicitRecordFacts('今天很無聊，也很空虛。');

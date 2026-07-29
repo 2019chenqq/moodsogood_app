@@ -68,7 +68,7 @@ void main() {
   });
 
   group('EmotionMetaphorLibrary', () {
-    test('returns three reviewed local candidates for an emotion profile', () {
+    test('returns five diverse reviewed candidates for an emotion profile', () {
       const profile = DiaryEmotionAnalysis(
         primaryEmotion: '疲憊',
         secondaryEmotions: ['希望'],
@@ -77,15 +77,50 @@ void main() {
         intensity: 4,
       );
 
-      final results = EmotionMetaphorLibrary.recommend(profile);
+      final results = EmotionMetaphorLibrary.recommend(
+        profile,
+        variationSeed: 'conversation-a',
+      );
 
-      expect(results, hasLength(3));
+      expect(results, hasLength(5));
       expect(
         results.every((item) => item.source == DiaryDraftSource.suggested),
         isTrue,
       );
       expect(
-        results.every((item) => item.evidence.contains('本地審核詞庫')),
+        results.every((item) => item.evidence.contains('意象')),
+        isTrue,
+      );
+    });
+
+    test('varies equally ranked candidates with the conversation seed', () {
+      const profile = DiaryEmotionAnalysis();
+
+      final first = EmotionMetaphorLibrary.recommend(
+        profile,
+        variationSeed: 'conversation-a',
+      ).map((item) => item.value).toList();
+      final second = EmotionMetaphorLibrary.recommend(
+        profile,
+        variationSeed: 'a-very-different-conversation',
+      ).map((item) => item.value).toList();
+
+      expect(first, isNot(equals(second)));
+    });
+
+    test('prioritizes metaphors that match explicit emotion tags', () {
+      const profile = DiaryEmotionAnalysis(
+        primaryEmotion: '憤怒',
+        secondaryEmotions: ['壓力'],
+        valence: 1,
+        energy: 5,
+        intensity: 5,
+      );
+
+      final results = EmotionMetaphorLibrary.recommend(profile);
+
+      expect(
+        results.take(2).any((item) => item.value.contains('熱氣')),
         isTrue,
       );
     });

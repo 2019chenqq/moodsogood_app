@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
@@ -72,7 +73,9 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
   Future<void> _loadTodaySession() async {
     setState(() => _loadingDraft = true);
     try {
-      final draft = await _draftService.loadOrCreateToday();
+      final draft = _mode.supportsDailyRecordDraft
+          ? await _draftService.loadOrCreateToday()
+          : null;
       final conversation = await _conversationService.loadToday(mode: _mode);
       if (!mounted) return;
       final restoredMessages = <InneraAiMessage>[
@@ -80,6 +83,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
       ];
       var migratedDraftEntries = false;
       if (_mode == InneraAiMode.dailyRecord &&
+          draft != null &&
           restoredMessages.isEmpty &&
           draft.rawUserEntries.isNotEmpty) {
         migratedDraftEntries = true;
@@ -155,7 +159,13 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     final saved = await _persistConversation();
     if (mounted && saved) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('對話與今天的草稿都已保存，可以稍後繼續。')),
+        SnackBar(
+          content: Text(
+            _mode.supportsDailyRecordDraft
+                ? '對話與今天的草稿都已保存，可以稍後繼續。'
+                : '狀態回顧對話已保存，可以稍後繼續。',
+          ),
+        ),
       );
     }
     return true;
@@ -167,8 +177,10 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('刪除對話並重新開始？'),
-        content: const Text(
-          '這會刪除今天尚未確認的 AI 對話與整理草稿，但不會刪除已正式儲存的每日紀錄或日記。',
+        content: Text(
+          _mode.supportsDailyRecordDraft
+              ? '這會刪除目前聊天室今天的 AI 對話與今日整理草稿，讓你重新記錄；已加入的每日紀錄與日記會保留。'
+              : '這會刪除今天的狀態回顧對話；既有每日紀錄與日記都會保留。',
         ),
         actions: [
           TextButton(
@@ -185,8 +197,13 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     if (confirmed != true || !mounted) return;
     setState(() => _loadingDraft = true);
     try {
-      await _conversationService.resetToday(mode: _mode);
-      final freshDraft = await _draftService.loadOrCreateToday();
+      await _conversationService.resetToday(
+        mode: _mode,
+        deleteRecordDraft: _mode.supportsDailyRecordDraft,
+      );
+      final freshDraft = _mode.supportsDailyRecordDraft
+          ? InneraAiRecordDraft.empty(DateTime.now())
+          : null;
       if (!mounted) return;
       setState(() {
         _messages
@@ -246,13 +263,12 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
             mode: _mode,
             history: _messages,
             userMessage: text,
-            recordDraft:
-                _mode == InneraAiMode.dailyRecord ? _recordDraft : null,
+            recordDraft: _mode.supportsDailyRecordDraft ? _recordDraft : null,
           )
           .timeout(const Duration(seconds: 70));
       if (!mounted) return;
-      InneraAiRecordDraft? nextDraft;
-      if (_mode == InneraAiMode.dailyRecord) {
+      InneraAiRecordDraft? nextDraftWithFallback;
+      if (_mode.supportsDailyRecordDraft) {
         final recordDraftPatch = response.recordDraft == null
             ? null
             : Map<String, dynamic>.from(response.recordDraft!);
@@ -260,10 +276,13 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
           // A message about yesterday must not overwrite today's sleep record.
           recordDraftPatch?.remove('sleep');
         }
-        nextDraft = (_recordDraft ?? InneraAiRecordDraft.empty(DateTime.now()))
-            .mergePatch(recordDraftPatch, rawUserEntry: text)
-            .mergeExplicitRecordFacts(text);
-        await _draftService.save(nextDraft);
+        final nextDraft =
+            (_recordDraft ?? InneraAiRecordDraft.empty(DateTime.now()))
+                .mergePatch(recordDraftPatch, rawUserEntry: text);
+        nextDraftWithFallback = _mode == InneraAiMode.dailyRecord
+            ? nextDraft.mergeExplicitRecordFacts(text)
+            : nextDraft;
+        await _draftService.save(nextDraftWithFallback);
       }
       if (!mounted) return;
       setState(() {
@@ -281,7 +300,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
             ),
           );
         }
-        if (nextDraft != null) _recordDraft = nextDraft;
+        _recordDraft = nextDraftWithFallback;
         _isSending = false;
       });
       await _persistConversation();
@@ -328,7 +347,9 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
 
   String _messageForError(Object error) => error is InneraAiException
       ? error.message
-      : 'AI 服務連線失敗或發生未預期錯誤，請確認網路後再試；目前草稿已保留。';
+      : _mode.supportsDailyRecordDraft
+          ? 'AI 服務連線失敗或發生未預期錯誤，請確認網路後再試；目前草稿已保留。'
+          : 'AI 服務連線失敗或發生未預期錯誤，請確認網路後再試；狀態回顧對話已保留。';
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -357,7 +378,10 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
             controller: controller,
             padding: const EdgeInsets.all(20),
             children: [
-              Text('今天的紀錄', style: Theme.of(context).textTheme.titleLarge),
+              Text(
+                '今天的紀錄草稿',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
               const SizedBox(height: 16),
               Text('情緒', style: Theme.of(context).textTheme.titleSmall),
               if (workingDraft.overallMood != null)
@@ -486,7 +510,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                 )
                     ? null
                     : () => Navigator.pop(context, workingDraft),
-                child: const Text('儲存草稿並整理今日紀錄'),
+                child: const Text('儲存草稿'),
               ),
               if (workingDraft.emotions.any(
                 (item) => !item.hasValidDimension || item.score == null,
@@ -509,7 +533,11 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
       await _draftService.save(confirmedDraft);
       if (!mounted) return;
       setState(() => _recordDraft = confirmedDraft);
-      await _extractDiaryDraft(structuredDraft: confirmedDraft);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('草稿已儲存，可以繼續補充；尚未加入每日紀錄。'),
+        ),
+      );
     } catch (error, stackTrace) {
       debugPrint('InneraAiChatPage draft score save failed: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -738,11 +766,15 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     });
     try {
       final conversation = await _conversationService.loadToday(mode: selected);
+      final draft = selected.supportsDailyRecordDraft
+          ? await _draftService.loadOrCreateToday()
+          : null;
       if (!mounted) return;
       setState(() {
         _messages
           ..clear()
           ..addAll(conversation?.messages ?? [_welcomeMessage()]);
+        _recordDraft = draft;
         _activeSafetyLevel = _messages.last.safetyLevel;
         _loadingDraft = false;
       });
@@ -828,7 +860,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                   _scrollToBottom();
                 },
               ),
-              if (_mode == InneraAiMode.dailyRecord &&
+              if (_mode.supportsDailyRecordDraft &&
                   !_loadingDraft &&
                   _recordDraft != null)
                 AiRecordDraftCard(
@@ -848,6 +880,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                     final message = _messages[index];
                     return AiMessageBubble(
                       message: message,
+                      userPhotoUrl: FirebaseAuth.instance.currentUser?.photoURL,
                       onRetry: _lastFailedInput == null
                           ? null
                           : () {
@@ -868,8 +901,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                 maxLength: _maxInputLength,
                 onSend: () => _send(),
               ),
-              if (_mode == InneraAiMode.dailyRecord &&
-                  _shouldShowScoreShortcuts())
+              if (_shouldShowScoreShortcuts())
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                   child: Row(
