@@ -407,6 +407,7 @@ class InneraAiRecordDraft {
     if (text.isEmpty) return this;
 
     final symptomSet = <String>{..._sanitizeSymptoms(symptoms)};
+    final clauses = text.split(RegExp(r'[，。！？；\n]'));
     final emotionByName = <String, AiEmotionDraft>{};
     for (final emotion in emotions) {
       final migratedSymptoms = _symptomNamesFromText(
@@ -415,10 +416,12 @@ class InneraAiRecordDraft {
       if (migratedSymptoms.isNotEmpty) {
         symptomSet.addAll(migratedSymptoms);
       } else {
-        emotionByName[emotion.dedupeKey] = emotion;
+        final temporalScope = _temporalScopeForEmotion(emotion, clauses);
+        emotionByName[emotion.dedupeKey] = temporalScope.matched
+            ? _emotionWithTimeContext(emotion, temporalScope.timeContext)
+            : emotion;
       }
     }
-    final clauses = text.split(RegExp(r'[，。！？；\n]'));
     for (final clause in clauses) {
       for (final dimension in kEmotionDimensions) {
         final aliases = [...dimension.aliases]
@@ -444,7 +447,7 @@ class InneraAiRecordDraft {
           needsFollowUp: score == null && existing?.score == null,
           needsConfirmation: true,
           confidence: match.group(0) == dimension.displayName ? 1 : .9,
-          timeContext: _timeContext(clause) ?? existing?.timeContext,
+          timeContext: _timeContext(clause),
           evidence: clause.trim(),
         );
       }
@@ -505,6 +508,16 @@ class InneraAiRecordDraft {
       confirmed: false,
       hasExistingRecord: hasExistingRecord,
     );
+  }
+
+  /// Re-applies deterministic extraction to persisted raw entries after rule
+  /// updates, so users do not need to type the same content again.
+  InneraAiRecordDraft reconcileExplicitRecordFacts() {
+    var reconciled = this;
+    for (final entry in rawUserEntries) {
+      reconciled = reconciled.mergeExplicitRecordFacts(entry);
+    }
+    return reconciled;
   }
 
   InneraAiRecordDraft withEmotionScore(String key, int score) {
@@ -630,6 +643,9 @@ class InneraAiRecordDraft {
   }
 
   static String? _timeContext(String clause) {
+    if (RegExp(r'昨天|昨晚').hasMatch(clause)) return '昨天';
+    if (clause.contains('前天')) return '前天';
+    if (RegExp(r'今天|今日').hasMatch(clause)) return null;
     if (clause.contains('早上') || clause.contains('早晨')) return '早上';
     if (clause.contains('中午')) return '中午';
     if (clause.contains('下午')) return '下午';
@@ -637,6 +653,56 @@ class InneraAiRecordDraft {
     if (clause.contains('剛剛') || clause.contains('現在')) return '當下';
     return null;
   }
+
+  static ({bool matched, String? timeContext}) _temporalScopeForEmotion(
+    AiEmotionDraft emotion,
+    List<String> clauses,
+  ) {
+    final dimension = emotion.normalizedDimensionId == null
+        ? null
+        : kEmotionDimensionsById[emotion.normalizedDimensionId];
+    final terms = <String>{
+      emotion.rawText.trim(),
+      if (emotion.normalizedDimensionName != null)
+        emotion.normalizedDimensionName!.trim(),
+      ...?dimension?.aliases,
+    }.where((term) => term.isNotEmpty).toList()
+      ..sort((left, right) => right.length.compareTo(left.length));
+    for (final clause in clauses.reversed) {
+      final comparableClause = _temporalComparable(clause);
+      final matches = terms.any((term) {
+        final comparableTerm = _temporalComparable(term);
+        return comparableTerm.isNotEmpty &&
+            comparableClause.contains(comparableTerm);
+      });
+      if (!matches) continue;
+      return (matched: true, timeContext: _timeContext(clause));
+    }
+    return (matched: false, timeContext: null);
+  }
+
+  static String _temporalComparable(String value) => value.replaceAll(
+        RegExp(r'\s+|也|有點|還是|仍然|還|很|真的'),
+        '',
+      );
+
+  static AiEmotionDraft _emotionWithTimeContext(
+    AiEmotionDraft emotion,
+    String? timeContext,
+  ) =>
+      AiEmotionDraft(
+        rawText: emotion.rawText,
+        normalizedDimensionId: emotion.normalizedDimensionId,
+        normalizedDimensionName: emotion.normalizedDimensionName,
+        score: emotion.score,
+        source: emotion.source,
+        mentioned: emotion.mentioned,
+        needsFollowUp: emotion.needsFollowUp,
+        needsConfirmation: emotion.needsConfirmation,
+        confidence: emotion.confidence,
+        timeContext: timeContext,
+        evidence: emotion.evidence,
+      );
 
   static ({String? wakeTime, String? finalWakeTime}) _explicitSleepTimes(
     List<String> clauses,

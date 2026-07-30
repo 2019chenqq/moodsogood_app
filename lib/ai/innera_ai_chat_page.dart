@@ -1,15 +1,18 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../constants/healing_design_system.dart';
 import '../daily/emotion_dimensions.dart';
 import 'ai_callable_diagnostics.dart';
 import 'ai_diary_draft_service.dart';
 import 'innera_ai_conversation_service.dart';
+import 'innera_ai_chat_image_service.dart';
 import 'innera_ai_message.dart';
 import 'innera_ai_mode.dart';
 import 'innera_ai_record_draft.dart';
@@ -35,6 +38,22 @@ class InneraAiChatPage extends StatefulWidget {
   State<InneraAiChatPage> createState() => _InneraAiChatPageState();
 }
 
+class _AiImageMigration {
+  const _AiImageMigration({
+    required this.originalMessages,
+    required this.messages,
+    required this.oldPaths,
+    required this.newPaths,
+  });
+
+  final List<InneraAiMessage> originalMessages;
+  final List<InneraAiMessage> messages;
+  final List<String> oldPaths;
+  final List<String> newPaths;
+
+  bool get hasChanges => oldPaths.isNotEmpty;
+}
+
 class _InneraAiChatPageState extends State<InneraAiChatPage> {
   static const int _maxInputLength = 2000;
 
@@ -46,9 +65,14 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
   final _focusNode = FocusNode();
   bool _isSending = false;
   String? _lastFailedInput;
+  InneraAiImageAttachment? _lastFailedImage;
+  Uint8List? _pendingImageBytes;
+  String? _pendingImageName;
   AiSafetyLevel _activeSafetyLevel = AiSafetyLevel.normal;
   final _draftService = InneraAiRecordDraftService();
   final _conversationService = InneraAiConversationService();
+  final _imageService = InneraAiChatImageService();
+  final _imagePicker = ImagePicker();
   InneraAiRecordDraft? _recordDraft;
   bool _loadingDraft = false;
   bool _isExtractingDiary = false;
@@ -73,14 +97,23 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
   Future<void> _loadTodaySession() async {
     setState(() => _loadingDraft = true);
     try {
-      final draft = _mode.supportsDailyRecordDraft
+      var draft = _mode.supportsDailyRecordDraft
           ? await _draftService.loadOrCreateToday()
           : null;
+      if (draft != null &&
+          !draft.confirmed &&
+          draft.rawUserEntries.isNotEmpty) {
+        draft = draft.reconcileExplicitRecordFacts();
+        await _draftService.save(draft);
+      }
       final conversation = await _conversationService.loadToday(mode: _mode);
       if (!mounted) return;
-      final restoredMessages = <InneraAiMessage>[
+      var restoredMessages = <InneraAiMessage>[
         ...?conversation?.messages,
       ];
+      final imageMigration = await _migrateLegacyImages(restoredMessages);
+      restoredMessages = imageMigration.messages;
+      if (!mounted) return;
       var migratedDraftEntries = false;
       if (_mode == InneraAiMode.dailyRecord &&
           draft != null &&
@@ -120,7 +153,10 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
         _activeSafetyLevel = restoredMessages.last.safetyLevel;
         _loadingDraft = false;
       });
-      if (migratedDraftEntries) await _persistConversation();
+      if (migratedDraftEntries || imageMigration.hasChanges) {
+        final saved = await _persistConversation();
+        await _finishImageMigration(imageMigration, saved: saved);
+      }
       _scrollToBottom();
     } catch (error, stackTrace) {
       debugPrint('InneraAiChatPage session load failed: $error');
@@ -152,6 +188,59 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
       debugPrint('InneraAiChatPage conversation save failed: $error');
       debugPrintStack(stackTrace: stackTrace);
       return false;
+    }
+  }
+
+  Future<_AiImageMigration> _migrateLegacyImages(
+    List<InneraAiMessage> messages,
+  ) async {
+    final migrated = <InneraAiMessage>[];
+    final oldPaths = <String>[];
+    final newPaths = <String>[];
+    for (final message in messages) {
+      final image = message.image;
+      if (image == null || image.isEncrypted) {
+        migrated.add(message);
+        continue;
+      }
+      try {
+        final encrypted = await _imageService.migrateLegacyAttachment(image);
+        migrated.add(message.copyWith(image: encrypted));
+        oldPaths.add(image.storagePath);
+        newPaths.add(encrypted.storagePath);
+      } catch (error, stackTrace) {
+        debugPrint('InneraAiChatPage legacy image migration failed: $error');
+        debugPrintStack(stackTrace: stackTrace);
+        migrated.add(message);
+      }
+    }
+    return _AiImageMigration(
+      originalMessages: messages,
+      messages: migrated,
+      oldPaths: oldPaths,
+      newPaths: newPaths,
+    );
+  }
+
+  Future<void> _finishImageMigration(
+    _AiImageMigration migration, {
+    required bool saved,
+  }) async {
+    if (!migration.hasChanges) return;
+    if (!saved && mounted) {
+      setState(() {
+        _messages
+          ..clear()
+          ..addAll(migration.originalMessages);
+      });
+    }
+    try {
+      await _imageService.deleteAll(
+        saved ? migration.oldPaths : migration.newPaths,
+      );
+    } catch (error, stackTrace) {
+      debugPrint('InneraAiChatPage image migration cleanup failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
     }
   }
 
@@ -196,6 +285,10 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     );
     if (confirmed != true || !mounted) return;
     setState(() => _loadingDraft = true);
+    final imagePaths = _messages
+        .map((message) => message.image?.storagePath)
+        .whereType<String>()
+        .toList();
     try {
       await _conversationService.resetToday(
         mode: _mode,
@@ -211,11 +304,20 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
           ..add(_welcomeMessage());
         _recordDraft = freshDraft;
         _lastFailedInput = null;
+        _lastFailedImage = null;
+        _pendingImageBytes = null;
+        _pendingImageName = null;
         _activeSafetyLevel = AiSafetyLevel.normal;
         _controller.clear();
         _loadingDraft = false;
       });
       await _persistConversation();
+      try {
+        await _imageService.deleteAll(imagePaths);
+      } catch (error, stackTrace) {
+        debugPrint('InneraAiChatPage old image cleanup failed: $error');
+        debugPrintStack(stackTrace: stackTrace);
+      }
       _scrollToBottom();
     } catch (error, stackTrace) {
       debugPrint('InneraAiChatPage reset failed: $error');
@@ -228,20 +330,145 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     }
   }
 
-  Future<void> _send({String? overrideText}) async {
-    final text = (overrideText ?? _controller.text).trim();
-    if (text.isEmpty || text.length > _maxInputLength || _isSending) return;
+  Future<void> _showImageSourcePicker() async {
+    if (_isSending) return;
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('從相簿選擇'),
+              onTap: () => Navigator.of(context).pop(ImageSource.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('拍照'),
+              onTap: () => Navigator.of(context).pop(ImageSource.camera),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+    try {
+      final picked = await _imagePicker.pickImage(
+        source: source,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 82,
+      );
+      if (picked == null) return;
+      final bytes = await picked.readAsBytes();
+      if (bytes.isEmpty ||
+          bytes.length > InneraAiChatImageService.maxImageBytes) {
+        throw const InneraAiChatImageException('照片大小必須小於 5 MB。');
+      }
+      if (!mounted) return;
+      setState(() {
+        _pendingImageBytes = bytes;
+        _pendingImageName = picked.name;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            error is InneraAiChatImageException
+                ? error.message
+                : '目前無法讀取照片，請重新選擇。',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _send({
+    String? overrideText,
+    InneraAiImageAttachment? overrideImage,
+  }) async {
+    final enteredText = (overrideText ?? _controller.text).trim();
+    final pendingBytes = overrideText == null ? _pendingImageBytes : null;
+    final pendingName = overrideText == null ? _pendingImageName : null;
+    final hasImage = overrideImage != null || pendingBytes != null;
+    if ((enteredText.isEmpty && !hasImage) ||
+        enteredText.length > _maxInputLength ||
+        _isSending) {
+      return;
+    }
+    final text = enteredText.isEmpty ? '請幫我閱讀並說明這張照片的內容。' : enteredText;
 
     setState(() {
       _isSending = true;
       _lastFailedInput = null;
-      if (overrideText == null) _controller.clear();
+      _lastFailedImage = null;
+      if (overrideText == null) {
+        _controller.clear();
+        _pendingImageBytes = null;
+        _pendingImageName = null;
+      }
+    });
+
+    InneraAiImageAttachment? image = overrideImage;
+    InneraAiTemporaryImage? temporaryImage;
+    var createdPermanentImage = false;
+    try {
+      if (image == null && pendingBytes != null) {
+        image = await _imageService.uploadEncryptedPermanent(
+          bytes: pendingBytes,
+          fileName: pendingName ?? 'photo.jpg',
+        );
+        createdPermanentImage = true;
+      }
+      if (image != null) {
+        temporaryImage = pendingBytes != null
+            ? await _imageService.uploadTemporaryForAi(
+                bytes: pendingBytes,
+                fileName: pendingName ?? 'photo.jpg',
+              )
+            : await _imageService.prepareTemporaryForAi(image);
+      }
+    } catch (error, stackTrace) {
+      debugPrint('InneraAiChatPage image upload failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (createdPermanentImage && image != null) {
+        try {
+          await _imageService.deleteAll([image.storagePath]);
+        } catch (cleanupError, cleanupStackTrace) {
+          debugPrint(
+            'InneraAiChatPage permanent image rollback failed: $cleanupError',
+          );
+          debugPrintStack(stackTrace: cleanupStackTrace);
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _isSending = false;
+        _pendingImageBytes = pendingBytes;
+        _pendingImageName = pendingName;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            error is InneraAiChatImageException
+                ? error.message
+                : '照片上傳失敗，請確認網路後再試一次。',
+          ),
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    setState(() {
       _messages.add(
         InneraAiMessage(
           id: 'u-${DateTime.now().microsecondsSinceEpoch}',
           role: InneraAiMessageRole.user,
           text: text,
           createdAt: DateTime.now(),
+          image: image,
         ),
       );
       _messages.add(
@@ -263,6 +490,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
             mode: _mode,
             history: _messages,
             userMessage: text,
+            image: temporaryImage,
             recordDraft: _mode.supportsDailyRecordDraft ? _recordDraft : null,
           )
           .timeout(const Duration(seconds: 70));
@@ -312,11 +540,23 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
           error,
           functionName: AiCallableEndpoints.chat,
         ),
+        image: image,
       );
     } catch (error, stackTrace) {
       debugPrint('InneraAiChatPage send failed: $error');
       debugPrintStack(stackTrace: stackTrace);
-      _showSendError(text, _messageForError(error));
+      _showSendError(text, _messageForError(error), image: image);
+    } finally {
+      if (temporaryImage != null) {
+        try {
+          await _imageService.deleteAll([temporaryImage.storagePath]);
+        } catch (cleanupError, cleanupStackTrace) {
+          debugPrint(
+            'InneraAiChatPage temporary image cleanup failed: $cleanupError',
+          );
+          debugPrintStack(stackTrace: cleanupStackTrace);
+        }
+      }
     }
   }
 
@@ -325,11 +565,16 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
         RegExp(r'(睡眠|入睡|起床|睡覺)[^，。！？\n]{0,16}昨天').hasMatch(text);
   }
 
-  void _showSendError(String text, String message) {
+  void _showSendError(
+    String text,
+    String message, {
+    InneraAiImageAttachment? image,
+  }) {
     if (!mounted) return;
     setState(() {
       _messages.removeWhere((message) => message.isLoading);
       _lastFailedInput = text;
+      _lastFailedImage = image;
       _messages.add(
         InneraAiMessage(
           id: 'err-${DateTime.now().microsecondsSinceEpoch}',
@@ -769,15 +1014,26 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
       final draft = selected.supportsDailyRecordDraft
           ? await _draftService.loadOrCreateToday()
           : null;
+      final imageMigration = await _migrateLegacyImages(
+        conversation?.messages ?? const <InneraAiMessage>[],
+      );
       if (!mounted) return;
       setState(() {
         _messages
           ..clear()
-          ..addAll(conversation?.messages ?? [_welcomeMessage()]);
+          ..addAll(
+            imageMigration.messages.isEmpty
+                ? [_welcomeMessage()]
+                : imageMigration.messages,
+          );
         _recordDraft = draft;
         _activeSafetyLevel = _messages.last.safetyLevel;
         _loadingDraft = false;
       });
+      if (imageMigration.hasChanges) {
+        final saved = await _persistConversation();
+        await _finishImageMigration(imageMigration, saved: saved);
+      }
     } catch (error, stackTrace) {
       debugPrint('InneraAiChatPage mode conversation load failed: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -887,7 +1143,10 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                               setState(() {
                                 _messages.removeWhere((item) => item.isError);
                               });
-                              _send(overrideText: _lastFailedInput);
+                              _send(
+                                overrideText: _lastFailedInput,
+                                overrideImage: _lastFailedImage,
+                              );
                             },
                     );
                   },
@@ -898,8 +1157,16 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                 focusNode: _focusNode,
                 mode: _mode,
                 isSending: _isSending,
+                pendingImageBytes: _pendingImageBytes,
                 maxLength: _maxInputLength,
                 onSend: () => _send(),
+                onPickImage: _showImageSourcePicker,
+                onRemoveImage: () {
+                  setState(() {
+                    _pendingImageBytes = null;
+                    _pendingImageName = null;
+                  });
+                },
               ),
               if (_shouldShowScoreShortcuts())
                 Padding(
@@ -950,16 +1217,22 @@ class _InputBar extends StatelessWidget {
     required this.focusNode,
     required this.mode,
     required this.isSending,
+    required this.pendingImageBytes,
     required this.maxLength,
     required this.onSend,
+    required this.onPickImage,
+    required this.onRemoveImage,
   });
 
   final TextEditingController controller;
   final FocusNode focusNode;
   final InneraAiMode mode;
   final bool isSending;
+  final Uint8List? pendingImageBytes;
   final int maxLength;
   final VoidCallback onSend;
+  final VoidCallback onPickImage;
+  final VoidCallback onRemoveImage;
 
   @override
   Widget build(BuildContext context) {
@@ -982,6 +1255,38 @@ class _InputBar extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
+            IconButton(
+              onPressed: isSending ? null : onPickImage,
+              icon: const Icon(Icons.add_photo_alternate_outlined),
+              tooltip: '加入照片',
+            ),
+            if (pendingImageBytes != null) ...[
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.memory(
+                      pendingImageBytes!,
+                      width: 52,
+                      height: 52,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  Positioned(
+                    top: -10,
+                    right: -10,
+                    child: IconButton.filled(
+                      visualDensity: VisualDensity.compact,
+                      onPressed: isSending ? null : onRemoveImage,
+                      icon: const Icon(Icons.close_rounded, size: 16),
+                      tooltip: '移除照片',
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 8),
+            ],
             Expanded(
               child: TextField(
                 controller: controller,
@@ -1011,7 +1316,8 @@ class _InputBar extends StatelessWidget {
             ValueListenableBuilder<TextEditingValue>(
               valueListenable: controller,
               builder: (context, value, child) {
-                final canSend = value.text.trim().isNotEmpty &&
+                final canSend = (value.text.trim().isNotEmpty ||
+                        pendingImageBytes != null) &&
                     value.text.trim().length <= maxLength &&
                     !isSending;
                 return IconButton.filled(

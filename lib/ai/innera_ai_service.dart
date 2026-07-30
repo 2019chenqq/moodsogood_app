@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../daily/emotion_dimensions.dart';
 import 'ai_callable_diagnostics.dart';
 import 'ai_request_id.dart';
+import 'innera_ai_chat_image_service.dart';
 import 'innera_ai_context_service.dart';
 import 'innera_ai_message.dart';
 import 'innera_ai_mode.dart';
@@ -63,6 +64,7 @@ class InneraAiService {
     required InneraAiMode mode,
     required List<InneraAiMessage> history,
     required String userMessage,
+    InneraAiTemporaryImage? image,
     InneraAiRecordDraft? recordDraft,
   }) async {
     final localSafety = _safetyService.assess(userMessage);
@@ -89,6 +91,7 @@ class InneraAiService {
       mode: mode,
       history: history,
       userMessage: userMessage,
+      image: image,
       context: contextBundle.data,
       contextSources: contextBundle.sources,
       recordDraft: recordDraft,
@@ -105,6 +108,7 @@ class InneraAiService {
     required String userMessage,
     required Map<String, dynamic> context,
     required List<AiContextSource> contextSources,
+    InneraAiTemporaryImage? image,
     InneraAiRecordDraft? recordDraft,
   }) async {
     final localSafety = _safetyService.assess(userMessage);
@@ -120,6 +124,11 @@ class InneraAiService {
       'messages': messages,
       'context': context,
       'contextSources': contextSources.map(_sourcePayload).toList(),
+      if (image != null)
+        'image': {
+          'storagePath': image.storagePath,
+          'contentType': image.contentType,
+        },
       'emotionDimensions': kEmotionDimensions
           .map(
             (dimension) => <String, dynamic>{

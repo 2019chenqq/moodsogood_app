@@ -23,7 +23,7 @@ const lastFmApiKey = defineSecret("LASTFM_API_KEY");
 const spotifyClientId = defineSecret("SPOTIFY_CLIENT_ID");
 const spotifyClientSecret = defineSecret("SPOTIFY_CLIENT_SECRET");
 const DEFAULT_AI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
-const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v5-shared-daily-record";
+const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v6-temporal-scope";
 const DIARY_EXTRACTION_PROMPT_VERSION = "diary_extraction_v1";
 
 exports.aggregateDailyAiUsage = onSchedule(
@@ -82,6 +82,47 @@ exports.aggregateDailyAiUsage = onSchedule(
       failedCount: summary.failedCount,
       estimatedCostMicroUsd: summary.estimatedCostMicroUsd,
       quotedPoints: summary.quotedPoints,
+    });
+  },
+);
+
+exports.cleanupExpiredAiChatImages = onSchedule(
+  {
+    schedule: "every 60 minutes",
+    timeZone: "Asia/Taipei",
+    region: "us-central1",
+    retryCount: 1,
+    maxInstances: 1,
+  },
+  async () => {
+    const bucket = admin.storage().bucket();
+    const [files] = await bucket.getFiles({ prefix: "ai_chat_temp/" });
+    const now = Date.now();
+    const fallbackCutoff = now - 60 * 60 * 1000;
+    const expired = files.filter((file) => {
+      const expiresAt = Date.parse(file.metadata?.metadata?.expiresAt || "");
+      const createdAt = Date.parse(file.metadata?.timeCreated || "");
+      const metadataExpired = !Number.isNaN(expiresAt) && expiresAt <= now;
+      const ageExpired =
+        !Number.isNaN(createdAt) && createdAt <= fallbackCutoff;
+      return metadataExpired || ageExpired;
+    });
+
+    for (let index = 0; index < expired.length; index += 50) {
+      await Promise.all(
+        expired.slice(index, index + 50).map(async (file) => {
+          try {
+            await file.delete();
+          } catch (error) {
+            if (Number(error?.code) !== 404) throw error;
+          }
+        }),
+      );
+    }
+
+    console.log("Expired AI chat image cleanup completed", {
+      scannedCount: files.length,
+      deletedCount: expired.length,
     });
   },
 );
@@ -482,6 +523,7 @@ const DAILY_RECORD_CLASSIFICATION_PROMPT = `
 9. normalizedDimensionId 與 normalizedDimensionName 只能使用請求中 emotionDimensions 的成對值。
 10. 無法可靠映射時兩者都輸出 null、needsConfirmation=true；不得建立新維度，也不得使用「無聊程度、空虛程度、興奮程度、焦慮程度」等舊名稱。
 11. 疲倦、疲憊、動力不足、沒有動力、食慾增加、食慾下降、想吐、噁心都屬於 symptoms，絕對不得放入 emotionMentions 或要求情緒分數。
+12. 日期詞只作用於它所在的子句，不得跨越逗號、句號或轉折詞污染後續敘述。在 dailyRecord 中，後續子句沒有再次標示昨天／前天時，一律視為今天。
 
 睡眠 flags：入睡困難=initInsomnia；半夜反覆醒／維持睡眠困難=interrupted；
 太早醒=earlyWake；淺眠=lightSleep；多夢／惡夢=dreams；睡眠不足=insufficient；
@@ -492,6 +534,7 @@ const DAILY_RECORD_CLASSIFICATION_PROMPT = `
 - wakeTime 是離床活動時刻，對應「起床、離床、下床開始活動」。
 - 「凌晨4點醒來，5點起床」必須是 finalWakeTime="04:00"、wakeTime="05:00"。
 - 若半夜醒來後又睡著，該時間放入 midWakeList／interrupted，不是 finalWakeTime。
+- 最近一次昨晚入睡、今天起床的跨夜睡眠歸入今天的 sleep。
 
 範例一：
 輸入：我今天很疲倦，晚上躺很久都睡不著。
@@ -509,7 +552,11 @@ sleep.flags=["initInsomnia"]。不得把入睡困難放進 symptoms。
 範例三：
 輸入：我焦慮大概4分，昨天半夜醒了三次。
 正確：rawText=焦慮、value=4、source=explicit，映射到正式維度「焦慮」；
-但昨天的睡眠不得寫入今天的 sleep。
+若「昨天半夜」明確是較早、且不屬於最近一次跨夜睡眠，才不得寫入今天的 sleep；無法確認時可針對睡眠日期補問。
+
+範例四：
+輸入：昨天睡了11小時，可是還是覺得好累，心情也不太好，也有點想哭，還一直沒有原因哀嚎。
+正確：最近一次跨夜睡眠可歸入今天的 sleep；疲倦是今天的 symptom；心情不太好、想哭、哀嚎是今天的 emotionMentions，timeContext 不得填「昨天」。回覆也不得把這些後續狀態說成昨天。
 
 dailyRecord 模式每次最多補問一至兩個最重要的缺漏。已辨識但無分數的情緒可以詢問強度，
 但不得忽略、不得填暫定 3 分，也不得自動套用 overallMood。
@@ -1313,6 +1360,49 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
     if (byId && (!requestedName || requestedName === byId.displayName)) return byId;
     return dimensionByTerm.get(requestedName) || dimensionByTerm.get(rawText) || null;
   };
+  const latestClauses = safeText(latestMessage, 4000)
+    .split(/[，。！？；\n]+/)
+    .map((clause) => clause.trim())
+    .filter(Boolean);
+  const timeContextFromClause = (clause) => {
+    if (/昨天|昨晚/.test(clause)) return "昨天";
+    if (/前天/.test(clause)) return "前天";
+    if (/今天|今日/.test(clause)) return null;
+    if (/早上|早晨/.test(clause)) return "早上";
+    if (/中午/.test(clause)) return "中午";
+    if (/下午/.test(clause)) return "下午";
+    if (/晚上|今晚/.test(clause)) return "晚上";
+    if (/剛剛|現在/.test(clause)) return "當下";
+    return null;
+  };
+  const temporalScopeForMention = (item, dimension, rawText) => {
+    const comparable = (value) =>
+      safeText(value, 500).replace(/\s+|也|有點|還是|仍然|還|很|真的/g, "");
+    const terms = [
+      rawText,
+      safeText(item?.evidence, 300),
+      dimension?.displayName,
+      ...(Array.isArray(dimension?.aliases) ? dimension.aliases : []),
+    ]
+      .map((term) => safeText(term, 300))
+      .filter(Boolean)
+      .sort((left, right) => right.length - left.length);
+    for (let index = latestClauses.length - 1; index >= 0; index -= 1) {
+      const clause = latestClauses[index];
+      const comparableClause = comparable(clause);
+      const matched = terms.some(
+        (term) =>
+          clause.includes(term) ||
+          (comparable(term) &&
+            comparableClause.includes(comparable(term))) ||
+          (term.length >= 4 && term.includes(clause)),
+      );
+      if (matched) {
+        return { matched: true, timeContext: timeContextFromClause(clause) };
+      }
+    }
+    return { matched: false, timeContext: null };
+  };
   const sleepFlagAliases = new Map([
     ["maintInsomnia", "interrupted"],
     ["earlyWake", "earlyWake"],
@@ -1397,6 +1487,7 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
     const key = dimension?.id || `raw:${rawText}`;
     const previousEmotion = emotionMap.get(key);
     const resolvedScore = score ?? previousEmotion?.value ?? null;
+    const temporalScope = temporalScopeForMention(item, dimension, rawText);
     emotionMap.set(key, {
       rawText,
       normalizedDimensionId: dimension?.id || null,
@@ -1410,7 +1501,9 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
         item?.source === "explicit" || item?.source === "explicitUserInput"
           ? "explicitUserInput"
           : item?.source || "aiExtracted",
-      timeContext: safeText(item?.timeContext, 40) || previousEmotion?.timeContext || null,
+      timeContext: temporalScope.matched
+        ? temporalScope.timeContext
+        : previousEmotion?.timeContext || null,
       evidence: safeText(item?.evidence, 300) || previousEmotion?.evidence || "",
     });
   }
@@ -2012,6 +2105,27 @@ exports.generateInneraAiChat = onCall(
     const mode = String(data.mode || "emotionalSupport").trim();
     const supportsDailyRecordDraft = mode !== "recentReview";
     const message = String(data.message || "").trim().slice(0, 2000);
+    const requestedImage =
+      data.image && typeof data.image === "object" ? data.image : null;
+    let image = null;
+    if (requestedImage) {
+      const storagePath = String(requestedImage.storagePath || "").trim();
+      const contentType = String(requestedImage.contentType || "").trim();
+      const expectedPrefix = `ai_chat_temp/${request.auth.uid}/`;
+      const allowedContentTypes = new Set([
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+      ]);
+      if (
+        !storagePath.startsWith(expectedPrefix) ||
+        storagePath.includes("..") ||
+        !allowedContentTypes.has(contentType)
+      ) {
+        throw new HttpsError("invalid-argument", "Invalid AI chat image");
+      }
+      image = { storagePath, contentType };
+    }
     const context =
       data.context && typeof data.context === "object" ? { ...data.context } : {};
     const history = Array.isArray(data.messages) ? data.messages : [];
@@ -2131,6 +2245,42 @@ exports.generateInneraAiChat = onCall(
         throw new HttpsError("internal", "缺少 OPENAI_API_KEY 設定");
       }
 
+      let currentUserContent = message;
+      if (image) {
+        const file = admin.storage().bucket().file(image.storagePath);
+        const [metadata] = await file.getMetadata();
+        const storedContentType = String(metadata.contentType || "");
+        const storedSize = Number(metadata.size || 0);
+        if (
+          storedContentType !== image.contentType ||
+          storedSize <= 0 ||
+          storedSize > 5 * 1024 * 1024 ||
+          metadata.metadata?.purpose !== "innera-ai-chat-temporary"
+        ) {
+          throw new HttpsError("invalid-argument", "Invalid stored AI chat image");
+        }
+        const [imageBytes] = await file.download();
+        try {
+          await file.delete();
+        } catch (cleanupError) {
+          console.warn("Temporary AI chat image cleanup failed", {
+            uid: request.auth.uid,
+            storagePath: image.storagePath,
+            error: cleanupError?.message || String(cleanupError),
+          });
+        }
+        currentUserContent = [
+          { type: "text", text: message },
+          {
+            type: "image_url",
+            image_url: {
+              url: `data:${image.contentType};base64,${imageBytes.toString("base64")}`,
+              detail: "low",
+            },
+          },
+        ];
+      }
+
       const normalizedHistory = history
         .map((item) => {
           const role = item && item.role === "user" ? "user" : "assistant";
@@ -2169,6 +2319,8 @@ exports.generateInneraAiChat = onCall(
               "Reply in Traditional Chinese with a gentle, respectful, non-judgmental tone.",
               "You are not a doctor, therapist, or emergency service.",
               "Do not diagnose, claim causation, recommend medication changes, or invent records.",
+              "When an image is provided, describe only what is visibly supported and clearly state uncertainty. Do not identify a person, diagnose from an image, or treat image interpretation as a confirmed medical fact.",
+              "Image-derived observations must never be added to recordDraft automatically. Only facts explicitly stated in the user's text may update the daily record; ask the user to confirm any image-derived detail first.",
               "Medication records may contain Chinese product names and English generic names or active ingredients. When discussing a recorded medication, use nameEn and ingredientLines as the primary identification evidence, understand English ingredient names even when the user writes in Chinese, and explain in Traditional Chinese.",
               "Clearly separate facts present in the user's medication record from general medication knowledge. If an ingredient is missing, ambiguous, misspelled, or unfamiliar, say that it cannot be identified reliably and suggest confirming the package, prescription, doctor, or pharmacist; never guess the ingredient, indication, interaction, side effect, or clinical effect.",
               "Do not minimize self-harm, violence, or medical emergency risk.",
@@ -2216,7 +2368,7 @@ exports.generateInneraAiChat = onCall(
           ...safeHistory,
           {
             role: "user",
-            content: message,
+            content: currentUserContent,
           },
         ],
       });
@@ -2240,7 +2392,7 @@ exports.generateInneraAiChat = onCall(
           : [],
         recordDraft: supportsDailyRecordDraft
           ? normalizeInneraRecordDraft(
-              parsed.recordDraft,
+              image ? existingRecordDraft : parsed.recordDraft,
               existingRecordDraft,
               emotionDimensions,
               message,

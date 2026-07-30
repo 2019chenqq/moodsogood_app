@@ -1,6 +1,9 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../../constants/healing_design_system.dart';
+import '../innera_ai_chat_image_service.dart';
 import '../innera_ai_message.dart';
 import 'ai_context_sources_sheet.dart';
 
@@ -35,7 +38,7 @@ class AiMessageBubble extends StatelessWidget {
       builder: (context, constraints) => Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         child: Align(
-          alignment: Alignment.centerLeft,
+          alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
           child: Row(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -88,33 +91,62 @@ class AiMessageBubble extends StatelessWidget {
                                       style: TextStyle(color: textColor)),
                                 ],
                               )
-                            : Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                            : Column(
                                 mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  if (!isUser) ...[
-                                    Icon(
-                                      Icons.auto_awesome_rounded,
-                                      size: 18,
-                                      color: colorScheme.primary,
-                                    ),
-                                    const SizedBox(width: 8),
-                                  ],
-                                  Flexible(
-                                    child: SelectionArea(
-                                      child: Text(
-                                        message.text,
-                                        softWrap: true,
-                                        overflow: TextOverflow.visible,
-                                        textWidthBasis: TextWidthBasis.parent,
-                                        textAlign: TextAlign.justify,
-                                        style: TextStyle(
-                                          color: textColor,
-                                          height: 1.55,
-                                          fontSize: 15,
+                                  if (message.image != null) ...[
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: _EncryptedChatImage(
+                                        message.image!,
+                                        width: 240,
+                                        height: 180,
+                                        fit: BoxFit.cover,
+                                        errorBuilder:
+                                            (context, error, stackTrace) =>
+                                                Container(
+                                          width: 240,
+                                          height: 120,
+                                          alignment: Alignment.center,
+                                          color: colorScheme.surfaceContainer,
+                                          child: const Text('照片目前無法顯示'),
                                         ),
                                       ),
                                     ),
+                                    const SizedBox(height: 10),
+                                  ],
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (!isUser) ...[
+                                        Icon(
+                                          Icons.auto_awesome_rounded,
+                                          size: 18,
+                                          color: colorScheme.primary,
+                                        ),
+                                        const SizedBox(width: 8),
+                                      ],
+                                      Flexible(
+                                        child: SelectionArea(
+                                          child: Text(
+                                            message.text,
+                                            softWrap: true,
+                                            overflow: TextOverflow.visible,
+                                            textWidthBasis:
+                                                TextWidthBasis.parent,
+                                            textAlign: TextAlign.left,
+                                            style: TextStyle(
+                                              color: textColor,
+                                              height: 1.55,
+                                              fontSize: 15,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
@@ -158,4 +190,79 @@ class AiMessageBubble extends StatelessWidget {
       ),
     );
   }
+}
+
+class _EncryptedChatImage extends StatefulWidget {
+  const _EncryptedChatImage(
+    this.attachment, {
+    this.width,
+    this.height,
+    this.fit,
+    this.errorBuilder,
+  });
+
+  final InneraAiImageAttachment attachment;
+  final double? width;
+  final double? height;
+  final BoxFit? fit;
+  final ImageErrorWidgetBuilder? errorBuilder;
+
+  @override
+  State<_EncryptedChatImage> createState() => _EncryptedChatImageState();
+}
+
+class _EncryptedChatImageState extends State<_EncryptedChatImage> {
+  late Future<Uint8List> _bytes;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant _EncryptedChatImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.attachment.storagePath != widget.attachment.storagePath) {
+      _load();
+    }
+  }
+
+  void _load() {
+    _bytes = InneraAiChatImageService().downloadForDisplay(widget.attachment);
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<Uint8List>(
+        future: _bytes,
+        builder: (context, snapshot) {
+          if (snapshot.hasData) {
+            return Image.memory(
+              snapshot.data!,
+              width: widget.width,
+              height: widget.height,
+              fit: widget.fit,
+              gaplessPlayback: true,
+            );
+          }
+          if (snapshot.hasError) {
+            final errorBuilder = widget.errorBuilder;
+            if (errorBuilder != null) {
+              return errorBuilder(
+                context,
+                snapshot.error!,
+                StackTrace.current,
+              );
+            }
+            return const Center(child: Icon(Icons.broken_image_outlined));
+          }
+          return SizedBox(
+            width: widget.width,
+            height: widget.height,
+            child: const Center(
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        },
+      );
 }

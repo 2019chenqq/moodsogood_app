@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 
 import '../diary/diary_repository.dart';
 import '../meds/medication_local_db.dart';
+import '../utils/health_data_encryption_service.dart';
 import 'innera_ai_message.dart';
 import 'innera_ai_mode.dart';
 
@@ -266,16 +267,17 @@ class InneraAiContextService {
     List<String> failures,
   ) async {
     try {
-      final snapshot = await _firestore
-          .collection('users')
-          .doc(uid)
-          .collection('periodCycles')
-          .where('startDate', isLessThanOrEqualTo: Timestamp.fromDate(today))
-          .orderBy('startDate', descending: true)
-          .limit(6)
-          .get();
-      final cycles = snapshot.docs
-          .map((doc) => {'id': doc.id, ...doc.data()})
+      final documents = await HealthDataEncryptionService.getEncrypted(
+        _firestore
+            .collection('users')
+            .doc(uid)
+            .collection('periodCycles')
+            .where('startDate', isLessThanOrEqualTo: Timestamp.fromDate(today))
+            .orderBy('startDate', descending: true)
+            .limit(6),
+      );
+      final cycles = documents
+          .map((doc) => {'id': doc.id, ...doc.data})
           .where((cycle) {
             final end =
                 _asDate(cycle['endDate']) ?? _asDate(cycle['startDate']);
@@ -387,7 +389,10 @@ class InneraAiContextService {
         .doc(_formatDate(date))
         .get();
     if (!doc.exists) return null;
-    return {'id': doc.id, ...?doc.data()};
+    final raw = doc.data();
+    if (raw == null) return null;
+    final decrypted = await HealthDataEncryptionService.decryptData(raw);
+    return {'id': doc.id, ...decrypted};
   }
 
   Future<List<Map<String, dynamic>>> _dailyRecords(
@@ -408,7 +413,12 @@ class InneraAiContextService {
         )
         .orderBy('date', descending: true)
         .get();
-    return snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
+    return Future.wait(
+      snapshot.docs.map((doc) async {
+        final data = await HealthDataEncryptionService.decryptData(doc.data());
+        return {'id': doc.id, ...data};
+      }),
+    );
   }
 
   Map<String, dynamic> _compactDailyRecord(Map<String, dynamic>? record) {

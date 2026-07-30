@@ -2,6 +2,43 @@ import 'innera_ai_safety_service.dart';
 
 enum InneraAiMessageRole { user, assistant, system }
 
+class InneraAiImageAttachment {
+  const InneraAiImageAttachment({
+    required this.storagePath,
+    required this.downloadUrl,
+    required this.contentType,
+    this.encryptionVersion = 0,
+  });
+
+  final String storagePath;
+  final String downloadUrl;
+  final String contentType;
+  final int encryptionVersion;
+
+  bool get isEncrypted => encryptionVersion > 0;
+
+  Map<String, dynamic> toMap() => {
+        'storagePath': storagePath,
+        if (downloadUrl.isNotEmpty) 'downloadUrl': downloadUrl,
+        'contentType': contentType,
+        if (isEncrypted) 'encryptionVersion': encryptionVersion,
+      };
+
+  factory InneraAiImageAttachment.fromMap(Map<String, dynamic> map) {
+    return InneraAiImageAttachment(
+      storagePath: (map['storagePath'] ?? '').toString().trim(),
+      downloadUrl: (map['downloadUrl'] ?? '').toString().trim(),
+      contentType: (map['contentType'] ?? 'image/jpeg').toString().trim(),
+      encryptionVersion: (map['encryptionVersion'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  bool get isValid =>
+      storagePath.isNotEmpty &&
+      (isEncrypted || downloadUrl.isNotEmpty) &&
+      const {'image/jpeg', 'image/png', 'image/webp'}.contains(contentType);
+}
+
 class AiContextSource {
   const AiContextSource({
     required this.label,
@@ -37,6 +74,7 @@ class InneraAiMessage {
     this.isLoading = false,
     this.isError = false,
     this.canRetry = false,
+    this.image,
   });
 
   final String id;
@@ -48,8 +86,10 @@ class InneraAiMessage {
   final bool isLoading;
   final bool isError;
   final bool canRetry;
+  final InneraAiImageAttachment? image;
 
-  bool get canPersist => !isLoading && !isError && text.trim().isNotEmpty;
+  bool get canPersist =>
+      !isLoading && !isError && (text.trim().isNotEmpty || image != null);
 
   Map<String, dynamic> toMap() => {
         'id': id,
@@ -58,6 +98,7 @@ class InneraAiMessage {
         'createdAt': createdAt.toIso8601String(),
         'sources': sources.map((source) => source.toMap()).toList(),
         'safetyLevel': safetyLevel.name,
+        if (image != null) 'image': image!.toMap(),
       };
 
   static InneraAiMessage? tryFromMap(Map<String, dynamic> map) {
@@ -65,7 +106,17 @@ class InneraAiMessage {
     final text = (map['text'] ?? '').toString().trim();
     final createdAt = DateTime.tryParse((map['createdAt'] ?? '').toString());
     final roleName = map['role']?.toString();
-    if (id.isEmpty || text.isEmpty || createdAt == null) return null;
+    final imageMap = map['image'];
+    final image = imageMap is Map
+        ? InneraAiImageAttachment.fromMap(
+            Map<String, dynamic>.from(imageMap),
+          )
+        : null;
+    if (id.isEmpty ||
+        (text.isEmpty && image?.isValid != true) ||
+        createdAt == null) {
+      return null;
+    }
     final role = InneraAiMessageRole.values.firstWhere(
       (value) => value.name == roleName,
       orElse: () => InneraAiMessageRole.assistant,
@@ -90,6 +141,7 @@ class InneraAiMessage {
         (value) => value.name == map['safetyLevel']?.toString(),
         orElse: () => AiSafetyLevel.normal,
       ),
+      image: image?.isValid == true ? image : null,
     );
   }
 
@@ -100,6 +152,7 @@ class InneraAiMessage {
     bool? isLoading,
     bool? isError,
     bool? canRetry,
+    InneraAiImageAttachment? image,
   }) {
     return InneraAiMessage(
       id: id,
@@ -111,6 +164,7 @@ class InneraAiMessage {
       isLoading: isLoading ?? this.isLoading,
       isError: isError ?? this.isError,
       canRetry: canRetry ?? this.canRetry,
+      image: image ?? this.image,
     );
   }
 }

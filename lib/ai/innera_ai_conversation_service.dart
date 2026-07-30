@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import 'innera_ai_message.dart';
 import 'innera_ai_mode.dart';
+import '../utils/health_data_encryption_service.dart';
 
 class InneraAiConversation {
   const InneraAiConversation({
@@ -38,22 +39,23 @@ class InneraAiConversationService {
     final uid = _requireUid();
     final dateKey = _todayKey();
     final snapshot = await _conversationRef(uid, dateKey, mode).get();
-    final conversation = _conversationFromSnapshot(snapshot);
+    final conversation = await _conversationFromSnapshot(snapshot);
     if (conversation != null) return conversation;
 
     // Read the old once-per-day document only when its saved mode matches.
     // This preserves existing conversations without letting one mode replace
     // the mode explicitly selected from the home screen.
     final legacySnapshot = await _legacyConversationRef(uid, dateKey).get();
-    final legacyConversation = _conversationFromSnapshot(legacySnapshot);
+    final legacyConversation = await _conversationFromSnapshot(legacySnapshot);
     return legacyConversation?.mode == mode ? legacyConversation : null;
   }
 
-  InneraAiConversation? _conversationFromSnapshot(
+  Future<InneraAiConversation?> _conversationFromSnapshot(
     DocumentSnapshot<Map<String, dynamic>> snapshot,
-  ) {
-    final data = snapshot.data();
-    if (!snapshot.exists || data == null) return null;
+  ) async {
+    final raw = snapshot.data();
+    if (!snapshot.exists || raw == null) return null;
+    final data = await HealthDataEncryptionService.decryptData(raw);
     final messages = (data['messages'] as List?)
             ?.whereType<Map>()
             .map(
@@ -85,7 +87,8 @@ class InneraAiConversationService {
     final start = persistable.length > maxStoredMessages
         ? persistable.length - maxStoredMessages
         : 0;
-    await _conversationRef(uid, _todayKey(), mode).set(
+    await HealthDataEncryptionService.setEncrypted(
+      _conversationRef(uid, _todayKey(), mode),
       {
         'schemaVersion': 1,
         'dateKey': _todayKey(),
@@ -94,7 +97,6 @@ class InneraAiConversationService {
             persistable.skip(start).map((message) => message.toMap()).toList(),
         'updatedAt': FieldValue.serverTimestamp(),
       },
-      SetOptions(merge: true),
     );
   }
 
@@ -120,7 +122,10 @@ class InneraAiConversationService {
     }
     final legacyRef = _legacyConversationRef(uid, dateKey);
     final legacySnapshot = await legacyRef.get();
-    if (legacySnapshot.data()?['mode'] == mode.name) {
+    final legacyData = legacySnapshot.data();
+    if (legacyData != null &&
+        (await HealthDataEncryptionService.decryptData(legacyData))['mode'] ==
+            mode.name) {
       batch.delete(legacyRef);
     }
     await batch.commit();

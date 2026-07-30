@@ -172,6 +172,93 @@ void main() {
       expect(draft.sleep.flags, isEmpty);
     });
 
+    test('limits yesterday to its own clause and keeps later emotions today',
+        () {
+      final draft =
+          InneraAiRecordDraft.empty(DateTime(2026, 7, 30)).mergePatch({
+        'emotionMentions': [
+          {
+            'rawText': '心情不太好',
+            'normalizedDimensionId': '低落',
+            'normalizedDimensionName': '低落',
+            'value': 4,
+            'timeContext': '昨天',
+          },
+          {
+            'rawText': '想哭',
+            'normalizedDimensionId': '難過',
+            'normalizedDimensionName': '難過',
+            'value': 3,
+            'timeContext': '昨天',
+          },
+          {
+            'rawText': '哀嚎',
+            'normalizedDimensionId': '煩躁',
+            'normalizedDimensionName': '煩躁',
+            'value': 5,
+            'timeContext': '昨天',
+          },
+        ],
+      }).mergeExplicitRecordFacts(
+        '昨天睡了11個小時，可是還是覺得好累，不知道是不是PMDD又找上門了，'
+        '心情也不太好，也有點想哭，還一直沒有原因哀嚎。',
+      );
+
+      expect(draft.symptoms, contains('疲倦'));
+      expect(draft.emotions, hasLength(3));
+      expect(
+        draft.emotions.every((item) => item.timeContext == null),
+        isTrue,
+        reason: draft.emotions
+            .map((item) => '${item.rawText}:${item.timeContext}')
+            .join(', '),
+      );
+    });
+
+    test('keeps yesterday only when the emotion clause says yesterday', () {
+      final draft = InneraAiRecordDraft.empty(
+        DateTime(2026, 7, 30),
+      ).mergeExplicitRecordFacts('昨天很低落，今天有點想哭。');
+
+      expect(
+        draft.emotions.firstWhere((item) => item.name == '低落').timeContext,
+        '昨天',
+      );
+      expect(
+        draft.emotions.firstWhere((item) => item.name == '難過').timeContext,
+        isNull,
+      );
+    });
+
+    test('repairs a persisted open draft from its stored raw entries', () {
+      final draft = InneraAiRecordDraft.fromMap({
+        'dateKey': '2026-07-30',
+        'confirmed': false,
+        'rawUserEntries': [
+          '昨天睡了11個小時，可是還是覺得好累，心情也不太好，也有點想哭。',
+        ],
+        'emotionMentions': [
+          {
+            'rawText': '心情不太好',
+            'normalizedDimensionId': '低落',
+            'normalizedDimensionName': '低落',
+            'value': 4,
+            'timeContext': '昨天',
+          },
+          {
+            'rawText': '想哭',
+            'normalizedDimensionId': '難過',
+            'normalizedDimensionName': '難過',
+            'value': 3,
+            'timeContext': '昨天',
+          },
+        ],
+      }).reconcileExplicitRecordFacts();
+
+      expect(draft.rawUserEntries, hasLength(1));
+      expect(draft.emotions.every((item) => item.timeContext == null), isTrue);
+    });
+
     test('maps waking up and getting out of bed to different fields', () {
       final draft = InneraAiRecordDraft.empty(
         DateTime(2026, 7, 24),

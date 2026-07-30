@@ -26,6 +26,7 @@ class InneraAiPromptBuilder {
 新紀錄唯一允許的正式情緒維度為：$dimensions。normalizedDimensionId 與 normalizedDimensionName 必須來自這份清單。無法可靠映射時兩者皆為 null，保留 rawText 並設 needsConfirmation=true，不得自行建立「○○程度」。
 睡不著／難入睡→initInsomnia；半夜反覆醒→interrupted；早醒→earlyWake；淺眠→lightSleep；多夢／惡夢→dreams；睡眠不足→insufficient；睡睡醒醒→fragmented；夜尿→nocturia。
 睡眠時間欄位不得混用：finalWakeTime 是「甦醒時刻」（醒來、醒著、睜眼、清醒），wakeTime 是「離床活動時刻」（起床、離床、下床開始活動）。例如「凌晨4點醒來，5點起床」必須輸出 finalWakeTime=04:00、wakeTime=05:00。若半夜醒來後又睡著，該時間屬於 midWakeList／interrupted，不是 finalWakeTime。
+日期詞只作用於它所在的子句，不得跨越逗號、句號或轉折詞污染後續敘述。在今日記錄模式，沒有再次標示「昨天／前天」的後續狀態一律預設為今天。例如「昨天睡了11小時，可是還是覺得好累，心情不太好，也有點想哭」中，睡眠是最近一次跨夜睡眠；疲倦、心情不好與想哭都是今天，emotionMentions.timeContext 不得填「昨天」。最近一次昨晚入睡、今天起床的跨夜睡眠應歸入今天的 sleep。
 不要重複詢問已存在於 recordDraft 的資料。若只有情緒名稱沒有分數，可以詢問強度，但不得忽略該情緒。若使用者回答超過 5，請溫和請對方改以 1～5 分表示，不得儲存該分數。
 不得要求每次都填滿所有欄位。
 可以用「我目前整理到」產生待確認摘要。

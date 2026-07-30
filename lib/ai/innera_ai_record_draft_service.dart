@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../daily/emotion_dimensions.dart';
 import '../diary/diary_repository.dart';
+import '../utils/health_data_encryption_service.dart';
 import 'innera_ai_record_draft.dart';
 
 class InneraAiRecordDraftService {
@@ -34,7 +35,9 @@ class InneraAiRecordDraftService {
     final draft = InneraAiRecordDraft.empty(DateTime.now());
     final snapshot = await _draftRef(uid, draft.dateKey).get();
     if (!snapshot.exists || snapshot.data() == null) return null;
-    return InneraAiRecordDraft.fromFirestore(snapshot.data()!);
+    final data =
+        await HealthDataEncryptionService.decryptData(snapshot.data()!);
+    return InneraAiRecordDraft.fromFirestore(data);
   }
 
   Future<InneraAiRecordDraft> loadOrCreateToday() async {
@@ -45,7 +48,10 @@ class InneraAiRecordDraftService {
     final draft = InneraAiRecordDraft.empty(DateTime.now());
     final record = await _recordRef(uid, draft.dateKey).get();
     final result = record.exists && record.data() != null
-        ? _fromExistingRecord(draft, record.data()!)
+        ? _fromExistingRecord(
+            draft,
+            await HealthDataEncryptionService.decryptData(record.data()!),
+          )
         : draft;
     await save(result);
     return result;
@@ -54,9 +60,12 @@ class InneraAiRecordDraftService {
   Future<void> save(InneraAiRecordDraft draft) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) throw StateError('A signed-in user is required.');
-    await _draftRef(uid, draft.dateKey).set(
-      {...draft.toFirestore(), 'updatedAt': FieldValue.serverTimestamp()},
-      SetOptions(merge: true),
+    await HealthDataEncryptionService.setEncrypted(
+      _draftRef(uid, draft.dateKey),
+      {
+        ...draft.toFirestore(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
     );
   }
 
@@ -68,9 +77,7 @@ class InneraAiRecordDraftService {
     final uid = _auth.currentUser?.uid;
     if (uid == null) throw StateError('A signed-in user is required.');
     final recordRef = _recordRef(uid, draft.dateKey);
-    await _firestore.runTransaction((transaction) async {
-      final snapshot = await transaction.get(recordRef);
-      final current = snapshot.data() ?? <String, dynamic>{};
+    await HealthDataEncryptionService.mutateEncrypted(recordRef, (current) {
       final currentEmotions = _emotionMap(current['emotions']);
       final hasLegacyTenPointEmotions =
           (current['moodScale'] as num?)?.toInt() == 10 &&
@@ -102,23 +109,21 @@ class InneraAiRecordDraftService {
             value is List ? value.isNotEmpty : value != null && value != '';
         if (meaningful) sleep[key] = value;
       });
-      transaction.set(
-          recordRef,
-          {
-            'date': Timestamp.fromDate(DateTime.parse(draft.dateKey)),
-            if (!hasLegacyTenPointEmotions) ...{
-              'moodScale': 5,
-              'emotions': currentEmotions.entries
-                  .map((entry) => {'name': entry.key, 'value': entry.value})
-                  .toList(),
-              'overallMood': draft.overallMood ?? current['overallMood'],
-            },
-            'symptoms': symptoms,
-            'bodySymptoms': symptoms,
-            'sleep': sleep,
-            'updatedAt': FieldValue.serverTimestamp(),
-          },
-          SetOptions(merge: true));
+      return {
+        ...current,
+        'date': Timestamp.fromDate(DateTime.parse(draft.dateKey)),
+        if (!hasLegacyTenPointEmotions) ...{
+          'moodScale': 5,
+          'emotions': currentEmotions.entries
+              .map((entry) => {'name': entry.key, 'value': entry.value})
+              .toList(),
+          'overallMood': draft.overallMood ?? current['overallMood'],
+        },
+        'symptoms': symptoms,
+        'bodySymptoms': symptoms,
+        'sleep': sleep,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
     });
 
     if (diaryContent.trim().isNotEmpty) {

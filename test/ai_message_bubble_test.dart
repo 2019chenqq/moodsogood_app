@@ -30,7 +30,7 @@ void main() {
     );
   }
 
-  testWidgets('使用者訊息與 AI 回覆都靠左並左右對齊', (tester) async {
+  testWidgets('使用者訊息與頭貼靠右，AI 回覆靠左，文字都靠左', (tester) async {
     const userText = '使用者測試訊息';
     const assistantText = 'AI回覆測試訊息';
 
@@ -44,11 +44,11 @@ void main() {
     final userWidget = tester.widget<Text>(find.text(userText));
     final assistantWidget = tester.widget<Text>(find.text(assistantText));
     expect(
-      tester.getTopLeft(find.text(userText)).dx,
-      lessThan(tester.getTopLeft(find.text(assistantText)).dx),
+      tester.getCenter(find.text(userText)).dx,
+      greaterThan(tester.getCenter(find.text(assistantText)).dx),
     );
-    expect(userWidget.textAlign, TextAlign.justify);
-    expect(assistantWidget.textAlign, TextAlign.justify);
+    expect(userWidget.textAlign, TextAlign.left);
+    expect(assistantWidget.textAlign, TextAlign.left);
     expect(find.byType(CircleAvatar), findsOneWidget);
     expect(find.byIcon(Icons.person_rounded), findsOneWidget);
   });
