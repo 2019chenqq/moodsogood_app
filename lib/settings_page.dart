@@ -9,6 +9,7 @@ import 'utils/notification_helper.dart';
 import 'providers/theme_provider.dart';
 import 'onboarding_page.dart';
 import 'utils/data_sync_diagnostics.dart';
+import 'utils/app_lock_pin_service.dart';
 import 'analytics_service.dart';
 import 'test_pages/test_data_management_page.dart';
 
@@ -194,6 +195,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           setState(() => _appLockEnabled = true);
                         }
                       } else {
+                        await AppLockPinService.deletePin();
                         final prefs = await SharedPreferences.getInstance();
                         await prefs.setBool('appLockEnabled', false);
                         setState(() => _appLockEnabled = false);
@@ -867,7 +869,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     final pin = pinController.text.trim();
                     final confirm = confirmController.text.trim();
 
-                    if (pin.length < 4 || pin.length > 6) {
+                    if (!RegExp(r'^\d{6}$').hasMatch(pin)) {
                       setState(() {
                         error = '請輸入 6 位數字密碼';
                       });
@@ -880,8 +882,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       return;
                     }
 
-                    final prefs = await SharedPreferences.getInstance();
-                    await prefs.setString('appLockPin', pin);
+                    await AppLockPinService.setPin(pin);
 
                     if (!mounted) return;
 
@@ -908,9 +909,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _showChangePinDialog() async {
-    final prefs = await SharedPreferences.getInstance();
-    // ⚠️ 一定要用 app_lock_screen.dart 裡用的同一個 key
-    final savedPin = prefs.getString('appLockPin') ?? '';
+    final hasPin = await AppLockPinService.hasPin();
 
     if (!mounted) return;
 
@@ -1020,14 +1019,14 @@ class _SettingsPageState extends State<SettingsPage> {
                     final confirmPin = _confirmPinController.text.trim();
 
                     // 1. 已經有舊密碼時，要先驗證
-                    if (savedPin.isNotEmpty && oldPin != savedPin) {
+                    if (hasPin && !await AppLockPinService.verifyPin(oldPin)) {
                       setState(() => errorText = '目前密碼輸入錯誤');
                       return;
                     }
 
-                    // 2. 新密碼不能空白
-                    if (newPin.isEmpty) {
-                      setState(() => errorText = '新密碼不能為空白');
+                    // 2. 新密碼必須是 6 位數字
+                    if (!RegExp(r'^\d{6}$').hasMatch(newPin)) {
+                      setState(() => errorText = '請輸入 6 位數字密碼');
                       return;
                     }
 
@@ -1037,8 +1036,8 @@ class _SettingsPageState extends State<SettingsPage> {
                       return;
                     }
 
-                    // 4. 寫回 SharedPreferences（跟 AppLockScreen 用同一個 key）
-                    await prefs.setString('appLockPin', newPin);
+                    // 4. 僅寫入安全儲存區的版本化 verifier。
+                    await AppLockPinService.setPin(newPin);
 
                     _oldPinController.clear();
                     _newPinController.clear();

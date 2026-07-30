@@ -14,6 +14,7 @@ import 'dart:ui';
 import '../utils/key_manager.dart';
 import '../utils/secure_storage_service.dart';
 import '../utils/encryption_service.dart';
+import 'utils/health_data_encryption_service.dart';
 import 'main.dart';
 import 'recovery_key_display_screen.dart';
 import 'recovery_key_restore_screen.dart';
@@ -305,6 +306,11 @@ final alreadyHasRecovery =
     }
 
     await batch.commit();
+    await HealthDataEncryptionService.reencryptAllForKeyChange(
+      uid: uid,
+      oldKey: oldKey,
+      newKey: newKey,
+    );
     print('✅ 遷移完成：${snapshot.docs.length} 篇日記已升級到新 KDF');
   }
 

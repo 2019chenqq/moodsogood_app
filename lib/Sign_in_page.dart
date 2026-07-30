@@ -36,7 +36,7 @@ class _SignInPageState extends State<SignInPage> {
       if (!mounted) return;
 
       if (user != null) {
-        debugPrint('✅ SignInPage observed auth success: ${user.uid}');
+        debugPrint('✅ SignInPage observed auth success');
         setState(() {
           _loading = false;
           _loadingProvider = null;
@@ -109,10 +109,10 @@ class _SignInPageState extends State<SignInPage> {
           .popUntil((route) => route.isFirst);
 
       // 登入成功後不需手動跳頁，讓 AuthGate 依 authStateChanges 自動切換
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('登入失敗：$e')),
+        const SnackBar(content: Text('登入失敗，請稍後再試')),
       );
       setState(() {
         _loading = false;
@@ -160,9 +160,6 @@ class _SignInPageState extends State<SignInPage> {
       final rawNonce = _generateNonce();
       final nonce = _sha256ofString(rawNonce);
 
-      debugPrint('🍎 rawNonce generated: $rawNonce');
-      debugPrint('🍎 hashed nonce generated: $nonce');
-
       final appleCredential = await SignInWithApple.getAppleIDCredential(
         scopes: const [
           AppleIDAuthorizationScopes.email,
@@ -172,16 +169,6 @@ class _SignInPageState extends State<SignInPage> {
       ).timeout(const Duration(seconds: 20));
 
       debugPrint('🍎 Apple credential received');
-      debugPrint('🍎 userIdentifier: ${appleCredential.userIdentifier}');
-      debugPrint('🍎 email: ${appleCredential.email}');
-      debugPrint('🍎 givenName: ${appleCredential.givenName}');
-      debugPrint('🍎 familyName: ${appleCredential.familyName}');
-      debugPrint(
-        '🍎 identityToken exists: ${appleCredential.identityToken != null && appleCredential.identityToken!.isNotEmpty}',
-      );
-      debugPrint(
-        '🍎 authorizationCode exists: ${appleCredential.authorizationCode.isNotEmpty}',
-      );
 
       final identityToken = appleCredential.identityToken;
       if (identityToken == null || identityToken.isEmpty) {
@@ -203,9 +190,7 @@ class _SignInPageState extends State<SignInPage> {
           .signInWithCredential(oauthCredential)
           .timeout(const Duration(seconds: 20));
 
-      debugPrint(
-        '🍎 Firebase credential sign-in success: ${userCredential.user?.uid}',
-      );
+      debugPrint('🍎 Firebase credential sign-in success');
 
       authSucceeded = true;
 
@@ -216,14 +201,14 @@ class _SignInPageState extends State<SignInPage> {
 
       if (fullName.isNotEmpty && currentDisplayName.isEmpty) {
         await userCredential.user?.updateDisplayName(fullName);
-        debugPrint('🍎 Display name updated: $fullName');
+        debugPrint('🍎 Display name updated');
       }
 
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true)
           .popUntil((route) => route.isFirst);
     } on SignInWithAppleAuthorizationException catch (e) {
-      debugPrint('🍎 Apple authorization exception: ${e.code} / ${e.message}');
+      debugPrint('🍎 Apple authorization failed: ${e.code.name}');
 
       if (!mounted) return;
 
@@ -233,7 +218,7 @@ class _SignInPageState extends State<SignInPage> {
           message = '你已取消 Apple 登入';
           break;
         case AuthorizationErrorCode.failed:
-          message = 'Apple 登入失敗：${e.message}';
+          message = 'Apple 登入失敗，請稍後再試';
           break;
         case AuthorizationErrorCode.invalidResponse:
           message = 'Apple 回傳資料無效，請稍後再試';
@@ -245,7 +230,7 @@ class _SignInPageState extends State<SignInPage> {
           message = '目前無法互動式登入 Apple ID';
           break;
         case AuthorizationErrorCode.unknown:
-          message = 'Apple 登入失敗：${e.message}';
+          message = 'Apple 登入失敗，請稍後再試';
           break;
       }
 
@@ -254,7 +239,6 @@ class _SignInPageState extends State<SignInPage> {
       );
     } on FirebaseAuthException catch (e) {
       debugPrint('🍎 FirebaseAuthException code: ${e.code}');
-      debugPrint('🍎 FirebaseAuthException message: ${e.message}');
 
       if (!mounted) return;
 
@@ -274,10 +258,10 @@ class _SignInPageState extends State<SignInPage> {
           message = '網路連線異常，請稍後再試。';
           break;
         case 'apple-signin-failed':
-          message = e.message ?? 'Apple identity token 為空';
+          message = 'Apple 登入資料不完整，請稍後再試。';
           break;
         default:
-          message = 'Apple 登入失敗：${e.message ?? e.code}';
+          message = 'Apple 登入失敗，請稍後再試。';
           break;
       }
 
@@ -291,17 +275,15 @@ class _SignInPageState extends State<SignInPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Apple 登入逾時，請稍後再試')),
       );
-    } catch (e, st) {
-      debugPrint('🍎 Unknown Apple sign-in error: $e');
-      debugPrint('$st');
+    } catch (_) {
+      debugPrint('🍎 Unknown Apple sign-in error');
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Apple 登入失敗：$e')),
+        const SnackBar(content: Text('Apple 登入失敗，請稍後再試')),
       );
     } finally {
-      if (!mounted) return;
-      if (!authSucceeded) {
+      if (mounted && !authSucceeded) {
         setState(() {
           _loading = false;
           _loadingProvider = null;

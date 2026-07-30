@@ -1,7 +1,19 @@
+import 'dart:async';
 import 'dart:ui';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/services.dart';
 import 'analytics_service.dart';
+import 'utils/app_lock_pin_service.dart';
+import 'utils/app_lock_reauthentication_service.dart';
+import 'utils/app_lock_second_factor_service.dart';
+import 'widgets/app_lock_email_verification_dialog.dart';
+
+enum _SecondFactorChoice {
+  retryBiometrics,
+  deviceSecurity,
+  email,
+}
 
 class AppLockScreen extends StatefulWidget {
   final VoidCallback onUnlocked;
@@ -18,8 +30,11 @@ class _AppLockScreenState extends State<AppLockScreen> {
   String? _errorText;
   bool _loading = false;
 
-  String? _savedPin;
+  bool _hasPin = false;
   bool _initializing = true;
+  bool _processingIncomingEmailLink = false;
+  DateTime? _lockedUntil;
+  Timer? _lockoutTimer;
 
   Color get _primary => Theme.of(context).colorScheme.primary;
 
@@ -27,18 +42,21 @@ class _AppLockScreenState extends State<AppLockScreen> {
   void initState() {
     super.initState();
     AnalyticsService.logPage('app_lock_screen');
-    _loadSavedPin();
+    _initializePin();
   }
 
-  Future<void> _loadSavedPin() async {
-    final prefs = await SharedPreferences.getInstance();
-    // ✅ 這個 key 要跟你「設定 / 變更密碼」那邊用的一樣
-    final pin = prefs.getString('appLockPin');
+  @override
+  void dispose() {
+    _lockoutTimer?.cancel();
+    super.dispose();
+  }
 
+  Future<void> _initializePin() async {
+    final hasPin = await AppLockPinService.hasPin();
+    final status = await AppLockPinService.getStatus();
     if (!mounted) return;
 
-    // 還沒設定過密碼 → 直接放行，不顯示鎖畫面
-    if (pin == null || pin.isEmpty) {
+    if (!hasPin) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         widget.onUnlocked();
       });
@@ -46,15 +64,83 @@ class _AppLockScreenState extends State<AppLockScreen> {
     }
 
     setState(() {
-      _savedPin = pin;
+      _hasPin = true;
+      _lockedUntil = status.lockedUntil;
       _initializing = false;
+      _errorText = _lockoutMessage();
+    });
+    _startLockoutTimerIfNeeded();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _resumePendingEmailLinkIfNeeded();
     });
   }
 
+  Future<void> _resumePendingEmailLinkIfNeeded() async {
+    if (_processingIncomingEmailLink) return;
+    final link = await AppLockSecondFactorService.getInitialLink();
+    if (!mounted ||
+        link == null ||
+        !FirebaseAuth.instance.isSignInWithEmailLink(link.toString())) {
+      return;
+    }
+
+    _processingIncomingEmailLink = true;
+    setState(() {
+      _loading = true;
+      _errorText = null;
+      _input = '';
+    });
+
+    final result = await AppLockSecondFactorService.verifyEmailLink(link);
+    if (!mounted) return;
+
+    if (result.succeeded) {
+      await AppLockPinService.resetEmailVerificationFailures();
+      if (!mounted) return;
+      await _completePinReset();
+      return;
+    }
+
+    _processingIncomingEmailLink = false;
+    setState(() => _loading = false);
+    if (result.outcome == AppLockEmailVerificationOutcome.expired) {
+      _showMessage('驗證連結已超過 10 分鐘，請重新寄送');
+      return;
+    }
+    if (result.outcome == AppLockEmailVerificationOutcome.userMismatch) {
+      _showMessage('請使用原本提出重設申請的帳號與裝置');
+      return;
+    }
+    if (result.outcome == AppLockEmailVerificationOutcome.unavailable) {
+      return;
+    }
+
+    final failedStatus =
+        await AppLockPinService.recordEmailVerificationFailure();
+    if (!mounted) return;
+    final remaining = failedStatus.remaining(DateTime.now());
+    _showMessage(
+      remaining > Duration.zero
+          ? '驗證失敗次數過多，請在 ${remaining.inSeconds + 1} 秒後再試'
+          : '驗證連結無效，請使用最新一封信重新操作',
+    );
+  }
+
   Future<void> _checkPin() async {
-    if (_savedPin == null || _savedPin!.isEmpty) {
-      // 理論上不會走到這裡，但保險再放一次
+    if (!_hasPin) {
       widget.onUnlocked();
+      return;
+    }
+
+    final status = await AppLockPinService.getStatus();
+    if (!mounted) return;
+    if (status.remaining(DateTime.now()) > Duration.zero) {
+      setState(() {
+        _lockedUntil = status.lockedUntil;
+        _errorText = _lockoutMessage();
+        _input = '';
+      });
+      _startLockoutTimerIfNeeded();
       return;
     }
 
@@ -65,19 +151,27 @@ class _AppLockScreenState extends State<AppLockScreen> {
 
     await Future.delayed(const Duration(milliseconds: 150));
 
-    if (_input == _savedPin) {
+    final isValid = await AppLockPinService.verifyPin(_input);
+    if (!mounted) return;
+
+    if (isValid) {
+      await AppLockPinService.resetFailedAttempts();
       widget.onUnlocked();
     } else {
+      final failedStatus = await AppLockPinService.recordFailedAttempt();
+      if (!mounted) return;
       setState(() {
         _loading = false;
-        _errorText = '密碼錯誤，請再試一次';
+        _lockedUntil = failedStatus.lockedUntil;
+        _errorText = _lockoutMessage() ?? '密碼錯誤，請再試一次';
         _input = '';
       });
+      _startLockoutTimerIfNeeded();
     }
   }
 
   void _onDigitPressed(String digit) {
-    if (_loading) return;
+    if (_loading || _isLockedOut) return;
     if (_input.length >= _pinLength) return;
 
     setState(() {
@@ -91,7 +185,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
   }
 
   void _onBackspace() {
-    if (_loading) return;
+    if (_loading || _isLockedOut) return;
     if (_input.isEmpty) return;
     setState(() {
       _input = _input.substring(0, _input.length - 1);
@@ -99,80 +193,365 @@ class _AppLockScreenState extends State<AppLockScreen> {
     });
   }
 
-  // ---------- 上方：簡單插畫感 header ----------
-  Widget _buildHeader() {
-  final bg = _primary.withValues(alpha: 0.06);
-  final circleBg = _primary.withValues(alpha: 0.14);
+  bool get _isLockedOut {
+    final lockedUntil = _lockedUntil;
+    return lockedUntil != null && lockedUntil.isAfter(DateTime.now());
+  }
 
-  return Container(
-    width: double.infinity,
-    padding: const EdgeInsets.fromLTRB(24, 32, 24, 32),
-    decoration: BoxDecoration(
-      color: bg,
-      borderRadius: const BorderRadius.only(
-        bottomLeft: Radius.circular(32),
-        bottomRight: Radius.circular(32),
-      ),
-    ),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        // 鎖頭圓圈：置中
-        Container(
-          width: 74,
-          height: 74,
-          decoration: BoxDecoration(
-            color: circleBg,
-            shape: BoxShape.circle,
+  String? _lockoutMessage() {
+    final lockedUntil = _lockedUntil;
+    if (lockedUntil == null) return null;
+    final remaining = lockedUntil.difference(DateTime.now()).inSeconds + 1;
+    if (remaining <= 0) return null;
+    return '嘗試次數過多，請在 $remaining 秒後再試';
+  }
+
+  void _startLockoutTimerIfNeeded() {
+    _lockoutTimer?.cancel();
+    if (!_isLockedOut) return;
+    _lockoutTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (!_isLockedOut) {
+        timer.cancel();
+        setState(() {
+          _lockedUntil = null;
+          _errorText = null;
+        });
+        return;
+      }
+      setState(() => _errorText = _lockoutMessage());
+    });
+  }
+
+  Future<void> _handleForgotPin() async {
+    if (_loading) return;
+
+    final resetStatus = await AppLockPinService.getResetStatus();
+    final remaining = resetStatus.remaining(DateTime.now());
+    if (!mounted) return;
+    if (remaining > Duration.zero) {
+      _showMessage(
+        '重設嘗試次數過多，請在 ${remaining.inSeconds + 1} 秒後再試',
+      );
+      return;
+    }
+
+    final providers = await AppLockReauthenticationService.availableProviders();
+    if (!mounted) return;
+    if (providers.isEmpty) {
+      _showMessage('目前登入狀態無法重新驗證，請確認帳號仍為登入狀態');
+      return;
+    }
+
+    final provider = await _chooseProvider(providers);
+    if (!mounted || provider == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('重設 App 解鎖密碼'),
+        content: Text(
+          '接下來會使用 ${provider.label} 再次確認是你本人。'
+          '\n\n驗證成功後需要設定新的 6 位密碼；日記加密金鑰與雲端資料不會被刪除。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
           ),
-          child: Stack(
-            alignment: Alignment.center,
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('開始驗證'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+
+    setState(() {
+      _loading = true;
+      _errorText = null;
+      _input = '';
+    });
+
+    final result =
+        await AppLockReauthenticationService.reauthenticate(provider);
+    if (!mounted) return;
+
+    if (!result.succeeded) {
+      setState(() => _loading = false);
+      if (result.outcome == AppLockReauthenticationOutcome.canceled) {
+        _showMessage('已取消身分驗證');
+        return;
+      }
+      if (result.outcome == AppLockReauthenticationOutcome.networkError) {
+        _showMessage('網路連線異常或驗證逾時，請稍後再試');
+        return;
+      }
+
+      final failedStatus = await AppLockPinService.recordResetFailure();
+      if (!mounted) return;
+      final failedRemaining = failedStatus.remaining(DateTime.now());
+      _showMessage(
+        failedRemaining > Duration.zero
+            ? '身分驗證失敗，請在 ${failedRemaining.inSeconds + 1} 秒後再試'
+            : '身分驗證失敗，請確認使用原本綁定的帳號',
+      );
+      return;
+    }
+
+    final secondFactorVerified = await _verifySecondFactor();
+    if (!mounted) return;
+    if (!secondFactorVerified) {
+      setState(() => _loading = false);
+      return;
+    }
+
+    await _completePinReset();
+  }
+
+  Future<void> _completePinReset() async {
+    final newPin = await _showNewPinDialog();
+    if (!mounted) return;
+    if (newPin == null) {
+      setState(() {
+        _loading = false;
+        _processingIncomingEmailLink = false;
+      });
+      return;
+    }
+
+    try {
+      await AppLockPinService.setPin(newPin);
+      await AppLockPinService.resetResetFailures();
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _processingIncomingEmailLink = false;
+        _lockedUntil = null;
+        _errorText = null;
+        _input = '';
+      });
+      _showMessage('App 解鎖密碼已更新');
+      widget.onUnlocked();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _processingIncomingEmailLink = false;
+      });
+      _showMessage('無法儲存新密碼，請稍後再試');
+    }
+  }
+
+  Future<bool> _verifySecondFactor() async {
+    final hasBiometrics =
+        await AppLockSecondFactorService.hasEnrolledBiometrics();
+    final supportsDeviceSecurity =
+        await AppLockSecondFactorService.supportsDeviceAuthentication();
+    if (!mounted) return false;
+
+    if (hasBiometrics) {
+      final authenticated =
+          await AppLockSecondFactorService.authenticateWithBiometrics();
+      if (!mounted) return false;
+      if (authenticated) return true;
+    }
+
+    while (mounted) {
+      final choice = await _showSecondFactorFallback(
+        canRetryBiometrics: hasBiometrics,
+        supportsDeviceSecurity: supportsDeviceSecurity,
+      );
+      if (!mounted || choice == null) return false;
+
+      switch (choice) {
+        case _SecondFactorChoice.retryBiometrics:
+          final authenticated =
+              await AppLockSecondFactorService.authenticateWithBiometrics();
+          if (!mounted) return false;
+          if (authenticated) return true;
+          break;
+        case _SecondFactorChoice.deviceSecurity:
+          final authenticated =
+              await AppLockSecondFactorService.authenticateWithDeviceSecurity();
+          if (!mounted) return false;
+          if (authenticated) return true;
+          break;
+        case _SecondFactorChoice.email:
+          final verified = await showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => const AppLockEmailVerificationDialog(),
+          );
+          if (!mounted) return false;
+          if (verified == true) return true;
+          break;
+      }
+    }
+    return false;
+  }
+
+  Future<_SecondFactorChoice?> _showSecondFactorFallback({
+    required bool canRetryBiometrics,
+    required bool supportsDeviceSecurity,
+  }) {
+    return showModalBottomSheet<_SecondFactorChoice>(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Icon(
-                Icons.lock_rounded,
-                size: 34,
-                color: _primary,
+              Text(
+                canRetryBiometrics ? '無法完成生物辨識' : '選擇其他驗證方式',
+                style: Theme.of(sheetContext).textTheme.titleLarge,
               ),
-              Positioned(
-                top: 14,
-                right: 16,
-                child: Icon(
-                  Icons.shield_rounded,
-                  size: 18,
-                  color: Colors.white.withValues(alpha: 0.9),
+              const SizedBox(height: 8),
+              const Text(
+                '你可以重新嘗試，或改用手機螢幕鎖定與 Email。'
+                '生物辨識硬體失敗不會被計入驗證錯誤。',
+              ),
+              const SizedBox(height: 16),
+              if (canRetryBiometrics)
+                ListTile(
+                  leading: const Icon(Icons.fingerprint_rounded),
+                  title: const Text('再試一次 Face ID／指紋'),
+                  onTap: () => Navigator.of(sheetContext)
+                      .pop(_SecondFactorChoice.retryBiometrics),
                 ),
+              if (supportsDeviceSecurity)
+                ListTile(
+                  leading: const Icon(Icons.screen_lock_portrait_rounded),
+                  title: const Text('使用手機螢幕鎖定'),
+                  subtitle: const Text('由系統驗證裝置密碼、PIN 或圖形鎖'),
+                  onTap: () => Navigator.of(sheetContext)
+                      .pop(_SecondFactorChoice.deviceSecurity),
+                ),
+              ListTile(
+                leading: const Icon(Icons.mark_email_read_outlined),
+                title: const Text('使用 Email 驗證連結'),
+                onTap: () =>
+                    Navigator.of(sheetContext).pop(_SecondFactorChoice.email),
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => Navigator.of(sheetContext).pop(),
+                child: const Text('取消重設'),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 16),
-        // 標題文字：置中
-        const Text(
-          '這裡很安全，\n只有你能打開。',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-            height: 1.4,
+      ),
+    );
+  }
+
+  Future<AppLockAuthProvider?> _chooseProvider(
+    List<AppLockAuthProvider> providers,
+  ) async {
+    if (providers.length == 1) return providers.first;
+    return showDialog<AppLockAuthProvider>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('選擇驗證方式'),
+        children: [
+          for (final provider in providers)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(dialogContext).pop(provider),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text('使用 ${provider.label} 驗證'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<String?> _showNewPinDialog() async {
+    final pinController = TextEditingController();
+    final confirmController = TextEditingController();
+    String? errorText;
+
+    final result = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('設定新的解鎖密碼'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: pinController,
+                keyboardType: TextInputType.number,
+                obscureText: true,
+                maxLength: _pinLength,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: const InputDecoration(
+                  labelText: '新密碼（6 位數字）',
+                  counterText: '',
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: confirmController,
+                keyboardType: TextInputType.number,
+                obscureText: true,
+                maxLength: _pinLength,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: InputDecoration(
+                  labelText: '再次輸入新密碼',
+                  counterText: '',
+                  errorText: errorText,
+                ),
+              ),
+            ],
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final pin = pinController.text.trim();
+                final confirmation = confirmController.text.trim();
+                if (!RegExp(r'^\d{6}$').hasMatch(pin)) {
+                  setDialogState(() => errorText = '請輸入 6 位數字密碼');
+                  return;
+                }
+                if (pin != confirmation) {
+                  setDialogState(() => errorText = '兩次輸入的密碼不一致');
+                  return;
+                }
+                Navigator.of(dialogContext).pop(pin);
+              },
+              child: const Text('儲存'),
+            ),
+          ],
         ),
-        const SizedBox(height: 8),
-        // 副標文字：置中
-        Text(
-          '輸入解鎖密碼，\n讓日記只為你保留位置。',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 13,
-            color: Colors.grey.shade700,
-            height: 1.4,
-          ),
-        ),
-      ],
-    ),
-  );
-}
+      ),
+    );
+
+    pinController.dispose();
+    confirmController.dispose();
+    return result;
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
 
   // ---------- PIN dots ----------
   Widget _buildPinDots() {
@@ -274,7 +653,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
     );
   }
 
-   @override
+  @override
   Widget build(BuildContext context) {
     if (_initializing) {
       // 讀取密碼中的小過場
@@ -367,13 +746,10 @@ class _AppLockScreenState extends State<AppLockScreen> {
                                   size: 44,
                                   color: Colors.white,
                                 ),
-                                Positioned(
-                                  bottom: 18,
-                                  child: Icon(
-                                    Icons.lock_outline, // 鎖
-                                    size: 22,
-                                    color: Colors.white,
-                                  ),
+                                Icon(
+                                  Icons.lock_outline, // 鎖
+                                  size: 18,
+                                  color: Colors.white,
                                 ),
                               ],
                             ),
@@ -441,13 +817,14 @@ class _AppLockScreenState extends State<AppLockScreen> {
 
                           const SizedBox(height: 16),
 
-                          // 忘記密碼提示（白色半透明）
-                          Text(
-                            '＊忘記密碼的話，只能刪除 App 重裝（雲端資料還在）',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: Colors.white.withValues(alpha: 0.88),
+                          TextButton.icon(
+                            onPressed: _loading ? null : _handleForgotPin,
+                            icon: const Icon(Icons.help_outline_rounded),
+                            label: const Text('忘記解鎖密碼'),
+                            style: TextButton.styleFrom(
+                              foregroundColor:
+                                  Colors.white.withValues(alpha: 0.94),
                             ),
-                            textAlign: TextAlign.center,
                           ),
                         ],
                       ),
@@ -461,6 +838,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
       ),
     );
   }
+
   Widget _blurBall(double size, Color color) {
     return Container(
       width: size,
@@ -469,5 +847,6 @@ class _AppLockScreenState extends State<AppLockScreen> {
         color: color,
         shape: BoxShape.circle,
       ),
-    );}
-  }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
+    );
+  }
+}

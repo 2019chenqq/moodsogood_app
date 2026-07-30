@@ -6,6 +6,11 @@
 	<array>
 		<string>Default</string>
 	</array>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:moodsogood-9e45b.firebaseapp.com</string>
+		<string>applinks:moodsogood-9e45b.web.app</string>
+	</array>
 	<key>keychain-access-groups</key>
 	<array/>
 </dict>

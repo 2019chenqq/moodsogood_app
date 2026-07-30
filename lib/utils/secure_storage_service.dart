@@ -3,28 +3,30 @@ import 'package:encrypt/encrypt.dart' as encrypt_lib;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
- 
+
 import 'key_manager.dart';
 import 'encryption_service.dart';
- 
+
 class SecureStorageService {
   static const _storage = FlutterSecureStorage();
- 
-  static const _keyAlias          = 'user_aes_encryption_key';
-  static const _pinAlias          = 'user_e2e_pin';
-  static const _verifierField     = 'encryptionVerifier';
+
+  static const _keyAlias = 'user_aes_encryption_key';
+  static const _pinAlias = 'user_e2e_pin';
+  static const _legacyAppLockRecoveryPinAlias =
+      'legacy_app_lock_pin_for_e2e_recovery';
+  static const _verifierField = 'encryptionVerifier';
   static const _verifierPlaintext = 'moodsogood-e2e-key-check-v1';
-  static const _localVerifierKey  = 'e2eVerifier';
+  static const _localVerifierKey = 'e2eVerifier';
   static const _recoveryWrappedKeyField = 'recoveryWrappedKey';
- 
+
   // ─────────────────────────────────────────
   //  金鑰驗證工具
   // ─────────────────────────────────────────
- 
+
   static String buildKeyVerifier(encrypt_lib.Key key) {
     return EncryptionService(key).encryptData(_verifierPlaintext);
   }
- 
+
   static bool verifyKeyWithVerifier({
     required encrypt_lib.Key key,
     required String verifier,
@@ -32,11 +34,11 @@ class SecureStorageService {
     final plain = EncryptionService(key).tryDecryptData(verifier);
     return plain == _verifierPlaintext;
   }
- 
+
   // ─────────────────────────────────────────
   //  AES 金鑰讀寫
   // ─────────────────────────────────────────
- 
+
   static Future<void> saveKey(encrypt_lib.Key key) async {
     try {
       await _storage.write(key: _keyAlias, value: key.base64);
@@ -48,7 +50,7 @@ class SecureStorageService {
       print('🛠️ [保險箱] 重寫成功！');
     }
   }
- 
+
   static Future<encrypt_lib.Key?> getKey() async {
     try {
       final keyString = await _storage.read(key: _keyAlias);
@@ -63,16 +65,16 @@ class SecureStorageService {
       return null;
     }
   }
- 
+
   static Future<void> deleteKey() async {
     await _storage.delete(key: _keyAlias);
     print('🗑️ [保險箱] 金鑰已銷毀');
   }
- 
+
   // ─────────────────────────────────────────
   //  PIN 讀寫
   // ─────────────────────────────────────────
- 
+
   static Future<void> savePin(String pin) async {
     try {
       await _storage.write(key: _pinAlias, value: pin);
@@ -82,7 +84,7 @@ class SecureStorageService {
       rethrow;
     }
   }
- 
+
   static Future<String?> getPin() async {
     try {
       return await _storage.read(key: _pinAlias);
@@ -91,7 +93,7 @@ class SecureStorageService {
       return null;
     }
   }
- 
+
   static Future<void> deletePin() async {
     try {
       await _storage.delete(key: _pinAlias);
@@ -100,11 +102,23 @@ class SecureStorageService {
       print('🚨 [保險箱] 刪除 PIN 失敗: $e');
     }
   }
- 
+
+  static Future<void> saveLegacyAppLockRecoveryPin(String pin) async {
+    await _storage.write(key: _legacyAppLockRecoveryPinAlias, value: pin);
+  }
+
+  static Future<String?> getLegacyAppLockRecoveryPin() {
+    return _storage.read(key: _legacyAppLockRecoveryPinAlias);
+  }
+
+  static Future<void> deleteLegacyAppLockRecoveryPin() {
+    return _storage.delete(key: _legacyAppLockRecoveryPinAlias);
+  }
+
   // ─────────────────────────────────────────
   //  備援金鑰雜湊（新增）
   // ─────────────────────────────────────────
- 
+
   /// 將備援金鑰的 SHA-256 雜湊儲存到 Firebase。
   /// 只存雜湊，不存明文，即使 Firebase 被洩漏也無法反推原始單字。
   static Future<void> saveRecoveryKeyHash({
@@ -161,11 +175,11 @@ class SecureStorageService {
       return null;
     }
   }
- 
+
   // ─────────────────────────────────────────
   //  金鑰自動重建（換機/重裝時使用）
   // ─────────────────────────────────────────
- 
+
   static Future<encrypt_lib.Key?> getOrRecoverKey() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -173,14 +187,17 @@ class SecureStorageService {
         print('🚨 [保險箱] 無法重建金鑰：目前未登入');
         return null;
       }
- 
-      final prefs     = await SharedPreferences.getInstance();
-      final e2ePin    = (await getPin() ?? '').trim();
-      final appLockPin = (prefs.getString('appLockPin') ?? '').trim();
- 
+
+      final prefs = await SharedPreferences.getInstance();
+      final e2ePin = (await getPin() ?? '').trim();
+      final legacySecureAppLockPin =
+          (await getLegacyAppLockRecoveryPin() ?? '').trim();
+      final legacyPreferenceAppLockPin =
+          (prefs.getString('appLockPin') ?? '').trim();
+
       final existing = await getKey();
       String verifier = (prefs.getString(_localVerifierKey) ?? '').trim();
- 
+
       DocumentSnapshot<Map<String, dynamic>>? userDoc;
       Future<void> loadUserDocIfNeeded() async {
         if (userDoc != null) return;
@@ -189,7 +206,7 @@ class SecureStorageService {
             .doc(user.uid)
             .get();
       }
- 
+
       if (verifier.isEmpty) {
         await loadUserDocIfNeeded();
         verifier = (userDoc?.data()?[_verifierField] as String?)?.trim() ?? '';
@@ -197,7 +214,7 @@ class SecureStorageService {
           await prefs.setString(_localVerifierKey, verifier);
         }
       }
- 
+
       if (existing != null) {
         if (verifier.isEmpty ||
             verifyKeyWithVerifier(key: existing, verifier: verifier)) {
@@ -206,32 +223,37 @@ class SecureStorageService {
         print('🚨 [保險箱] 現有金鑰與 verifier 不匹配，清除後改走重建流程');
         await deleteKey();
       }
- 
+
       String salt = (prefs.getString('e2eSalt') ?? '').trim();
       if (salt.isEmpty) {
         await loadUserDocIfNeeded();
         salt = (userDoc?.data()?['encryptionSalt'] as String?)?.trim() ?? '';
         if (salt.isNotEmpty) await prefs.setString('e2eSalt', salt);
       }
- 
+
       if (salt.isEmpty) {
         print('🚨 [保險箱] 無法重建金鑰：找不到雲端 salt');
         return null;
       }
- 
+
       final candidatePins = <String>[];
       if (e2ePin.isNotEmpty) candidatePins.add(e2ePin);
-      if (appLockPin.isNotEmpty && appLockPin != e2ePin) {
-        candidatePins.add(appLockPin);
+      if (legacySecureAppLockPin.isNotEmpty &&
+          !candidatePins.contains(legacySecureAppLockPin)) {
+        candidatePins.add(legacySecureAppLockPin);
+      }
+      if (legacyPreferenceAppLockPin.isNotEmpty &&
+          !candidatePins.contains(legacyPreferenceAppLockPin)) {
+        candidatePins.add(legacyPreferenceAppLockPin);
       }
 
       if (candidatePins.isEmpty) {
         print('🚨 [保險箱] 無法重建金鑰：找不到本地 PIN');
         return null;
       }
- 
+
       encrypt_lib.Key? recoveredKey;
- 
+
       if (verifier.isNotEmpty) {
         for (final candidate in candidatePins) {
           final key = await KeyManager.deriveKey(candidate, salt);
@@ -251,10 +273,11 @@ class SecureStorageService {
         }
         recoveredKey = await KeyManager.deriveKey(e2ePin, salt);
       }
- 
+
       await saveKey(recoveredKey);
       final verified = await getKey();
       if (verified != null) {
+        await deleteLegacyAppLockRecoveryPin();
         print('🛠️ [保險箱] 已用 PIN + salt 重建金鑰成功');
       }
       return verified;

@@ -2,8 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSFaceIDUsageDescription</key>
+	<string>用來確認是你本人後重設 App 解鎖密碼</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>需要存取照片來加入日記圖片</string>
+	<key>NSCameraUsageDescription</key>
+	<string>讓你拍攝照片並傳送到心域 AI 聊天室</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
