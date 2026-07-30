@@ -91,13 +91,18 @@ class _MainDrawerState extends State<MainDrawer> {
 
       await FirebaseAuth.instance.signOut();
       if (hasGoogleProvider) {
-        final googleSignIn = GoogleSignIn();
-        await googleSignIn.signOut();
+        try {
+          final googleSignIn = GoogleSignIn();
+          await googleSignIn.signOut();
+        } catch (e) {
+          // Firebase 已成功登出時，不應因 Google 快取清理失敗而阻止返回登入頁。
+          debugPrint('Google 登入快取清理失敗: $e');
+        }
       }
 
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true)
-          .popUntil((route) => route.isFirst);
+          .pushNamedAndRemoveUntil('/login', (route) => false);
     } catch (e) {
       debugPrint('登出失敗: $e');
       if (!mounted) return;

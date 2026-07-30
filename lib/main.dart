@@ -282,6 +282,7 @@ class MainApp extends StatelessWidget {
       // 關鍵：跟著 ThemeProvider 切換
       themeMode: themeProvider.themeMode,
       routes: {
+        '/login': (_) => const AuthGate(),
         CommunityHomePage.routeName: (_) => const CommunityHomePage(),
         RoomPage.routeName: (_) => const RoomPage(),
         PostDetailPage.routeName: (_) => const PostDetailPage(),
