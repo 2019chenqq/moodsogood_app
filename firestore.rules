@@ -66,6 +66,11 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Per-user abuse-prevention counters are maintained only by Functions.
+    match /ai_rate_limits/{userId} {
+      allow read, write: if false;
+    }
+
     // =========================
     // 其他所有路徑：預設全部拒絕
     // =========================

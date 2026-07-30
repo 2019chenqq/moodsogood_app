@@ -10,6 +10,7 @@ import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 
 // Firebase + Google Sign-In
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -76,6 +77,24 @@ Future<void> main() async {
       debugPrint('ℹ️ Firebase already initialized, reusing existing app');
     }
     _firebaseReady = true;
+    if (Platform.isAndroid || Platform.isIOS) {
+      try {
+        await FirebaseAppCheck.instance.activate(
+          androidProvider: kDebugMode
+              ? AndroidProvider.debug
+              : AndroidProvider.playIntegrity,
+          appleProvider: kDebugMode
+              ? AppleProvider.debug
+              : AppleProvider.appAttestWithDeviceCheckFallback,
+        );
+        debugPrint('Firebase App Check activated');
+      } catch (error, stackTrace) {
+        // Keep non-AI features available if attestation is temporarily
+        // unavailable. Protected Functions will still reject invalid requests.
+        debugPrint('Firebase App Check activation failed: $error');
+        debugPrint('$stackTrace');
+      }
+    }
   } catch (error, stackTrace) {
     // Hot restart / isolate re-entry can hit duplicate-app; treat as ready.
     if (error is FirebaseException && error.code == 'duplicate-app') {

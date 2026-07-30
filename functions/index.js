@@ -11,6 +11,10 @@ const {
   createAiUsageTracker,
 } = require("./ai_usage");
 const {
+  AiRateLimitError,
+  enforceAiRateLimit,
+} = require("./ai_rate_limit");
+const {
   previousTaipeiDayRange,
   summarizeAiUsageEvents,
 } = require("./ai_usage_aggregation");
@@ -25,6 +29,38 @@ const spotifyClientSecret = defineSecret("SPOTIFY_CLIENT_SECRET");
 const DEFAULT_AI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v6-temporal-scope";
 const DIARY_EXTRACTION_PROMPT_VERSION = "diary_extraction_v1";
+
+async function requireAiCapacity(uid, feature) {
+  try {
+    await enforceAiRateLimit({
+      db,
+      admin,
+      uid,
+      feature,
+    });
+  } catch (error) {
+    if (error instanceof AiRateLimitError) {
+      throw new HttpsError(
+        "resource-exhausted",
+        "AI 使用過於頻繁，請稍後再試。",
+        {
+          reason: "ai_rate_limit",
+          limitType: error.limitType,
+          retryAfterSeconds: error.retryAfterSeconds,
+        },
+      );
+    }
+    console.error("AI rate limit check failed", {
+      uid,
+      feature,
+      message: error?.message || String(error),
+    });
+    throw new HttpsError(
+      "unavailable",
+      "AI 服務暫時無法確認使用額度，請稍後再試。",
+    );
+  }
+}
 
 exports.aggregateDailyAiUsage = onSchedule(
   {
@@ -1095,7 +1131,7 @@ exports.createCommunityPost = onCall(async (request) => {
 });
 
 exports.generateAiJournalReflection = onCall(
-  { secrets: [openAiApiKey] },
+  { secrets: [openAiApiKey], enforceAppCheck: true },
   async (request) => {
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "請先登入後再使用此功能");
@@ -1177,6 +1213,7 @@ exports.generateAiJournalReflection = onCall(
       throw new HttpsError("invalid-argument", "缺少可分析的日記內容");
     }
 
+    await requireAiCapacity(request.auth.uid, "journal_reflection");
     const crisisDetected = detectCrisis(trimmedDiary);
     const emotionModel = buildEmotionModel(safeDailyRecord, safeDiaryFields, trimmedDiary);
     const usageTracker = createAiUsageTracker({
@@ -1560,7 +1597,7 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
 }
 
 exports.generateInneraDiaryDraft = onCall(
-  { secrets: [openAiApiKey] },
+  { secrets: [openAiApiKey], enforceAppCheck: true },
   async (request) => {
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "請先登入後再整理今日紀錄");
@@ -1587,6 +1624,7 @@ exports.generateInneraDiaryDraft = onCall(
       throw new HttpsError("invalid-argument", "紀錄日期格式錯誤");
     }
 
+    await requireAiCapacity(request.auth.uid, "diary_draft");
     const usageTracker = createAiUsageTracker({
       db,
       admin,
@@ -1713,6 +1751,7 @@ exports.recommendInneraSongs = onCall(
       spotifyClientId,
       spotifyClientSecret,
     ],
+    enforceAppCheck: true,
   },
   async (request) => {
     if (!request.auth) {
@@ -1752,6 +1791,7 @@ exports.recommendInneraSongs = onCall(
       return { recommendations: [], error: "missing_search_profile" };
     }
 
+    await requireAiCapacity(request.auth.uid, "song_recommendation");
     const cacheProfile = {
       musicTags,
       searchKeywords,
@@ -2040,7 +2080,10 @@ exports.recommendInneraSongs = onCall(
 );
 
 exports.searchInneraSongs = onCall(
-  { secrets: [spotifyClientId, spotifyClientSecret] },
+  {
+    secrets: [spotifyClientId, spotifyClientSecret],
+    enforceAppCheck: true,
+  },
   async (request) => {
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "請先登入後再搜尋歌曲");
@@ -2053,6 +2096,7 @@ exports.searchInneraSongs = onCall(
     if (!query) {
       throw new HttpsError("invalid-argument", "請輸入歌名、歌手或關鍵字");
     }
+    await requireAiCapacity(request.auth.uid, "music_search");
     const clientId = spotifyClientId.value();
     const clientSecret = spotifyClientSecret.value();
     if (!clientId || !clientSecret) {
@@ -2091,7 +2135,7 @@ exports.searchInneraSongs = onCall(
 );
 
 exports.generateInneraAiChat = onCall(
-  { secrets: [openAiApiKey] },
+  { secrets: [openAiApiKey], enforceAppCheck: true },
   async (request) => {
     console.log("generateInneraAiChat invoked", {
       mode: request.data?.mode,
@@ -2225,6 +2269,7 @@ exports.generateInneraAiChat = onCall(
 
     const usageFeature =
       mode === "recentReview" ? "recent_review" : "innera_chat";
+    await requireAiCapacity(request.auth.uid, usageFeature);
     const usageTracker = createAiUsageTracker({
       db,
       admin,
