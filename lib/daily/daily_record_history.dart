@@ -1379,6 +1379,18 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
                               HealingDesignSystem.adaptivePrimaryText(context),
                         ),
                       ),
+                      if (useMA) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          '使用 7 天移動平均',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: HealingDesignSystem.adaptiveSecondaryText(
+                                context),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 4),
                       Text(
                         '以正向感受平均減去負向感受平均，協助觀察整體感受傾向的變化。',
@@ -1423,6 +1435,18 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
                               HealingDesignSystem.adaptivePrimaryText(context),
                         ),
                       ),
+                      if (useMA) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          '使用 7 天移動平均',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: HealingDesignSystem.adaptiveSecondaryText(
+                                context),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 4),
                       Text(
                         '分別呈現正向感受與負向感受的平均起伏。未分類的自訂情緒暫不納入平均。',
