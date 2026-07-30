@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../../constants/healing_design_system.dart';
 import '../../models/daily_record.dart';
+import '../../models/weekly_record.dart';
 
 class WeeklySummaryCard extends StatelessWidget {
   final List<DailyRecord> records;
   final String title;
   final String subtitle;
   final int? totalDays;
+  final bool currentWeekHasNoDailyRecords;
+  final WeeklyRecord? currentWeeklyRecord;
+  final VoidCallback? onStartWeeklyReview;
 
   const WeeklySummaryCard({
     super.key,
@@ -15,6 +19,9 @@ class WeeklySummaryCard extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.totalDays,
+    this.currentWeekHasNoDailyRecords = false,
+    this.currentWeeklyRecord,
+    this.onStartWeeklyReview,
   });
 
   @override
@@ -50,7 +57,8 @@ class WeeklySummaryCard extends StatelessWidget {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: HealingDesignSystem.primaryBlue.withOpacity(0.12),
+                  color:
+                      HealingDesignSystem.primaryBlue.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(
@@ -60,25 +68,28 @@ class WeeklySummaryCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      color: HealingDesignSystem.adaptivePrimaryText(context),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: HealingDesignSystem.adaptivePrimaryText(context),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                  ),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      color: HealingDesignSystem.adaptiveSecondaryText(context),
-                      fontSize: 12,
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color:
+                            HealingDesignSystem.adaptiveSecondaryText(context),
+                        fontSize: 12,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ],
           ),
@@ -145,6 +156,155 @@ class WeeklySummaryCard extends StatelessWidget {
               ),
             ),
           ),
+          if (currentWeeklyRecord != null) ...[
+            const SizedBox(height: 12),
+            _WeeklyRecordSummary(record: currentWeeklyRecord!),
+          ] else if (onStartWeeklyReview != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: HealingDesignSystem.primaryBlue.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(
+                  HealingDesignSystem.radiusM,
+                ),
+                border: Border.all(
+                  color:
+                      HealingDesignSystem.primaryBlue.withValues(alpha: 0.35),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    currentWeekHasNoDailyRecords
+                        ? '沒有每天記，也可以留下一個這週。'
+                        : '把這週整理成一筆週紀錄。',
+                    style: TextStyle(
+                      color: HealingDesignSystem.adaptivePrimaryText(context),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    currentWeekHasNoDailyRecords
+                        ? '不用補登，只回答一個必填問題；其他都可以跳過。'
+                        : '每日紀錄保留細節，週回顧留下可用於趨勢與回診摘要的整體輪廓。',
+                    style: TextStyle(
+                      color: HealingDesignSystem.adaptiveSecondaryText(context),
+                      fontSize: 12,
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  FilledButton.icon(
+                    key: const Key('start_weekly_review_button'),
+                    onPressed: onStartWeeklyReview,
+                    icon: const Icon(Icons.timer_outlined, size: 18),
+                    label: const Text('開始 3 分鐘每週回顧'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: HealingDesignSystem.primaryBlue,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _WeeklyRecordSummary extends StatelessWidget {
+  const _WeeklyRecordSummary({required this.record});
+
+  final WeeklyRecord record;
+
+  static const _stateLabels = ['很辛苦', '有些低落', '普通', '還不錯', '很好'];
+
+  @override
+  Widget build(BuildContext context) {
+    final stateIndex = record.overallState.clamp(1, 5) - 1;
+    final details = <String>[
+      if (record.comparison != null) '較上週${record.comparison}',
+      if (record.emotions.isNotEmpty) '情緒 ${record.emotions.take(3).join('、')}',
+      if (record.sleepQuality != null) '睡眠 ${record.sleepQuality}/5',
+      if (record.energyLevel != null) '力氣 ${record.energyLevel}/5',
+      if (record.emotions.isEmpty && record.feeling != null) record.feeling!,
+    ];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: HealingDesignSystem.primaryBlue.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+        border: Border.all(
+          color: HealingDesignSystem.primaryBlue.withValues(alpha: 0.35),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.check_circle_rounded,
+                color: HealingDesignSystem.successGreen,
+                size: 20,
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  '本週已留下週紀錄：${_stateLabels[stateIndex]}',
+                  style: TextStyle(
+                    color: HealingDesignSystem.adaptivePrimaryText(context),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (details.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              details.join(' · '),
+              style: TextStyle(
+                color: HealingDesignSystem.adaptiveSecondaryText(context),
+                fontSize: 12,
+              ),
+            ),
+          ],
+          if (record.emotions.isNotEmpty ||
+              record.sleepQuality != null ||
+              record.symptoms.isNotEmpty ||
+              record.functionImpacts.isNotEmpty ||
+              record.majorChanges.isNotEmpty) ...[
+            const SizedBox(height: 9),
+            Text(
+              record.visitSummary,
+              style: TextStyle(
+                color: HealingDesignSystem.adaptivePrimaryText(context),
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+          ],
+          if (record.note != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              record.note!,
+              style: TextStyle(
+                color: HealingDesignSystem.adaptivePrimaryText(context),
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+          ],
         ],
       ),
     );

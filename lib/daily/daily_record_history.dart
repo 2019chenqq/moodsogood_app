@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../diary/diary_repository.dart';
 import '../models/daily_record.dart'; // 確保引用正確
+import '../models/weekly_record.dart';
 import '../utils/date_helper.dart'; // 確保引用正確
 import 'record_detail_screen.dart'; // 確保引用正確
 import '../models/period_cycle.dart';
@@ -15,7 +16,9 @@ import 'widgets/emotion_page_checkbox.dart';
 import 'widgets/history_chart_widget.dart';
 import 'widgets/pro_locked_view.dart';
 import 'widgets/weekly_summary_card.dart';
+import 'weekly_record_repository.dart';
 import '../utils/firebase_sync_config.dart';
+import '../utils/health_data_encryption_service.dart';
 import '../widgets/trend_range_selector.dart';
 import '../constants/healing_design_system.dart';
 import '../analytics_service.dart';
@@ -70,6 +73,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
 
   // 用於強制刷新的計數器
   int _refreshCounter = 0;
+  Future<WeeklyRecord?>? _currentWeeklyRecordFuture;
+  String? _weeklyRecordUserId;
 
   String? _periodLabel(DailyRecord r) {
     if (r.isPeriod == true) {
@@ -121,6 +126,22 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
   }
 
   DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  DateTime _currentWeekStart() {
+    final today = _dateOnly(DateTime.now());
+    return today.subtract(Duration(days: today.weekday - DateTime.monday));
+  }
+
+  Future<WeeklyRecord?> _weeklyRecordFuture(String uid) {
+    if (_currentWeeklyRecordFuture == null || _weeklyRecordUserId != uid) {
+      _weeklyRecordUserId = uid;
+      _currentWeeklyRecordFuture = WeeklyRecordRepository().getWeeklyRecord(
+        userId: uid,
+        weekStart: _currentWeekStart(),
+      );
+    }
+    return _currentWeeklyRecordFuture!;
+  }
 
   String _weekdayText(int weekday) {
     const labels = {
@@ -340,24 +361,23 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
           listRecords = _applyDateFilter(listRecords);
           listRecords.sort((a, b) => b.date.compareTo(a.date));
 
-          return StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('users')
-                .doc(uid)
-                .collection('periodCycles')
-                .orderBy('startDate', descending: true)
-                .snapshots(),
+          final periodQuery = FirebaseFirestore.instance
+              .collection('users')
+              .doc(uid)
+              .collection('periodCycles')
+              .orderBy('startDate', descending: true);
+          return StreamBuilder<List<HealthDocument>>(
+            stream: HealthDataEncryptionService.watchEncrypted(periodQuery),
             builder: (context, periodSnap) {
-              final cycles = periodSnap.data?.docs
-                      .map((doc) => PeriodCycle.fromFirestore(
-                          doc as DocumentSnapshot<Map<String, dynamic>>))
+              final cycles = periodSnap.data
+                      ?.map((doc) => PeriodCycle.fromData(doc.id, doc.data))
                       .toList() ??
                   [];
 
               return TabBarView(
                 controller: _tabController,
                 children: [
-                  _buildListPage(listRecords, isPro),
+                  _buildListPage(listRecords, isPro, uid),
                   _buildSleepAnalysisPage(listRecords, isPro),
                   _buildProChartContent(
                       context, dailyRecords, availableEmotions, cycles, isPro),
@@ -430,7 +450,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
       debugPrint('✅ Loaded ${snapshot.docs.length} records from Firebase');
 
       for (var doc in snapshot.docs) {
-        final record = DailyRecord.fromFirestore(doc);
+        final data = await HealthDataEncryptionService.decryptData(doc.data());
+        final record = DailyRecord.fromData(doc.id, data);
         recordsMap[record.id] = record;
         debugPrint('  ☁️  Firebase: ${record.id} (${record.date})');
       }
@@ -693,6 +714,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
   Widget _buildListPage(
     List<DailyRecord> records,
     bool isPro,
+    String uid,
   ) {
     final bool isLocked = _isHistoryLocked(isPro);
 
@@ -705,11 +727,17 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
           // ─────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: WeeklySummaryCard(
-              records: records,
-              title: '狀態小結',
-              subtitle: _selectedSummarySubtitle,
-              totalDays: _selectedSummaryTotalDays,
+            child: FutureBuilder<WeeklyRecord?>(
+              future: _weeklyRecordFuture(uid),
+              builder: (context, weeklySnapshot) {
+                return WeeklySummaryCard(
+                  records: records,
+                  title: '狀態小結',
+                  subtitle: _selectedSummarySubtitle,
+                  totalDays: _selectedSummaryTotalDays,
+                  currentWeeklyRecord: weeklySnapshot.data,
+                );
+              },
             ),
           ),
 
@@ -1788,12 +1816,12 @@ Future<void> clearPeriodForRecord(BuildContext context, DailyRecord r) async {
 
   if (confirm != true) return;
 
-  await FirebaseFirestore.instance
+  final reference = FirebaseFirestore.instance
       .collection('users')
       .doc(uid)
       .collection('dailyRecords')
-      .doc(r.id)
-      .update({
+      .doc(r.id);
+  await HealthDataEncryptionService.updateEncrypted(reference, {
     'isPeriod': false,
     'periodStartId': null,
     'periodEndId': null,
