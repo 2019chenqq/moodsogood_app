@@ -5,7 +5,7 @@ import 'package:qr/qr.dart';
 import '../analytics_service.dart';
 import '../constants/healing_design_system.dart';
 import '../daily/daily_record_helpers.dart';
-import '../daily/daily_record_history.dart';
+import 'trend_review_hub_page.dart';
 import '../meds/med_symptom_compare_page.dart';
 import '../meds/medication_local_db.dart';
 import '../meds/record_adjustment_page.dart';
@@ -375,7 +375,7 @@ class _FollowUpHubPageState extends State<FollowUpHubPage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => const DailyRecordHistory(initialTab: 1),
+        builder: (_) => const TrendReviewHubPage(),
       ),
     );
   }

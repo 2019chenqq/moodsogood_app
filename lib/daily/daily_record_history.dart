@@ -50,23 +50,19 @@ class _DiaryMoodScore {
 class DailyRecordHistory extends StatefulWidget {
   const DailyRecordHistory({super.key, this.initialTab = 0});
 
-  /// 0: 列表與週報, 1: 情緒趨勢圖
+  /// 0: 紀錄列表與週摘要, 1: 睡眠摘要, 2: 情緒趨勢
   final int initialTab;
 
   @override
   State<DailyRecordHistory> createState() => _DailyRecordHistoryState();
 }
 
-class _DailyRecordHistoryState extends State<DailyRecordHistory>
-    with SingleTickerProviderStateMixin {
+class _DailyRecordHistoryState extends State<DailyRecordHistory> {
   static const String _overallMoodLabel = '整體情緒';
 
   int? _selectedRangeDays = 7;
   DateTimeRange? _selectedDateRange; // 新增：月曆自訂區間
   int _historyWeekStartDay = DateTime.monday; // ✅ 補上
-
-  // 分頁控制器
-  late TabController _tabController;
 
   // 動態情緒選擇
   String _selectedEmotion = '';
@@ -86,17 +82,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
   @override
   void initState() {
     super.initState();
-    final safeIndex = widget.initialTab.clamp(0, 2).toInt(); // ✅ 修正型別
-    _tabController =
-        TabController(length: 3, vsync: this, initialIndex: safeIndex);
     _loadHistoryWeekStartDay();
     AnalyticsService.logPage('record_history_page');
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
   }
 
   Future<void> _loadHistoryWeekStartDay() async {
@@ -291,6 +278,12 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
   @override
   Widget build(BuildContext context) {
     final bool isPro = kDemoUnlockPro;
+    final pageIndex = widget.initialTab.clamp(0, 2);
+    final pageTitle = switch (pageIndex) {
+      1 => '睡眠摘要',
+      2 => '情緒趨勢',
+      _ => '紀錄歷程',
+    };
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
@@ -317,26 +310,12 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
           onPressed: () => Navigator.maybePop(context),
         ),
         title: Text(
-          '紀錄歷程',
+          pageTitle,
           style: TextStyle(
             color: HealingDesignSystem.adaptiveAppBarForeground(context),
             fontSize: 18,
             fontWeight: FontWeight.w700,
           ),
-        ),
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: HealingDesignSystem.adaptiveAppBarForeground(context),
-          unselectedLabelColor:
-              HealingDesignSystem.adaptiveAppBarForeground(context)
-                  .withOpacity(0.72),
-          indicatorColor: HealingDesignSystem.adaptiveAccent(context),
-          indicatorSize: TabBarIndicatorSize.tab,
-          tabs: const [
-            Tab(text: '列表小結'),
-            Tab(text: '睡眠摘要'),
-            Tab(text: '情緒趨勢圖'),
-          ],
         ),
       ),
       body: FutureBuilder<List<DailyRecord>>(
@@ -374,15 +353,17 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory>
                       .toList() ??
                   [];
 
-              return TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildListPage(listRecords, isPro, uid),
-                  _buildSleepAnalysisPage(listRecords, isPro),
-                  _buildProChartContent(
-                      context, dailyRecords, availableEmotions, cycles, isPro),
-                ],
-              );
+              return switch (pageIndex) {
+                1 => _buildSleepAnalysisPage(listRecords, isPro),
+                2 => _buildProChartContent(
+                    context,
+                    dailyRecords,
+                    availableEmotions,
+                    cycles,
+                    isPro,
+                  ),
+                _ => _buildListPage(listRecords, isPro, uid),
+              };
             },
           );
         },

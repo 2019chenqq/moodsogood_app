@@ -19,6 +19,7 @@ import 'feedback_page.dart';
 import 'follow_up_hub_page.dart';
 import 'life_overview_page.dart';
 import 'profile_page.dart';
+import 'trend_review_hub_page.dart';
 
 class HomeHubPage extends StatelessWidget {
   const HomeHubPage({super.key});
@@ -335,10 +336,19 @@ class _RecordHubPageState extends State<RecordHubPage> {
             _RecordEntryCard(
               icon: Icons.history,
               title: '紀錄歷程',
-              subtitle: '查看每日紀錄、週摘要與趨勢',
+              subtitle: '查看每日紀錄與每週摘要',
               color: const Color.fromARGB(255, 144, 202, 249),
               onTap: () =>
                   _push(context, const DailyRecordHistory(initialTab: 0)),
+            ),
+            const SizedBox(height: 12),
+            _RecordEntryCard(
+              icon: Icons.insights_rounded,
+              title: '趨勢回顧',
+              subtitle: '睡眠、情緒與症狀變化集中查看',
+              color: const Color(0xFF5C9BD5),
+              onTap: () => _push(context, const TrendReviewHubPage()),
+              actionLabel: '查看趨勢',
             ),
             const SizedBox(height: 12),
             _RecordEntryCard(

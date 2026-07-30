@@ -58,6 +58,7 @@ FlDotData _dotDataForSpots(List<FlSpot> spots, Color color) {
 List<LineTooltipItem?> _sameDayTooltipItems(
   List<LineBarSpot> spots, {
   required Color positiveColor,
+  required DateTime Function(LineBarSpot spot) dateForSpot,
 }) {
   if (spots.isEmpty) {
     return const [];
@@ -69,16 +70,17 @@ List<LineTooltipItem?> _sameDayTooltipItems(
     final nextDistance = next is TouchLineBarSpot ? next.distance : 0.0;
     return nextDistance < currentDistance ? next : current;
   });
-  final targetX = targetSpot.x;
+  final targetDate = dateForSpot(targetSpot);
+  final dateLabel = '${targetDate.month}/${targetDate.day}';
 
   return spots.map((spot) {
-    if ((spot.x - targetX).abs() > 0.001) {
+    if (dateForSpot(spot) != targetDate) {
       return null;
     }
 
     final label = spot.bar.color == positiveColor ? '正向' : '負向';
     return LineTooltipItem(
-      '$label ${_formatChartNumber(spot.y)}',
+      '$dateLabel $label ${_formatChartNumber(spot.y)}',
       const TextStyle(
         color: Colors.white,
         fontWeight: FontWeight.w600,
@@ -285,6 +287,7 @@ class EmotionBalanceChartWidget extends StatelessWidget {
             totalDays: totalDays,
             sortedDates: sortedDates,
           );
+    final positiveDates = positiveSeries.keys.toList()..sort();
     final negativeSpots = negativeSeries.isEmpty
         ? <FlSpot>[]
         : _spots(
@@ -293,6 +296,7 @@ class EmotionBalanceChartWidget extends StatelessWidget {
             totalDays: totalDays,
             sortedDates: sortedDates,
           );
+    final negativeDates = negativeSeries.keys.toList()..sort();
 
     final lineBars = <LineChartBarData>[
       if (positiveSeries.isNotEmpty)
@@ -321,6 +325,15 @@ class EmotionBalanceChartWidget extends StatelessWidget {
         ),
     ];
     final xBounds = _xBounds(lineBars);
+    DateTime dateForSpot(LineBarSpot spot) {
+      final dates = spot.barIndex == 0 ? positiveDates : negativeDates;
+      final index = spot.spotIndex;
+      if (index < 0 || index >= dates.length) {
+        return startDate;
+      }
+      return dates[index];
+    }
+
     // X 軸標籤：依資料範圍動態決定顯示頻率，避免重疊
     final labelPositions = <int>{};
     if (sortedDates.isNotEmpty) {
@@ -441,6 +454,7 @@ class EmotionBalanceChartWidget extends StatelessWidget {
                     getTooltipItems: (spots) => _sameDayTooltipItems(
                       spots,
                       positiveColor: positiveColor,
+                      dateForSpot: dateForSpot,
                     ),
                   ),
                 ),
@@ -656,6 +670,7 @@ class EmotionBalanceTrendChartWidget extends StatelessWidget {
       totalDays: totalDays,
       sortedDates: sortedDates,
     );
+    final balanceDates = series.keys.toList()..sort();
     final lineBars = [
       LineChartBarData(
         spots: balanceSpots,
@@ -717,7 +732,6 @@ class EmotionBalanceTrendChartWidget extends StatelessWidget {
                       color: HealingDesignSystem.adaptiveSecondaryText(context)
                           .withValues(alpha: 0.35),
                       strokeWidth: 1,
-                      dashArray: [4, 4],
                     ),
                   ],
                 ),
@@ -802,7 +816,7 @@ class EmotionBalanceTrendChartWidget extends StatelessWidget {
                       return spots
                           .map(
                             (spot) => LineTooltipItem(
-                              '平衡 ${_formatChartNumber(spot.y)}',
+                              '${balanceDates[spot.spotIndex].month}/${balanceDates[spot.spotIndex].day} 平衡 ${_formatChartNumber(spot.y)}',
                               const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600,
