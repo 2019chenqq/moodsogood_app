@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../utils/health_data_encryption_service.dart';
+
 class MedicationAdjustmentTimeline extends StatelessWidget {
   final void Function(String adjustId, Map<String, dynamic> data)? onTapItem;
 
@@ -34,8 +36,8 @@ class MedicationAdjustmentTimeline extends StatelessWidget {
         .orderBy('date', descending: true)
         .limit(50);
 
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: q.snapshots(),
+    return StreamBuilder<List<HealthDocument>>(
+      stream: HealthDataEncryptionService.watchEncrypted(q),
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(
@@ -63,7 +65,7 @@ class MedicationAdjustmentTimeline extends StatelessWidget {
           );
         }
 
-        final docs = snap.data?.docs ?? [];
+        final docs = snap.data ?? [];
 
         if (docs.isEmpty) {
           return const _EmptyTimeline();
@@ -76,7 +78,7 @@ class MedicationAdjustmentTimeline extends StatelessWidget {
             itemCount: docs.length,
             itemBuilder: (context, i) {
               final doc = docs[i];
-              final data = doc.data();
+              final data = doc.data;
 
               final ts = data['date'];
               final date = (ts is Timestamp) ? ts.toDate() : DateTime.now();
@@ -94,7 +96,8 @@ class MedicationAdjustmentTimeline extends StatelessWidget {
                 changes: changes,
                 isFirst: isFirst,
                 isLast: isLast,
-                onTap: onTapItem == null ? null : () => onTapItem!(doc.id, data),
+                onTap:
+                    onTapItem == null ? null : () => onTapItem!(doc.id, data),
               );
             },
           ),
@@ -116,9 +119,8 @@ class MedicationAdjustmentTimeline extends StatelessWidget {
     final items = changes.take(3).map((c) {
       final nameZh = (c['nameZh'] ?? '').toString();
       final nameEn = (c['nameEn'] ?? '').toString();
-      final name = nameZh.isNotEmpty
-          ? nameZh
-          : (nameEn.isNotEmpty ? nameEn : '未命名藥物');
+      final name =
+          nameZh.isNotEmpty ? nameZh : (nameEn.isNotEmpty ? nameEn : '未命名藥物');
 
       final action = (c['action'] ?? '').toString();
       final before = c['doseBefore'];

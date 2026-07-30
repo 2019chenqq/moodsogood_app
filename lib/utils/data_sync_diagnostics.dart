@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:convert';
 import '../daily/daily_record_repository.dart';
+import 'health_data_encryption_service.dart';
 
 /// 數據同步診斷和修復工具
 class DataSyncDiagnostics {
@@ -40,17 +41,14 @@ class DataSyncDiagnostics {
           .get();
 
       // 3. 比較差異
-      final localIds =
-          localRecords.map((r) => r['id'] as String).toSet();
-      final firebaseIds =
-          snapshot.docs.map((doc) => doc.id).toSet();
+      final localIds = localRecords.map((r) => r['id'] as String).toSet();
+      final firebaseIds = snapshot.docs.map((doc) => doc.id).toSet();
 
       final onlyInLocal = localIds.difference(firebaseIds);
       final onlyInFirebase = firebaseIds.difference(localIds);
       final inBoth = localIds.intersection(firebaseIds);
 
-      final isHealthy =
-          onlyInLocal.isEmpty && onlyInFirebase.isEmpty;
+      final isHealthy = onlyInLocal.isEmpty && onlyInFirebase.isEmpty;
 
       return SyncDiagnosisResult(
         isHealthy: isHealthy,
@@ -142,7 +140,8 @@ class DataSyncDiagnostics {
       final symptoms = _parseJsonIfString(localRecord['bodySymptoms']) as List?;
 
       final payload = <String, dynamic>{
-        'date': Timestamp.fromDate(DateTime.parse(localRecord['date'] as String)),
+        'date':
+            Timestamp.fromDate(DateTime.parse(localRecord['date'] as String)),
         'emotions': emotions is Map
             ? emotions.entries
                 .map((e) => {'name': e.key, 'value': e.value})
@@ -154,12 +153,12 @@ class DataSyncDiagnostics {
         'uploadedAt': FieldValue.serverTimestamp(),
       };
 
-      await FirebaseFirestore.instance
+      final reference = FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
           .collection('dailyRecords')
-          .doc(docId)
-          .set(payload, SetOptions(merge: true));
+          .doc(docId);
+      await HealthDataEncryptionService.setEncrypted(reference, payload);
 
       debugPrint('✅ Uploaded local record $docId to Firebase');
     } catch (e) {

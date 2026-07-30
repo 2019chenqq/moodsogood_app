@@ -5,6 +5,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import '../constants/healing_design_system.dart';
 import 'medication_local_db.dart';
 import '../analytics_service.dart';
+import '../utils/health_data_encryption_service.dart';
 
 class MedSymptomComparePage extends StatefulWidget {
   const MedSymptomComparePage({super.key});
@@ -137,14 +138,15 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
 
   Future<void> _syncFromFirebase(String uid) async {
     try {
-      final snap = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('medications')
-          .get();
+      final docs = await HealthDataEncryptionService.getEncrypted(
+        FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('medications'),
+      );
 
-      for (final doc in snap.docs) {
-        final data = doc.data();
+      for (final doc in docs) {
+        final data = doc.data;
         final startTs = data['startDate'];
         DateTime? startDate;
         if (startTs is Timestamp) startDate = startTs.toDate();
@@ -286,21 +288,23 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
               try {
                 final uid2 = FirebaseAuth.instance.currentUser?.uid;
                 if (uid2 != null) {
-                  final adjSnap = await FirebaseFirestore.instance
-                      .collection('users')
-                      .doc(uid2)
-                      .collection('medAdjustments')
-                      .orderBy('date', descending: true)
-                      .get();
+                  final adjustmentDocs =
+                      await HealthDataEncryptionService.getEncrypted(
+                    FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(uid2)
+                        .collection('medAdjustments')
+                        .orderBy('date', descending: true),
+                  );
 
-                  for (final doc in adjSnap.docs) {
-                    final items = doc.data()['items'];
+                  for (final doc in adjustmentDocs) {
+                    final items = doc.data['items'];
                     if (items is! List) continue;
                     final hasThisMed = items.any((item) =>
                         item is Map && item['medDocId']?.toString() == v);
                     if (!hasThisMed) continue;
 
-                    final rawDate = doc.data()['date'];
+                    final rawDate = doc.data['date'];
                     if (rawDate is Timestamp) {
                       medAdjustedDate = rawDate.toDate();
                     } else if (rawDate is String) {
@@ -492,7 +496,7 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
     return (s, e);
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _fetchDailyRecords(
+  Future<List<HealthDocument>> _fetchDailyRecords(
     String uid,
     DateTime startInclusive,
     DateTime endExclusive,
@@ -510,24 +514,22 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
         .doc(uid)
         .collection('dailyRecords');
 
-    final byDate = await recordsRef
+    final byDate = await HealthDataEncryptionService.getEncrypted(recordsRef
         .where('date',
             isGreaterThanOrEqualTo: Timestamp.fromDate(startInclusive))
-        .where('date', isLessThan: Timestamp.fromDate(endExclusive))
-        .get();
+        .where('date', isLessThan: Timestamp.fromDate(endExclusive)));
 
     final startId = id(startInclusive);
     // endExclusive 不含，所以用「前一天」作為 endId（含）
     final endId = id(endExclusive.subtract(const Duration(days: 1)));
 
-    final byDocId = await recordsRef
+    final byDocId = await HealthDataEncryptionService.getEncrypted(recordsRef
         .where(FieldPath.documentId, isGreaterThanOrEqualTo: startId)
-        .where(FieldPath.documentId, isLessThanOrEqualTo: endId)
-        .get();
+        .where(FieldPath.documentId, isLessThanOrEqualTo: endId));
 
-    final merged = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{
-      for (final d in byDate.docs) d.id: d,
-      for (final d in byDocId.docs) d.id: d,
+    final merged = <String, HealthDocument>{
+      for (final d in byDate) d.id: d,
+      for (final d in byDocId) d.id: d,
     };
 
     return merged.values.toList();
@@ -536,8 +538,7 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
   // -----------------------------
   // 解析 + 平均計算（你最可能需要微調的地方）
   // -----------------------------
-  _AggResult _aggregateDailyRecords(
-      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+  _AggResult _aggregateDailyRecords(List<HealthDocument> docs) {
     // 累積 sum & count
     final symptomDays = <String, int>{};
     final emotionSum = <String, double>{};
@@ -546,7 +547,7 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
     int daysWithAny = 0;
 
     for (final d in docs) {
-      final data = d.data();
+      final data = d.data;
 
       final symptomNames = _normalizeSymptomNameSet(
         data['symptoms'] ?? data['bodySymptoms'] ?? data['symptomScores'],

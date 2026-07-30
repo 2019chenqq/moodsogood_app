@@ -979,8 +979,6 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
           .id; // 生成 ID
 
       final now = DateTime.now();
-      final timestamp = Timestamp.fromDate(now);
-
       final medicationData = {
         'id': docId,
         'name': name,
@@ -1019,41 +1017,7 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
 
       // 2️⃣ 再上傳 Firebase（如果啟用同步）
       if (FirebaseSyncConfig.shouldSync()) {
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .collection('medications')
-            .doc(docId)
-            .set({
-          'name': name,
-          if (nameEn.isNotEmpty) 'nameEn': nameEn,
-          'dose': doseValue,
-          'dosePerUnit': dosePerUnit,
-          'pillCount': pillCount,
-          'concentrationMg': concentrationMg,
-          'concentrationMl': concentrationMl,
-          'intakeMl': intakeMl,
-          'unit': _medType == 'drops' ? 'mg' : _unit,
-          'type': _medType,
-          'drugForm': _drugForm,
-          'compoundType': _compoundType,
-          'drugConcentration': _drugConcentration,
-          'packageAmount': _packageAmount,
-          'packageUnit': _packageUnit,
-          'ingredientLines': _ingredientLines,
-          'intervalDays': _medType == 'injection' ? _intervalDays : null,
-          'times': times,
-          'purposes': purposes,
-          'note': _noteCtrl.text.trim(),
-          'startDate': Timestamp.fromDate(
-              DateTime(_startDate.year, _startDate.month, _startDate.day)),
-          'isActive': _isActive,
-          'bodySymptoms': bodySymptoms,
-          'purposeOther': purposeOther.isEmpty ? null : purposeOther,
-          'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-          'lastChangeAt': null,
-        });
+        // MedicationLocalDB already wrote the encrypted cloud document.
         debugPrint('🔥 Firebase 已同步: $docId');
       }
 

@@ -27,6 +27,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../analytics_service.dart';
 import '../services/ai_journal_reflection_http_client.dart';
 import '../utils/secure_storage_service.dart';
+import '../utils/health_data_encryption_service.dart';
 import '../utils/encryption_service.dart';
 import '../constants/healing_design_system.dart';
 
@@ -193,10 +194,13 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
         }
       }
 
+      final dailyRecordData = recordSnap.data() == null
+          ? null
+          : await HealthDataEncryptionService.decryptData(recordSnap.data()!);
       if (!mounted) return;
       setState(() {
         _diaryData = diaryData;
-        _dailyRecordData = recordSnap.data();
+        _dailyRecordData = dailyRecordData;
       });
     } catch (e, stack) {
       m.debugPrint('AiJournalReflectionPage Firestore read exception: $e');
@@ -217,11 +221,14 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
           .doc(_docId)
           .get();
 
-      if (snap.exists && mounted) {
+      final raw = snap.data();
+      if (snap.exists && raw != null && mounted) {
+        final result = await HealthDataEncryptionService.decryptData(raw);
+        if (!mounted) return;
         setState(() {
-          _aiResult = snap.data();
+          _aiResult = result;
           _hasSavedResult = true;
-          _crisisDetected = snap.data()?['crisisDetected'] == true;
+          _crisisDetected = result['crisisDetected'] == true;
         });
       }
     } catch (e, stack) {
@@ -237,15 +244,15 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
       final userRef = _db.collection('users').doc(uid);
       final checkinSnap =
           await userRef.collection('medicationCheckins').doc(_docId).get();
-      final medsSnap = await userRef
-          .collection('medications')
-          .where('isActive', isEqualTo: true)
-          .get();
+      final medicationDocs = await HealthDataEncryptionService.getEncrypted(
+        userRef.collection('medications'),
+      );
 
       final medNameById = <String, String>{};
       final activeMedicationNames = <String>[];
-      for (final doc in medsSnap.docs) {
-        final data = doc.data();
+      for (final doc in medicationDocs) {
+        final data = doc.data;
+        if (data['isActive'] == false) continue;
         final name = (data['name'] ?? '').toString().trim();
         if (name.isEmpty) continue;
         medNameById[doc.id] = name;
@@ -264,7 +271,11 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
         };
       }
 
-      final data = checkinSnap.data() ?? const <String, dynamic>{};
+      final data = checkinSnap.data() == null
+          ? const <String, dynamic>{}
+          : await HealthDataEncryptionService.decryptData(
+              checkinSnap.data()!,
+            );
       final statusesRaw = (data['statuses'] is Map)
           ? Map<String, dynamic>.from(data['statuses'] as Map)
           : <String, dynamic>{};
@@ -724,12 +735,14 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
       result['generatedAt'] = FieldValue.serverTimestamp();
 
       // 儲存到 Firestore
-      await _db
-          .collection('users')
-          .doc(uid)
-          .collection('aiJournalReflections')
-          .doc(_docId)
-          .set(result, SetOptions(merge: true));
+      await HealthDataEncryptionService.setEncrypted(
+        _db
+            .collection('users')
+            .doc(uid)
+            .collection('aiJournalReflections')
+            .doc(_docId),
+        result,
+      );
 
       if (!mounted) return;
       setState(() {

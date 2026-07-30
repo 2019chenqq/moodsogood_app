@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../utils/health_data_encryption_service.dart';
+
 /// 一筆回診資料
 class FollowUpAppointment {
   final String id;
@@ -122,11 +124,20 @@ class FollowUpInstructionHistoryItem {
   factory FollowUpInstructionHistoryItem.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> doc,
   ) {
-    final data = doc.data() ?? const <String, dynamic>{};
+    return FollowUpInstructionHistoryItem.fromData(
+      doc.id,
+      doc.data() ?? const <String, dynamic>{},
+    );
+  }
+
+  factory FollowUpInstructionHistoryItem.fromData(
+    String id,
+    Map<String, dynamic> data,
+  ) {
     final rawRecordedAt = data['recordedAt'];
     final rawArchivedAt = data['archivedAt'];
     return FollowUpInstructionHistoryItem(
-      id: doc.id,
+      id: id,
       medicalInstructions: (data['medicalInstructions'] ?? '').toString(),
       recordedAt: rawRecordedAt is Timestamp ? rawRecordedAt.toDate() : null,
       archivedAt: rawArchivedAt is Timestamp ? rawArchivedAt.toDate() : null,
@@ -163,7 +174,9 @@ class FollowUpService {
 
     try {
       final doc = await _workspaceRef(uid).get();
-      final data = doc.data();
+      final data = doc.data() == null
+          ? null
+          : await HealthDataEncryptionService.decryptData(doc.data()!);
       return data == null
           ? const FollowUpWorkspace()
           : FollowUpWorkspace.fromMap(data);
@@ -183,33 +196,36 @@ class FollowUpService {
     final historyRef = _instructionHistoryRef(uid).doc();
     final nextInstructions = instructions.trim();
 
-    await _firestore.runTransaction((transaction) async {
-      final current = await transaction.get(workspaceRef);
-      final currentData = current.data() ?? const <String, dynamic>{};
-      final previousInstructions =
-          (currentData['medicalInstructions'] ?? '').toString().trim();
+    final current = await workspaceRef.get();
+    final currentData = current.data() == null
+        ? const <String, dynamic>{}
+        : await HealthDataEncryptionService.decryptData(current.data()!);
+    final previousInstructions =
+        (currentData['medicalInstructions'] ?? '').toString().trim();
 
-      if (previousInstructions.isNotEmpty &&
-          previousInstructions != nextInstructions) {
-        transaction.set(historyRef, {
+    if (previousInstructions.isNotEmpty &&
+        previousInstructions != nextInstructions) {
+      await HealthDataEncryptionService.setEncrypted(
+        historyRef,
+        {
           'medicalInstructions': previousInstructions,
           'recordedAt': currentData['medicalInstructionsUpdatedAt'] ??
               currentData['updatedAt'] ??
               FieldValue.serverTimestamp(),
           'archivedAt': FieldValue.serverTimestamp(),
-        });
-      }
-
-      transaction.set(
-        workspaceRef,
-        {
-          'medicalInstructions': nextInstructions,
-          'medicalInstructionsUpdatedAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
         },
-        SetOptions(merge: true),
+        merge: false,
       );
-    });
+    }
+
+    await HealthDataEncryptionService.setEncrypted(
+      workspaceRef,
+      {
+        'medicalInstructions': nextInstructions,
+        'medicalInstructionsUpdatedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+    );
   }
 
   static Future<void> saveDiscussion({
@@ -220,13 +236,13 @@ class FollowUpService {
     if (uid == null) {
       throw StateError('儲存回診工作區前需要先登入');
     }
-    await _workspaceRef(uid).set(
+    await HealthDataEncryptionService.setEncrypted(
+      _workspaceRef(uid),
       {
         'discussionTopics': topics,
         'discussionDetails': details.trim(),
         'updatedAt': FieldValue.serverTimestamp(),
       },
-      SetOptions(merge: true),
     );
   }
 
@@ -236,11 +252,14 @@ class FollowUpService {
     if (uid == null) return const [];
 
     try {
-      final snapshot = await _instructionHistoryRef(uid)
-          .orderBy('archivedAt', descending: true)
-          .get();
-      return snapshot.docs
-          .map(FollowUpInstructionHistoryItem.fromFirestore)
+      final documents = await HealthDataEncryptionService.getEncrypted(
+        _instructionHistoryRef(uid).orderBy('archivedAt', descending: true),
+      );
+      return documents
+          .map(
+            (doc) =>
+                FollowUpInstructionHistoryItem.fromData(doc.id, doc.data),
+          )
           .where((item) => item.medicalInstructions.trim().isNotEmpty)
           .toList();
     } catch (e) {
@@ -255,10 +274,17 @@ class FollowUpService {
     if (uid == null) return [];
 
     try {
-      final doc = await _firestore.collection('users').doc(uid).get();
-      if (!doc.exists) return [];
+      final userRef = _firestore.collection('users').doc(uid);
+      final doc = await userRef.get();
+      final healthDoc =
+          await userRef.collection('healthProfile').doc('current').get();
+      final healthData = healthDoc.data() == null
+          ? const <String, dynamic>{}
+          : await HealthDataEncryptionService.decryptData(healthDoc.data()!);
 
-      final raw = doc.data()?['followUpAppointments'];
+      final raw =
+          healthData['followUpAppointments'] ??
+          doc.data()?['followUpAppointments'];
       if (raw is List) {
         final list = raw
             .map((e) =>
@@ -269,7 +295,8 @@ class FollowUpService {
       }
 
       // 向後相容：舊的單一日期格式
-      final oldTs = doc.data()?['nextFollowUpDate'];
+      final oldTs =
+          healthData['nextFollowUpDate'] ?? doc.data()?['nextFollowUpDate'];
       if (oldTs is Timestamp) {
         return [
           FollowUpAppointment(
@@ -323,13 +350,19 @@ class FollowUpService {
   static Future<void> _saveAppointments(
       String uid, List<FollowUpAppointment> appointments) async {
     try {
-      await _firestore.collection('users').doc(uid).set(
+      final userRef = _firestore.collection('users').doc(uid);
+      await HealthDataEncryptionService.setEncrypted(
+        userRef.collection('healthProfile').doc('current'),
         {
           'followUpAppointments': appointments.map((a) => a.toMap()).toList(),
           'followUpAppointmentsUpdatedAt': FieldValue.serverTimestamp(),
         },
-        SetOptions(merge: true),
       );
+      await userRef.set({
+        'followUpAppointments': FieldValue.delete(),
+        'followUpAppointmentsUpdatedAt': FieldValue.delete(),
+        'nextFollowUpDate': FieldValue.delete(),
+      }, SetOptions(merge: true));
     } catch (e) {
       debugPrint('❌ 儲存回診日期失敗：$e');
     }

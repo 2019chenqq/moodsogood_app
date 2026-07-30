@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'record_detail_screen.dart';
 import '../utils/date_helper.dart';
 import '../utils/firebase_sync_config.dart';
+import '../utils/health_data_encryption_service.dart';
 import 'daily_record_repository.dart';
 import '../constants/healing_design_system.dart';
 import '../analytics_service.dart';
@@ -108,7 +109,7 @@ newSleep['naps'] = naps;
     
     // Only sync to Firebase if enabled
     if (FirebaseSyncConfig.shouldSync()) {
-      await ref.set(payload, SetOptions(merge: true));
+      await HealthDataEncryptionService.setEncrypted(ref, payload);
     }
 
     // Always save to local database

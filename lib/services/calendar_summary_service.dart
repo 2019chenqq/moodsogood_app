@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/calendar_day_summary.dart';
+import '../utils/health_data_encryption_service.dart';
 
 class CalendarSummaryService {
   CalendarSummaryService({
@@ -155,7 +156,7 @@ class CalendarSummaryService {
 
     var count = 0;
     for (final doc in docs) {
-      final data = doc.data();
+      final data = await HealthDataEncryptionService.decryptData(doc.data());
       final date = _resolveDate(doc.id, data);
       if (date == null || !_inRange(date, range)) continue;
 
@@ -246,9 +247,9 @@ class CalendarSummaryService {
       final hasEmotionData = dayMood != null ||
           emotionNames.isNotEmpty ||
           _hasCollectionData(data['emotions']);
-      final hasSymptomData = symptomNames.isNotEmpty || _hasCollectionData(data['symptoms']);
-      final hasSleepData =
-          normalizedSleepHours != null ||
+      final hasSymptomData =
+          symptomNames.isNotEmpty || _hasCollectionData(data['symptoms']);
+      final hasSleepData = normalizedSleepHours != null ||
           normalizedSleepQuality != null ||
           _hasSleepContent(sleepMap) ||
           _hasSleepContent(sleepDataMap);
@@ -276,7 +277,8 @@ class CalendarSummaryService {
           averageMood: current.averageMood ?? dayMood,
           emotionNames: _mergeStringLists(current.emotionNames, emotionNames),
           symptomNames: _mergeStringLists(current.symptomNames, symptomNames),
-          medicationNames: _mergeStringLists(current.medicationNames, medicationNames),
+          medicationNames:
+              _mergeStringLists(current.medicationNames, medicationNames),
           sleepHours: current.sleepHours ?? normalizedSleepHours,
           sleepQuality: current.sleepQuality ?? normalizedSleepQuality,
           dailyRecordDocId: current.dailyRecordDocId ?? doc.id,
@@ -386,16 +388,14 @@ class CalendarSummaryService {
     var periodDocs = 0;
 
     try {
-      final snap = await _firestore
-          .collection('users')
-          .doc(uid)
-          .collection('periodCycles')
-          .get();
+      final documents = await HealthDataEncryptionService.getEncrypted(
+        _firestore.collection('users').doc(uid).collection('periodCycles'),
+      );
 
-      periodDocs = snap.docs.length;
+      periodDocs = documents.length;
 
-      for (final doc in snap.docs) {
-        final data = doc.data();
+      for (final doc in documents) {
+        final data = doc.data;
         final start = _toDate(data['startDate']);
         if (start == null) continue;
 
@@ -438,7 +438,10 @@ class CalendarSummaryService {
           .collection('settings')
           .doc('periodTracker')
           .get();
-      final value = (config.data()?['cycleLength'] as num?)?.toInt();
+      final configData = config.data() == null
+          ? null
+          : await HealthDataEncryptionService.decryptData(config.data()!);
+      final value = (configData?['cycleLength'] as num?)?.toInt();
       if (value != null && value >= 21 && value <= 45) {
         cycleLength = value;
       }
@@ -735,24 +738,35 @@ class CalendarSummaryService {
     final hasMidWake = _toCleanString(sleepMap['midWakeList']) != null;
 
     final qualityText = _toDisplayString(sleepMap['quality']);
-    final qualityNumber = qualityText != null ? double.tryParse(qualityText) : null;
+    final qualityNumber =
+        qualityText != null ? double.tryParse(qualityText) : null;
     final hasQuality = qualityNumber != null
         ? (qualityNumber > 0 && qualityNumber <= 10)
         : qualityText != null;
 
     final hasFlags = (sleepMap['flags'] is Iterable) &&
-        (sleepMap['flags'] as Iterable).any((item) => _toCleanString(item) != null);
+        (sleepMap['flags'] as Iterable)
+            .any((item) => _toCleanString(item) != null);
 
     final hasNaps = (sleepMap['naps'] is Iterable) &&
         (sleepMap['naps'] as Iterable).isNotEmpty;
 
-    return hasTime || hasNote || hasMidWake || hasQuality || hasFlags || hasNaps;
+    return hasTime ||
+        hasNote ||
+        hasMidWake ||
+        hasQuality ||
+        hasFlags ||
+        hasNaps;
   }
 
   bool _hasMeaningfulTimeString(dynamic value) {
     if (value is! String) return false;
     final t = value.trim();
-    if (t.isEmpty || t == '-' || t == '--' || t == '—' || t.toLowerCase() == 'null') {
+    if (t.isEmpty ||
+        t == '-' ||
+        t == '--' ||
+        t == '—' ||
+        t.toLowerCase() == 'null') {
       return false;
     }
     return _parseHmMinutes(t) != null;
@@ -815,7 +829,9 @@ class CalendarSummaryService {
         }
 
         // For map-style records like {"anxious": true}, only keep key when value is meaningful.
-        if (_hasMeaningfulValue(value) && key is String && key.trim().isNotEmpty) {
+        if (_hasMeaningfulValue(value) &&
+            key is String &&
+            key.trim().isNotEmpty) {
           final lowered = key.trim().toLowerCase();
           final ignored = {'intensity', 'score', 'value', 'level'};
           if (!ignored.contains(lowered)) {

@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../constants/healing_design_system.dart';
 import '../utils/firebase_sync_config.dart';
+import '../utils/health_data_encryption_service.dart';
 import 'medication_local_db.dart';
 import 'medication_reminder_service.dart';
 import 'medication_dose_units.dart';
@@ -88,14 +89,15 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
 
   Future<void> _syncFromFirebase(String uid) async {
     try {
-      final snap = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('medications')
-          .get();
+      final docs = await HealthDataEncryptionService.getEncrypted(
+        FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('medications'),
+      );
 
-      for (final doc in snap.docs) {
-        final data = doc.data();
+      for (final doc in docs) {
+        final data = doc.data;
         final startTs = data['startDate'];
         DateTime? startDate;
         if (startTs is Timestamp) startDate = startTs.toDate();
@@ -1107,9 +1109,6 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
       final userRef = FirebaseFirestore.instance.collection('users').doc(uid);
 
       final adjRef = userRef.collection('medAdjustments').doc();
-      final adjDate =
-          Timestamp.fromDate(DateTime(_date.year, _date.month, _date.day));
-
       final items = changed.map((e) {
         final docId = e.key;
         final d = e.value;
@@ -1142,8 +1141,6 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
         };
       }).toList();
 
-      final batch = FirebaseFirestore.instance.batch();
-
       // 1) 寫入調整紀錄到本地 DB（一定要寫入）
       final adjId = adjRef.id;
       final dateStr = _fmtYmd(DateTime(_date.year, _date.month, _date.day));
@@ -1168,13 +1165,6 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
       }
 
       // 2) 寫入調整紀錄到 Firebase
-      batch.set(adjRef, {
-        'date': adjDate,
-        'note': _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
-        'items': items,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-
       // 3) 同步更新藥物主檔（只更新有變動的）
       // 先讀取本地舊資料，讓「總劑量」可同步換算為「每顆劑量 x 顆數」。
       final localMedById = <String, Map<String, dynamic>>{};
@@ -1183,49 +1173,6 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
         if (local != null) {
           localMedById[e.key] = local;
         }
-      }
-
-      for (final e in changed) {
-        final medDocId = e.key;
-        final d = e.value;
-
-        final medRef = userRef.collection('medications').doc(medDocId);
-
-        final patch = <String, dynamic>{
-          'updatedAt': FieldValue.serverTimestamp(),
-          'lastChangeAt': adjDate,
-        };
-
-        if (d.type == MedChangeType.doseChanged) {
-          patch.addAll(
-            _buildDoseFieldsForDoseChanged(
-              draft: d,
-            ),
-          );
-          if (d.newTimes != null) {
-            patch['times'] = d.newTimes;
-          }
-          patch['isActive'] = true;
-        } else if (d.type == MedChangeType.scheduleChanged) {
-          if (d.newTimes != null) {
-            patch['times'] = d.newTimes;
-          }
-          patch['isActive'] = true;
-        } else if (d.type == MedChangeType.injected) {
-          patch['isActive'] = true;
-        } else if (d.type == MedChangeType.added) {
-          if (d.newTimes != null) {
-            patch['times'] = d.newTimes;
-          }
-          patch['isActive'] = true;
-        } else if (d.type == MedChangeType.stopped) {
-          patch['isActive'] = false;
-        } else if (d.type == MedChangeType.resumed) {
-          patch['isActive'] = true;
-          patch['resumedAt'] = adjDate;
-        }
-
-        batch.set(medRef, patch, SetOptions(merge: true));
       }
 
       // 4️⃣ 先更新本地端藥物（一定要更新）
@@ -1290,7 +1237,7 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
       // 5️⃣ 再上傳 Firebase（如果啟用同步）
       if (FirebaseSyncConfig.shouldSync()) {
         try {
-          await batch.commit();
+          // MedicationLocalDB committed the encrypted adjustment and updates.
           debugPrint('🔥 Firebase 調整已同步');
         } catch (e) {
           debugPrint('⚠️ Firebase 同步失敗：$e');

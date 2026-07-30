@@ -8,6 +8,7 @@ import '../models/daily_record.dart';
 import 'daily_record_repository.dart';
 import '../constants/healing_design_system.dart';
 import '../analytics_service.dart';
+import '../utils/health_data_encryption_service.dart';
 
 class RecordDetailScreen extends StatefulWidget {
   final String uid;
@@ -64,7 +65,9 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
 
       if (snap.exists && snap.data() != null) {
         debugPrint('✅ Loaded record from Firebase: ${widget.docId}');
-        return DailyRecord.fromFirestore(snap);
+        final data =
+            await HealthDataEncryptionService.decryptData(snap.data()!);
+        return DailyRecord.fromData(snap.id, data);
       }
     } catch (e) {
       debugPrint('⚠️  Firebase load failed: $e');

@@ -35,6 +35,7 @@ import 'community/post_detail_page.dart';
 import 'community/compose_post_page.dart';
 import 'onboarding_page.dart';
 import 'utils/secure_storage_service.dart';
+import 'utils/health_data_encryption_service.dart';
 import 'pin_setup_screen.dart';
 import 'recovery_key_restore_screen.dart';
 import 'analytics_service.dart';
@@ -503,23 +504,66 @@ class LockWrapper extends StatefulWidget {
   State<LockWrapper> createState() => _LockWrapperState();
 }
 
-class _LockWrapperState extends State<LockWrapper> {
+class _LockWrapperState extends State<LockWrapper> with WidgetsBindingObserver {
   bool _loading = true;
   bool _needLock = false;
+  bool _lockEnabled = false;
+  bool _wasBackgrounded = false;
+  bool _checkingLock = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _checkLock();
   }
 
-  Future<void> _checkLock() async {
-    final prefs = await SharedPreferences.getInstance();
-    final enabled = prefs.getBool('appLockEnabled') ?? false;
-    setState(() {
-      _needLock = enabled;
-      _loading = false;
-    });
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.inactive:
+        break;
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+        _wasBackgrounded = true;
+        if (_lockEnabled && mounted && !_needLock) {
+          setState(() => _needLock = true);
+        }
+        _checkLock(showLoading: false);
+        break;
+      case AppLifecycleState.resumed:
+        if (_wasBackgrounded) {
+          _wasBackgrounded = false;
+          _checkLock(showLoading: false);
+        }
+        break;
+      case AppLifecycleState.detached:
+        _wasBackgrounded = true;
+        break;
+    }
+  }
+
+  Future<void> _checkLock({bool showLoading = true}) async {
+    if (_checkingLock) return;
+    _checkingLock = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final enabled = prefs.getBool('appLockEnabled') ?? false;
+      if (!mounted) return;
+      setState(() {
+        _lockEnabled = enabled;
+        _needLock = enabled;
+        if (showLoading) _loading = false;
+      });
+    } finally {
+      _checkingLock = false;
+    }
   }
 
   void _onUnlocked() {
@@ -581,7 +625,17 @@ class _ProfileCompletionGateState extends State<ProfileCompletionGate> {
           .get();
       final data = doc.data();
       final completed = data?['profileCompleted'] == true;
-      final hasBirthday = data?['birthday'] != null;
+      final healthDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('healthProfile')
+          .doc('current')
+          .get();
+      final healthData = healthDoc.data() == null
+          ? const <String, dynamic>{}
+          : await HealthDataEncryptionService.decryptData(healthDoc.data()!);
+      final hasBirthday =
+          healthData['birthday'] != null || data?['birthday'] != null;
 
       if (mounted) {
         setState(() {
@@ -719,6 +773,17 @@ class _EncryptionGateState extends State<EncryptionGate> {
           // 本機有錯誤金鑰時先清掉，避免後續頁面反覆解密失敗。
           await SecureStorageService.deleteKey();
         }
+      }
+    }
+
+    if (hasKey) {
+      try {
+        await HealthDataEncryptionService.migrateAllForCurrentUser();
+      } catch (error, stackTrace) {
+        // Keep login available during a temporary network failure. Because the
+        // migration marker is not written, the next launch retries safely.
+        debugPrint('Health data encryption migration deferred: $error');
+        debugPrint('$stackTrace');
       }
     }
 

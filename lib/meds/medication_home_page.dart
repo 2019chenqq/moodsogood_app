@@ -11,6 +11,7 @@ import 'record_adjustment_history_page.dart';
 import 'med_symptom_compare_page.dart';
 import 'medication_local_db.dart';
 import 'drug_dictionary_service.dart';
+import '../utils/health_data_encryption_service.dart';
 
 const List<String> kTimeOrder = [
   '早上',
@@ -266,14 +267,15 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
   /// 將 Firebase 資料合併到本地（不阻塞首次顯示）
   Future<void> _mergeFirebaseIntoLocal(String uid) async {
     try {
-      final snap = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('medications')
-          .get();
+      final docs = await HealthDataEncryptionService.getEncrypted(
+        FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('medications'),
+      );
 
-      for (final doc in snap.docs) {
-        final data = doc.data();
+      for (final doc in docs) {
+        final data = doc.data;
         final startTs = data['startDate'];
         DateTime? startDate;
         if (startTs is Timestamp) startDate = startTs.toDate();
@@ -571,12 +573,11 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
                     );
 
                     // Firebase 更新
-                    await FirebaseFirestore.instance
-                        .collection('users')
-                        .doc(uid)
-                        .collection('medications')
-                        .doc(medId)
-                        .update({'isActive': false});
+                    await MedicationLocalDB().updateMedicationStatus(
+                      uid,
+                      medId,
+                      isActive: false,
+                    );
 
                     if (!mounted) return;
                     messenger.showSnackBar(
@@ -612,15 +613,11 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
                     }
 
                     // Firebase 更新
-                    await FirebaseFirestore.instance
-                        .collection('users')
-                        .doc(uid)
-                        .collection('medications')
-                        .doc(medId)
-                        .update({
-                      'isActive': true,
-                      'resumedAt': FieldValue.serverTimestamp(),
-                    });
+                    await MedicationLocalDB().updateMedicationStatus(
+                      uid,
+                      medId,
+                      isActive: true,
+                    );
 
                     if (!mounted) return;
                     messenger.showSnackBar(

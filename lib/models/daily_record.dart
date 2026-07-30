@@ -206,13 +206,15 @@ class DailyRecord {
 
   factory DailyRecord.fromFirestore(
       DocumentSnapshot<Map<String, dynamic>> doc) {
-    final data = doc.data() ?? {};
+    return DailyRecord.fromData(doc.id, doc.data() ?? {});
+  }
+
+  factory DailyRecord.fromData(String id, Map<String, dynamic> data) {
     final emotions = _parseEmotions(data['emotions']);
 
     return DailyRecord(
-      id: doc.id,
-      date:
-          _asDate(data['date']) ?? DateTime.tryParse(doc.id) ?? DateTime.now(),
+      id: id,
+      date: _asDate(data['date']) ?? DateTime.tryParse(id) ?? DateTime.now(),
       emotions: emotions,
       symptoms:
           (data['symptoms'] as List?)?.map((e) => e.toString()).toList() ?? [],

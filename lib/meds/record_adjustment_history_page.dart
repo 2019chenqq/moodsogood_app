@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../constants/healing_design_system.dart';
 import 'medication_local_db.dart';
 import '../analytics_service.dart';
+import '../utils/health_data_encryption_service.dart';
 
 class RecordAdjustmentHistoryPage extends StatefulWidget {
   const RecordAdjustmentHistoryPage({super.key});
@@ -60,12 +61,11 @@ class _RecordAdjustmentHistoryPageState
           .orderBy('date', descending: true)
           .limit(60);
 
-      final snap = await query.get();
-      final docs = snap.docs;
+      final docs = await HealthDataEncryptionService.getEncrypted(query);
       debugPrint('🔥 Firebase 返回 ${docs.length} 筆記錄');
 
       for (final doc in docs) {
-        final data = doc.data();
+        final data = doc.data;
         final date = data['date'];
         final dateStr = (date is Timestamp)
             ? _fmtYmd(date.toDate())

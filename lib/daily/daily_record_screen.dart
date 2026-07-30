@@ -8,6 +8,7 @@ import 'dart:convert';
 import '../constants/healing_design_system.dart';
 import '../utils/date_helper.dart';
 import '../utils/firebase_sync_config.dart';
+import '../utils/health_data_encryption_service.dart';
 import '../models/daily_record.dart';
 import '../widgets/main_drawer.dart';
 import 'daily_record_repository.dart';
@@ -100,7 +101,22 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     try {
       final profile =
           await FirebaseFirestore.instance.collection('users').doc(uid).get();
-      final sex = (profile.data()?['sexAssignedAtBirth'] as String?)?.trim();
+      final healthProfile = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('healthProfile')
+          .doc('current')
+          .get();
+      final healthData = healthProfile.data() == null
+          ? const <String, dynamic>{}
+          : await HealthDataEncryptionService.decryptData(
+              healthProfile.data()!,
+            );
+      final sex =
+          (healthData['sexAssignedAtBirth'] ??
+                  profile.data()?['sexAssignedAtBirth'])
+              ?.toString()
+              .trim();
       showsPeriodCalendar = sex == null || sex.isEmpty || sex == '女性';
     } catch (e) {
       debugPrint('讀取生理性別失敗: $e');
@@ -225,7 +241,11 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
             .collection('settings')
             .doc('periodTracker');
         final configSnap = await configRef.get();
-        final config = configSnap.data();
+        final config = configSnap.data() == null
+            ? null
+            : await HealthDataEncryptionService.decryptData(
+                configSnap.data()!,
+              );
         final cloudCycle = (config?['cycleLength'] as num?)?.toInt();
         if (cloudCycle != null && cloudCycle >= 21 && cloudCycle <= 45) {
           _periodCycleLength = cloudCycle;
@@ -241,8 +261,10 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
             .get();
 
         for (final doc in periodSnap.docs) {
-          if (doc.data()['isPeriod'] != true) continue;
-          final ts = doc.data()['date'] as Timestamp?;
+          final data =
+              await HealthDataEncryptionService.decryptData(doc.data());
+          if (data['isPeriod'] != true) continue;
+          final ts = data['date'] as Timestamp?;
           if (ts != null) {
             selected.add(_dateOnly(ts.toDate()));
           }
@@ -350,38 +372,21 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       }
 
       if (FirebaseSyncConfig.shouldSync()) {
-        await FirebaseFirestore.instance
+        final periodTrackerRef = FirebaseFirestore.instance
             .collection('users')
             .doc(uid)
             .collection('settings')
-            .doc('periodTracker')
-            .set({
+            .doc('periodTracker');
+        await HealthDataEncryptionService.setEncrypted(
+          periodTrackerRef,
+          {
           'cycleLength': _periodCycleLength,
           'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+          },
+          policyName: 'periodTracker',
+        );
 
-        final batch = FirebaseFirestore.instance.batch();
-        for (final day in days) {
-          final docId = DateHelper.toId(day);
-          final ref = FirebaseFirestore.instance
-              .collection('users')
-              .doc(uid)
-              .collection('dailyRecords')
-              .doc(docId);
-          batch.set(
-            ref,
-            {
-              'date': Timestamp.fromDate(day),
-              'isPeriod': isPeriod,
-              'periodStartId': isPeriod ? startId : null,
-              'periodEndId': null,
-              'periodCycleLength': _periodCycleLength,
-              'updatedAt': FieldValue.serverTimestamp(),
-            },
-            SetOptions(merge: true),
-          );
-        }
-        await batch.commit();
+        // DailyRecordRepository above is the encrypted cloud write path.
       }
     } catch (e) {
       debugPrint('更新生理期月曆失敗: $e');
@@ -946,7 +951,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       if (doc.exists && doc.data() != null) {
         debugPrint('✅ Loaded record from Firebase: $docId');
         // A. 這一天已經有紀錄 → 完整讀取
-        final record = DailyRecord.fromFirestore(doc);
+        final data = await HealthDataEncryptionService.decryptData(doc.data()!);
+        final record = DailyRecord.fromData(doc.id, data);
         _applyFirebaseRecordData(record, date);
       } else {
         debugPrint(
@@ -1249,7 +1255,9 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
             const GetOptions(source: Source.serverAndCache),
           );
           if (oldSnap.exists && oldSnap.data() != null) {
-            final old = DailyRecord.fromFirestore(oldSnap);
+            final oldData =
+                await HealthDataEncryptionService.decryptData(oldSnap.data()!);
+            final old = DailyRecord.fromData(oldSnap.id, oldData);
             oldStartId = old.periodStartId;
             oldIsPeriod = old.isPeriod;
           }
@@ -1314,7 +1322,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       // Only sync to Firebase if enabled
       if (FirebaseSyncConfig.shouldSync()) {
         try {
-          await ref.set(payload, SetOptions(merge: true));
+          await HealthDataEncryptionService.setEncrypted(ref, payload);
         } catch (e) {
           cloudSyncFailed = true;
           debugPrint('⚠️ 雲端同步失敗（已改為僅本地儲存）：$e');

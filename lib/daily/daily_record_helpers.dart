@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/daily_record.dart';
 import 'emotion_dimensions.dart';
+import '../utils/health_data_encryption_service.dart';
 
 // Sentinel to distinguish between "not provided" and explicit null when copying.
 const _unset = Object();
@@ -16,7 +17,12 @@ Future<List<DailyRecord>> loadAllRecords(String uid) async {
       .collection('dailyRecords')
       .get();
 
-  return snap.docs.map((d) => DailyRecord.fromFirestore(d)).toList();
+  return Future.wait(
+    snap.docs.map((doc) async {
+      final data = await HealthDataEncryptionService.decryptData(doc.data());
+      return DailyRecord.fromData(doc.id, data);
+    }),
+  );
 }
 
 double? overallFrom(Map<String, dynamic> data) {

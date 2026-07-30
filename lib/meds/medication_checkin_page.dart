@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../analytics_service.dart';
+import '../utils/health_data_encryption_service.dart';
 import 'medication_local_db.dart';
 import 'medication_reminder_service.dart';
 
@@ -179,7 +180,8 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
       final byDate = <String, _DailyAdherence>{};
       final missedSlotCount = <String, int>{};
       for (final doc in snap.docs) {
-        final data = doc.data();
+        final data =
+            await HealthDataEncryptionService.decryptData(doc.data());
         final date = _parseAnyDate(data['date']);
         if (date == null) continue;
 
@@ -378,7 +380,9 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
           .doc(_docId(_selectedDate));
 
       final snap = await ref.get();
-      final data = snap.data() ?? <String, dynamic>{};
+      final data = snap.data() == null
+          ? <String, dynamic>{}
+          : await HealthDataEncryptionService.decryptData(snap.data()!);
 
       final checksMap = Map<String, dynamic>.from(data['checks'] ?? <String, dynamic>{});
       final statusesMap = Map<String, dynamic>.from(data['statuses'] ?? <String, dynamic>{});
@@ -428,14 +432,14 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
       _ensureFixedSlotKeys(checksMap: checksMap, statusesMap: statusesMap);
       final afterCount = statusesMap.length + checksMap.length;
       if (afterCount != beforeCount) {
-        await ref.set(
+        await HealthDataEncryptionService.setEncrypted(
+          ref,
           {
             'date': Timestamp.fromDate(_dateOnly(_selectedDate)),
             'statuses': statusesMap,
             'checks': checksMap,
             'updatedAt': FieldValue.serverTimestamp(),
           },
-          SetOptions(merge: true),
         );
       }
 
@@ -618,7 +622,9 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
           .doc(_docId(_selectedDate));
 
       final snap = await ref.get();
-      final data = snap.data() ?? <String, dynamic>{};
+      final data = snap.data() == null
+          ? <String, dynamic>{}
+          : await HealthDataEncryptionService.decryptData(snap.data()!);
 
       final checksMap = Map<String, dynamic>.from(data['checks'] ?? <String, dynamic>{});
       final statusesMap = Map<String, dynamic>.from(data['statuses'] ?? <String, dynamic>{});
@@ -639,7 +645,8 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
         actualAmountMap.remove(key);
       }
 
-      await ref.set(
+      await HealthDataEncryptionService.setEncrypted(
+        ref,
         {
           'date': Timestamp.fromDate(_dateOnly(_selectedDate)),
           'statuses': statusesMap,
@@ -648,7 +655,6 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
           'actualAmount': actualAmountMap,
           'updatedAt': FieldValue.serverTimestamp(),
         },
-        SetOptions(merge: true),
       );
 
       await _loadStats(uid);
@@ -697,7 +703,9 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
           .doc(_docId(_selectedDate));
 
       final snap = await ref.get();
-      final data = snap.data() ?? <String, dynamic>{};
+      final data = snap.data() == null
+          ? <String, dynamic>{}
+          : await HealthDataEncryptionService.decryptData(snap.data()!);
 
       final checksMap = Map<String, dynamic>.from(data['checks'] ?? <String, dynamic>{});
       final statusesMap = Map<String, dynamic>.from(data['statuses'] ?? <String, dynamic>{});
@@ -717,7 +725,8 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
         takenAtMap.remove(key);
       }
 
-      await ref.set(
+      await HealthDataEncryptionService.setEncrypted(
+        ref,
         {
           'date': Timestamp.fromDate(_dateOnly(_selectedDate)),
           'statuses': statusesMap,
@@ -726,7 +735,6 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
           'prnEvents': prnEventsMap,
           'updatedAt': FieldValue.serverTimestamp(),
         },
-        SetOptions(merge: true),
       );
 
       await _loadStats(uid);

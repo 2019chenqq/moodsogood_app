@@ -991,39 +991,8 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
 
       // 2️⃣ 再更新 Firebase（如果啟用同步）
       if (FirebaseSyncConfig.shouldSync()) {
-        final userRef = FirebaseFirestore.instance.collection('users').doc(uid);
-        await userRef.collection('medications').doc(widget.docId).set({
-          'name': name,
-          if (nameEn.isNotEmpty) 'nameEn': nameEn,
-          'dose': totalDose,
-          'dosePerUnit': dosePerUnit,
-          'pillCount': pillCount,
-          'concentrationMg': concentrationMg,
-          'concentrationMl': concentrationMl,
-          'intakeMl': intakeMl,
-          'unit': _medType == 'drops' ? 'mg' : _unit,
-          'type': _medType,
-          'drugForm': _drugForm,
-          'compoundType': _compoundType,
-          'drugConcentration': _drugConcentration,
-          'packageAmount': _packageAmount,
-          'packageUnit': _packageUnit,
-          'ingredientLines': _ingredientLines,
-          'intervalDays': _medType == 'injection' ? _intervalDays : null,
-          'times': times,
-          'purposes': purposes,
-          'purposeOther': purposeOther.isEmpty ? null : purposeOther,
-          'bodySymptoms': bodySymptoms,
-          'note': _noteCtrl.text.trim(),
-          'startDate': Timestamp.fromDate(
-              DateTime(_startDate.year, _startDate.month, _startDate.day)),
-          'isActive': _isActive,
-          'lastChangeAt': Timestamp.fromDate(now),
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-
         if (timelineItems.isNotEmpty) {
-          await userRef.collection('medAdjustments').doc(timelineId).set({
+          await MedicationLocalDB().addAdjustmentRecord(uid, timelineId, {
             'date': Timestamp.fromDate(DateTime(now.year, now.month, now.day)),
             'note': '藥物詳細頁調整',
             'items': timelineItems,

@@ -5,6 +5,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../analytics_service.dart';
+import '../utils/health_data_encryption_service.dart';
 import '../constants/healing_design_system.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -137,16 +138,29 @@ class _ProfilePageState extends State<ProfilePage> {
 
     try {
       final doc = await _firestore.collection('users').doc(user.uid).get();
+      final healthDoc = await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('healthProfile')
+          .doc('current')
+          .get();
       if (doc.exists && doc.data() != null) {
         final data = doc.data()!;
+        final healthData = healthDoc.data() == null
+            ? <String, dynamic>{}
+            : await HealthDataEncryptionService.decryptData(healthDoc.data()!);
         name = (data['name'] ?? data['nickname'] ?? name).toString();
-        diagnosis = (data['diagnosis'] ?? '').toString();
+        diagnosis =
+            (healthData['diagnosis'] ?? data['diagnosis'] ?? '').toString();
         residence = (data['residence'] ?? '').toString();
         occupation = (data['occupation'] ?? '').toString();
-        sexAssignedAtBirth = _readString(data['sexAssignedAtBirth']);
+        sexAssignedAtBirth = _readString(
+          healthData['sexAssignedAtBirth'] ?? data['sexAssignedAtBirth'],
+        );
         genderIdentity = _readString(data['genderIdentity']);
         livingStatus = _readString(data['livingStatus']);
-        birthday = _parseBirthday(data['birthday']);
+        birthday =
+            _parseBirthday(healthData['birthday'] ?? data['birthday']);
       }
     } catch (e) {
       debugPrint('Error loading user profile: $e');
@@ -244,12 +258,7 @@ class _ProfilePageState extends State<ProfilePage> {
         {
           'name': newName,
           'nickname': newName,
-          'sexAssignedAtBirth': _sexAssignedAtBirth,
           'genderIdentity': _genderIdentity,
-          'birthday': normalizedBirthday == null
-              ? null
-              : Timestamp.fromDate(normalizedBirthday),
-          'diagnosis': diagnosis,
           'residence': residence,
           'livingStatus': _livingStatus,
           'occupation': occupation,
@@ -259,9 +268,25 @@ class _ProfilePageState extends State<ProfilePage> {
           'profileCompleted': true,
           'profileCompletedAt': FieldValue.serverTimestamp(),
           'profileUpdatedAt': FieldValue.serverTimestamp(),
+          'sexAssignedAtBirth': FieldValue.delete(),
+          'birthday': FieldValue.delete(),
+          'diagnosis': FieldValue.delete(),
         },
         SetOptions(merge: true),
       );
+      final healthProfileRef = _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('healthProfile')
+          .doc('current');
+      await HealthDataEncryptionService.setEncrypted(healthProfileRef, {
+        'sexAssignedAtBirth': _sexAssignedAtBirth,
+        'birthday': normalizedBirthday == null
+            ? null
+            : Timestamp.fromDate(normalizedBirthday),
+        'diagnosis': diagnosis,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
       await AnalyticsService.setUserProperty(
         name: 'age_group',
         value: ageGroup,

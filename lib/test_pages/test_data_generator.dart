@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../daily/emotion_trend_calculator.dart';
 import '../daily/daily_record_repository.dart';
+import '../utils/health_data_encryption_service.dart';
 import '../models/daily_record.dart';
 import '../utils/date_helper.dart';
 
@@ -449,7 +450,9 @@ class TestDataGenerator {
             .collection('dailyRecords')
             .doc(docId);
         final cloudDoc = await ref.get();
-        final cloudData = cloudDoc.data();
+        final cloudData = cloudDoc.data() == null
+            ? null
+            : await HealthDataEncryptionService.decryptData(cloudDoc.data()!);
         final isOwnedTestRecord =
             cloudData != null && _isOwnedTestRecord(cloudData);
         final localData = await repo.getDailyRecord(userId: userId, date: date);
@@ -476,12 +479,12 @@ class TestDataGenerator {
           moodScale: moodScale,
         );
 
-        await ref.set({
+        await HealthDataEncryptionService.setEncrypted(ref, {
           kTestFlagField: true,
           kTestOwnedField: true,
           'source': kTestSource,
           'testGeneratedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+        });
       } catch (e) {
         debugPrint('⚠️ Test record save failed for $docId: $e');
       }
@@ -578,7 +581,8 @@ class TestDataGenerator {
         final total = snapshot.docs.length;
 
         for (final doc in snapshot.docs) {
-          final data = doc.data();
+          final data =
+              await HealthDataEncryptionService.decryptData(doc.data());
           if (_isOwnedTestRecord(data)) {
             try {
               await doc.reference.delete();
@@ -650,7 +654,7 @@ class TestDataGenerator {
 
       count = snapshot.docs.length;
       for (final doc in snapshot.docs) {
-        final data = doc.data();
+        final data = await HealthDataEncryptionService.decryptData(doc.data());
         final scale = (data['moodScale'] as num?)?.toInt() ?? 10;
         if (scale < minScale) minScale = scale;
         if (scale > maxScale) maxScale = scale;

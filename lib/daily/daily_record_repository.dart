@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../services/home_widget_sync_service.dart';
+import '../utils/health_data_encryption_service.dart';
 
 class DailyRecordRepository {
   static final DailyRecordRepository _instance =
@@ -42,7 +43,7 @@ class DailyRecordRepository {
     int moodScale = 10,
   }) async {
     final day = DateTime(date.year, date.month, date.day);
-    await _records(userId).doc(id).set({
+    await HealthDataEncryptionService.setEncrypted(_records(userId).doc(id), {
       'date': Timestamp.fromDate(day),
       'emotions': emotions,
       'sleep': sleep,
@@ -53,7 +54,7 @@ class DailyRecordRepository {
       'moodScale': moodScale,
       'updatedAt': FieldValue.serverTimestamp(),
       'createdAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    });
 
     final today = DateTime.now();
     final todayOnly = DateTime(today.year, today.month, today.day);
@@ -105,7 +106,8 @@ class DailyRecordRepository {
   }) async {
     final doc = await _records(userId).doc(_dateId(date)).get();
     if (!doc.exists || doc.data() == null) return null;
-    return _normalize(doc.id, doc.data()!);
+    final data = await HealthDataEncryptionService.decryptData(doc.data()!);
+    return _normalize(doc.id, data);
   }
 
   Future<List<Map<String, dynamic>>> getDailyRecordsByDateRange({
@@ -128,7 +130,13 @@ class DailyRecordRepository {
         .where('date', isLessThanOrEqualTo: Timestamp.fromDate(end))
         .orderBy('date', descending: true)
         .get();
-    return snapshot.docs.map((doc) => _normalize(doc.id, doc.data())).toList();
+    final records = await Future.wait(
+      snapshot.docs.map((doc) async {
+        final data = await HealthDataEncryptionService.decryptData(doc.data());
+        return _normalize(doc.id, data);
+      }),
+    );
+    return records;
   }
 
   Future<void> deleteDailyRecord(String id) async {

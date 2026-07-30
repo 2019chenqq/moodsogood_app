@@ -22,7 +22,7 @@ class PeriodCycle {
     // 正規化日期 (只比對 yyyy-MM-dd)
     final d = DateTime(date.year, date.month, date.day);
     final s = DateTime(startDate.year, startDate.month, startDate.day);
-    final e = endDate != null 
+    final e = endDate != null
         ? DateTime(endDate!.year, endDate!.month, endDate!.day)
         : DateTime.now(); // 若未結束，預設包含到今天
 
@@ -36,10 +36,14 @@ class PeriodCycle {
     };
   }
 
-  factory PeriodCycle.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
-    final data = doc.data() ?? {};
+  factory PeriodCycle.fromFirestore(
+      DocumentSnapshot<Map<String, dynamic>> doc) {
+    return PeriodCycle.fromData(doc.id, doc.data() ?? {});
+  }
+
+  factory PeriodCycle.fromData(String id, Map<String, dynamic> data) {
     return PeriodCycle(
-      id: doc.id,
+      id: id,
       startDate: (data['startDate'] as Timestamp).toDate(),
       endDate: (data['endDate'] as Timestamp?)?.toDate(),
     );

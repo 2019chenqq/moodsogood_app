@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../utils/health_data_encryption_service.dart';
+
 class MedicationLocalDB {
   static final MedicationLocalDB _instance = MedicationLocalDB._internal();
 
@@ -24,10 +26,10 @@ class MedicationLocalDB {
     if (id == null || id.isEmpty) {
       throw ArgumentError('Medication id is required.');
     }
-    await _medications(uid).doc(id).set(
-          _toCloudMedication(data),
-          SetOptions(merge: true),
-        );
+    await HealthDataEncryptionService.setEncrypted(
+      _medications(uid).doc(id),
+      _toCloudMedication(data),
+    );
   }
 
   Future<void> updateMedication(
@@ -35,10 +37,10 @@ class MedicationLocalDB {
     String docId,
     Map<String, dynamic> data,
   ) async {
-    await _medications(uid).doc(docId).set(
-          _toCloudMedication(data),
-          SetOptions(merge: true),
-        );
+    await HealthDataEncryptionService.setEncrypted(
+      _medications(uid).doc(docId),
+      _toCloudMedication(data),
+    );
   }
 
   Future<void> updateMedicationStatus(
@@ -48,11 +50,12 @@ class MedicationLocalDB {
     String? updatedAt,
     String? lastChangeAt,
   }) async {
-    await _medications(uid).doc(docId).set({
+    await HealthDataEncryptionService.setEncrypted(
+        _medications(uid).doc(docId), {
       'isActive': isActive,
       'updatedAt': _asTimestamp(updatedAt) ?? FieldValue.serverTimestamp(),
       if (lastChangeAt != null) 'lastChangeAt': _asTimestamp(lastChangeAt),
-    }, SetOptions(merge: true));
+    });
   }
 
   Future<void> deleteMedication(String uid, String docId) async {
@@ -60,9 +63,10 @@ class MedicationLocalDB {
   }
 
   Future<List<Map<String, dynamic>>> getMedications(String uid) async {
-    final snapshot = await _medications(uid).get();
+    final documents =
+        await HealthDataEncryptionService.getEncrypted(_medications(uid));
     final records =
-        snapshot.docs.map((doc) => _fromCloud(doc.id, doc.data())).toList();
+        documents.map((doc) => _fromCloud(doc.id, doc.data)).toList();
     records.sort((a, b) {
       final activeCompare = (b['isActive'] == true ? 1 : 0)
           .compareTo(a['isActive'] == true ? 1 : 0);
@@ -79,8 +83,10 @@ class MedicationLocalDB {
     String docId,
   ) async {
     final doc = await _medications(uid).doc(docId).get();
-    final data = doc.data();
-    return data == null ? null : _fromCloud(doc.id, data);
+    final raw = doc.data();
+    if (raw == null) return null;
+    final data = await HealthDataEncryptionService.decryptData(raw);
+    return _fromCloud(doc.id, data);
   }
 
   Future<List<Map<String, dynamic>>> getMedicationsForDisplay(String uid) {
@@ -98,21 +104,23 @@ class MedicationLocalDB {
     String docId,
     Map<String, dynamic> data,
   ) async {
-    await _adjustments(uid).doc(docId).set({
+    await HealthDataEncryptionService.setEncrypted(
+        _adjustments(uid).doc(docId), {
       ...data,
       'date': _asTimestamp(data['date']) ?? data['date'],
       'createdAt':
           _asTimestamp(data['createdAt']) ?? FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    });
   }
 
   Future<List<Map<String, dynamic>>> getAdjustmentRecords(String uid) async {
-    final snapshot =
-        await _adjustments(uid).orderBy('date', descending: true).get();
-    return snapshot.docs
+    final documents = await HealthDataEncryptionService.getEncrypted(
+      _adjustments(uid).orderBy('date', descending: true),
+    );
+    return documents
         .map((doc) => {
               'id': doc.id,
-              ..._normalizeMap(doc.data()),
+              ..._normalizeMap(doc.data),
             })
         .toList();
   }
@@ -131,14 +139,15 @@ class MedicationLocalDB {
     required String unit,
   }) async {
     final totalDose = _roundDose(dosePerUnit * pillCount);
-    await _medications(uid).doc(medId).set({
+    await HealthDataEncryptionService.setEncrypted(
+        _medications(uid).doc(medId), {
       'dose': totalDose,
       'dosePerUnit': dosePerUnit,
       'pillCount': pillCount,
       'unit': unit,
       'updatedAt': FieldValue.serverTimestamp(),
       'lastChangeAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    });
   }
 
   Map<String, dynamic> _toCloudMedication(Map<String, dynamic> data) {
