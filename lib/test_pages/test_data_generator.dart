@@ -476,6 +476,9 @@ class TestDataGenerator {
           userId: userId,
           date: date,
           emotions: emotionsMap,
+          emotionSectionCompleted: true,
+          symptomSectionCompleted: false,
+          stateSectionCompleted: false,
           moodScale: moodScale,
         );
 

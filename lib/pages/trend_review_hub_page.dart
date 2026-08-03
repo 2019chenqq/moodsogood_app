@@ -38,7 +38,7 @@ class TrendReviewHubPage extends StatelessWidget {
           const SizedBox(height: 16),
           _TrendEntryCard(
             icon: Icons.bedtime_outlined,
-            title: '睡眠摘要',
+            title: '睡眠洞察',
             subtitle: '查看睡眠品質、時數與常見睡眠狀況',
             color: const Color(0xFF7986CB),
             onTap: () => _push(

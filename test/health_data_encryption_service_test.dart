@@ -19,6 +19,15 @@ void main() {
           {'name': 'anxious', 'value': 4},
         ],
         'sleep': {'note': 'private sleep note'},
+        'stateChanges': {
+          'energy_change': 2,
+          'appetite_change': 5,
+        },
+        'bodyMeasurement': {
+          'weightKg': 75.5,
+          'bodyFatPercent': 40.0,
+          'measurementTiming': 'beforeSleep',
+        },
       },
       key: key,
       collectionName: 'dailyRecords',
@@ -27,10 +36,33 @@ void main() {
     expect(encrypted['date'], date);
     expect(encrypted.containsKey('emotions'), isFalse);
     expect(encrypted.containsKey('sleep'), isFalse);
+    expect(encrypted.containsKey('stateChanges'), isFalse);
+    expect(encrypted.containsKey('bodyMeasurement'), isFalse);
     expect(encrypted['healthDataEncrypted'], isTrue);
     expect(
       encrypted['encryptedHealthData'],
       isNot(contains('private sleep note')),
+    );
+    expect(
+      encrypted['encryptedHealthData'],
+      isNot(contains('energy_change')),
+    );
+    expect(
+      encrypted['encryptedHealthData'],
+      isNot(contains('75.5')),
+    );
+
+    final decrypted = HealthDataEncryptionService.decryptForTesting(
+      encrypted,
+      key: key,
+    );
+    expect(decrypted['stateChanges'], {
+      'energy_change': 2,
+      'appetite_change': 5,
+    });
+    expect(
+      (decrypted['bodyMeasurement'] as Map)['weightKg'],
+      75.5,
     );
   });
 

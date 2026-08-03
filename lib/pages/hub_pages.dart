@@ -60,15 +60,6 @@ class HomeHubPage extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
             _RecordEntryCard(
-              icon: Icons.auto_awesome_rounded,
-              title: '心域 AI',
-              subtitle: '說說現在的狀態，或讓 AI 協助回顧近期紀錄',
-              color: const Color(0xFF7DB7D8),
-              onTap: () => _push(context, const InneraAiHomePage()),
-              actionLabel: '開始對話',
-            ),
-            const SizedBox(height: 12),
-            _RecordEntryCard(
               icon: Icons.edit_note_rounded,
               title: '紀錄系統',
               subtitle: '記錄每日狀態、日記、用藥與服藥情形',
@@ -78,12 +69,12 @@ class HomeHubPage extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             _RecordEntryCard(
-              icon: Icons.medical_information_outlined,
-              title: '回診專區',
-              subtitle: '整理調藥、醫囑、待討論問題與近期趨勢',
-              color: const Color(0xFF26A69A),
-              onTap: () => _push(context, const FollowUpHubPage()),
-              actionLabel: '前往專區',
+              icon: Icons.auto_awesome_rounded,
+              title: '心域 AI',
+              subtitle: '說說現在的狀態，或讓 AI 協助回顧近期紀錄',
+              color: const Color(0xFF7DB7D8),
+              onTap: () => _push(context, const InneraAiHomePage()),
+              actionLabel: '開始對話',
             ),
             const SizedBox(height: 12),
             _RecordEntryCard(
@@ -93,6 +84,15 @@ class HomeHubPage extends StatelessWidget {
               color: const Color(0xFF5C9BD5),
               onTap: () => _push(context, const LifeOverviewPage()),
               actionLabel: '查看軌跡',
+            ),
+            const SizedBox(height: 12),
+            _RecordEntryCard(
+              icon: Icons.medical_information_outlined,
+              title: '回診專區',
+              subtitle: '整理調藥、醫囑、待討論問題與近期趨勢',
+              color: const Color(0xFF26A69A),
+              onTap: () => _push(context, const FollowUpHubPage()),
+              actionLabel: '前往專區',
             ),
             const SizedBox(height: 12),
             _RecordEntryCard(
@@ -492,6 +492,8 @@ class _RecordEntryCard extends StatefulWidget {
 
 class _RecordEntryCardState extends State<_RecordEntryCard>
     with SingleTickerProviderStateMixin {
+  static const double _cardHeight = 120;
+
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
 
@@ -535,106 +537,125 @@ class _RecordEntryCardState extends State<_RecordEntryCard>
       onTapCancel: _onTapCancel,
       child: ScaleTransition(
         scale: _scaleAnimation,
-        child: Card(
-          elevation: 4,
-          shadowColor: widget.color.withValues(alpha: 0.4),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Container(
-            decoration: BoxDecoration(
+        child: SizedBox(
+          height: _cardHeight,
+          child: Card(
+            elevation: 4,
+            shadowColor: widget.color.withValues(alpha: 0.4),
+            shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  widget.color.withValues(alpha: 0.15),
-                  widget.color.withValues(alpha: 0.05),
-                ],
-              ),
-              border: Border.all(
-                color: widget.color.withValues(alpha: 0.2),
-                width: 1.5,
-              ),
             ),
-            child: ListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 20,
-                vertical: 12,
-              ),
-              leading: Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      widget.color.withValues(alpha: 0.3),
-                      widget.color.withValues(alpha: 0.15),
-                    ],
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: widget.color.withValues(alpha: 0.2),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    widget.color.withValues(alpha: 0.15),
+                    widget.color.withValues(alpha: 0.05),
                   ],
                 ),
-                child: Icon(
-                  widget.icon,
-                  color: widget.color,
-                  size: 28,
+                border: Border.all(
+                  color: widget.color.withValues(alpha: 0.2),
+                  width: 1.5,
                 ),
               ),
-              title: Text(
-                widget.title,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
-              ),
-              subtitle: Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 14,
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Text(
-                      widget.subtitle,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(alpha: 0.7),
+                    Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            widget.color.withValues(alpha: 0.3),
+                            widget.color.withValues(alpha: 0.15),
+                          ],
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: widget.color.withValues(alpha: 0.2),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
                           ),
-                    ),
-                    if (widget.actionLabel != null) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        widget.actionLabel!,
-                        style:
-                            Theme.of(context).textTheme.labelMedium?.copyWith(
-                                  color: widget.color,
-                                  fontWeight: FontWeight.w800,
-                                ),
+                        ],
                       ),
-                    ],
+                      child: Icon(
+                        widget.icon,
+                        color: widget.color,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.title,
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color:
+                                      Theme.of(context).colorScheme.onSurface,
+                                ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            widget.subtitle,
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withValues(alpha: 0.7),
+                                      height: 1.35,
+                                    ),
+                          ),
+                          if (widget.actionLabel != null) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              widget.actionLabel!,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelMedium
+                                  ?.copyWith(
+                                    color: widget.color,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: widget.color.withValues(alpha: 0.1),
+                      ),
+                      child: Icon(
+                        Icons.arrow_forward_ios,
+                        color: widget.color,
+                        size: 16,
+                      ),
+                    ),
                   ],
-                ),
-              ),
-              trailing: Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: widget.color.withValues(alpha: 0.1),
-                ),
-                child: Icon(
-                  Icons.arrow_forward_ios,
-                  color: widget.color,
-                  size: 16,
                 ),
               ),
             ),
