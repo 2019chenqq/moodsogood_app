@@ -8,13 +8,17 @@ import '../firebase_options.dart';
 import '../ai/ai_request_id.dart';
 
 class AiJournalReflectionHttpClient {
-  AiJournalReflectionHttpClient({http.Client? httpClient})
-      : _httpClient = httpClient ?? http.Client();
+  AiJournalReflectionHttpClient({
+    http.Client? httpClient,
+    String functionName = _defaultFunctionName,
+  })  : _httpClient = httpClient ?? http.Client(),
+        _functionName = functionName;
 
-  static const String _functionName = 'generateAiJournalReflection';
+  static const String _defaultFunctionName = 'generateAiJournalReflection';
   static const String _region = 'us-central1';
 
   final http.Client _httpClient;
+  final String _functionName;
 
   Uri get _callableUri {
     final projectId = DefaultFirebaseOptions.currentPlatform.projectId;
