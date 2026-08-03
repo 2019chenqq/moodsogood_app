@@ -40,8 +40,17 @@ class AiRecordDraftCard extends StatelessWidget {
     if (draft.symptoms.isNotEmpty) {
       summary.add('症狀：${draft.symptoms.join('、')}');
     }
+    if (draft.stateChanges.isNotEmpty) {
+      summary.add('狀態變化：已補充 ${draft.stateChanges.length} 項');
+    }
+    if (draft.bodyMeasurement?.hasData == true) {
+      summary.add('身體數據：已補充');
+    }
     if (draft.sleep.hasData) {
       summary.add('睡眠：已補充');
+    }
+    if (draft.events.isNotEmpty) {
+      summary.add('生活事件：${draft.events.take(2).join('、')}');
     }
     if (draft.diaryText.isNotEmpty || draft.rawUserEntries.isNotEmpty) {
       summary.add('日記：已整理 ${draft.diaryText.length} 字');

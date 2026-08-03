@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../daily/emotion_dimensions.dart';
 import '../diary/diary_repository.dart';
 import '../utils/health_data_encryption_service.dart';
+import '../models/daily_record.dart';
 import 'innera_ai_record_draft.dart';
 
 class InneraAiRecordDraftService {
@@ -83,7 +84,8 @@ class InneraAiRecordDraftService {
           (current['moodScale'] as num?)?.toInt() == 10 &&
               currentEmotions.isNotEmpty;
       if (!hasLegacyTenPointEmotions) {
-        for (final emotion in draft.emotions) {
+        for (final emotion
+            in draft.emotions.where((item) => item.isEligibleUserEmotion)) {
           final score = emotion.score;
           final dimension =
               kEmotionDimensionsById[emotion.normalizedDimensionId];
@@ -98,6 +100,8 @@ class InneraAiRecordDraftService {
       final legacySymptoms = _strings(current['bodySymptoms']);
       final symptoms =
           {...currentSymptoms, ...legacySymptoms, ...draft.symptoms}.toList();
+      final currentStateChanges = _stateChanges(current['stateChanges']);
+      currentStateChanges.addAll(draft.stateChanges);
       final sleep = Map<String, dynamic>.from(
         current['sleep'] is Map
             ? current['sleep'] as Map
@@ -121,6 +125,12 @@ class InneraAiRecordDraftService {
         },
         'symptoms': symptoms,
         'bodySymptoms': symptoms,
+        'stateChanges': currentStateChanges,
+        'symptomSectionCompleted': true,
+        'emotionSectionCompleted': true,
+        'stateSectionCompleted': true,
+        if (draft.bodyMeasurement != null)
+          'bodyMeasurement': draft.bodyMeasurement!.toJson(),
         'sleep': sleep,
         'updatedAt': FieldValue.serverTimestamp(),
       };
@@ -166,6 +176,8 @@ class InneraAiRecordDraftService {
         source: AiDraftSource.existingRecord,
         confidence: dimension == null ? 0 : 1,
         needsConfirmation: dimension == null,
+        subjectType: AiEmotionSubjectType.user,
+        subjectText: '我',
       );
     }).toList();
     final storedSleep = data['sleep'] is Map
@@ -180,6 +192,12 @@ class InneraAiRecordDraftService {
         ..._strings(data['symptoms']),
         ..._strings(data['bodySymptoms'])
       }.toList(),
+      stateChanges: _stateChanges(data['stateChanges']),
+      bodyMeasurement: data['bodyMeasurement'] is Map
+          ? BodyMeasurement.fromJson(
+              (data['bodyMeasurement'] as Map).cast<String, dynamic>(),
+            )
+          : null,
       sleep: AiSleepDraft.fromMap(storedSleep),
       updatedAt: DateTime.now(),
       hasExistingRecord: true,
@@ -213,6 +231,18 @@ class InneraAiRecordDraftService {
           .where((item) => item.isNotEmpty)
           .toList()
       : const [];
+  static Map<String, int> _stateChanges(dynamic value) {
+    if (value is! Map) return <String, int>{};
+    final result = <String, int>{};
+    for (final entry in value.entries) {
+      final score = (entry.value as num?)?.toInt();
+      if (score != null && score >= 1 && score <= 5) {
+        result[entry.key.toString()] = score;
+      }
+    }
+    return result;
+  }
+
   static double? _score(dynamic value) {
     final score = (value as num?)?.toDouble();
     return score != null && score >= 1 && score <= 5 ? score : null;

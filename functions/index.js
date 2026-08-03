@@ -27,7 +27,7 @@ const lastFmApiKey = defineSecret("LASTFM_API_KEY");
 const spotifyClientId = defineSecret("SPOTIFY_CLIENT_ID");
 const spotifyClientSecret = defineSecret("SPOTIFY_CLIENT_SECRET");
 const DEFAULT_AI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
-const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v6-temporal-scope";
+const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v7-emotion-subject";
 const DIARY_EXTRACTION_PROMPT_VERSION = "diary_extraction_v1";
 
 async function requireAiCapacity(uid, feature) {
@@ -396,6 +396,8 @@ const inneraChatSchema = {
         "overallMood",
         "emotionMentions",
         "symptoms",
+        "stateChanges",
+        "bodyMeasurement",
         "sleep",
         "events",
         "diaryText",
@@ -423,6 +425,9 @@ const inneraChatSchema = {
               "confidence",
               "timeContext",
               "evidence",
+              "subjectType",
+              "subjectText",
+              "isQuotedSpeech",
             ],
             properties: {
               rawText: { type: "string" },
@@ -439,6 +444,12 @@ const inneraChatSchema = {
               confidence: { type: "number", minimum: 0, maximum: 1 },
               timeContext: nullableStringSchema,
               evidence: { type: "string" },
+              subjectType: {
+                type: "string",
+                enum: ["user", "other", "shared", "unknown"],
+              },
+              subjectText: nullableStringSchema,
+              isQuotedSpeech: { type: "boolean" },
             },
           },
         },
@@ -455,6 +466,32 @@ const inneraChatSchema = {
                 type: "string",
                 enum: ["explicit", "summarized", "inferred"],
               },
+            },
+          },
+        },
+        stateChanges: {
+          type: "object",
+          additionalProperties: false,
+          required: ["energy_change", "appetite_change", "activity_change"],
+          properties: {
+            energy_change: nullableScoreSchema,
+            appetite_change: nullableScoreSchema,
+            activity_change: nullableScoreSchema,
+          },
+        },
+        bodyMeasurement: {
+          type: "object",
+          additionalProperties: false,
+          required: ["weightKg", "bodyFatPercent", "waistCm", "measurementTiming"],
+          properties: {
+            weightKg: { anyOf: [{ type: "number" }, { type: "null" }] },
+            bodyFatPercent: { anyOf: [{ type: "number" }, { type: "null" }] },
+            waistCm: { anyOf: [{ type: "number" }, { type: "null" }] },
+            measurementTiming: {
+              anyOf: [
+                { type: "string", enum: ["afterWaking", "beforeBreakfast", "afterMeal", "beforeSleep", "other"] },
+                { type: "null" },
+              ],
             },
           },
         },
@@ -545,20 +582,37 @@ const inneraChatSchema = {
 };
 
 const DAILY_RECORD_CLASSIFICATION_PROMPT = `
-你正在協助使用者完成今天的結構化紀錄。你必須把對話分別分類到 emotionMentions、symptoms、sleep，不得只產生文字摘要。
+你正在協助使用者完成今天的結構化紀錄。你必須把對話分別分類到 emotionMentions、stateChanges、symptoms、bodyMeasurement、sleep，不得只產生文字摘要。
+
+情緒主體判定是最高優先規則，必須先判定「誰有這個情緒」，再決定是否抽取：
+- 每筆 emotionMention 必須輸出 subjectType、subjectText、isQuotedSpeech。
+- subjectType=user：使用者明確說「我／自己」的感受，或省略主詞但語境清楚是在說自己的當下感受。subjectText 填「我」或 null。
+- subjectType=other：爸爸、媽媽、弟弟、朋友、同事、醫師、對方、他／她等其他人的情緒；subjectText 保留原始主詞。
+- subjectType=shared：句子明確說「我們都／我也和他一樣」且有使用者自己的情緒證據。
+- subjectType=unknown：無法可靠判定主體。不可為了填欄位而猜成 user。
+- 他人情緒、他人說的話、引述句、歌詞、電影／文章／貼文中的情緒，不得寫入使用者 emotionMentions；保留在 events 或 diaryText，且不得改寫主體。
+- 混合句必須按逗號與「但／可是／不過／然而」拆開。例如「爸爸很快樂，但我超級不爽」只記錄「我超級不爽」為 user，爸爸快樂留在 events。
+- 「嗆他、摔門、不理他」是行為，不等於明確情緒。若依上下文推測情緒，source=inferred、needsConfirmation=true、confidence 不得高於 0.75；證據不足就不要建立 emotionMention。
+
+主體範例：
+- 「弟弟氣到哭，我很心疼」：弟弟生氣是 other，放 events；只把「我很心疼」列為 user emotionMention。
+- 「爸爸說他很快樂，我嗆他整趟只有你在快樂」：快樂是爸爸／引述內容，不得成為使用者情緒；「嗆他」本身也不得直接當成生氣。
+- 「媽媽很擔心我，害我也開始焦慮」：媽媽擔心放 events；只記錄使用者焦慮。
+- 「朋友說我看起來很焦慮，我自己也覺得是」：第二句是使用者確認，可記錄使用者焦慮；第一句本身不是使用者自述。
 
 分類優先順序：
 1. 睡眠時間、入睡、夜醒、早醒、睡眠品質優先放入 sleep。
 2. 明確情緒詞先保留為 emotionMentions.rawText，再嘗試映射到系統提供的正式情緒維度。
-3. 身體感受、食慾、能量與行動狀態放入 symptoms。
-4. 同一句可以拆到多個欄位。
+3. 與平常相比的能量、食慾、活動量方向放入 stateChanges；只允許 energy_change、appetite_change、activity_change。3 代表和平常相同，沒有比較證據不得填 3；只有方向時保守使用 2 或 4。
+4. 具體身體或行為表現放入 symptoms；明確測量數值與單位放入 bodyMeasurement，禁止從模糊敘述猜數字。
+5. 同一句可以拆到多個欄位。
 5. 情緒沒有明確 1～5 分時仍必須保留，value=null、mentioned=true、needsFollowUp=true。
 6. 使用者明確說出的情緒 source=explicit。每筆保留 rawText、confidence、needsConfirmation、timeContext 和 evidence。
 7. 不得把早上興奮、下午無聊簡化成只有 overallMood。
 8. 不得把入睡困難放入 symptoms。
 9. normalizedDimensionId 與 normalizedDimensionName 只能使用請求中 emotionDimensions 的成對值。
 10. 無法可靠映射時兩者都輸出 null、needsConfirmation=true；不得建立新維度，也不得使用「無聊程度、空虛程度、興奮程度、焦慮程度」等舊名稱。
-11. 疲倦、疲憊、動力不足、沒有動力、食慾增加、食慾下降、想吐、噁心都屬於 symptoms，絕對不得放入 emotionMentions 或要求情緒分數。
+11. 疲倦、白天嗜睡、身體沉重、食慾降低、一直想吃東西、噁心反胃等具體表現屬於 symptoms；能量、食慾、活動量絕對不得放入 emotionMentions 或要求情緒分數。
 12. 日期詞只作用於它所在的子句，不得跨越逗號、句號或轉折詞污染後續敘述。在 dailyRecord 中，後續子句沒有再次標示昨天／前天時，一律視為今天。
 
 睡眠 flags：入睡困難=initInsomnia；半夜反覆醒／維持睡眠困難=interrupted；
@@ -577,8 +631,8 @@ const DAILY_RECORD_CLASSIFICATION_PROMPT = `
 正確：symptoms=[{"name":"疲倦","source":"explicit"}]；
 sleep.flags=["initInsomnia"]。不得把入睡困難放進 symptoms。
 
-輸入：最近完全沒有動力，食慾增加，吃完又會想吐。
-正確：symptoms 包含「動力不足、食慾增加、想吐」；emotionMentions 不得包含這三項。
+輸入：今天完全沒精神，一直想吃東西，體重 75.5 公斤，吃完又會反胃。
+正確：stateChanges.energy_change=1、appetite_change=4；symptoms 包含「一直想吃東西、噁心反胃」；bodyMeasurement.weightKg=75.5；emotionMentions 不得包含能量或食慾。
 
 範例二：
 輸入：我下午很無聊，也覺得很空虛，但早上看到比賽消息時很興奮。整體心情大概3分。
@@ -1370,9 +1424,9 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
   const symptomPatterns = [
     ["疲倦", /疲倦|疲憊|很累|好累|很倦|倦怠/],
     ["動力不足", /動力不足|沒有動力|沒動力|缺乏動力|提不起勁/],
-    ["食慾增加", /食慾增加|食慾變大|食量增加|吃得比平常多|一直想吃/],
-    ["食慾下降", /食慾下降|食慾不振|沒有食慾|沒胃口|吃不下/],
-    ["想吐", /想吐|噁心|反胃/],
+    ["一直想吃東西", /食慾增加|食慾變大|食量增加|吃得比平常多|一直想吃/],
+    ["食慾降低", /食慾下降|食慾降低|食慾不振|沒有食慾|沒胃口|吃不下/],
+    ["噁心反胃", /想吐|噁心|反胃/],
     ["頭痛", /頭痛|頭疼/],
     ["心悸", /心悸|心跳很快/],
     ["胃痛", /胃痛|胃不舒服/],
@@ -1397,7 +1451,109 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
     if (byId && (!requestedName || requestedName === byId.displayName)) return byId;
     return dimensionByTerm.get(requestedName) || dimensionByTerm.get(rawText) || null;
   };
+  const stateIds = ["energy_change", "appetite_change", "activity_change"];
+  const stateChanges = {};
+  for (const id of stateIds) {
+    const next = validScore(raw.stateChanges?.[id]);
+    const old = validScore(existing.stateChanges?.[id]);
+    if (next != null || old != null) stateChanges[id] = next ?? old;
+  }
+  const validMeasurement = (value, min, max) => {
+    if (value == null || value === "") return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : null;
+  };
+  const nextBody = raw.bodyMeasurement && typeof raw.bodyMeasurement === "object"
+    ? raw.bodyMeasurement
+    : {};
+  const oldBody = existing.bodyMeasurement && typeof existing.bodyMeasurement === "object"
+    ? existing.bodyMeasurement
+    : {};
+  const timingValues = new Set(["afterWaking", "beforeBreakfast", "afterMeal", "beforeSleep", "other"]);
+  const requestedTiming = nextBody.measurementTiming ?? oldBody.measurementTiming;
+  const bodyMeasurement = {
+    weightKg: validMeasurement(nextBody.weightKg, 20, 300) ?? validMeasurement(oldBody.weightKg, 20, 300),
+    bodyFatPercent: validMeasurement(nextBody.bodyFatPercent, 1, 70) ?? validMeasurement(oldBody.bodyFatPercent, 1, 70),
+    waistCm: validMeasurement(nextBody.waistCm, 30, 250) ?? validMeasurement(oldBody.waistCm, 30, 250),
+    measurementTiming: timingValues.has(requestedTiming) ? requestedTiming : null,
+  };
+  const otherSubjectPattern = /(爸爸|爸媽|媽媽|母親|父親|弟弟|妹妹|哥哥|姊姊|姐姐|家人|朋友|同事|同學|老師|醫師|醫生|護理師|伴侶|男友|女友|先生|太太|孩子|兒子|女兒|對方|他們|她們|他|她)/;
+  const explicitUserPattern = /(我(?:自己|本人|也|還|真的|其實|現在|今天|當下|開始|感到|感覺|覺得|變得|很|好|超|有點|有些|有一點|心裡|心情)?|讓我|害我|使我|令我|我的)/;
+  const sharedUserPattern = /(我們(?:都|一起)?|我也(?:一樣|開始|覺得|感到)?|我和[^，。！？；\n]{0,12}(?:都|一樣))/;
+  const speechOrMediaPattern = /(說|表示|告訴|問|寫著|提到|看起來|覺得我|歌詞|歌曲|電影|影集|文章|貼文|新聞|小說)/;
+  const quotePattern = /[「『\"“].+[」』\"”]/;
+  const subjectTextFromEvidence = (text) =>
+    (safeText(text, 500).match(otherSubjectPattern) || [null])[0];
+  const emotionInsideQuote = (text, rawText) => {
+    const evidence = safeText(text, 500);
+    const term = safeText(rawText, 100);
+    if (!term) return false;
+    const quotedParts = evidence.match(/[「『\"“][^」』\"”]+[」』\"”]/g) || [];
+    return quotedParts.some((part) => part.includes(term));
+  };
+  const matchingEvidence = (item, rawText) => {
+    const evidence = safeText(item?.evidence, 300);
+    if (evidence) return evidence;
+    return latestClauses.find((clause) => clause.includes(rawText)) || "";
+  };
+  const classifyEmotionSubject = (item, rawText, isExisting = false) => {
+    const evidence = matchingEvidence(item, rawText);
+    const requested = ["user", "other", "shared", "unknown"].includes(item?.subjectType)
+      ? item.subjectType
+      : null;
+    const explicitUser = explicitUserPattern.test(evidence);
+    const sharedUser = sharedUserPattern.test(evidence);
+    const otherSubject = otherSubjectPattern.test(evidence);
+    const emotionIndex = evidence.indexOf(rawText);
+    const evidenceBeforeEmotion = emotionIndex >= 0
+      ? evidence.slice(0, emotionIndex)
+      : evidence;
+    const lastUserBeforeEmotion = Math.max(
+      evidenceBeforeEmotion.lastIndexOf("我"),
+      evidenceBeforeEmotion.lastIndexOf("自己"),
+    );
+    let lastOtherBeforeEmotion = -1;
+    for (const match of evidenceBeforeEmotion.matchAll(new RegExp(otherSubjectPattern.source, "g"))) {
+      lastOtherBeforeEmotion = Math.max(lastOtherBeforeEmotion, match.index ?? -1);
+    }
+    const otherOwnsEmotion =
+      lastOtherBeforeEmotion >= 0 && lastOtherBeforeEmotion > lastUserBeforeEmotion;
+    const quoted = item?.isQuotedSpeech === true ||
+      emotionInsideQuote(evidence, rawText) ||
+      (otherSubject && speechOrMediaPattern.test(evidence));
+    let subjectType = requested;
+    if (isExisting && item?.source === "existingRecord") {
+      subjectType = "user";
+    } else if (quoted && !sharedUser) {
+      subjectType = "other";
+    } else if ((otherOwnsEmotion || (otherSubject && !explicitUser)) && !sharedUser) {
+      subjectType = "other";
+    } else if (sharedUser) {
+      subjectType = "shared";
+    } else if (!subjectType) {
+      // Old drafts are migrated conservatively: never assume an unspecified
+      // subject is the user without explicit first-person evidence.
+      subjectType = explicitUser ? "user" : "unknown";
+    }
+    const source = safeText(item?.source, 40);
+    const inferred = source === "inferred";
+    return {
+      subjectType,
+      subjectText: subjectType === "other"
+        ? safeText(item?.subjectText, 80) || subjectTextFromEvidence(evidence)
+        : (safeText(item?.subjectText, 80) || (explicitUser ? "我" : null)),
+      isQuotedSpeech: quoted,
+      evidence,
+      source,
+      inferred,
+      explicitUser,
+      keep: (subjectType === "user" ||
+        (subjectType === "shared" && explicitUser && !quoted)) &&
+        !(quoted && subjectType !== "shared"),
+    };
+  };
   const latestClauses = safeText(latestMessage, 4000)
+    .replace(/但|可是|不過|然而/g, "，")
     .split(/[，。！？；\n]+/)
     .map((clause) => clause.trim())
     .filter(Boolean);
@@ -1476,6 +1632,8 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
       .filter(Boolean))].slice(0, max);
   const emotionMap = new Map();
   const migratedEmotionSymptoms = new Set();
+  const excludedEmotionEvents = new Set();
+  const excludedEmotionTerms = new Set();
   const existingMentions = Array.isArray(existing.emotionMentions)
     ? existing.emotionMentions
     : (Array.isArray(existing.emotions) ? existing.emotions : []);
@@ -1491,7 +1649,19 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
     const dimension = resolveDimension(item, rawText);
     const score = validScore(item?.value ?? item?.score);
     if (!rawText) continue;
+    const subject = classifyEmotionSubject(item, rawText, true);
+    if (!subject.keep) {
+      excludedEmotionTerms.add(rawText);
+      if (dimension?.displayName) excludedEmotionTerms.add(dimension.displayName);
+      if (subject.subjectType === "other" && subject.evidence) {
+        excludedEmotionEvents.add(subject.evidence);
+      }
+      continue;
+    }
     const key = dimension?.id || `raw:${rawText}`;
+    const inferredConfidence = subject.inferred
+      ? Math.min(0.75, Number(item?.confidence) || 0)
+      : Math.max(0, Math.min(1, Number(item?.confidence) || 0));
     emotionMap.set(key, {
       rawText,
       normalizedDimensionId: dimension?.id || null,
@@ -1499,11 +1669,14 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
       value: score,
       mentioned: item?.mentioned !== false,
       needsFollowUp: score == null,
-      needsConfirmation: !dimension || item?.needsConfirmation === true,
-      confidence: Math.max(0, Math.min(1, Number(item?.confidence) || 0)),
+      needsConfirmation: !dimension || subject.inferred || item?.needsConfirmation === true,
+      confidence: inferredConfidence,
       source: item?.source || "existingRecord",
       timeContext: safeText(item?.timeContext, 40) || null,
-      evidence: safeText(item?.evidence, 300),
+      evidence: subject.evidence,
+      subjectType: subject.subjectType,
+      subjectText: subject.subjectText,
+      isQuotedSpeech: subject.isQuotedSpeech,
     });
   }
   const rawMentions = Array.isArray(raw.emotionMentions)
@@ -1521,6 +1694,15 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
     }
     const dimension = resolveDimension(item, rawText);
     const score = validScore(item?.value ?? item?.score);
+    const subject = classifyEmotionSubject(item, rawText);
+    if (!subject.keep) {
+      excludedEmotionTerms.add(rawText);
+      if (dimension?.displayName) excludedEmotionTerms.add(dimension.displayName);
+      if (subject.subjectType === "other" && subject.evidence) {
+        excludedEmotionEvents.add(subject.evidence);
+      }
+      continue;
+    }
     const key = dimension?.id || `raw:${rawText}`;
     const previousEmotion = emotionMap.get(key);
     const resolvedScore = score ?? previousEmotion?.value ?? null;
@@ -1532,8 +1714,10 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
       value: resolvedScore,
       mentioned: item?.mentioned !== false,
       needsFollowUp: resolvedScore == null,
-      needsConfirmation: !dimension || item?.needsConfirmation === true,
-      confidence: Math.max(0, Math.min(1, Number(item?.confidence) || 0)),
+      needsConfirmation: !dimension || subject.inferred || item?.needsConfirmation === true,
+      confidence: subject.inferred
+        ? Math.min(0.75, Number(item?.confidence) || 0)
+        : Math.max(0, Math.min(1, Number(item?.confidence) || 0)),
       source:
         item?.source === "explicit" || item?.source === "explicitUserInput"
           ? "explicitUserInput"
@@ -1541,7 +1725,10 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
       timeContext: temporalScope.matched
         ? temporalScope.timeContext
         : previousEmotion?.timeContext || null,
-      evidence: safeText(item?.evidence, 300) || previousEmotion?.evidence || "",
+      evidence: subject.evidence || previousEmotion?.evidence || "",
+      subjectType: subject.subjectType,
+      subjectText: subject.subjectText,
+      isQuotedSpeech: subject.isQuotedSpeech,
     });
   }
   const oldSleep = existing.sleep && typeof existing.sleep === "object" ? existing.sleep : {};
@@ -1583,17 +1770,34 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
   const pendingEmotionFields = [...emotionMap.values()]
     .filter((item) => item.value == null || item.normalizedDimensionId == null)
     .map((item) => `${item.rawText}的正式情緒與強度`);
-  return {
+  const result = {
     date: safeText(raw.date || existing.date, 10),
     moodScale: 5,
     overallMood: overallMood,
     emotionMentions: [...emotionMap.values()].slice(0, 20),
     symptoms: symptoms.slice(0, 30),
+    stateChanges,
+    bodyMeasurement,
     sleep,
-    events: mergeNames(existing.events, raw.events, 12),
+    events: mergeNames(
+      mergeNames(existing.events, raw.events, 12),
+      [...excludedEmotionEvents],
+      12,
+    ),
     diaryText: safeText(raw.diaryText, 8000) || safeText(existing.diaryText, 8000),
-    missingFields: mergeNames([], [...(Array.isArray(raw.missingFields) ? raw.missingFields : []), ...pendingEmotionFields], 20),
+    missingFields: mergeNames([], [
+      ...(Array.isArray(raw.missingFields)
+        ? raw.missingFields.filter((field) =>
+          ![...excludedEmotionTerms].some((term) => safeText(field, 200).includes(term)))
+        : []),
+      ...pendingEmotionFields,
+    ], 20),
   };
+  Object.defineProperty(result, "excludedEmotionTerms", {
+    value: [...excludedEmotionTerms],
+    enumerable: false,
+  });
+  return result;
 }
 
 exports.generateInneraDiaryDraft = onCall(
@@ -2428,21 +2632,31 @@ exports.generateInneraAiChat = onCall(
         throw new Error("Missing AI reply");
       }
 
+      const normalizedRecordDraft = supportsDailyRecordDraft
+        ? normalizeInneraRecordDraft(
+            image ? existingRecordDraft : parsed.recordDraft,
+            existingRecordDraft,
+            emotionDimensions,
+            message,
+          )
+        : null;
+      const rawFollowUpQuestion = String(parsed.followUpQuestion || "")
+        .trim()
+        .slice(0, 600);
+      const asksExcludedEmotionScore =
+        normalizedRecordDraft &&
+        /(幾分|分數|強度|程度)/.test(rawFollowUpQuestion) &&
+        normalizedRecordDraft.excludedEmotionTerms.some((term) =>
+          rawFollowUpQuestion.includes(term),
+        );
       const result = {
         reply,
-        followUpQuestion: String(parsed.followUpQuestion || "").trim().slice(0, 600),
+        followUpQuestion: asksExcludedEmotionScore ? "" : rawFollowUpQuestion,
         sources: contextSources,
         suggestedActions: Array.isArray(parsed.suggestedActions)
           ? parsed.suggestedActions.map((item) => String(item).trim()).filter(Boolean).slice(0, 4)
           : [],
-        recordDraft: supportsDailyRecordDraft
-          ? normalizeInneraRecordDraft(
-              image ? existingRecordDraft : parsed.recordDraft,
-              existingRecordDraft,
-              emotionDimensions,
-              message,
-            )
-          : null,
+        recordDraft: normalizedRecordDraft,
         safetyLevel: "normal",
         requiresFixedSafetyUi: false,
         model: DEFAULT_AI_MODEL,

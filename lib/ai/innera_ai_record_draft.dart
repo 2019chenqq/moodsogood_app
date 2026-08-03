@@ -1,20 +1,105 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../daily/emotion_dimensions.dart';
+import '../daily/daily_state_dimensions.dart';
+import '../daily/symptom_definitions.dart';
+import '../models/daily_record.dart';
 
 enum AiDraftSource {
   explicitUserInput,
   aiExtracted,
+  inferred,
   existingRecord,
   defaultPendingConfirmation,
+}
+
+enum AiEmotionSubjectType { user, other, shared, unknown }
+
+final RegExp _otherEmotionSubjectPattern = RegExp(
+  r'爸爸|爸媽|媽媽|母親|父親|弟弟|妹妹|哥哥|姊姊|姐姐|家人|朋友|同事|同學|老師|醫師|醫生|護理師|伴侶|男友|女友|先生|太太|孩子|兒子|女兒|對方|他們|她們|他|她',
+);
+final RegExp _explicitUserEmotionPattern = RegExp(
+  r'我(?:自己|本人|也|還|真的|其實|現在|今天|當下|開始|感到|感覺|覺得|變得|很|好|超|有點|有些|有一點|心裡|心情)?|讓我|害我|使我|令我|我的',
+);
+final RegExp _sharedEmotionPattern = RegExp(r'我們(?:都|一起)?|我也(?:一樣|開始|覺得|感到)?');
+final RegExp _speechOrMediaPattern = RegExp(
+  r'說|表示|告訴|問|寫著|提到|看起來|覺得我|歌詞|歌曲|電影|影集|文章|貼文|新聞|小說',
+);
+final RegExp _quotedTextPattern = RegExp(r'[「『\"“].+[」』\"”]');
+
+bool _emotionInsideQuote(String text, String emotion) {
+  if (emotion.trim().isEmpty) return false;
+  return RegExp(
+          r'[「『\"“][^」』\"”]*' + RegExp.escape(emotion) + r'[^」』\"”]*[」』\"”]')
+      .hasMatch(text);
+}
+
+({AiEmotionSubjectType type, String? text, bool quoted}) _emotionSubjectFromMap(
+    Map<String, dynamic> map, String rawText) {
+  final evidence = (map['evidence'] ?? '').toString().trim();
+  final source = map['source']?.toString();
+  final explicitUser = _explicitUserEmotionPattern.hasMatch(evidence);
+  final shared = _sharedEmotionPattern.hasMatch(evidence);
+  final otherMatch = _otherEmotionSubjectPattern.firstMatch(evidence);
+  final emotionIndex = evidence.indexOf(rawText);
+  final evidenceBeforeEmotion =
+      emotionIndex >= 0 ? evidence.substring(0, emotionIndex) : evidence;
+  final userBeforeEmotion = evidenceBeforeEmotion.lastIndexOf('我');
+  final otherMatches = _otherEmotionSubjectPattern.allMatches(
+    evidenceBeforeEmotion,
+  );
+  final otherBeforeEmotion = otherMatches.isEmpty
+      ? -1
+      : otherMatches.map((match) => match.start).reduce(
+            (left, right) => left > right ? left : right,
+          );
+  final otherOwnsEmotion =
+      otherBeforeEmotion >= 0 && otherBeforeEmotion > userBeforeEmotion;
+  final quoted = map['isQuotedSpeech'] == true ||
+      _emotionInsideQuote(evidence, rawText) ||
+      (otherMatch != null && _speechOrMediaPattern.hasMatch(evidence));
+  final requested = AiEmotionSubjectType.values.where(
+    (value) => value.name == map['subjectType']?.toString(),
+  );
+  var type = requested.isEmpty ? null : requested.first;
+  if (source == AiDraftSource.existingRecord.name) {
+    type = AiEmotionSubjectType.user;
+  } else if (quoted && !shared) {
+    type = AiEmotionSubjectType.other;
+  } else if ((otherOwnsEmotion || (otherMatch != null && !explicitUser)) &&
+      !shared) {
+    type = AiEmotionSubjectType.other;
+  } else if (shared) {
+    type = AiEmotionSubjectType.shared;
+  } else {
+    // Conservative migration for old drafts: an absent subject is never
+    // silently treated as the user unless first-person evidence exists.
+    type ??=
+        explicitUser ? AiEmotionSubjectType.user : AiEmotionSubjectType.unknown;
+  }
+  final requestedText = map['subjectText']?.toString().trim();
+  return (
+    type: type,
+    text: requestedText?.isNotEmpty == true
+        ? requestedText
+        : type == AiEmotionSubjectType.other
+            ? otherMatch?.group(0)
+            : explicitUser
+                ? '我'
+                : null,
+    quoted: quoted,
+  );
 }
 
 const _symptomPatterns = <String, String>{
   '疲倦': r'疲倦|疲憊|很累|好累|很倦|倦怠',
   '動力不足': r'動力不足|沒有動力|沒動力|缺乏動力|提不起勁',
-  '食慾增加': r'食慾增加|食慾變大|食量增加|吃得比平常多|一直想吃',
-  '食慾下降': r'食慾下降|食慾不振|沒有食慾|沒胃口|吃不下',
-  '想吐': r'想吐|噁心|反胃',
+  '一直想吃東西': r'食慾增加|食慾變大|食量增加|吃得比平常多|一直想吃東西|看到什麼都想吃',
+  '容易飢餓': r'容易飢餓|很快又餓',
+  '吃完仍不滿足': r'吃完仍不滿足|吃完還想吃',
+  '食慾降低': r'食慾下降|食慾降低|食慾不振|沒有食慾|沒胃口|吃不下',
+  '噁心反胃': r'想吐|噁心|反胃',
+  '白天嗜睡': r'白天嗜睡|睏倦|嗜睡',
   '頭痛': r'頭痛|頭疼',
   '心悸': r'心悸|心跳很快',
   '胃痛': r'胃痛|胃不舒服',
@@ -39,6 +124,9 @@ class AiEmotionDraft {
     this.confidence = 0,
     this.timeContext,
     this.evidence,
+    this.subjectType = AiEmotionSubjectType.unknown,
+    this.subjectText,
+    this.isQuotedSpeech = false,
   }) : rawText = rawText ?? name ?? '';
 
   final String rawText;
@@ -52,6 +140,9 @@ class AiEmotionDraft {
   final double confidence;
   final String? timeContext;
   final String? evidence;
+  final AiEmotionSubjectType subjectType;
+  final String? subjectText;
+  final bool isQuotedSpeech;
 
   String get name => normalizedDimensionName ?? rawText;
   String get dedupeKey => normalizedDimensionId ?? 'raw:${rawText.trim()}';
@@ -59,6 +150,11 @@ class AiEmotionDraft {
       normalizedDimensionId != null &&
       kEmotionDimensionsById[normalizedDimensionId]?.displayName ==
           normalizedDimensionName;
+  bool get isEligibleUserEmotion =>
+      subjectType == AiEmotionSubjectType.user ||
+      (subjectType == AiEmotionSubjectType.shared &&
+          !isQuotedSpeech &&
+          _explicitUserEmotionPattern.hasMatch(evidence ?? ''));
 
   Map<String, dynamic> toMap() => {
         'rawText': rawText,
@@ -72,6 +168,9 @@ class AiEmotionDraft {
         'confidence': confidence.clamp(0, 1),
         'timeContext': timeContext,
         'evidence': evidence,
+        'subjectType': subjectType.name,
+        'subjectText': subjectText,
+        'isQuotedSpeech': isQuotedSpeech,
       };
 
   static AiEmotionDraft? tryFromMap(Map<String, dynamic> map) {
@@ -95,6 +194,8 @@ class AiEmotionDraft {
     if (rawText.isEmpty && dimension == null) return null;
     final sourceName = map['source']?.toString();
     final rawConfidence = (map['confidence'] as num?)?.toDouble();
+    final subject = _emotionSubjectFromMap(map, rawText);
+    final isInferred = sourceName == 'inferred';
     return AiEmotionDraft(
       rawText: rawText.isEmpty ? dimension!.displayName : rawText,
       normalizedDimensionId: dimension?.id,
@@ -104,17 +205,25 @@ class AiEmotionDraft {
         (value) => value.name == sourceName,
         orElse: () => sourceName == 'explicit'
             ? AiDraftSource.explicitUserInput
-            : AiDraftSource.aiExtracted,
+            : isInferred
+                ? AiDraftSource.inferred
+                : AiDraftSource.aiExtracted,
       ),
       mentioned: map['mentioned'] != false,
       needsFollowUp: map['needsFollowUp'] == true || score == null,
-      needsConfirmation: map['needsConfirmation'] == true || dimension == null,
-      confidence: rawConfidence?.clamp(0, 1) ??
+      needsConfirmation:
+          isInferred || map['needsConfirmation'] == true || dimension == null,
+      confidence: (isInferred
+              ? (rawConfidence ?? 0).clamp(0, .75)
+              : rawConfidence?.clamp(0, 1)) ??
           (dimension?.displayName == rawText
               ? 1
               : (dimension == null ? 0 : .9)),
       timeContext: _text(map['timeContext']),
       evidence: _text(map['evidence']),
+      subjectType: subject.type,
+      subjectText: subject.text,
+      isQuotedSpeech: subject.quoted,
     );
   }
 
@@ -122,6 +231,9 @@ class AiEmotionDraft {
     int? score,
     bool clearScore = false,
     EmotionDimensionDefinition? dimension,
+    AiEmotionSubjectType? subjectType,
+    String? subjectText,
+    bool? isQuotedSpeech,
   }) =>
       AiEmotionDraft(
         rawText: rawText,
@@ -136,6 +248,9 @@ class AiEmotionDraft {
         confidence: dimension != null ? 1 : confidence,
         timeContext: timeContext,
         evidence: evidence,
+        subjectType: subjectType ?? this.subjectType,
+        subjectText: subjectText ?? this.subjectText,
+        isQuotedSpeech: isQuotedSpeech ?? this.isQuotedSpeech,
       );
 
   static String? _text(dynamic value) {
@@ -244,6 +359,8 @@ class InneraAiRecordDraft {
     this.overallMood,
     this.emotions = const [],
     this.symptoms = const [],
+    this.stateChanges = const {},
+    this.bodyMeasurement,
     this.sleep = const AiSleepDraft(),
     this.events = const [],
     this.rawUserEntries = const [],
@@ -259,6 +376,8 @@ class InneraAiRecordDraft {
   final double? overallMood;
   final List<AiEmotionDraft> emotions;
   final List<String> symptoms;
+  final Map<String, int> stateChanges;
+  final BodyMeasurement? bodyMeasurement;
   final AiSleepDraft sleep;
   final List<String> events;
   final List<String> rawUserEntries;
@@ -278,6 +397,8 @@ class InneraAiRecordDraft {
 
   factory InneraAiRecordDraft.fromMap(Map<String, dynamic> map) {
     final emotionByName = <String, AiEmotionDraft>{};
+    final eventSet = <String>{..._strings(map['events'])};
+    final excludedEmotionTerms = <String>{};
     final symptomSet = <String>{
       ..._sanitizeSymptoms(_strings(map['symptoms'])),
     };
@@ -301,6 +422,17 @@ class InneraAiRecordDraft {
         symptomSet.addAll(migratedSymptoms);
         continue;
       }
+      if (!parsed.isEligibleUserEmotion) {
+        excludedEmotionTerms.add(parsed.rawText);
+        if (parsed.normalizedDimensionName != null) {
+          excludedEmotionTerms.add(parsed.normalizedDimensionName!);
+        }
+        if (parsed.subjectType == AiEmotionSubjectType.other) {
+          final event = parsed.evidence?.trim() ?? '';
+          if (event.isNotEmpty) eventSet.add(event);
+        }
+        continue;
+      }
       emotionByName[parsed.dedupeKey] = parsed;
     }
     return InneraAiRecordDraft(
@@ -308,11 +440,17 @@ class InneraAiRecordDraft {
       overallMood: _doubleInRange(map['overallMood']),
       emotions: emotionByName.values.toList(),
       symptoms: symptomSet.toList(),
+      stateChanges: _stateChanges(map['stateChanges']),
+      bodyMeasurement: _bodyMeasurement(map['bodyMeasurement']),
       sleep: AiSleepDraft.fromMap(_map(map['sleep'])),
-      events: _strings(map['events']),
+      events: eventSet.toList(),
       rawUserEntries: _strings(map['rawUserEntries']),
       diaryText: (map['diaryText'] ?? '').toString().trim(),
-      missingFields: _strings(map['missingFields']),
+      missingFields: _strings(map['missingFields'])
+          .where(
+            (field) => !excludedEmotionTerms.any(field.contains),
+          )
+          .toList(),
       updatedAt: _date(map['updatedAt']) ?? DateTime.now(),
       confirmed: map['confirmed'] == true,
       hasExistingRecord: map['hasExistingRecord'] == true,
@@ -325,6 +463,8 @@ class InneraAiRecordDraft {
         'overallMood': overallMood,
         'emotionMentions': emotions.map((item) => item.toMap()).toList(),
         'symptoms': symptoms,
+        'stateChanges': stateChanges,
+        'bodyMeasurement': bodyMeasurement?.toJson(),
         'sleep': sleep.toMap(),
         'events': events,
         'rawUserEntries': rawUserEntries,
@@ -343,6 +483,8 @@ class InneraAiRecordDraft {
         'overallMood': overallMood,
         'emotionMentions': emotions.map((item) => item.toMap()).toList(),
         'symptoms': symptoms,
+        'stateChanges': stateChanges,
+        'bodyMeasurement': bodyMeasurement?.toJson(),
         'sleep': sleep.toMap(),
         'events': events,
         'rawUserEntries': rawUserEntries,
@@ -387,6 +529,8 @@ class InneraAiRecordDraft {
       overallMood: parsed.overallMood ?? overallMood,
       emotions: emotionByName.values.toList(),
       symptoms: _sanitizeSymptoms(symptomSet.toList()),
+      stateChanges: {...stateChanges, ...parsed.stateChanges},
+      bodyMeasurement: parsed.bodyMeasurement ?? bodyMeasurement,
       sleep: sleep.merge(parsed.sleep),
       events: {...events, ...parsed.events}.toList(),
       rawUserEntries: entries,
@@ -407,7 +551,8 @@ class InneraAiRecordDraft {
     if (text.isEmpty) return this;
 
     final symptomSet = <String>{..._sanitizeSymptoms(symptoms)};
-    final clauses = text.split(RegExp(r'[，。！？；\n]'));
+    final clauses = _splitEmotionClauses(text);
+    final eventSet = <String>{...events};
     final emotionByName = <String, AiEmotionDraft>{};
     for (final emotion in emotions) {
       final migratedSymptoms = _symptomNamesFromText(
@@ -415,14 +560,23 @@ class InneraAiRecordDraft {
       );
       if (migratedSymptoms.isNotEmpty) {
         symptomSet.addAll(migratedSymptoms);
-      } else {
+      } else if (emotion.isEligibleUserEmotion) {
         final temporalScope = _temporalScopeForEmotion(emotion, clauses);
         emotionByName[emotion.dedupeKey] = temporalScope.matched
             ? _emotionWithTimeContext(emotion, temporalScope.timeContext)
             : emotion;
+      } else if (emotion.subjectType == AiEmotionSubjectType.other &&
+          emotion.evidence?.trim().isNotEmpty == true) {
+        eventSet.add(emotion.evidence!.trim());
       }
     }
+    EmotionDimensionDefinition? observedUserEmotion;
     for (final clause in clauses) {
+      final clauseSubject = _subjectForExplicitClause(clause);
+      if (clauseSubject == AiEmotionSubjectType.other) {
+        eventSet.add(clause.trim());
+      }
+      var foundEmotion = false;
       for (final dimension in kEmotionDimensions) {
         final aliases = [...dimension.aliases]
           ..sort((left, right) => right.length.compareTo(left.length));
@@ -433,6 +587,16 @@ class InneraAiRecordDraft {
                     : RegExp(aliases.map(RegExp.escape).join('|'))
                         .firstMatch(clause));
         if (match == null) continue;
+        foundEmotion = true;
+        if (clauseSubject != AiEmotionSubjectType.user &&
+            clauseSubject != AiEmotionSubjectType.shared) {
+          eventSet.add(clause.trim());
+          observedUserEmotion = _speechOrMediaPattern.hasMatch(clause) &&
+                  _explicitUserEmotionPattern.hasMatch(clause)
+              ? dimension
+              : observedUserEmotion;
+          continue;
+        }
         final scoreMatch = RegExp(r'([1-5])\s*分').firstMatch(clause);
         final score =
             scoreMatch == null ? null : int.tryParse(scoreMatch.group(1)!);
@@ -449,7 +613,33 @@ class InneraAiRecordDraft {
           confidence: match.group(0) == dimension.displayName ? 1 : .9,
           timeContext: _timeContext(clause),
           evidence: clause.trim(),
+          subjectType: clauseSubject,
+          subjectText: '我',
+          isQuotedSpeech: false,
         );
+      }
+      if (!foundEmotion &&
+          observedUserEmotion != null &&
+          RegExp(r'我(?:自己)?也?(?:覺得|感覺)(?:是|有|一樣)?|我也這麼覺得').hasMatch(clause)) {
+        final dimension = observedUserEmotion;
+        final existing = emotionByName[dimension.id];
+        emotionByName[dimension.id] = AiEmotionDraft(
+          rawText: dimension.displayName,
+          normalizedDimensionId: dimension.id,
+          normalizedDimensionName: dimension.displayName,
+          score: existing?.score,
+          source: AiDraftSource.explicitUserInput,
+          mentioned: true,
+          needsFollowUp: existing?.score == null,
+          needsConfirmation: false,
+          confidence: .9,
+          timeContext: _timeContext(clause),
+          evidence: clause.trim(),
+          subjectType: AiEmotionSubjectType.user,
+          subjectText: '我',
+          isQuotedSpeech: false,
+        );
+        observedUserEmotion = null;
       }
     }
 
@@ -480,12 +670,16 @@ class InneraAiRecordDraft {
     final explicitSleepTimes = _explicitSleepTimes(clauses);
 
     symptomSet.addAll(_symptomNamesFromText(text));
+    final explicitStateChanges = _explicitStateChanges(text);
+    final explicitBodyMeasurement = _explicitBodyMeasurement(text);
 
     return InneraAiRecordDraft(
       dateKey: dateKey,
       overallMood: parsedOverall ?? overallMood,
       emotions: emotionByName.values.toList(),
       symptoms: _sanitizeSymptoms(symptomSet.toList()),
+      stateChanges: {...stateChanges, ...explicitStateChanges},
+      bodyMeasurement: explicitBodyMeasurement ?? bodyMeasurement,
       sleep: AiSleepDraft(
         sleepTime: sleep.sleepTime,
         wakeTime: explicitSleepTimes.wakeTime ?? sleep.wakeTime,
@@ -495,7 +689,7 @@ class InneraAiRecordDraft {
         flags: sleepFlags.toList(),
         naps: sleep.naps,
       ),
-      events: events,
+      events: eventSet.toList(),
       rawUserEntries: rawUserEntries,
       diaryText: diaryText,
       missingFields: {
@@ -530,6 +724,8 @@ class InneraAiRecordDraft {
               : item)
           .toList(),
       symptoms: symptoms,
+      stateChanges: stateChanges,
+      bodyMeasurement: bodyMeasurement,
       sleep: sleep,
       events: events,
       rawUserEntries: rawUserEntries,
@@ -561,6 +757,8 @@ class InneraAiRecordDraft {
       overallMood: overallMood,
       emotions: byDimension.values.toList(),
       symptoms: symptoms,
+      stateChanges: stateChanges,
+      bodyMeasurement: bodyMeasurement,
       sleep: sleep,
       events: events,
       rawUserEntries: rawUserEntries,
@@ -577,6 +775,8 @@ class InneraAiRecordDraft {
         overallMood: overallMood,
         emotions: emotions.where((item) => item.dedupeKey != key).toList(),
         symptoms: symptoms,
+        stateChanges: stateChanges,
+        bodyMeasurement: bodyMeasurement,
         sleep: sleep,
         events: events,
         rawUserEntries: rawUserEntries,
@@ -596,6 +796,8 @@ class InneraAiRecordDraft {
       overallMood: overallMood,
       emotions: emotions,
       symptoms: symptoms,
+      stateChanges: stateChanges,
+      bodyMeasurement: bodyMeasurement,
       sleep: sleep,
       events: events,
       rawUserEntries: [...rawUserEntries, entry],
@@ -612,6 +814,8 @@ class InneraAiRecordDraft {
         overallMood: overallMood,
         emotions: emotions,
         symptoms: symptoms,
+        stateChanges: stateChanges,
+        bodyMeasurement: bodyMeasurement,
         sleep: sleep,
         events: events,
         rawUserEntries: rawUserEntries,
@@ -636,10 +840,87 @@ class InneraAiRecordDraft {
       r'睡不著|入睡困難|難入睡|半夜.*醒|反覆醒|早醒|淺眠|多夢|惡夢|噩夢|睡眠不足|睡不夠|睡睡醒醒|睡眠中斷|夜尿',
     );
     return values
-        .map((item) => item.trim())
+        .map(normalizeSymptomName)
         .where((item) => item.isNotEmpty && !sleepPattern.hasMatch(item))
         .toSet()
         .toList();
+  }
+
+  static Map<String, int> _stateChanges(dynamic value) {
+    if (value is! Map) return const {};
+    final result = <String, int>{};
+    for (final entry in value.entries) {
+      if (!kDailyStateDimensionsById.containsKey(entry.key.toString())) {
+        continue;
+      }
+      final score = (entry.value as num?)?.toInt();
+      if (score != null && score >= 1 && score <= 5) {
+        result[entry.key.toString()] = score;
+      }
+    }
+    return result;
+  }
+
+  static BodyMeasurement? _bodyMeasurement(dynamic value) {
+    if (value is! Map) return null;
+    final parsed = BodyMeasurement.fromJson(value.cast<String, dynamic>());
+    return parsed.hasData && parsed.isValid ? parsed : null;
+  }
+
+  static Map<String, int> _explicitStateChanges(String text) {
+    final result = <String, int>{};
+    if (RegExp(r'和平常差不多').hasMatch(text)) {
+      for (final dimension in kDailyStateDimensions) {
+        if (text.contains(dimension.displayName.replaceAll('變化', ''))) {
+          result[dimension.id] = 3;
+        }
+      }
+    }
+    if (RegExp(r'完全沒精神|精神很差|沒有力氣').hasMatch(text)) {
+      result['energy_change'] = 1;
+    } else if (RegExp(r'完全沒有動力|沒有動力|動力不足|提不起勁').hasMatch(text)) {
+      result['energy_change'] = 2;
+    } else if (RegExp(r'很有精神|精神很好|精力充沛').hasMatch(text)) {
+      result['energy_change'] = 4;
+    }
+    if (RegExp(r'完全沒胃口|吃不下|食慾降低').hasMatch(text)) {
+      result['appetite_change'] = 2;
+    } else if (RegExp(r'一直想吃|看到什麼都想吃|食慾變大|食慾增加').hasMatch(text)) {
+      result['appetite_change'] = 4;
+    }
+    if (RegExp(r'整天躺著|不想動|活動變少').hasMatch(text)) {
+      result['activity_change'] = 2;
+    } else if (RegExp(r'停不下來|活動變多|做了很多事情').hasMatch(text) &&
+        RegExp(r'和平常|比平常|變多|增加').hasMatch(text)) {
+      result['activity_change'] = 4;
+    }
+    return result;
+  }
+
+  static BodyMeasurement? _explicitBodyMeasurement(String text) {
+    final weight =
+        RegExp(r'(\d{2,3}(?:\.\d{1,2})?)\s*(?:公斤|kg)', caseSensitive: false)
+            .firstMatch(text);
+    final bodyFat = RegExp(r'(?:體脂(?:率)?)[^\d]{0,4}(\d{1,2}(?:\.\d{1,2})?)\s*%')
+        .firstMatch(text);
+    final waist = RegExp(r'(?:腰圍)[^\d]{0,4}(\d{2,3}(?:\.\d{1,2})?)\s*(?:公分|cm)',
+            caseSensitive: false)
+        .firstMatch(text);
+    final measurement = BodyMeasurement(
+      weightKg: double.tryParse(weight?.group(1) ?? ''),
+      bodyFatPercent: double.tryParse(bodyFat?.group(1) ?? ''),
+      waistCm: double.tryParse(waist?.group(1) ?? ''),
+      measurementTiming: text.contains('睡前')
+          ? MeasurementTiming.beforeSleep
+          : text.contains('起床後')
+              ? MeasurementTiming.afterWaking
+              : text.contains('早餐前')
+                  ? MeasurementTiming.beforeBreakfast
+                  : text.contains('飯後')
+                      ? MeasurementTiming.afterMeal
+                      : null,
+    );
+    return measurement.hasData && measurement.isValid ? measurement : null;
   }
 
   static String? _timeContext(String clause) {
@@ -702,7 +983,35 @@ class InneraAiRecordDraft {
         confidence: emotion.confidence,
         timeContext: timeContext,
         evidence: emotion.evidence,
+        subjectType: emotion.subjectType,
+        subjectText: emotion.subjectText,
+        isQuotedSpeech: emotion.isQuotedSpeech,
       );
+
+  static List<String> _splitEmotionClauses(String text) => text
+      .replaceAll(RegExp(r'但|可是|不過|然而'), '，')
+      .split(RegExp(r'[，。！？；\n]'))
+      .map((item) => item.trim())
+      .where((item) => item.isNotEmpty)
+      .toList();
+
+  static AiEmotionSubjectType _subjectForExplicitClause(String clause) {
+    final hasUser = _explicitUserEmotionPattern.hasMatch(clause);
+    final hasShared = _sharedEmotionPattern.hasMatch(clause);
+    final hasOther = _otherEmotionSubjectPattern.hasMatch(clause);
+    final quotedOrMedia = _quotedTextPattern.hasMatch(clause) ||
+        (hasOther && _speechOrMediaPattern.hasMatch(clause));
+    if (quotedOrMedia && !hasShared) return AiEmotionSubjectType.other;
+    if (hasShared) return AiEmotionSubjectType.shared;
+    final explicitUserFeeling = RegExp(
+      r'害我|讓我|使我|令我|我(?:自己|也|開始|覺得|感到|感覺|很|好|超|有點|有些|心裡|心情)',
+    ).hasMatch(clause);
+    if (hasOther && !explicitUserFeeling) return AiEmotionSubjectType.other;
+    if (hasUser) return AiEmotionSubjectType.user;
+    // A direct, unquoted emotion in today's first-person diary conversation
+    // commonly omits 「我」; this is current input, not old-draft migration.
+    return AiEmotionSubjectType.user;
+  }
 
   static ({String? wakeTime, String? finalWakeTime}) _explicitSleepTimes(
     List<String> clauses,

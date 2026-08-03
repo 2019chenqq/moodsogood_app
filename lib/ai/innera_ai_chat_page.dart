@@ -739,6 +739,11 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
               Text('睡眠', style: Theme.of(context).textTheme.titleSmall),
               Text(_sleepPreview(workingDraft)),
               const SizedBox(height: 14),
+              Text('生活事件', style: Theme.of(context).textTheme.titleSmall),
+              Text(workingDraft.events.isEmpty
+                  ? '目前沒有內容'
+                  : workingDraft.events.join('\n')),
+              const SizedBox(height: 14),
               Text('原始內容', style: Theme.of(context).textTheme.titleSmall),
               Text(workingDraft.rawUserEntries.isEmpty
                   ? '尚未補充'

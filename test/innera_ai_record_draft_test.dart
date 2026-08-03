@@ -3,13 +3,127 @@ import 'package:moodsogood_app/ai/innera_ai_record_draft.dart';
 
 void main() {
   group('InneraAiRecordDraft', () {
+    group('emotion subject guard', () {
+      InneraAiRecordDraft extract(String text) => InneraAiRecordDraft.empty(
+            DateTime(2026, 8, 2),
+          ).mergeExplicitRecordFacts(text);
+
+      test('does not record dad anger as the user emotion', () {
+        final draft = extract('爸爸今天很生氣。');
+        expect(draft.emotions, isEmpty);
+        expect(draft.events.join(' '), contains('爸爸今天很生氣'));
+      });
+
+      test('records explicit user anger', () {
+        final draft = extract('我今天很生氣。');
+        expect(draft.emotions.single.name, '生氣');
+        expect(draft.emotions.single.subjectType, AiEmotionSubjectType.user);
+      });
+
+      test('splits brother anger from user sadness', () {
+        final draft = extract('弟弟氣到哭，我很難過。');
+        expect(draft.emotions.map((item) => item.name), ['難過']);
+        expect(draft.events.join(' '), contains('弟弟氣到哭'));
+      });
+
+      test('does not record quoted dad happiness', () {
+        final draft = extract('爸爸說他很快樂。');
+        expect(draft.emotions, isEmpty);
+        expect(draft.events.join(' '), contains('爸爸說他很快樂'));
+      });
+
+      test('does not record happiness inside a quote addressed to someone', () {
+        final draft = extract('我嗆他「整趟只有你在快樂」。');
+        expect(draft.emotions, isEmpty);
+        expect(draft.events.join(' '), contains('你在快樂'));
+      });
+
+      test('keeps dad happiness as event and user annoyance as emotion', () {
+        final draft = extract('爸爸很快樂，但我超級煩躁。');
+        expect(draft.emotions.map((item) => item.name), ['煩躁']);
+        expect(draft.events.join(' '), contains('爸爸很快樂'));
+      });
+
+      test('does not record a friend quoted anxiety', () {
+        final draft = extract('朋友說「我最近很焦慮」。');
+        expect(draft.emotions, isEmpty);
+        expect(draft.events.join(' '), contains('朋友說'));
+      });
+
+      test('records anxiety after the user confirms a friend observation', () {
+        final draft = extract('朋友說我最近看起來很焦慮，我自己也覺得是。');
+        expect(draft.emotions.single.name, '焦慮');
+        expect(draft.emotions.single.subjectType, AiEmotionSubjectType.user);
+        expect(draft.events.join(' '), contains('朋友說'));
+      });
+
+      test('keeps brother incident without assigning his emotion to user', () {
+        final draft = extract('弟弟跌倒兩次，氣到哭，我覺得很難過。');
+        expect(draft.emotions.map((item) => item.name), ['難過']);
+        expect(draft.emotions.map((item) => item.name), isNot(contains('生氣')));
+      });
+
+      test('keeps mother worry as event and user anxiety as emotion', () {
+        final draft = extract('媽媽很擔心我，害我也開始焦慮。');
+        expect(draft.emotions.map((item) => item.name), ['焦慮']);
+        expect(draft.events.join(' '), contains('媽媽很擔心我'));
+      });
+
+      test('migrates old subjectless drafts conservatively', () {
+        final draft = InneraAiRecordDraft.fromMap({
+          'dateKey': '2026-08-02',
+          'emotionMentions': [
+            {'rawText': '生氣', 'evidence': '爸爸很生氣'},
+            {'rawText': '焦慮', 'evidence': '我今天很焦慮'},
+            {'rawText': '低落', 'evidence': '最近有點低落'},
+          ],
+        });
+        expect(draft.emotions.map((item) => item.name), ['焦慮']);
+        expect(draft.events.join(' '), contains('爸爸很生氣'));
+      });
+
+      test('rejects an AI mention mislabeled as user by the subject guard', () {
+        final draft = InneraAiRecordDraft.fromMap({
+          'dateKey': '2026-08-02',
+          'emotionMentions': [
+            {
+              'rawText': '擔心',
+              'subjectType': 'user',
+              'evidence': '媽媽很擔心我',
+            },
+          ],
+          'missingFields': ['擔心的正式情緒與強度'],
+        });
+        expect(draft.emotions, isEmpty);
+        expect(draft.events, contains('媽媽很擔心我'));
+        expect(draft.missingFields, isEmpty);
+      });
+
+      test('caps inferred behavior emotion confidence and confirms it', () {
+        final mention = AiEmotionDraft.tryFromMap({
+          'rawText': '生氣',
+          'normalizedDimensionId': '生氣',
+          'normalizedDimensionName': '生氣',
+          'source': 'inferred',
+          'confidence': .96,
+          'needsConfirmation': false,
+          'subjectType': 'user',
+          'subjectText': '我',
+          'isQuotedSpeech': false,
+          'evidence': '我摔門後不理他',
+        })!;
+        expect(mention.confidence, .75);
+        expect(mention.needsConfirmation, isTrue);
+      });
+    });
+
     test('keeps all new AI drafts on the 1 to 5 mood scale', () {
       final draft =
           InneraAiRecordDraft.empty(DateTime(2026, 7, 17)).mergePatch({
         'moodScale': 10,
         'emotions': [
-          {'name': '焦慮', 'score': 4},
-          {'name': '煩躁', 'score': 8},
+          {'name': '焦慮', 'score': 4, 'subjectType': 'user'},
+          {'name': '煩躁', 'score': 8, 'subjectType': 'user'},
         ],
       });
 
@@ -33,7 +147,7 @@ void main() {
       });
       final updated = initial.mergePatch({
         'emotions': [
-          {'name': '煩躁', 'score': 5},
+          {'name': '煩躁', 'score': 5, 'subjectType': 'user'},
         ],
         'symptoms': ['頭痛'],
       });
@@ -61,7 +175,7 @@ void main() {
           {'rawText': '動力不足'},
           {'rawText': '食慾增加'},
           {'rawText': '想吐'},
-          {'rawText': '煩躁', 'value': 5},
+          {'rawText': '煩躁', 'value': 5, 'subjectType': 'user'},
         ],
         'symptoms': ['疲倦', '想吐'],
       });
@@ -69,7 +183,7 @@ void main() {
       expect(draft.emotions.map((item) => item.name), ['煩躁']);
       expect(
         draft.symptoms,
-        containsAll(['疲倦', '動力不足', '食慾增加', '想吐']),
+        containsAll(['疲倦', '動力不足', '一直想吃東西', '噁心反胃']),
       );
       expect(draft.symptoms.toSet(), hasLength(4));
     });
@@ -80,8 +194,10 @@ void main() {
 
       expect(
         draft.symptoms,
-        containsAll(['動力不足', '食慾增加', '想吐']),
+        containsAll(['動力不足', '一直想吃東西', '噁心反胃']),
       );
+      expect(draft.stateChanges['energy_change'], 2);
+      expect(draft.stateChanges['appetite_change'], 4);
       expect(draft.emotions, isEmpty);
     });
 
@@ -99,7 +215,7 @@ void main() {
       final updated = openDraft.mergePatch({'symptoms': []});
 
       expect(updated.emotions.map((item) => item.name), ['煩躁']);
-      expect(updated.symptoms, containsAll(['動力不足', '食慾增加']));
+      expect(updated.symptoms, containsAll(['動力不足', '一直想吃東西']));
     });
 
     test('keeps mentioned boredom and emptiness with null scores', () {
@@ -135,7 +251,7 @@ void main() {
         'symptoms': ['疲倦', '入睡困難', '想吐'],
       }).mergeExplicitRecordFacts('很疲倦、入睡困難、想吐。');
 
-      expect(draft.symptoms, containsAll(['疲倦', '想吐']));
+      expect(draft.symptoms, containsAll(['疲倦', '噁心反胃']));
       expect(draft.symptoms, isNot(contains('入睡困難')));
       expect(draft.sleep.flags, contains('initInsomnia'));
     });
@@ -183,6 +299,7 @@ void main() {
             'normalizedDimensionName': '低落',
             'value': 4,
             'timeContext': '昨天',
+            'subjectType': 'user',
           },
           {
             'rawText': '想哭',
@@ -190,6 +307,7 @@ void main() {
             'normalizedDimensionName': '難過',
             'value': 3,
             'timeContext': '昨天',
+            'subjectType': 'user',
           },
           {
             'rawText': '哀嚎',
@@ -197,6 +315,7 @@ void main() {
             'normalizedDimensionName': '煩躁',
             'value': 5,
             'timeContext': '昨天',
+            'subjectType': 'user',
           },
         ],
       }).mergeExplicitRecordFacts(
@@ -302,6 +421,7 @@ void main() {
             'normalizedDimensionName': '混亂程度',
             'value': null,
             'needsConfirmation': false,
+            'evidence': '我心裡很亂',
           },
         ],
       });
@@ -322,17 +442,14 @@ void main() {
       expect(draft.emotions.single.normalizedDimensionName, '無聊');
     });
 
-    test('keeps legacy degree names unresolved for read compatibility only',
+    test('does not migrate a subjectless legacy degree emotion as the user',
         () {
       final draft = InneraAiRecordDraft.fromMap({
         'dateKey': '2026-07-23',
         'emotions': ['無聊程度'],
       });
 
-      final mention = draft.emotions.single;
-      expect(mention.rawText, '無聊程度');
-      expect(mention.normalizedDimensionId, isNull);
-      expect(mention.needsConfirmation, isTrue);
+      expect(draft.emotions, isEmpty);
     });
   });
 }
