@@ -4,13 +4,12 @@ import '../../constants/healing_design_system.dart';
 import '../../widgets/emotion_slider.dart';
 import '../../analytics_service.dart';
 import '../emotion_dimensions.dart';
+import '../daily_state_dimensions.dart';
 
 export '../emotion_dimensions.dart';
 
-/// 新版：分類選擇 + 已選情緒評分
-/// TOP: 三大類情緒（整體狀態、壓力情緒、低落警訊）以 Chip 方式選擇
-/// MIDDLE: 已選情緒顯示 Slider (0~10)，可收合
-/// BOTTOM: 日記頁面
+/// 每日情緒與狀態：正式情緒採 1～5 分強度；每日狀態則獨立記錄
+/// 與平常相比的 1～5 分變化，兩者不共用資料或提示邏輯。
 class EmotionPageCheckbox extends StatefulWidget {
   const EmotionPageCheckbox({
     super.key,
@@ -20,6 +19,8 @@ class EmotionPageCheckbox extends StatefulWidget {
     required this.onDelete,
     required this.onToggleChecked,
     required this.onChangeValue,
+    required this.stateChanges,
+    required this.onChangeState,
     this.firstEmotionItemKey,
     this.emotionScoreKey,
     this.tutorialSliderKey,
@@ -33,6 +34,8 @@ class EmotionPageCheckbox extends StatefulWidget {
   final void Function(int index) onDelete;
   final void Function(int index, bool checked) onToggleChecked;
   final void Function(int index, int value) onChangeValue;
+  final Map<String, int> stateChanges;
+  final void Function(String id, int? value) onChangeState;
   final GlobalKey? firstEmotionItemKey;
   final GlobalKey? emotionScoreKey;
   final GlobalKey? tutorialSliderKey;
@@ -45,6 +48,7 @@ class EmotionPageCheckbox extends StatefulWidget {
 
 class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
   bool _isSliderExpanded = true; // 控制 slider 區域的展開/收合
+  bool _isStateExpanded = false;
 
   @override
   void initState() {
@@ -101,6 +105,9 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
           _buildCollapsibleSliderSection(
               context, selectedEmotions, emotionIndices),
 
+          const Divider(height: 1, thickness: 2),
+          _buildDailyStateSection(context),
+
           // ========================================
           // BOTTOM SECTION: 日記連結
           // ========================================
@@ -148,6 +155,104 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
           //     ),
           //   ),
           // ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDailyStateSection(BuildContext context) {
+    return Container(
+      color: HealingDesignSystem.adaptiveFill(context),
+      child: ExpansionTile(
+        initiallyExpanded: _isStateExpanded,
+        onExpansionChanged: (value) => setState(() => _isStateExpanded = value),
+        title: Text(
+          '今天的狀態變化',
+          style: HealingDesignSystem.titleMedium.copyWith(
+            color: HealingDesignSystem.adaptivePrimaryText(context),
+          ),
+        ),
+        subtitle: const Text('選填・請和平常的自己相比'),
+        childrenPadding: const EdgeInsets.fromLTRB(
+          HealingDesignSystem.paddingL,
+          0,
+          HealingDesignSystem.paddingL,
+          HealingDesignSystem.paddingL,
+        ),
+        children: [
+          Text(
+            '請和平常的自己相比。3 分代表和平常差不多，越靠左代表降低，越靠右代表增加。',
+            style: HealingDesignSystem.bodySmall.copyWith(
+              color: HealingDesignSystem.adaptiveSecondaryText(context),
+            ),
+          ),
+          const SizedBox(height: HealingDesignSystem.paddingM),
+          ...kDailyStateDimensions
+              .map((dimension) => _buildDailyStateCard(context, dimension)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDailyStateCard(
+    BuildContext context,
+    DailyStateDimensionDefinition dimension,
+  ) {
+    final value = widget.stateChanges[dimension.id];
+    return Container(
+      margin: const EdgeInsets.only(bottom: HealingDesignSystem.paddingL),
+      padding: const EdgeInsets.all(HealingDesignSystem.paddingL),
+      decoration: HealingDesignSystem.adaptiveCardDecoration(context),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(dimension.displayName,
+                    style: HealingDesignSystem.titleSmall.copyWith(
+                      color: HealingDesignSystem.adaptivePrimaryText(context),
+                    )),
+              ),
+              if (value != null)
+                TextButton(
+                  onPressed: () => widget.onChangeState(dimension.id, null),
+                  child: const Text('清除'),
+                )
+              else
+                const Text('尚未填寫',
+                    style: TextStyle(color: HealingDesignSystem.mutedText)),
+            ],
+          ),
+          Text(dimension.question,
+              style: HealingDesignSystem.bodyMedium.copyWith(
+                color: HealingDesignSystem.adaptiveSecondaryText(context),
+              )),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                  child: Text(dimension.lowLabel, textAlign: TextAlign.left)),
+              Expanded(
+                  child:
+                      Text(dimension.middleLabel, textAlign: TextAlign.center)),
+              Expanded(
+                  child: Text(dimension.highLabel, textAlign: TextAlign.right)),
+            ],
+          ),
+          Slider(
+            value: (value ?? 3).toDouble(),
+            min: 1,
+            max: 5,
+            divisions: 4,
+            label: value?.toString() ?? '尚未填寫',
+            onChanged: (next) =>
+                widget.onChangeState(dimension.id, next.round()),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: List.generate(5, (index) => Text('${index + 1}')),
+          ),
         ],
       ),
     );

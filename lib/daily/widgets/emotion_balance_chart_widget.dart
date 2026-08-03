@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../constants/healing_design_system.dart';
 import '../emotion_trend_calculator.dart';
 import '../../models/daily_record.dart';
+import '../../models/period_cycle.dart';
 
 int? _wholeNumberX(double value) {
   final rounded = value.round();
@@ -38,6 +39,82 @@ const double _singleLineTooltipTouchThreshold = double.infinity;
   final padding = max((top - bottom).abs() * 0.08, 0.5);
 
   return (minY: bottom - padding, maxY: top + padding);
+}
+
+DateTime _normDate(DateTime d) => DateTime(d.year, d.month, d.day);
+
+List<VerticalRangeAnnotation> _buildPeriodRanges(
+  List<PeriodCycle> cycles, {
+  required double Function(DateTime date) xForDate,
+  required double minX,
+  required double maxX,
+}) {
+  final list = <VerticalRangeAnnotation>[];
+  final periodDays = cycles
+      .expand((cycle) sync* {
+        final start = _normDate(cycle.startDate);
+        final end = _normDate(cycle.endDate ?? DateTime.now());
+        for (var day = start;
+            !day.isAfter(end);
+            day = day.add(const Duration(days: 1))) {
+          yield day;
+        }
+      })
+      .toSet()
+      .toList()
+    ..sort();
+  if (periodDays.isEmpty) return list;
+
+  final completedDurations = cycles
+      .where((cycle) => cycle.endDate != null)
+      .map((cycle) => cycle.durationDays)
+      .where((days) => days > 0 && days <= 14)
+      .toList();
+  final averageDuration = completedDurations.isEmpty
+      ? 7
+      : (completedDurations.reduce((a, b) => a + b) / completedDurations.length)
+          .round();
+  final bridgeGapDays = max(7, averageDuration).clamp(1, 14);
+  double? periodStartX;
+  DateTime? previousPeriodDate;
+
+  void addRange(DateTime endDate) {
+    if (periodStartX == null) return;
+    final rawX1 = periodStartX! - 0.5;
+    final rawX2 = xForDate(endDate) + 0.5;
+    if (rawX2 < minX || rawX1 > maxX) {
+      periodStartX = null;
+      previousPeriodDate = null;
+      return;
+    }
+    double x1 = rawX1;
+    double x2 = rawX2;
+    x1 = x1.clamp(minX, maxX);
+    x2 = x2.clamp(minX, maxX);
+    if (x2 >= x1) {
+      list.add(VerticalRangeAnnotation(
+        x1: x1,
+        x2: x2,
+        color: Colors.pink.withValues(alpha: 0.15),
+      ));
+    }
+    periodStartX = null;
+    previousPeriodDate = null;
+  }
+
+  for (final day in periodDays) {
+    if (previousPeriodDate != null &&
+        day.difference(previousPeriodDate!).inDays > bridgeGapDays) {
+      addRange(previousPeriodDate!);
+    }
+    periodStartX ??= xForDate(day);
+    previousPeriodDate = day;
+  }
+
+  if (previousPeriodDate != null) {
+    addRange(previousPeriodDate!);
+  }
+  return list;
 }
 
 FlDotData _dotDataForSpots(List<FlSpot> spots, Color color) {
@@ -96,12 +173,14 @@ class EmotionBalanceChartWidget extends StatelessWidget {
     required this.fullRecords,
     required this.useMovingAverage,
     this.forceMonthlyAverage = false,
+    this.periodCycles = const <PeriodCycle>[],
   });
 
   final List<DailyRecord> records;
   final List<DailyRecord> fullRecords;
   final bool useMovingAverage;
   final bool forceMonthlyAverage;
+  final List<PeriodCycle> periodCycles;
 
   DateTime _norm(DateTime d) => DateTime(d.year, d.month, d.day);
 
@@ -325,6 +404,27 @@ class EmotionBalanceChartWidget extends StatelessWidget {
         ),
     ];
     final xBounds = _xBounds(lineBars);
+    double xForDate(DateTime date) {
+      if (forceMonthlyAverage) {
+        final month = DateTime(date.year, date.month, 1);
+        final index = sortedDates.indexOf(month);
+        if (index >= 0) return index.toDouble();
+
+        final insertionIndex = sortedDates.indexWhere((d) => d.isAfter(month));
+        if (insertionIndex >= 0) return insertionIndex.toDouble();
+        return (sortedDates.length - 1).toDouble();
+      }
+
+      return _norm(date).difference(startDate).inDays.toDouble();
+    }
+
+    final periodRanges = _buildPeriodRanges(
+      periodCycles,
+      xForDate: xForDate,
+      minX: xBounds.minX,
+      maxX: xBounds.maxX,
+    );
+
     DateTime dateForSpot(LineBarSpot spot) {
       final dates = spot.barIndex == 0 ? positiveDates : negativeDates;
       final index = spot.spotIndex;
@@ -374,6 +474,9 @@ class EmotionBalanceChartWidget extends StatelessWidget {
                 maxY: yMax,
                 minX: xBounds.minX,
                 maxX: xBounds.maxX,
+                rangeAnnotations: RangeAnnotations(
+                  verticalRangeAnnotations: periodRanges,
+                ),
                 gridData: FlGridData(
                   show: true,
                   horizontalInterval: yInterval,
@@ -510,12 +613,14 @@ class EmotionBalanceTrendChartWidget extends StatelessWidget {
     required this.fullRecords,
     required this.useMovingAverage,
     this.forceMonthlyAverage = false,
+    this.periodCycles = const <PeriodCycle>[],
   });
 
   final List<DailyRecord> records;
   final List<DailyRecord> fullRecords;
   final bool useMovingAverage;
   final bool forceMonthlyAverage;
+  final List<PeriodCycle> periodCycles;
 
   DateTime _norm(DateTime d) => DateTime(d.year, d.month, d.day);
 
@@ -690,6 +795,26 @@ class EmotionBalanceTrendChartWidget extends StatelessWidget {
       minScaleY: -5,
       maxScaleY: 5,
     );
+    double xForDate(DateTime date) {
+      if (forceMonthlyAverage) {
+        final month = DateTime(date.year, date.month, 1);
+        final index = sortedDates.indexOf(month);
+        if (index >= 0) return index.toDouble();
+
+        final insertionIndex = sortedDates.indexWhere((d) => d.isAfter(month));
+        if (insertionIndex >= 0) return insertionIndex.toDouble();
+        return (sortedDates.length - 1).toDouble();
+      }
+
+      return _norm(date).difference(startDate).inDays.toDouble();
+    }
+
+    final periodRanges = _buildPeriodRanges(
+      periodCycles,
+      xForDate: xForDate,
+      minX: xBounds.minX,
+      maxX: xBounds.maxX,
+    );
 
     // X 軸標籤：依資料範圍動態決定顯示頻率，避免重疊
     final labelPositions = <int>{};
@@ -725,6 +850,9 @@ class EmotionBalanceTrendChartWidget extends StatelessWidget {
                 maxY: yBounds.maxY,
                 minX: xBounds.minX,
                 maxX: xBounds.maxX,
+                rangeAnnotations: RangeAnnotations(
+                  verticalRangeAnnotations: periodRanges,
+                ),
                 extraLinesData: ExtraLinesData(
                   horizontalLines: [
                     HorizontalLine(

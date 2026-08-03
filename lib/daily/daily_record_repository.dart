@@ -35,6 +35,11 @@ class DailyRecordRepository {
     required String userId,
     required DateTime date,
     Map<String, dynamic>? emotions,
+    Map<String, int>? stateChanges,
+    bool? symptomSectionCompleted,
+    bool? emotionSectionCompleted,
+    bool? stateSectionCompleted,
+    Map<String, dynamic>? bodyMeasurement,
     Map<String, dynamic>? sleep,
     List<String>? bodySymptoms,
     Map<String, dynamic>? dailyActivities,
@@ -46,6 +51,14 @@ class DailyRecordRepository {
     await HealthDataEncryptionService.setEncrypted(_records(userId).doc(id), {
       'date': Timestamp.fromDate(day),
       'emotions': emotions,
+      'stateChanges': stateChanges ?? const <String, int>{},
+      if (symptomSectionCompleted != null)
+        'symptomSectionCompleted': symptomSectionCompleted,
+      if (emotionSectionCompleted != null)
+        'emotionSectionCompleted': emotionSectionCompleted,
+      if (stateSectionCompleted != null)
+        'stateSectionCompleted': stateSectionCompleted,
+      'bodyMeasurement': bodyMeasurement,
       'sleep': sleep,
       'bodySymptoms': bodySymptoms,
       'dailyActivities': dailyActivities,

@@ -6,16 +6,21 @@ import '../daily_record_helpers.dart';
 
 /// 睡眠分頁
 class SleepPage extends StatelessWidget {
-  SleepPage({
+  const SleepPage({
     super.key,
     required this.sleepTime,
+    required this.estimatedSleepTime,
     required this.wakeTime,
     required this.onPickSleepTime,
+    required this.onPickEstimatedSleepTime,
     required this.onPickWakeTime,
     required this.finalWakeTime,
     required this.onPickFinalWakeTime,
-    required this.midWakeCtrl,
-    required this.onChangeMidWake,
+    required this.nightAwakenings,
+    required this.onAddNightAwakening,
+    required this.onEditNightAwakening,
+    required this.onDeleteNightAwakening,
+    required this.legacyMidWakeText,
     required this.flags,
     required this.onToggleFlag,
     required this.sleepNote,
@@ -37,13 +42,18 @@ class SleepPage extends StatelessWidget {
   });
 
   final TimeOfDay? sleepTime;
+  final TimeOfDay? estimatedSleepTime;
   final TimeOfDay? wakeTime;
   final Future<void> Function() onPickSleepTime;
+  final Future<void> Function() onPickEstimatedSleepTime;
   final Future<void> Function() onPickWakeTime;
   final TimeOfDay? finalWakeTime;
   final Future<void> Function() onPickFinalWakeTime;
-  final TextEditingController midWakeCtrl;
-  final ValueChanged<String> onChangeMidWake;
+  final List<NightAwakeningItem> nightAwakenings;
+  final Future<void> Function() onAddNightAwakening;
+  final Future<void> Function(int) onEditNightAwakening;
+  final void Function(int) onDeleteNightAwakening;
+  final String legacyMidWakeText;
 
   final Set<SleepFlag> flags;
   final void Function(SleepFlag) onToggleFlag;
@@ -116,6 +126,31 @@ class SleepPage extends StatelessWidget {
         ),
       ),
       isDense: true,
+    );
+  }
+
+  Widget _nightAwakeningTile(
+    BuildContext context,
+    NightAwakeningItem item,
+    int index,
+  ) {
+    final detail = item.end != null
+        ? ' → ${DateHelper.formatTime(item.end)}'
+        : item.estimatedDurationMinutes != null
+            ? ' · 約 ${item.estimatedDurationMinutes} 分鐘'
+            : '';
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.access_time_outlined),
+      title: Text('${DateHelper.formatTime(item.start)}$detail'),
+      subtitle:
+          item.note?.trim().isNotEmpty == true ? Text(item.note!.trim()) : null,
+      onTap: () => onEditNightAwakening(index),
+      trailing: IconButton(
+        tooltip: '刪除這筆夜間醒來',
+        icon: const Icon(Icons.delete_outline_rounded),
+        onPressed: () => onDeleteNightAwakening(index),
+      ),
     );
   }
 
@@ -203,6 +238,21 @@ class SleepPage extends StatelessWidget {
             subtitle: Text(
                 sleepTime == null ? '—' : DateHelper.formatTime(sleepTime!)),
             onTap: onPickSleepTime,
+          ),
+        ),
+        _sleepCard(
+          child: ListTile(
+            leading: const Icon(
+              Icons.bedtime_outlined,
+              color: HealingDesignSystem.primaryBlue,
+            ),
+            title: const Text('大約幾點睡著？（選填）'),
+            subtitle: Text(
+              estimatedSleepTime == null
+                  ? '不確定可留空，系統會以準備睡覺時間估算'
+                  : DateHelper.formatTime(estimatedSleepTime),
+            ),
+            onTap: onPickEstimatedSleepTime,
           ),
         ),
         _sleepCard(
@@ -381,24 +431,50 @@ class SleepPage extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '中途與甦醒',
+                  '夜間醒來',
                   style: HealingDesignSystem.titleSmall.copyWith(
                     color: HealingDesignSystem.adaptivePrimaryText(context),
                   ),
                 ),
+                const SizedBox(height: 4),
+                Text(
+                  '記錄醒來時間，並可補上再次睡著時間或推估清醒時長。',
+                  style: HealingDesignSystem.bodySmall.copyWith(
+                    color: HealingDesignSystem.mutedText,
+                  ),
+                ),
+                if (nightAwakenings.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  for (var i = 0; i < nightAwakenings.length; i++)
+                    _nightAwakeningTile(context, nightAwakenings[i], i),
+                ],
+                if (legacyMidWakeText.trim().isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: HealingDesignSystem.adaptiveFill(context),
+                      borderRadius: BorderRadius.circular(
+                        HealingDesignSystem.radiusS,
+                      ),
+                    ),
+                    child: Text(
+                      '舊版夜間醒來註記：${legacyMidWakeText.trim()}',
+                      style: HealingDesignSystem.bodySmall.copyWith(
+                        color: HealingDesignSystem.mutedText,
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
-                TextField(
-                  controller: midWakeCtrl,
-                  style: TextStyle(
-                    color: HealingDesignSystem.adaptivePrimaryText(context),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    onPressed: onAddNightAwakening,
+                    icon: const Icon(Icons.add_rounded),
+                    label: const Text('新增夜間醒來'),
                   ),
-                  decoration: _sleepInputDecoration(
-                    context: context,
-                    labelText: '半夜醒來時間 (可留白)',
-                    hintText: '例：03:15, 05:40 (看截圖時間)',
-                    prefixIcon: const Icon(Icons.access_time_outlined),
-                  ),
-                  onChanged: onChangeMidWake,
                 ),
               ],
             ),

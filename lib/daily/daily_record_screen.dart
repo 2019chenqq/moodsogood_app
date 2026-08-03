@@ -18,6 +18,9 @@ import 'daily_record_helpers.dart';
 import 'daily_record_widgets.dart';
 import 'daily_record_pages.dart';
 import 'widgets/emotion_page_checkbox.dart';
+import 'widgets/night_awakening_editor.dart';
+import 'widgets/body_measurement_page.dart';
+import 'symptom_definitions.dart';
 import '../analytics_service.dart';
 import '../tutorial/app_tutorial_service.dart';
 
@@ -38,6 +41,10 @@ class DailyRecordScreen extends StatefulWidget {
 
 class _DailyRecordScreenState extends State<DailyRecordScreen> {
   int _index = 0;
+  final Set<int> _visitedSectionPages = <int>{};
+  bool _loadedSymptomSectionCompleted = false;
+  bool _loadedEmotionSectionCompleted = false;
+  bool _loadedStateSectionCompleted = false;
   late final PageController _pageController;
   bool _isSaving = false;
   bool _isPeriod = false;
@@ -67,7 +74,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   @override
   void initState() {
     super.initState();
-    _index = widget.initialTab.clamp(0, 2);
+    _index = widget.initialTab.clamp(0, 3);
+    _visitedSectionPages.add(_index);
     _pageController = PageController(initialPage: _index);
     _loadPeriodVisibilityAndCalendarState();
     _loadExistingData(_recordDate);
@@ -112,11 +120,10 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
           : await HealthDataEncryptionService.decryptData(
               healthProfile.data()!,
             );
-      final sex =
-          (healthData['sexAssignedAtBirth'] ??
-                  profile.data()?['sexAssignedAtBirth'])
-              ?.toString()
-              .trim();
+      final sex = (healthData['sexAssignedAtBirth'] ??
+              profile.data()?['sexAssignedAtBirth'])
+          ?.toString()
+          .trim();
       showsPeriodCalendar = sex == null || sex.isEmpty || sex == '女性';
     } catch (e) {
       debugPrint('讀取生理性別失敗: $e');
@@ -311,12 +318,18 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   }) async {
     final repo = DailyRecordRepository();
     final existing = await repo.getDailyRecord(userId: uid, date: day);
+    final existingRecord = existing == null
+        ? null
+        : DailyRecord.fromData(DateHelper.toId(day), existing);
 
     await repo.saveDailyRecord(
       id: DateHelper.toId(day),
       userId: uid,
       date: day,
       emotions: (existing?['emotions'] as Map?)?.cast<String, dynamic>(),
+      symptomSectionCompleted: existingRecord?.symptomSectionCompleted ?? false,
+      emotionSectionCompleted: existingRecord?.emotionSectionCompleted ?? false,
+      stateSectionCompleted: existingRecord?.stateSectionCompleted ?? false,
       sleep: (existing?['sleep'] as Map?)?.cast<String, dynamic>(),
       bodySymptoms: (existing?['bodySymptoms'] as List?)
           ?.map((e) => e.toString())
@@ -380,8 +393,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         await HealthDataEncryptionService.setEncrypted(
           periodTrackerRef,
           {
-          'cycleLength': _periodCycleLength,
-          'updatedAt': FieldValue.serverTimestamp(),
+            'cycleLength': _periodCycleLength,
+            'updatedAt': FieldValue.serverTimestamp(),
           },
           policyName: 'periodTracker',
         );
@@ -458,6 +471,14 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       // 🔹 症狀
       _symptoms.clear();
       _symptoms.add(SymptomItem(name: ''));
+      _stateChanges.clear();
+      _bodyMeasurement = null;
+      _loadedSymptomSectionCompleted = false;
+      _loadedEmotionSectionCompleted = false;
+      _loadedStateSectionCompleted = false;
+      _visitedSectionPages
+        ..clear()
+        ..add(_index);
 
       // 🔹 安眠藥相關
       tookHypnotic = false;
@@ -468,10 +489,12 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
 
       // 🔹 睡眠時間
       sleepTime = null;
+      estimatedSleepTime = null;
       wakeTime = null;
       finalWakeTime = null;
       midWakeList = '';
       _midWakeCtrl.clear();
+      _nightAwakenings.clear();
 
       // 🔹 睡眠旗標、備註、品質
       _sleepFlags.clear();
@@ -493,11 +516,14 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       kEmotionCheckboxNames.map((name) => EmotionItem(name)).toList();
 
   final List<SymptomItem> _symptoms = [SymptomItem(name: '')];
+  final Map<String, int> _stateChanges = {};
+  BodyMeasurement? _bodyMeasurement;
 
   bool tookHypnotic = false;
   String hypnoticName = '';
   String hypnoticDose = '';
   TimeOfDay? sleepTime;
+  TimeOfDay? estimatedSleepTime;
   TimeOfDay? wakeTime;
   TimeOfDay? finalWakeTime;
   String midWakeList = '';
@@ -508,6 +534,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   String sleepNote = '';
   int? sleepQuality;
   final List<NapItem> _naps = [];
+  final List<NightAwakeningItem> _nightAwakenings = [];
 
   // ——— 共用：包裹每個分頁（頁首 + 內容 + 底部儲存鈕） ———
   Widget _pageWrapper(Widget child) {
@@ -834,6 +861,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       (icon: Icons.sentiment_satisfied, label: '情緒'),
       (icon: Icons.healing, label: '症狀'),
       (icon: Icons.nightlight_round, label: '睡眠'),
+      (icon: Icons.monitor_weight_outlined, label: '身體'),
     ];
 
     return Container(
@@ -902,6 +930,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   }
 
   void _selectTab(int index) {
+    _visitedSectionPages.add(index);
     if (_index == index) return;
     setState(() => _index = index);
     _pageController.animateToPage(
@@ -1032,7 +1061,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         } else {
           throw TypeError();
         }
-        debugPrint('✅ Parsed periodData: $periodData');
+        debugPrint('✅ Parsed period data');
       } catch (e) {
         debugPrint('❌ Failed to parse periodData: $e');
       }
@@ -1058,6 +1087,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       debugPrint('⚠️  No sleep field in data');
     }
 
+    final parsedRecord = DailyRecord.fromData(DateHelper.toId(date), data);
+
     debugPrint('🎨 Applying parsed data to UI...');
     setState(() {
       // 應用情緒
@@ -1072,8 +1103,15 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         ..addAll(
           symptoms.isEmpty
               ? [SymptomItem(name: '')]
-              : symptoms.map((n) => SymptomItem(name: n)),
+              : symptoms.map((n) => SymptomItem(name: normalizeSymptomName(n))),
         );
+      _stateChanges
+        ..clear()
+        ..addAll(parsedRecord.stateChanges);
+      _bodyMeasurement = parsedRecord.bodyMeasurement;
+      _loadedSymptomSectionCompleted = parsedRecord.symptomSectionCompleted;
+      _loadedEmotionSectionCompleted = parsedRecord.emotionSectionCompleted;
+      _loadedStateSectionCompleted = parsedRecord.stateSectionCompleted;
       debugPrint('✅ Applied ${symptoms.length} symptoms to UI');
 
       // 應用睡眠數據
@@ -1084,11 +1122,15 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       _hypnoticDoseCtrl.text = hypnoticDose;
 
       sleepTime = sleepData.sleepTime;
+      estimatedSleepTime = sleepData.estimatedSleepTime;
       wakeTime = sleepData.wakeTime;
       finalWakeTime = sleepData.finalWakeTime;
 
       midWakeList = sleepData.midWakeList ?? '';
       _midWakeCtrl.text = midWakeList;
+      _nightAwakenings
+        ..clear()
+        ..addAll(sleepData.nightAwakenings);
 
       // 睡眠標籤
       _sleepFlags.clear();
@@ -1130,8 +1172,16 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         ..addAll(
           record.symptoms.isEmpty
               ? [SymptomItem(name: '')]
-              : record.symptoms.map((n) => SymptomItem(name: n)),
+              : record.symptoms
+                  .map((n) => SymptomItem(name: normalizeSymptomName(n))),
         );
+      _stateChanges
+        ..clear()
+        ..addAll(record.stateChanges);
+      _bodyMeasurement = record.bodyMeasurement;
+      _loadedSymptomSectionCompleted = record.symptomSectionCompleted;
+      _loadedEmotionSectionCompleted = record.emotionSectionCompleted;
+      _loadedStateSectionCompleted = record.stateSectionCompleted;
 
       // --- 睡眠 ---
       tookHypnotic = s.tookHypnotic;
@@ -1141,11 +1191,15 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       _hypnoticDoseCtrl.text = hypnoticDose;
 
       sleepTime = s.sleepTime;
+      estimatedSleepTime = s.estimatedSleepTime;
       wakeTime = s.wakeTime;
       finalWakeTime = s.finalWakeTime;
 
       midWakeList = s.midWakeList ?? '';
       _midWakeCtrl.text = midWakeList;
+      _nightAwakenings
+        ..clear()
+        ..addAll(s.nightAwakenings);
 
       // 睡眠標籤
       _sleepFlags.clear();
@@ -1183,6 +1237,9 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       sleepTime: sleepMap['sleepTime'] != null
           ? DateHelper.parseTime(sleepMap['sleepTime'])
           : null,
+      estimatedSleepTime: sleepMap['estimatedSleepTime'] != null
+          ? DateHelper.parseTime(sleepMap['estimatedSleepTime'])
+          : null,
       wakeTime: sleepMap['wakeTime'] != null
           ? DateHelper.parseTime(sleepMap['wakeTime'])
           : null,
@@ -1190,6 +1247,13 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
           ? DateHelper.parseTime(sleepMap['finalWakeTime'])
           : null,
       midWakeList: sleepMap['midWakeList'],
+      nightAwakenings: (sleepMap['nightAwakenings'] as List?)
+              ?.whereType<Map>()
+              .map((item) => item.cast<String, dynamic>())
+              .where((item) => DateHelper.parseTime(item['start']) != null)
+              .map(NightAwakeningItem.fromMap)
+              .toList() ??
+          const [],
       flags: List<String>.from(sleepMap['flags'] ?? []),
       note: sleepMap['note'],
       quality: sleepMap['quality'],
@@ -1228,6 +1292,13 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   Future<void> _saveAll() async {
     if (_isSaving) return;
 
+    if (_bodyMeasurement?.isValid == false) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('請先修正身體數據的輸入範圍')),
+      );
+      return;
+    }
+
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
 
@@ -1247,6 +1318,13 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       bool oldIsPeriod = false;
       var cloudSyncFailed = false;
       final effectiveIsPeriod = _showsPeriodCalendar && _isPeriod;
+      final emotionSectionCompleted =
+          _loadedEmotionSectionCompleted || _visitedSectionPages.contains(0);
+      final symptomSectionCompleted =
+          _loadedSymptomSectionCompleted || _visitedSectionPages.contains(1);
+      final stateSectionCompleted = _loadedStateSectionCompleted ||
+          _visitedSectionPages.contains(0) ||
+          _visitedSectionPages.contains(2);
 
       // 離線時這一步可能失敗，不能影響本地儲存。
       if (FirebaseSyncConfig.shouldSync()) {
@@ -1272,18 +1350,30 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
             .where((e) => e.value != null)
             .map((e) => {'name': e.name, 'value': e.value})
             .toList(),
-        'symptoms': _symptoms.map((s) => s.name).toList(),
+        'symptoms': _symptoms
+            .map((s) => normalizeSymptomName(s.name))
+            .where((name) => name.isNotEmpty)
+            .toSet()
+            .toList(),
+        'stateChanges': Map<String, int>.from(_stateChanges),
+        'symptomSectionCompleted': symptomSectionCompleted,
+        'emotionSectionCompleted': emotionSectionCompleted,
+        'stateSectionCompleted': stateSectionCompleted,
+        'bodyMeasurement': _bodyMeasurement?.toJson(),
         'sleep': {
           'tookHypnotic': tookHypnotic,
           'hypnoticName': hypnoticName,
           'hypnoticDose': hypnoticDose,
           'sleepTime': DateHelper.formatTime(sleepTime),
+          'estimatedSleepTime': DateHelper.formatTime(estimatedSleepTime),
           'wakeTime': DateHelper.formatTime(wakeTime),
           'flags': _sleepFlags.map((f) => f.name).toList(),
           'note': sleepNote,
           'quality': sleepQuality,
           'finalWakeTime': DateHelper.formatTime(finalWakeTime),
           'midWakeList': midWakeList,
+          'nightAwakenings':
+              _nightAwakenings.map((item) => item.toMap()).toList(),
           'naps': _naps
               .map((n) => {
                     'start': DateHelper.formatTime(n.start),
@@ -1335,7 +1425,6 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         debugPrint('🏁 Start saving to local database...');
         debugPrint(
             '📅 Saving with date: $_recordDate (ISO: ${_recordDate.toIso8601String()})');
-        debugPrint('👤 Saving with userId: $uid');
 
         final emotionsToSave = Map<String, dynamic>.from(_emotions
             .where((e) =>
@@ -1344,31 +1433,41 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
             .toList()
             .asMap()
             .map((k, v) => MapEntry(v.name, v.value)));
-        debugPrint('📊 Emotions to save: $emotionsToSave');
+        debugPrint('📊 Emotions to save: ${emotionsToSave.length} items');
 
         final symptomsToSave = _symptoms
-            .map((s) => s.name)
+            .map((s) => normalizeSymptomName(s.name))
             .where((name) => name.isNotEmpty)
+            .toSet()
             .toList();
-        debugPrint(
-            '🩹 Symptoms to save: $symptomsToSave (from _symptoms: ${_symptoms.map((s) => s.name).toList()})');
+        debugPrint('🩹 Symptoms to save: ${symptomsToSave.length} items');
 
         await repo.saveDailyRecord(
           id: docId,
           userId: uid,
           date: _recordDate,
           emotions: emotionsToSave,
+          stateChanges: Map<String, int>.from(_stateChanges),
+          symptomSectionCompleted: symptomSectionCompleted,
+          emotionSectionCompleted: emotionSectionCompleted,
+          stateSectionCompleted: stateSectionCompleted,
+          bodyMeasurement: _bodyMeasurement?.toJson(),
           bodySymptoms: symptomsToSave,
           moodScale: 5,
           sleep: {
             'sleepTime':
                 sleepTime != null ? DateHelper.formatTime(sleepTime!) : null,
+            'estimatedSleepTime': estimatedSleepTime != null
+                ? DateHelper.formatTime(estimatedSleepTime!)
+                : null,
             'wakeTime':
                 wakeTime != null ? DateHelper.formatTime(wakeTime!) : null,
             'finalWakeTime': finalWakeTime != null
                 ? DateHelper.formatTime(finalWakeTime!)
                 : null,
             'midWakeList': midWakeList,
+            'nightAwakenings':
+                _nightAwakenings.map((item) => item.toMap()).toList(),
             'quality': sleepQuality,
             'tookHypnotic': tookHypnotic,
             'hypnoticName': hypnoticName,
@@ -1589,6 +1688,16 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
             });
             _maybeShowEmergencyAlert();
           },
+          stateChanges: _stateChanges,
+          onChangeState: (id, value) {
+            setState(() {
+              if (value == null) {
+                _stateChanges.remove(id);
+              } else {
+                _stateChanges[id] = value.clamp(1, 5);
+              }
+            });
+          },
           firstEmotionItemKey: _firstEmotionItemKey,
           emotionScoreKey: _emotionScoreKey,
           tutorialSliderKey: _tutorialSliderKey,
@@ -1633,11 +1742,20 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       )),
       _pageWrapper(SleepPage(
         sleepTime: sleepTime,
+        estimatedSleepTime: estimatedSleepTime,
         wakeTime: wakeTime,
         onPickSleepTime: () async {
           final t = await showTimePicker(
               context: context, initialTime: TimeOfDay.now());
           if (t != null) setState(() => sleepTime = t);
+        },
+        onPickEstimatedSleepTime: () async {
+          final t = await showTimePicker(
+            context: context,
+            initialTime: estimatedSleepTime ?? sleepTime ?? TimeOfDay.now(),
+            helpText: '推估實際睡著時間',
+          );
+          if (t != null) setState(() => estimatedSleepTime = t);
         },
         onPickWakeTime: () async {
           final t = await showTimePicker(
@@ -1703,8 +1821,26 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
               context: context, initialTime: TimeOfDay.now());
           if (t != null) setState(() => finalWakeTime = t);
         },
-        midWakeCtrl: _midWakeCtrl,
-        onChangeMidWake: (v) => setState(() => midWakeList = v),
+        nightAwakenings: _nightAwakenings,
+        legacyMidWakeText: midWakeList,
+        onAddNightAwakening: () async {
+          final item = await showNightAwakeningEditor(context);
+          if (item != null && mounted) {
+            setState(() => _nightAwakenings.add(item));
+          }
+        },
+        onEditNightAwakening: (index) async {
+          final item = await showNightAwakeningEditor(
+            context,
+            initial: _nightAwakenings[index],
+          );
+          if (item != null && mounted) {
+            setState(() => _nightAwakenings[index] = item);
+          }
+        },
+        onDeleteNightAwakening: (index) {
+          setState(() => _nightAwakenings.removeAt(index));
+        },
         tookHypnotic: tookHypnotic,
         onToggleHypnotic: (v) => setState(() => tookHypnotic = v),
         hypnoticName: hypnoticName,
@@ -1774,6 +1910,10 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         },
         onDeleteNap: (i) => setState(() => _naps.removeAt(i)),
       )),
+      _pageWrapper(BodyMeasurementPage(
+        value: _bodyMeasurement,
+        onChanged: (value) => setState(() => _bodyMeasurement = value),
+      )),
     ];
     return Scaffold(
       backgroundColor: scaffoldBg,
@@ -1830,6 +1970,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
                 child: PageView(
                   controller: _pageController,
                   onPageChanged: (index) {
+                    _visitedSectionPages.add(index);
                     if (_index != index) {
                       setState(() => _index = index);
                     }

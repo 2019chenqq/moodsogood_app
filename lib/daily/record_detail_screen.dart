@@ -9,6 +9,8 @@ import 'daily_record_repository.dart';
 import '../constants/healing_design_system.dart';
 import '../analytics_service.dart';
 import '../utils/health_data_encryption_service.dart';
+import 'daily_state_dimensions.dart';
+import 'symptom_definitions.dart';
 
 class RecordDetailScreen extends StatefulWidget {
   final String uid;
@@ -78,6 +80,7 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
 
   /// 從本地 Map 轉換為 DailyRecord
   DailyRecord _convertLocalToRecord(Map<String, dynamic> data, DateTime date) {
+    final parsedRecord = DailyRecord.fromData(widget.docId, data);
     List<Emotion> emotions = [];
     if (data['emotions'] != null) {
       try {
@@ -111,7 +114,10 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
         } else {
           throw TypeError();
         }
-        symptoms = symptomList.cast<String>();
+        symptoms = symptomList
+            .map((item) => normalizeSymptomName(item.toString()))
+            .toSet()
+            .toList();
       } catch (e) {
         debugPrint('❌ Failed to parse symptoms: $e');
       }
@@ -160,6 +166,8 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
       date: date,
       emotions: emotions,
       symptoms: symptoms,
+      stateChanges: parsedRecord.stateChanges,
+      bodyMeasurement: parsedRecord.bodyMeasurement,
       sleep: sleepData,
       isPeriod: isPeriod,
       periodStartId: periodStartId,
@@ -176,6 +184,9 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
       sleepTime: sleepMap['sleepTime'] != null
           ? DateHelper.parseTime(sleepMap['sleepTime'])
           : null,
+      estimatedSleepTime: sleepMap['estimatedSleepTime'] != null
+          ? DateHelper.parseTime(sleepMap['estimatedSleepTime'])
+          : null,
       wakeTime: sleepMap['wakeTime'] != null
           ? DateHelper.parseTime(sleepMap['wakeTime'])
           : null,
@@ -183,6 +194,13 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
           ? DateHelper.parseTime(sleepMap['finalWakeTime'])
           : null,
       midWakeList: sleepMap['midWakeList'],
+      nightAwakenings: (sleepMap['nightAwakenings'] as List?)
+              ?.whereType<Map>()
+              .map((item) => item.cast<String, dynamic>())
+              .where((item) => DateHelper.parseTime(item['start']) != null)
+              .map(NightAwakeningItem.fromMap)
+              .toList() ??
+          const [],
       flags: List<String>.from(sleepMap['flags'] ?? []),
       note: sleepMap['note'],
       quality: sleepMap['quality'],
@@ -237,6 +255,17 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
       }
     }
     return out.isEmpty ? '-' : out.join('、');
+  }
+
+  String _nightAwakeningLabel(NightAwakeningItem item) {
+    final start = DateHelper.formatTime(item.start);
+    final time = item.end != null
+        ? '$start → ${DateHelper.formatTime(item.end)}'
+        : item.estimatedDurationMinutes != null
+            ? '$start · 約 ${item.estimatedDurationMinutes} 分鐘'
+            : start;
+    final note = item.note?.trim();
+    return note?.isNotEmpty == true ? '$time（$note）' : time;
   }
 
   Future<void> _clearRecord(BuildContext context) async {
@@ -418,6 +447,29 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                 ),
               ),
 
+              if (record.stateChanges.isNotEmpty) ...[
+                _sectionHeader(context, '今日狀態變化'),
+                Container(
+                  margin: const EdgeInsets.only(bottom: 18),
+                  decoration:
+                      HealingDesignSystem.adaptiveCardDecoration(context),
+                  child: Column(
+                    children: kDailyStateDimensions
+                        .where((dimension) =>
+                            record.stateChanges.containsKey(dimension.id))
+                        .map((dimension) => _detailTile(
+                              context,
+                              dimension.displayName.replaceAll('變化', ''),
+                              dailyStateValueLabel(
+                                dimension,
+                                record.stateChanges[dimension.id]!,
+                              ),
+                            ))
+                        .toList(),
+                  ),
+                ),
+              ],
+
               // ===== 症狀 =====
               _sectionHeader(context, '症狀'),
               Container(
@@ -456,6 +508,35 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                       ),
               ),
 
+              if (record.bodyMeasurement?.hasData == true) ...[
+                _sectionHeader(context, '身體數據'),
+                Container(
+                  margin: const EdgeInsets.only(bottom: 18),
+                  decoration:
+                      HealingDesignSystem.adaptiveCardDecoration(context),
+                  child: Column(
+                    children: [
+                      if (record.bodyMeasurement!.weightKg != null)
+                        _detailTile(context, '體重',
+                            '${record.bodyMeasurement!.weightKg} kg'),
+                      if (record.bodyMeasurement!.bodyFatPercent != null)
+                        _detailTile(context, '體脂率',
+                            '${record.bodyMeasurement!.bodyFatPercent}%'),
+                      if (record.bodyMeasurement!.waistCm != null)
+                        _detailTile(context, '腰圍',
+                            '${record.bodyMeasurement!.waistCm} cm'),
+                      if (record.bodyMeasurement!.measurementTiming != null)
+                        _detailTile(
+                          context,
+                          '測量時間',
+                          record
+                              .bodyMeasurement!.measurementTiming!.displayName,
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+
               // ===== 睡眠 =====
               _sectionHeader(context, '睡眠'),
               Container(
@@ -482,16 +563,31 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                               ? '-'
                               : sleep.hypnoticDose!),
                     ],
-                    _detailTile(context, '入睡時間',
+                    _detailTile(context, '準備睡覺時間',
                         DateHelper.formatTime(sleep.sleepTime)),
+                    _detailTile(
+                      context,
+                      '推估入睡時間',
+                      sleep.estimatedSleepTime == null
+                          ? '未填寫（以準備睡覺時間估算）'
+                          : DateHelper.formatTime(sleep.estimatedSleepTime),
+                    ),
                     _detailTile(context, '夜間睡眠狀況', _prettyFlags(sleep.flags)),
                     _detailTile(
+                      context,
+                      '夜間醒來',
+                      sleep.nightAwakenings.isEmpty
+                          ? '-'
+                          : sleep.nightAwakenings
+                              .map(_nightAwakeningLabel)
+                              .join('\n'),
+                    ),
+                    if (sleep.midWakeList?.trim().isNotEmpty == true)
+                      _detailTile(
                         context,
-                        '夜間醒來時間',
-                        sleep.midWakeList == null ||
-                                sleep.midWakeList!.trim().isEmpty
-                            ? '-'
-                            : sleep.midWakeList!),
+                        '舊版夜間醒來註記',
+                        sleep.midWakeList!.trim(),
+                      ),
                     _detailTile(context, '自覺睡眠品質',
                         sleep.quality == null ? '-' : '${sleep.quality}'),
                     if ((sleep.note ?? '').isNotEmpty)

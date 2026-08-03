@@ -34,14 +34,75 @@ class NapItem {
       NapItem(start: start ?? this.start, end: end ?? this.end);
 }
 
+/// 夜間醒來紀錄。「再次睡著」與「估計清醒分鐘」均為選填。
+class NightAwakeningItem {
+  final TimeOfDay start;
+  final TimeOfDay? end;
+  final int? estimatedDurationMinutes;
+  final String? note;
+
+  const NightAwakeningItem({
+    required this.start,
+    this.end,
+    this.estimatedDurationMinutes,
+    this.note,
+  });
+
+  int? get effectiveDurationMinutes {
+    if (end != null) {
+      final minutes = DateHelper.calcDurationMinutes(start, end!);
+      return minutes > 0 ? minutes : null;
+    }
+    final estimate = estimatedDurationMinutes;
+    return estimate != null && estimate > 0 ? estimate : null;
+  }
+
+  Map<String, dynamic> toMap() => {
+        'start': DateHelper.formatTime(start),
+        'end': end == null ? null : DateHelper.formatTime(end),
+        'estimatedDurationMinutes': estimatedDurationMinutes,
+        'note': note?.trim() ?? '',
+      };
+
+  factory NightAwakeningItem.fromMap(Map<String, dynamic> map) {
+    return NightAwakeningItem(
+      start: DateHelper.parseTime(map['start'])!,
+      end: DateHelper.parseTime(map['end']),
+      estimatedDurationMinutes:
+          (map['estimatedDurationMinutes'] as num?)?.toInt(),
+      note: map['note']?.toString(),
+    );
+  }
+
+  NightAwakeningItem copyWith({
+    TimeOfDay? start,
+    TimeOfDay? end,
+    bool clearEnd = false,
+    int? estimatedDurationMinutes,
+    bool clearEstimatedDuration = false,
+    String? note,
+  }) {
+    return NightAwakeningItem(
+      start: start ?? this.start,
+      end: clearEnd ? null : (end ?? this.end),
+      estimatedDurationMinutes: clearEstimatedDuration
+          ? null
+          : (estimatedDurationMinutes ?? this.estimatedDurationMinutes),
+      note: note ?? this.note,
+    );
+  }
+}
+
 /// ------------------------------------------------------
 /// 2. 睡眠資料模型
 /// ------------------------------------------------------
 class SleepData {
-  final TimeOfDay? sleepTime; // 準備睡覺
+  final TimeOfDay? sleepTime; // 準備睡覺（舊欄位，保留相容性）
+  final TimeOfDay? estimatedSleepTime; // 推估實際睡著時間（選填）
   final TimeOfDay? wakeTime; // 離床活動
   final TimeOfDay? finalWakeTime; // 🔥 新增：甦醒時刻 (睜開眼)
   final String? midWakeList; // 🔥 新增：半夜醒來時間 (文字)
+  final List<NightAwakeningItem> nightAwakenings;
   final int? quality;
   final bool tookHypnotic;
   final String? hypnoticName;
@@ -52,9 +113,11 @@ class SleepData {
 
   const SleepData({
     this.sleepTime,
+    this.estimatedSleepTime,
     this.wakeTime,
     this.finalWakeTime, // 🔥 新增
     this.midWakeList, // 🔥 新增
+    this.nightAwakenings = const [],
     this.quality,
     this.tookHypnotic = false,
     this.hypnoticName,
@@ -67,15 +130,16 @@ class SleepData {
 
   factory SleepData.empty() => const SleepData();
 
-  // 🔥 升級：自動計算夜間睡眠時數 (回傳小時，例如 7.5)
+  TimeOfDay? get effectiveSleepStart => estimatedSleepTime ?? sleepTime;
+
+  // 自動計算夜間睡眠時數 (回傳小時，例如 7.5)
   double? get durationHours {
     // 優先使用 finalWakeTime 計算，如果沒有才用 wakeTime (離床)
     final end = finalWakeTime ?? wakeTime;
-    if (sleepTime == null || end == null) return null;
-    final mins = DateHelper.calcDurationMinutes(sleepTime!, end);
+    final start = effectiveSleepStart;
+    if (start == null || end == null) return null;
+    final mins = DateHelper.calcDurationMinutes(start, end);
     final result = double.parse((mins / 60).toStringAsFixed(1));
-    debugPrint(
-        '🛏️ durationHours 計算：sleepTime=$sleepTime, wakeTime=$end, mins=$mins, result=$result');
     return result;
   }
 
@@ -85,11 +149,15 @@ class SleepData {
   Map<String, dynamic> toMap() {
     return {
       'sleepTime': sleepTime != null ? DateHelper.formatTime(sleepTime) : null,
+      'estimatedSleepTime': estimatedSleepTime != null
+          ? DateHelper.formatTime(estimatedSleepTime)
+          : null,
       'wakeTime': wakeTime != null ? DateHelper.formatTime(wakeTime) : null,
       'finalWakeTime': finalWakeTime != null
           ? DateHelper.formatTime(finalWakeTime)
           : null, // 🔥
       'midWakeList': midWakeList ?? '', // 🔥
+      'nightAwakenings': nightAwakenings.map((item) => item.toMap()).toList(),
       'quality': quality,
       'tookHypnotic': tookHypnotic,
       'hypnoticName': hypnoticName ?? '',
@@ -105,14 +173,20 @@ class SleepData {
     final sleepTimeStr = map['sleepTime'];
     final wakeTimeStr = map['wakeTime'];
     final finalWakeTimeStr = map['finalWakeTime'];
-    debugPrint(
-        '🛏️ SleepData.fromMap: sleepTime=$sleepTimeStr, wakeTime=$wakeTimeStr, finalWakeTime=$finalWakeTimeStr');
     return SleepData(
       sleepTime: DateHelper.parseTime(sleepTimeStr),
+      estimatedSleepTime: DateHelper.parseTime(map['estimatedSleepTime']),
       wakeTime: DateHelper.parseTime(wakeTimeStr),
       finalWakeTime: DateHelper.parseTime(finalWakeTimeStr), // 🔥
       midWakeList: map['midWakeList'] as String?, // 🔥
-      quality: map['quality'] as int?,
+      nightAwakenings: (map['nightAwakenings'] as List?)
+              ?.whereType<Map>()
+              .map((item) => item.cast<String, dynamic>())
+              .where((item) => DateHelper.parseTime(item['start']) != null)
+              .map(NightAwakeningItem.fromMap)
+              .toList() ??
+          const [],
+      quality: (map['quality'] as num?)?.toInt(),
       tookHypnotic: map['tookHypnotic'] == true,
       hypnoticName: map['hypnoticName'] as String?,
       hypnoticDose: map['hypnoticDose'] as String?,
@@ -146,6 +220,111 @@ class Emotion {
   }
 }
 
+class DailyStateItem {
+  const DailyStateItem({required this.id, required this.name, this.value});
+
+  final String id;
+  final String name;
+  final int? value;
+
+  DailyStateItem copyWith({int? value, bool clearValue = false}) =>
+      DailyStateItem(
+        id: id,
+        name: name,
+        value: clearValue ? null : value ?? this.value,
+      );
+
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'value': value};
+
+  factory DailyStateItem.fromJson(Map<String, dynamic> json) {
+    final rawValue = json['value'];
+    final parsed = rawValue is num ? rawValue.toInt() : null;
+    return DailyStateItem(
+      id: (json['id'] ?? '').toString(),
+      name: (json['name'] ?? '').toString(),
+      value: parsed != null && parsed >= 1 && parsed <= 5 ? parsed : null,
+    );
+  }
+}
+
+enum MeasurementTiming {
+  afterWaking,
+  beforeBreakfast,
+  afterMeal,
+  beforeSleep,
+  other
+}
+
+extension MeasurementTimingDisplay on MeasurementTiming {
+  String get displayName => switch (this) {
+        MeasurementTiming.afterWaking => '起床後',
+        MeasurementTiming.beforeBreakfast => '早餐前',
+        MeasurementTiming.afterMeal => '飯後',
+        MeasurementTiming.beforeSleep => '睡前',
+        MeasurementTiming.other => '其他時間',
+      };
+}
+
+class BodyMeasurement {
+  const BodyMeasurement({
+    this.weightKg,
+    this.bodyFatPercent,
+    this.waistCm,
+    this.measuredAt,
+    this.measurementTiming,
+  });
+
+  final double? weightKg;
+  final double? bodyFatPercent;
+  final double? waistCm;
+  final DateTime? measuredAt;
+  final MeasurementTiming? measurementTiming;
+
+  bool get hasData =>
+      weightKg != null ||
+      bodyFatPercent != null ||
+      waistCm != null ||
+      measurementTiming != null;
+
+  bool get isValid =>
+      _inRange(weightKg, 20, 300) &&
+      _inRange(bodyFatPercent, 1, 70) &&
+      _inRange(waistCm, 30, 250);
+
+  Map<String, dynamic> toJson() => {
+        'weightKg': weightKg,
+        'bodyFatPercent': bodyFatPercent,
+        'waistCm': waistCm,
+        'measuredAt': measuredAt?.toIso8601String(),
+        'measurementTiming': measurementTiming?.name,
+      };
+
+  factory BodyMeasurement.fromJson(Map<String, dynamic> json) {
+    final timingName = json['measurementTiming']?.toString();
+    final timings = MeasurementTiming.values.where((e) => e.name == timingName);
+    return BodyMeasurement(
+      weightKg: _asDouble(json['weightKg']),
+      bodyFatPercent: _asDouble(json['bodyFatPercent']),
+      waistCm: _asDouble(json['waistCm']),
+      measuredAt: _asDate(json['measuredAt']),
+      measurementTiming: timings.isEmpty ? null : timings.first,
+    );
+  }
+
+  static bool _inRange(double? value, double min, double max) =>
+      value == null || (value >= min && value <= max);
+
+  static double? _asDouble(dynamic value) => value is num
+      ? value.toDouble()
+      : double.tryParse(value?.toString() ?? '');
+
+  static DateTime? _asDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    return DateTime.tryParse(value?.toString() ?? '');
+  }
+}
+
 /// ------------------------------------------------------
 /// 4. 每日紀錄總模型
 /// ------------------------------------------------------
@@ -155,6 +334,11 @@ class DailyRecord {
 
   final List<Emotion> emotions;
   final List<String> symptoms;
+  final Map<String, int> stateChanges;
+  final bool symptomSectionCompleted;
+  final bool emotionSectionCompleted;
+  final bool stateSectionCompleted;
+  final BodyMeasurement? bodyMeasurement;
   final SleepData sleep;
 
   final double? overallMood;
@@ -173,6 +357,11 @@ class DailyRecord {
     required this.date,
     this.emotions = const [],
     this.symptoms = const [],
+    this.stateChanges = const {},
+    this.symptomSectionCompleted = false,
+    this.emotionSectionCompleted = false,
+    this.stateSectionCompleted = false,
+    this.bodyMeasurement,
     this.sleep = const SleepData(),
     this.overallMood,
     this.moodScale = 5,
@@ -194,6 +383,11 @@ class DailyRecord {
       'date': Timestamp.fromDate(DateTime(date.year, date.month, date.day)),
       'emotions': emotions.map((e) => e.toMap()).toList(),
       'symptoms': symptoms,
+      'stateChanges': stateChanges,
+      'symptomSectionCompleted': symptomSectionCompleted,
+      'emotionSectionCompleted': emotionSectionCompleted,
+      'stateSectionCompleted': stateSectionCompleted,
+      'bodyMeasurement': bodyMeasurement?.toJson(),
       'sleep': sleep.toMap(),
       'overallMood': overallMood,
       'moodScale': moodScale,
@@ -211,22 +405,53 @@ class DailyRecord {
 
   factory DailyRecord.fromData(String id, Map<String, dynamic> data) {
     final emotions = _parseEmotions(data['emotions']);
+    final periodData = data['periodData'] is Map
+        ? (data['periodData'] as Map).cast<String, dynamic>()
+        : const <String, dynamic>{};
+    final rawSymptoms = data['symptoms'] ?? data['bodySymptoms'];
+    final rawSleep = data['sleep'];
+    final symptoms = rawSymptoms is List
+        ? rawSymptoms.map((e) => e.toString()).toList()
+        : const <String>[];
+    final stateChanges = _parseStateChanges(data['stateChanges']);
+    final sleep = SleepData.fromMap(
+      rawSleep is Map ? rawSleep.cast<String, dynamic>() : null,
+    );
 
     return DailyRecord(
       id: id,
       date: _asDate(data['date']) ?? DateTime.tryParse(id) ?? DateTime.now(),
       emotions: emotions,
-      symptoms:
-          (data['symptoms'] as List?)?.map((e) => e.toString()).toList() ?? [],
-      sleep: SleepData.fromMap(data['sleep'] as Map<String, dynamic>?),
+      symptoms: symptoms,
+      stateChanges: stateChanges,
+      symptomSectionCompleted: _resolveSectionCompletion(
+        data['symptomSectionCompleted'],
+        symptoms.any((item) => item.trim().isNotEmpty),
+      ),
+      emotionSectionCompleted: _resolveSectionCompletion(
+        data['emotionSectionCompleted'],
+        emotions.any((emotion) => emotion.value != null),
+      ),
+      stateSectionCompleted: _resolveSectionCompletion(
+        data['stateSectionCompleted'],
+        stateChanges.isNotEmpty || sleep.quality != null,
+      ),
+      bodyMeasurement: data['bodyMeasurement'] is Map
+          ? BodyMeasurement.fromJson(
+              (data['bodyMeasurement'] as Map).cast<String, dynamic>(),
+            )
+          : null,
+      sleep: sleep,
       overallMood: _parseOverallMood(data['overallMood'], emotions),
       moodScale: data.containsKey('moodScale')
           ? resolveStoredRecordMoodScale(data)
           : 10,
-      isPeriod: data['isPeriod'] == true,
-      periodStartId: data['periodStartId'] as String?,
-      periodEndId: data['periodEndId'] as String?,
-      updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
+      isPeriod: data['isPeriod'] == true || periodData['isPeriod'] == true,
+      periodStartId: data['periodStartId'] as String? ??
+          periodData['periodStartId'] as String?,
+      periodEndId: data['periodEndId'] as String? ??
+          periodData['periodEndId'] as String?,
+      updatedAt: _asDate(data['updatedAt']),
     );
   }
 
@@ -254,6 +479,23 @@ class DailyRecord {
     }
 
     return const [];
+  }
+
+  static Map<String, int> _parseStateChanges(dynamic raw) {
+    if (raw is! Map) return const {};
+    final result = <String, int>{};
+    for (final entry in raw.entries) {
+      final value = entry.value is num ? (entry.value as num).toInt() : null;
+      if (value != null && value >= 1 && value <= 5) {
+        result[entry.key.toString()] = value;
+      }
+    }
+    return result;
+  }
+
+  static bool _resolveSectionCompletion(dynamic explicit, bool legacyContent) {
+    if (explicit is bool) return explicit;
+    return legacyContent;
   }
 
   static double? _parseOverallMood(dynamic raw, List<Emotion> emotions) {

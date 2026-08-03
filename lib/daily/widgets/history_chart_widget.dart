@@ -4,6 +4,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/daily_record.dart';
+import '../../models/period_cycle.dart';
 
 class HistoryChartWidget extends StatelessWidget {
   final List<DailyRecord> records;
@@ -13,6 +14,7 @@ class HistoryChartWidget extends StatelessWidget {
   final bool forceMonthlyAverage; // 新增
   final Map<DateTime, double> diaryMoodScores;
   final String overallMoodLabel;
+  final List<PeriodCycle> periodCycles;
 
   const HistoryChartWidget({
     super.key,
@@ -23,6 +25,7 @@ class HistoryChartWidget extends StatelessWidget {
     this.forceMonthlyAverage = false, // 新增
     this.diaryMoodScores = const <DateTime, double>{},
     this.overallMoodLabel = '整體情緒',
+    this.periodCycles = const <PeriodCycle>[],
   });
 
   /// 正規化日期（去除時間部分）
@@ -76,6 +79,7 @@ class HistoryChartWidget extends StatelessWidget {
   }
 
   /// 建立經期粉紅區塊（依照日期距離 startDate 的天數作為 x 座標，並限制在 minX/maxX 內）
+  // ignore: unused_element
   List<VerticalRangeAnnotation> _buildPeriodRanges(
     List<DailyRecord> sorted, {
     required double Function(DateTime date) xForDate,
@@ -125,6 +129,81 @@ class HistoryChartWidget extends StatelessWidget {
   }
 
   /// 將每日點轉為「月移動平均」點（key 為每月 1 日）
+  List<VerticalRangeAnnotation> _buildVisiblePeriodRanges(
+    List<PeriodCycle> cycles, {
+    required double Function(DateTime date) xForDate,
+    required double minX,
+    required double maxX,
+  }) {
+    final list = <VerticalRangeAnnotation>[];
+    final periodDays = cycles
+        .expand((cycle) sync* {
+          final start = _norm(cycle.startDate);
+          final end = _norm(cycle.endDate ?? DateTime.now());
+          for (var day = start;
+              !day.isAfter(end);
+              day = day.add(const Duration(days: 1))) {
+            yield day;
+          }
+        })
+        .toSet()
+        .toList()
+      ..sort();
+    if (periodDays.isEmpty) return list;
+
+    final completedDurations = cycles
+        .where((cycle) => cycle.endDate != null)
+        .map((cycle) => cycle.durationDays)
+        .where((days) => days > 0 && days <= 14)
+        .toList();
+    final averageDuration = completedDurations.isEmpty
+        ? 7
+        : (completedDurations.reduce((a, b) => a + b) /
+                completedDurations.length)
+            .round();
+    final bridgeGapDays = max(7, averageDuration).clamp(1, 14);
+    double? periodStartX;
+    DateTime? previousPeriodDate;
+
+    void addRange(DateTime endDate) {
+      if (periodStartX == null) return;
+      final rawX1 = periodStartX! - 0.5;
+      final rawX2 = xForDate(endDate) + 0.5;
+      if (rawX2 < minX || rawX1 > maxX) {
+        periodStartX = null;
+        previousPeriodDate = null;
+        return;
+      }
+      double x1 = rawX1;
+      double x2 = rawX2;
+      x1 = x1.clamp(minX, maxX);
+      x2 = x2.clamp(minX, maxX);
+      if (x2 >= x1) {
+        list.add(VerticalRangeAnnotation(
+          x1: x1,
+          x2: x2,
+          color: Colors.pink.withValues(alpha: 0.15),
+        ));
+      }
+      periodStartX = null;
+      previousPeriodDate = null;
+    }
+
+    for (final day in periodDays) {
+      if (previousPeriodDate != null &&
+          day.difference(previousPeriodDate!).inDays > bridgeGapDays) {
+        addRange(previousPeriodDate!);
+      }
+      periodStartX ??= xForDate(day);
+      previousPeriodDate = day;
+    }
+
+    if (previousPeriodDate != null) {
+      addRange(previousPeriodDate!);
+    }
+    return list;
+  }
+
   Map<DateTime, double> _toMonthlyMovingAverage(Map<DateTime, double> source) {
     final buckets = <DateTime, List<double>>{};
 
@@ -405,8 +484,8 @@ class HistoryChartWidget extends StatelessWidget {
     }
 
     // ===== 4️⃣ 經期粉紅區塊 =====
-    final periodRanges = _buildPeriodRanges(
-      sorted,
+    final periodRanges = _buildVisiblePeriodRanges(
+      periodCycles,
       xForDate: xForDate,
       minX: xBounds.minX,
       maxX: xBounds.maxX,

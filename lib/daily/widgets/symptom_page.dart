@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../constants/healing_design_system.dart';
 import '../daily_record_helpers.dart';
+import '../symptom_definitions.dart';
 
 /// 症狀分頁
 class SymptomPage extends StatelessWidget {
@@ -47,16 +48,6 @@ class SymptomPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const presetSymptoms = <String>{
-      '心悸', '胸悶', '胸痛', '呼吸困難', '過度換氣',
-      '胃食道逆流', '胃痛', '腹痛', '腹瀉', '便秘', '噁心反胃', '嘔吐', '脹氣', '食慾不振',
-      '頭暈', '頭痛', '頭脹',
-      '眼睛乾澀', '眼睛疲勞', '視力模糊', '不斷流淚', '耳鳴',
-      '口乾舌燥', '味覺失調', '口腔苦澀', '咽喉異物感',
-      '顫抖', '發麻', '手汗變多', '肌肉緊繃', '肌肉抽蓄', '四肢無力','頭重腳輕', '肌肉不自主抽動',
-      '疲倦', '睏倦', '嗜睡',
-    };
-
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -131,7 +122,7 @@ class SymptomPage extends StatelessWidget {
         ),
         const SizedBox(height: HealingDesignSystem.paddingS),
         _buildSymptomChips(
-          symptoms: ['心悸', '胸悶', '胸痛', '呼吸不順', '過度換氣'],
+          symptoms: kSymptomCategories['心血管與呼吸']!,
           items: items,
           onTogglePreset: onTogglePreset,
         ),
@@ -147,8 +138,7 @@ class SymptomPage extends StatelessWidget {
         ),
         const SizedBox(height: HealingDesignSystem.paddingS),
         _buildSymptomChips(
-          symptoms: [
-            '胃食道逆流', '胃痛', '腹痛', '腹瀉', '便秘', '噁心反胃', '嘔吐', '脹氣', '食慾不振'],
+          symptoms: kSymptomCategories['消化系統']!,
           items: items,
           onTogglePreset: onTogglePreset,
         ),
@@ -164,7 +154,7 @@ class SymptomPage extends StatelessWidget {
         ),
         const SizedBox(height: HealingDesignSystem.paddingS),
         _buildSymptomChips(
-          symptoms: ['頭暈', '頭痛', '頭脹'],
+          symptoms: kSymptomCategories['頭部']!,
           items: items,
           onTogglePreset: onTogglePreset,
         ),
@@ -180,7 +170,7 @@ class SymptomPage extends StatelessWidget {
         ),
         const SizedBox(height: HealingDesignSystem.paddingS),
         _buildSymptomChips(
-          symptoms: ['眼睛乾澀', '眼睛疲勞', '視力模糊', '不斷流淚', '耳鳴'],
+          symptoms: kSymptomCategories['眼睛與耳朵']!,
           items: items,
           onTogglePreset: onTogglePreset,
         ),
@@ -196,7 +186,7 @@ class SymptomPage extends StatelessWidget {
         ),
         const SizedBox(height: HealingDesignSystem.paddingS),
         _buildSymptomChips(
-          symptoms: ['口乾舌燥', '味覺失調', '口腔苦澀', '咽喉異物感'],
+          symptoms: kSymptomCategories['口腔與咽喉']!,
           items: items,
           onTogglePreset: onTogglePreset,
         ),
@@ -212,23 +202,23 @@ class SymptomPage extends StatelessWidget {
         ),
         const SizedBox(height: HealingDesignSystem.paddingS),
         _buildSymptomChips(
-          symptoms: ['顫抖', '發麻', '手汗變多', '肌肉緊繃', '肌肉抽蓄', '四肢無力', '頭重腳輕', '肌肉不自主抽動'],
+          symptoms: kSymptomCategories['四肢與肌肉']!,
           items: items,
           onTogglePreset: onTogglePreset,
         ),
 
-const SizedBox(height: HealingDesignSystem.paddingL),
+        const SizedBox(height: HealingDesignSystem.paddingL),
 
- // 7. 能量（勾選）
+        // 7. 全身狀態（勾選）
         Text(
-          '能量',
+          '全身狀態',
           style: HealingDesignSystem.titleSmall.copyWith(
             color: HealingDesignSystem.adaptivePrimaryText(context),
           ),
         ),
         const SizedBox(height: HealingDesignSystem.paddingS),
         _buildSymptomChips(
-          symptoms: ['疲倦', '睏倦', '嗜睡'],
+          symptoms: kSymptomCategories['全身狀態']!,
           items: items,
           onTogglePreset: onTogglePreset,
         ),
@@ -238,7 +228,7 @@ const SizedBox(height: HealingDesignSystem.paddingL),
         // 8. 自訂症狀清單
         if (items.asMap().entries.any((e) =>
             e.value.name.trim().isNotEmpty &&
-            !presetSymptoms.contains(e.value.name)))
+            !kPresetSymptoms.contains(e.value.name)))
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -258,7 +248,7 @@ const SizedBox(height: HealingDesignSystem.paddingL),
                     .entries
                     .where((e) =>
                         e.value.name.trim().isNotEmpty &&
-                        !presetSymptoms.contains(e.value.name))
+                        !kPresetSymptoms.contains(e.value.name))
                     .map((e) => _buildCustomSymptomTag(
                           symptomName: e.value.name,
                           onDelete: () => onDelete(e.key),

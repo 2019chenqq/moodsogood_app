@@ -22,6 +22,9 @@ import '../utils/health_data_encryption_service.dart';
 import '../widgets/trend_range_selector.dart';
 import '../constants/healing_design_system.dart';
 import '../analytics_service.dart';
+import '../sleep_insights/models/sleep_insight_models.dart';
+import '../sleep_insights/services/sleep_analysis_service.dart';
+import '../sleep_insights/widgets/sleep_insights_view.dart';
 
 const Map<String, String> ksleepFlagMap = {
   'good': '優',
@@ -60,7 +63,7 @@ class DailyRecordHistory extends StatefulWidget {
 class _DailyRecordHistoryState extends State<DailyRecordHistory> {
   static const String _overallMoodLabel = '整體情緒';
 
-  int? _selectedRangeDays = 7;
+  int? _selectedRangeDays = 30;
   DateTimeRange? _selectedDateRange; // 新增：月曆自訂區間
   int _historyWeekStartDay = DateTime.monday; // ✅ 補上
 
@@ -150,6 +153,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
     final hasTime =
         s.sleepTime != null || s.wakeTime != null || s.finalWakeTime != null;
     final hasOther = (s.midWakeList?.trim().isNotEmpty ?? false) ||
+        s.nightAwakenings.isNotEmpty ||
         s.quality != null ||
         s.flags.isNotEmpty ||
         s.naps.isNotEmpty ||
@@ -280,7 +284,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
     final bool isPro = kDemoUnlockPro;
     final pageIndex = widget.initialTab.clamp(0, 2);
     final pageTitle = switch (pageIndex) {
-      1 => '睡眠摘要',
+      1 => '睡眠洞察',
       2 => '情緒趨勢',
       _ => '紀錄歷程',
     };
@@ -340,21 +344,18 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
           listRecords = _applyDateFilter(listRecords);
           listRecords.sort((a, b) => b.date.compareTo(a.date));
 
-          final periodQuery = FirebaseFirestore.instance
-              .collection('users')
-              .doc(uid)
-              .collection('periodCycles')
-              .orderBy('startDate', descending: true);
-          return StreamBuilder<List<HealthDocument>>(
-            stream: HealthDataEncryptionService.watchEncrypted(periodQuery),
+          return FutureBuilder<List<PeriodCycle>>(
+            future: _loadPeriodCalendarCycles(uid),
             builder: (context, periodSnap) {
-              final cycles = periodSnap.data
-                      ?.map((doc) => PeriodCycle.fromData(doc.id, doc.data))
-                      .toList() ??
-                  [];
+              final cycles = periodSnap.data ?? const <PeriodCycle>[];
 
               return switch (pageIndex) {
-                1 => _buildSleepAnalysisPage(listRecords, isPro),
+                1 => _buildSleepAnalysisPage(
+                    dailyRecords,
+                    cycles,
+                    isPro,
+                    uid,
+                  ),
                 2 => _buildProChartContent(
                     context,
                     dailyRecords,
@@ -448,9 +449,104 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
     return allRecords;
   }
 
+  Future<List<PeriodCycle>> _loadPeriodCalendarCycles(String uid) async {
+    final startDate = DateTime(2020, 1, 1);
+    final endDate = DateTime.now().add(const Duration(days: 365));
+    final markedDays = <DateTime>{};
+
+    Map<String, dynamic>? periodMap(dynamic value) {
+      if (value is Map) return value.cast<String, dynamic>();
+      if (value is String && value.trim().isNotEmpty) {
+        try {
+          final decoded = jsonDecode(value);
+          if (decoded is Map) return decoded.cast<String, dynamic>();
+        } catch (_) {}
+      }
+      return null;
+    }
+
+    try {
+      final repo = DailyRecordRepository();
+      final localRecords = await repo.getDailyRecordsByDateRange(
+        userId: uid,
+        startDate: startDate,
+        endDate: endDate,
+      );
+      for (final row in localRecords) {
+        final data = periodMap(row['periodData']);
+        if (data?['isPeriod'] != true) continue;
+        final date = DateTime.tryParse(row['date']?.toString() ?? '');
+        if (date != null) {
+          markedDays.add(_dateOnly(date));
+        }
+      }
+    } catch (e) {
+      debugPrint('Local period calendar load failed: $e');
+    }
+
+    if (FirebaseSyncConfig.shouldSync()) {
+      try {
+        final snapshot = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('dailyRecords')
+            .where('date',
+                isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
+            .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
+            .get();
+
+        for (final doc in snapshot.docs) {
+          final data =
+              await HealthDataEncryptionService.decryptData(doc.data());
+          final isPeriod = data['isPeriod'] == true ||
+              periodMap(data['periodData'])?['isPeriod'] == true;
+          if (!isPeriod) continue;
+          final ts = data['date'] as Timestamp?;
+          if (ts != null) {
+            markedDays.add(_dateOnly(ts.toDate()));
+          }
+        }
+      } catch (e) {
+        debugPrint('Cloud period calendar load failed: $e');
+      }
+    }
+
+    return _periodCyclesFromMarkedDays(markedDays);
+  }
+
+  List<PeriodCycle> _periodCyclesFromMarkedDays(Set<DateTime> markedDays) {
+    final sorted = markedDays.toList()..sort();
+    if (sorted.isEmpty) return const <PeriodCycle>[];
+
+    final cycles = <PeriodCycle>[];
+    var start = sorted.first;
+    var previous = sorted.first;
+
+    void addCycle() {
+      cycles.add(PeriodCycle(
+        id: DateHelper.toId(start),
+        startDate: start,
+        endDate: previous,
+      ));
+    }
+
+    for (var i = 1; i < sorted.length; i++) {
+      final day = sorted[i];
+      if (day.difference(previous).inDays > 1) {
+        addCycle();
+        start = day;
+      }
+      previous = day;
+    }
+    addCycle();
+    return cycles;
+  }
+
   /// 將單個本地記錄轉換為 DailyRecord 對象
   DailyRecord _convertLocalRecordToDailyRecord(Map<String, dynamic> record) {
     final date = DateTime.tryParse(record['date'] ?? '') ?? DateTime.now();
+    final parsedRecord =
+        DailyRecord.fromData(record['id']?.toString() ?? '', record);
     final emotions = _parseEmotionsFromLocal(record['emotions']);
     final sleep = _parseSleepFromLocal(record['sleep']);
 
@@ -467,6 +563,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
       emotions: emotions,
       overallMood: overallMood,
       symptoms: _parseBodySymptoms(record['bodySymptoms']),
+      stateChanges: parsedRecord.stateChanges,
+      bodyMeasurement: parsedRecord.bodyMeasurement,
       sleep: sleep,
       moodScale: (record['moodScale'] as num?)?.toInt() ?? 10,
       isPeriod: (record['periodData'] as Map?)?['isPeriod'] == true,
@@ -541,8 +639,13 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
     final map = sleepData as Map<String, dynamic>;
     return SleepData(
       sleepTime: _parseTime(map['sleepTime']),
+      estimatedSleepTime: _parseTime(map['estimatedSleepTime']),
       wakeTime: _parseTime(map['wakeTime']),
       finalWakeTime: _parseTime(map['finalWakeTime']),
+      midWakeList: map['midWakeList']?.toString(),
+      nightAwakenings: _parseNightAwakeningsFromLocal(
+        map['nightAwakenings'],
+      ),
       quality: (map['quality'] as num?)?.toInt(),
       tookHypnotic: map['tookHypnotic'] ?? false,
       hypnoticName: map['hypnoticName'],
@@ -566,6 +669,24 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
     return napsData
         .whereType<Map>()
         .map((e) => NapItem.fromMap(e.cast<String, dynamic>()))
+        .toList();
+  }
+
+  List<NightAwakeningItem> _parseNightAwakeningsFromLocal(dynamic data) {
+    if (data is String) {
+      try {
+        data = jsonDecode(data);
+      } catch (_) {
+        return const [];
+      }
+    }
+    if (data is! List) return const [];
+
+    return data
+        .whereType<Map>()
+        .map((item) => item.cast<String, dynamic>())
+        .where((item) => DateHelper.parseTime(item['start']) != null)
+        .map(NightAwakeningItem.fromMap)
         .toList();
   }
 
@@ -997,7 +1118,70 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
     );
   }
 
-  Widget _buildSleepAnalysisPage(List<DailyRecord> records, bool isPro) {
+  Widget _buildSleepAnalysisPage(
+    List<DailyRecord> records,
+    List<PeriodCycle> cycles,
+    bool isPro,
+    String uid,
+  ) {
+    final isLocked = _isHistoryLocked(isPro);
+    final selectedPeriod = switch (_selectedRangeDays) {
+      7 => SleepInsightPeriod.sevenDays,
+      90 => SleepInsightPeriod.ninetyDays,
+      null => SleepInsightPeriod.all,
+      _ => SleepInsightPeriod.thirtyDays,
+    };
+    final endDate = _selectedDateRange?.end ?? DateTime.now();
+    final result = const SleepAnalysisService().analyze(
+      records: records,
+      endDate: endDate,
+      startDate: _selectedDateRange?.start,
+      period: selectedPeriod,
+      periodCycles: cycles,
+    );
+
+    return Container(
+      color: HealingDesignSystem.adaptiveBackground(context),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            decoration: HealingDesignSystem.adaptiveCardDecoration(
+              context,
+              radius: HealingDesignSystem.radiusM,
+            ),
+            child: _buildDateRangeDropdown(),
+          ),
+          const SizedBox(height: 12),
+          if (isLocked)
+            buildProLockedView(
+              context: context,
+              title: '進階睡眠洞察',
+              description: '查看近 90 天、全部紀錄與自訂日期區間，需要升級 Pro。',
+            )
+          else
+            SleepInsightsView(
+              result: result,
+              onOpenDate: (date) {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => RecordDetailScreen(
+                      uid: uid,
+                      docId: DateHelper.toId(date),
+                    ),
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  // 保留舊版摘要片段作為分階段回滾參考，待新洞察頁驗收後刪除。
+  // ignore: unused_element
+  Widget _buildLegacySleepAnalysisPage(List<DailyRecord> records, bool isPro) {
     final bool isLocked = _isHistoryLocked(isPro);
     final textScale = MediaQuery.textScalerOf(context).scale(1.0);
     final metricCardExtent =
@@ -1370,6 +1554,31 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
                 Expanded(
                   child: ListView(
                     children: [
+                      if (cycles.isNotEmpty) ...[
+                        Row(
+                          children: [
+                            Container(
+                              width: 14,
+                              height: 14,
+                              decoration: BoxDecoration(
+                                color: const Color(0x55F19AB5),
+                                borderRadius: BorderRadius.circular(3),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '粉紅背景代表生理期區間',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color:
+                                    HealingDesignSystem.adaptiveSecondaryText(
+                                        context),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                      ],
                       Text(
                         '情緒平衡趨勢圖',
                         style: TextStyle(
@@ -1421,6 +1630,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
                             useMovingAverage: useMA,
                             forceMonthlyAverage:
                                 _shouldUseMonthlyChartForRecords(records5),
+                            periodCycles: cycles,
                           ),
                         ),
                         const SizedBox(height: 14),
@@ -1477,6 +1687,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
                             useMovingAverage: useMA,
                             forceMonthlyAverage:
                                 _shouldUseMonthlyChartForRecords(records5),
+                            periodCycles: cycles,
                           ),
                         ),
                         const SizedBox(height: 14),
@@ -1553,6 +1764,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
                                 _shouldUseMonthlyChartForRecords(records5),
                             diaryMoodScores: diary5,
                             overallMoodLabel: _overallMoodLabel,
+                            periodCycles: cycles,
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -1580,6 +1792,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
                                 _shouldUseMonthlyChartForRecords(records10),
                             diaryMoodScores: diary10,
                             overallMoodLabel: _overallMoodLabel,
+                            periodCycles: cycles,
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -1761,8 +1974,9 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
 
   int? _nightSleepMinutes(SleepData sleep) {
     final end = sleep.finalWakeTime ?? sleep.wakeTime;
-    if (sleep.sleepTime == null || end == null) return null;
-    final minutes = DateHelper.calcDurationMinutes(sleep.sleepTime!, end);
+    final start = sleep.effectiveSleepStart;
+    if (start == null || end == null) return null;
+    final minutes = DateHelper.calcDurationMinutes(start, end);
     return minutes > 0 ? minutes : null;
   }
 
