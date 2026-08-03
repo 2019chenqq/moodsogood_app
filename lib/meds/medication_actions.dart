@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'edit_medication_page.dart';
 import 'medication_local_db.dart';
 import 'medication_reminder_service.dart';
+import 'medication_adjustment_service.dart';
 
 Future<void> showMedicationMoreSheet({
   required BuildContext context,
@@ -62,7 +63,12 @@ Future<void> showMedicationMoreSheet({
       return;
     }
     if (action == 'deactivate') {
-      await _deactivateMedication(uid: uid, medId: medId);
+      await _setMedicationActive(
+        uid: uid,
+        medId: medId,
+        data: data,
+        isActive: false,
+      );
       await MedicationReminderService.syncDailyRemindersForActiveMeds();
 
       if (!context.mounted) return;
@@ -73,7 +79,12 @@ Future<void> showMedicationMoreSheet({
     }
 
     if (action == 'activate') {
-      await _activateMedication(uid: uid, medId: medId);
+      await _setMedicationActive(
+        uid: uid,
+        medId: medId,
+        data: data,
+        isActive: true,
+      );
       await MedicationReminderService.syncDailyRemindersForActiveMeds();
 
       if (!context.mounted) return;
@@ -118,27 +129,28 @@ Future<void> showMedicationMoreSheet({
   }
 }
 
-Future<void> _deactivateMedication(
-    {required String uid, required String medId}) async {
-  final now = DateTime.now().toString();
-
+Future<void> _setMedicationActive({
+  required String uid,
+  required String medId,
+  required Map<String, dynamic> data,
+  required bool isActive,
+}) async {
+  final now = DateTime.now();
   await MedicationLocalDB().updateMedicationStatus(
     uid,
     medId,
-    isActive: false,
-    updatedAt: now,
+    isActive: isActive,
+    updatedAt: now.toIso8601String(),
+    lastChangeAt: now.toIso8601String(),
   );
-}
-
-Future<void> _activateMedication(
-    {required String uid, required String medId}) async {
-  final now = DateTime.now().toString();
-
-  await MedicationLocalDB().updateMedicationStatus(
-    uid,
-    medId,
-    isActive: true,
-    updatedAt: now,
+  await MedicationAdjustmentService().recordDetectedChanges(
+    uid: uid,
+    medDocId: medId,
+    before: data,
+    after: {...data, 'isActive': isActive},
+    effectiveDate: now,
+    source: 'medicationMoreSheet',
+    note: isActive ? '恢復使用' : '停藥',
   );
 }
 

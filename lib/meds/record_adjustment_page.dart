@@ -7,6 +7,7 @@ import '../utils/health_data_encryption_service.dart';
 import 'medication_local_db.dart';
 import 'medication_reminder_service.dart';
 import 'medication_dose_units.dart';
+import 'medication_adjustment_service.dart';
 import '../analytics_service.dart';
 
 // 你已經有的新增藥物頁（路徑依你的專案調整）
@@ -1014,7 +1015,12 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
 
     final added = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(builder: (_) => const AddMedicationPage()),
+      MaterialPageRoute(
+        builder: (_) => AddMedicationPage(
+          initialStartDate: _date,
+          adjustmentEventSource: 'adjustmentRecord',
+        ),
+      ),
     );
 
     if (added != true) return;
@@ -1106,9 +1112,6 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
     setState(() => _saving = true);
 
     try {
-      final userRef = FirebaseFirestore.instance.collection('users').doc(uid);
-
-      final adjRef = userRef.collection('medAdjustments').doc();
       final items = changed.map((e) {
         final docId = e.key;
         final d = e.value;
@@ -1142,18 +1145,17 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
       }).toList();
 
       // 1) 寫入調整紀錄到本地 DB（一定要寫入）
-      final adjId = adjRef.id;
       final dateStr = _fmtYmd(DateTime(_date.year, _date.month, _date.day));
-      debugPrint(
-          '📋 準備保存調整記錄 - adjId: $adjId, date: $dateStr, items 數量: ${items.length}');
+      debugPrint('📋 準備保存調整記錄 - date: $dateStr, items 數量: ${items.length}');
 
       try {
-        await MedicationLocalDB().addAdjustmentRecord(uid, adjId, {
-          'date': dateStr,
-          'note': _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
-          'items': items,
-          'createdAt': DateTime.now().toString(),
-        });
+        await MedicationAdjustmentService().recordItems(
+          uid: uid,
+          effectiveDate: _date,
+          source: 'adjustmentRecord',
+          note: _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
+          items: items,
+        );
         debugPrint('✅ 本地調整記錄已保存');
       } catch (e) {
         debugPrint('❌ 本地調整記錄保存失敗：$e');

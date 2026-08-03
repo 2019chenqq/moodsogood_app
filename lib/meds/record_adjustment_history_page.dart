@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../constants/healing_design_system.dart';
 import 'medication_local_db.dart';
 import '../analytics_service.dart';
-import '../utils/health_data_encryption_service.dart';
+import 'med_symptom_compare_models.dart';
+import 'medication_compare_repository.dart';
 
 class RecordAdjustmentHistoryPage extends StatefulWidget {
   const RecordAdjustmentHistoryPage({super.key});
@@ -17,6 +17,7 @@ class RecordAdjustmentHistoryPage extends StatefulWidget {
 class _RecordAdjustmentHistoryPageState
     extends State<RecordAdjustmentHistoryPage> {
   late Future<List<Map<String, dynamic>>> _future;
+  final MedicationCompareRepository _repository = MedicationCompareRepository();
   bool _initialized = false;
 
   @override
@@ -54,35 +55,8 @@ class _RecordAdjustmentHistoryPageState
   Future<void> _syncFromFirebase(String uid) async {
     try {
       debugPrint('🔥 開始從 Firebase 同步調整記錄...');
-      final query = FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('medAdjustments')
-          .orderBy('date', descending: true)
-          .limit(60);
-
-      final docs = await HealthDataEncryptionService.getEncrypted(query);
-      debugPrint('🔥 Firebase 返回 ${docs.length} 筆記錄');
-
-      for (final doc in docs) {
-        final data = doc.data;
-        final date = data['date'];
-        final dateStr = (date is Timestamp)
-            ? _fmtYmd(date.toDate())
-            : (date is DateTime)
-                ? _fmtYmd(date)
-                : date.toString();
-
-        await MedicationLocalDB().addAdjustmentRecord(uid, doc.id, {
-          'date': dateStr,
-          'note': data['note'],
-          'items': data['items'] ?? [],
-          'createdAt':
-              data['createdAt']?.toString() ?? DateTime.now().toString(),
-        });
-      }
-
-      debugPrint('✅ Firebase 同步完成，共 ${docs.length} 筆');
+      await _repository.syncAdjustmentRecords(uid);
+      debugPrint('✅ Firebase 調藥記錄同步完成');
       // 同步後重新載入本地資料
       if (mounted) {
         setState(() => _loadFromLocal());
@@ -140,7 +114,10 @@ class _RecordAdjustmentHistoryPageState
             return Center(child: Text('讀取失敗：${snap.error}'));
           }
 
-          final records = snap.data ?? [];
+          final records = (snap.data ?? [])
+              .where((record) =>
+                  MedicationAdjustmentEvent.fromRecord(record).isNotEmpty)
+              .toList();
           if (records.isEmpty) {
             return const _EmptyHistoryTimeline();
           }
@@ -153,12 +130,10 @@ class _RecordAdjustmentHistoryPageState
               itemBuilder: (context, i) {
                 final record = records[i];
 
-                final dateStr = (record['date'] as String?) ?? '';
-                final note = (record['note'] as String?)?.trim() ?? '';
-                final items =
-                    (record['items'] as List?)?.whereType<Map>().toList() ??
-                        const [];
-                final summary = _buildSummary(items);
+                final dateStr = record['date']?.toString() ?? '';
+                final note = record['note']?.toString().trim() ?? '';
+                final events = MedicationAdjustmentEvent.fromRecord(record);
+                final summary = _buildSummary(events);
 
                 final isFirst = i == 0;
                 final isLast = i == records.length - 1;
@@ -167,10 +142,10 @@ class _RecordAdjustmentHistoryPageState
                   dateText: dateStr,
                   note: note,
                   summary: summary,
-                  count: items.length,
+                  count: events.length,
                   isFirst: isFirst,
                   isLast: isLast,
-                  onTap: () => _showDetailSheet(context, dateStr, note, items),
+                  onTap: () => _showDetailSheet(context, dateStr, note, events),
                 );
               },
             ),
@@ -180,81 +155,23 @@ class _RecordAdjustmentHistoryPageState
     );
   }
 
-  static String _fmtYmd(DateTime dt) {
-    final y = dt.year.toString().padLeft(4, '0');
-    final m = dt.month.toString().padLeft(2, '0');
-    final d = dt.day.toString().padLeft(2, '0');
-    return '$y/$m/$d';
-  }
-
-  /// 讀你目前的 items schema：
-  /// { name, type(added/injected/doseChanged/scheduleChanged/stopped), oldDose, newDose, oldTimes, newTimes, unit, stopReason }
-  static String _buildSummary(List items) {
-    if (items.isEmpty) return '（本次沒有任何變更）';
-
-    String fmtItem(dynamic it) {
-      if (it is! Map) return '';
-      final name = (it['name'] ?? '未命名藥物').toString();
-      final type = (it['type'] ?? 'unchanged').toString();
-      final unit = (it['newUnit'] ?? it['unit'] ?? '').toString();
-      final oldUnit = (it['oldUnit'] ?? it['unit'] ?? '').toString();
-      final oldDose = it['oldDose'];
-      final newDose = it['newDose'];
-      final oldTimes = _timesToText(it['oldTimes']);
-      final newTimes = _timesToText(it['newTimes']);
-
-      switch (type) {
-        case 'added':
-          return '$name：新增 ${newDose ?? ''} $unit';
-        case 'injected':
-          return '$name：已施打';
-        case 'injection':
-          return '$name：已施打';
-        case 'doseChanged':
-          final oldDosePerUnit = it['oldDosePerUnit'];
-          final newDosePerUnit = it['newDosePerUnit'];
-          final oldPillCount = it['oldPillCount'];
-          final newPillCount = it['newPillCount'];
-
-          String doseText;
-          if (newDosePerUnit != null && newPillCount != null) {
-            doseText =
-                '$name：${newDosePerUnit ?? ''}$unit × ${newPillCount ?? ''}顆（總量 ${newDose ?? ''} $unit）';
-          } else {
-            doseText = '$name：${oldDose ?? ''}→${newDose ?? ''} $unit';
-          }
-
-          if ((oldDosePerUnit != null && oldPillCount != null) &&
-              (oldDosePerUnit != newDosePerUnit ||
-                  oldPillCount != newPillCount ||
-                  oldUnit != unit)) {
-            doseText =
-                '$doseText；原本 ${oldDosePerUnit ?? ''}$oldUnit × ${oldPillCount ?? ''}顆';
-          }
-
-          if (oldTimes != newTimes && newTimes.isNotEmpty) {
-            return '$doseText；時間 $oldTimes→$newTimes';
-          }
-          return doseText;
-        case 'scheduleChanged':
-          return '$name：時間 $oldTimes→$newTimes';
-        case 'stopped':
-          return '$name：停藥';
-        case 'resumed':
-          return '$name：恢復使用';
-        default:
-          return '$name：維持';
-      }
-    }
-
-    final shown =
-        items.take(3).map(fmtItem).where((s) => s.isNotEmpty).toList();
-    final more = items.length > 3 ? '…等 ${items.length} 項' : '';
+  static String _buildSummary(List<MedicationAdjustmentEvent> events) {
+    if (events.isEmpty) return '（本次沒有任何變更）';
+    final shown = events
+        .take(3)
+        .map((event) =>
+            '${event.medName}：${MedicationAdjustmentFormatter.shortSummary(event)}')
+        .toList();
+    final more = events.length > 3 ? '…等 ${events.length} 項' : '';
     return '${shown.join('、')} $more'.trim();
   }
 
   static void _showDetailSheet(
-      BuildContext context, String title, String note, List items) {
+    BuildContext context,
+    String title,
+    String note,
+    List<MedicationAdjustmentEvent> events,
+  ) {
     showModalBottomSheet(
       context: context,
       showDragHandle: true,
@@ -273,59 +190,7 @@ class _RecordAdjustmentHistoryPageState
                   Text(note, style: Theme.of(context).textTheme.bodyMedium),
                 ],
                 const SizedBox(height: 12),
-                ...items.map((it) {
-                  if (it is! Map) return const SizedBox.shrink();
-
-                  final name = (it['name'] ?? '未命名藥物').toString();
-                  final type = (it['type'] ?? 'unchanged').toString();
-                  final unit = (it['newUnit'] ?? it['unit'] ?? '').toString();
-                  final oldUnit =
-                      (it['oldUnit'] ?? it['unit'] ?? '').toString();
-                  final oldDose = it['oldDose'];
-                  final newDose = it['newDose'];
-                  final oldTimes = _timesToText(it['oldTimes']);
-                  final newTimes = _timesToText(it['newTimes']);
-                  final stopReason = (it['stopReason'] ?? '').toString().trim();
-
-                  String line;
-                  if (type == 'added') {
-                    line = '新增：${newDose ?? ''} $unit';
-                  } else if (type == 'injected' || type == 'injection') {
-                    line = '已施打';
-                  } else if (type == 'doseChanged') {
-                    final oldDosePerUnit = it['oldDosePerUnit'];
-                    final newDosePerUnit = it['newDosePerUnit'];
-                    final oldPillCount = it['oldPillCount'];
-                    final newPillCount = it['newPillCount'];
-
-                    if (newDosePerUnit != null && newPillCount != null) {
-                      line =
-                          '調整：${newDosePerUnit ?? ''}$unit × ${newPillCount ?? ''}顆（總量 ${newDose ?? ''} $unit）';
-                      if (oldDosePerUnit != null &&
-                          oldPillCount != null &&
-                          (oldDosePerUnit != newDosePerUnit ||
-                              oldPillCount != newPillCount ||
-                              oldUnit != unit)) {
-                        line =
-                            '$line；原本 ${oldDosePerUnit ?? ''}$oldUnit × ${oldPillCount ?? ''}顆';
-                      }
-                    } else {
-                      line = '調整：${oldDose ?? ''} → ${newDose ?? ''} $unit';
-                    }
-
-                    if (oldTimes != newTimes && newTimes.isNotEmpty) {
-                      line = '$line；時間：$oldTimes → $newTimes';
-                    }
-                  } else if (type == 'scheduleChanged') {
-                    line = '時間調整：$oldTimes → $newTimes';
-                  } else if (type == 'stopped') {
-                    line = stopReason.isEmpty ? '停藥' : '停藥（原因：$stopReason）';
-                  } else if (type == 'resumed') {
-                    line = '恢復使用';
-                  } else {
-                    line = '維持原劑量';
-                  }
-
+                ...events.map((event) {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: Row(
@@ -337,11 +202,13 @@ class _RecordAdjustmentHistoryPageState
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(name,
+                              Text(event.medName,
                                   style:
                                       Theme.of(context).textTheme.titleSmall),
                               const SizedBox(height: 2),
-                              Text(line,
+                              Text(
+                                  MedicationAdjustmentFormatter.detailSummary(
+                                      event),
                                   style: Theme.of(context).textTheme.bodySmall),
                             ],
                           ),
@@ -356,20 +223,6 @@ class _RecordAdjustmentHistoryPageState
         );
       },
     );
-  }
-
-  static String _timesToText(dynamic value) {
-    if (value is List) {
-      final parts =
-          value.whereType<String>().where((s) => s.trim().isNotEmpty).toList();
-      if (parts.isEmpty) return '未設定';
-      return parts.join('、');
-    }
-    if (value is String) {
-      final t = value.trim();
-      return t.isEmpty ? '未設定' : t;
-    }
-    return '未設定';
   }
 }
 
@@ -418,8 +271,8 @@ class _HistoryTimelineItem extends StatelessWidget {
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color:
-                            HealingDesignSystem.primaryBlue.withOpacity(0.25),
+                        color: HealingDesignSystem.primaryBlue
+                            .withValues(alpha: 0.25),
                         blurRadius: 10,
                         offset: const Offset(0, 3),
                       ),

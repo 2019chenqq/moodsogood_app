@@ -1,11 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_tts/flutter_tts.dart';
-import '../constants/healing_design_system.dart';
-import 'medication_local_db.dart';
+
 import '../analytics_service.dart';
+import '../constants/healing_design_system.dart';
 import '../utils/health_data_encryption_service.dart';
+import 'med_symptom_compare_models.dart';
+import 'medication_compare_repository.dart';
 
 class MedSymptomComparePage extends StatefulWidget {
   const MedSymptomComparePage({super.key});
@@ -14,2127 +15,936 @@ class MedSymptomComparePage extends StatefulWidget {
   State<MedSymptomComparePage> createState() => _MedSymptomComparePageState();
 }
 
-class _MedSymptomComparePageState extends State<MedSymptomComparePage> {
-  String? _selectedMedId;
-  Map<String, dynamic>? _selectedMedData;
-
-  late final FlutterTts _tts;
-
-  DateTime _anchorDate = DateTime.now();
+class _MedSymptomComparePageState extends State<MedSymptomComparePage>
+    with WidgetsBindingObserver {
+  final MedicationCompareRepository _repository = MedicationCompareRepository();
+  late Future<List<MedicationCompareOption>> _optionsFuture;
+  String? _selectedOptionKey;
+  List<MedicationAdjustmentEvent> _allEvents = const [];
+  List<MedicationAdjustmentEvent> _medEvents = const [];
+  MedicationAdjustmentEvent? _selectedEvent;
+  List<MedicationAdjustmentEvent> _concurrentEvents = const [];
+  DailyRecordAggregate? _before;
+  DailyRecordAggregate? _after;
+  List<CompareMetricResult> _results = const [];
   int _windowDays = 7;
-
   bool _loading = false;
-
-  // 結果
-  Map<String, double> _beforeSymptomRates = {};
-  Map<String, double> _afterSymptomRates = {};
-  Map<String, double> _beforeAvgEmotions = {};
-  Map<String, double> _afterAvgEmotions = {};
-  int _beforeDaysCount = 0;
-  int _afterDaysCount = 0;
-
+  bool _dataLoading = true;
   String? _error;
-
-  @override
-  Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    final appBarForeground =
-        HealingDesignSystem.adaptiveAppBarForeground(context);
-
-    return Scaffold(
-      backgroundColor: HealingDesignSystem.adaptiveBackground(context),
-      appBar: AppBar(
-        backgroundColor: HealingDesignSystem.adaptiveAppBarBackground(context),
-        foregroundColor: appBarForeground,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        iconTheme: IconThemeData(color: appBarForeground),
-        title: Text(
-          '症狀交叉比對',
-          style: TextStyle(
-            color: appBarForeground,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        actions: [
-          IconButton(
-            tooltip: '重新計算',
-            icon: Icon(Icons.refresh, color: appBarForeground),
-            onPressed: uid == null ? null : _runCompare,
-          ),
-        ],
-      ),
-      body: uid == null
-          ? Center(
-              child: Text(
-                '尚未登入',
-                style: TextStyle(
-                  color: HealingDesignSystem.adaptivePrimaryText(context),
-                ),
-              ),
-            )
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                _buildMedPicker(uid),
-                const SizedBox(height: 12),
-                _buildAnchorPicker(),
-                const SizedBox(height: 12),
-                _buildWindowPicker(),
-                const SizedBox(height: 16),
-                FilledButton.icon(
-                  onPressed:
-                      (_selectedMedId == null || _loading) ? null : _runCompare,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: HealingDesignSystem.primaryBlue,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
-                  ),
-                  icon: _loading
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        )
-                      : const Icon(Icons.analytics_outlined),
-                  label: const Text('開始比對'),
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    _error!,
-                    style:
-                        TextStyle(color: Theme.of(context).colorScheme.error),
-                  ),
-                ],
-                const SizedBox(height: 20),
-                _buildResultSection(),
-              ],
-            ),
-    );
-  }
+  String? _syncWarning;
+  ObservationWindowStatus? _observationStatus;
+  int _beforeAvailableDays = 0;
+  int _afterAvailableDays = 0;
 
   @override
   void initState() {
     super.initState();
-    _tts = FlutterTts();
-    // Prefer Traditional Chinese if available
-    _tts.setLanguage('zh-TW');
-    _tts.setSpeechRate(0.45);
+    WidgetsBinding.instance.addObserver(this);
     AnalyticsService.logPage('med_symptom_compare_page');
-
-    // 初始化時從 Firebase 同步最新藥物到本地
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid != null) {
-      _syncFromFirebase(uid);
+    _optionsFuture = uid == null
+        ? Future.value(const <MedicationCompareOption>[])
+        : _loadOptions(uid);
+  }
+
+  Future<List<MedicationCompareOption>> _loadOptions(String uid) async {
+    String? syncWarning;
+    try {
+      await _repository.syncAll(uid);
+    } catch (error) {
+      syncWarning = '同步失敗，已使用目前可讀資料：$error';
+      debugPrint(syncWarning);
+    }
+    try {
+      final medications = await _repository.getMedications(uid);
+      final persistedEvents = await _repository.getAdjustmentEvents(uid);
+      final events = [
+        ...persistedEvents,
+        ...buildSyntheticAddedEvents(medications, persistedEvents),
+      ]..sort((left, right) => right.date.compareTo(left.date));
+      _allEvents = events;
+      return mergeMedicationCompareOptions(medications, events);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _dataLoading = false;
+          _syncWarning = syncWarning;
+        });
+      }
     }
   }
 
-  Future<void> _syncFromFirebase(String uid) async {
-    try {
-      final docs = await HealthDataEncryptionService.getEncrypted(
-        FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .collection('medications'),
-      );
+  void _reloadOptions() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || _dataLoading) return;
+    setState(() {
+      _dataLoading = true;
+      _syncWarning = null;
+      _selectedOptionKey = null;
+      _selectedEvent = null;
+      _medEvents = const [];
+      _clearResults();
+      _optionsFuture = _loadOptions(uid);
+    });
+  }
 
-      for (final doc in docs) {
-        final data = doc.data;
-        final startTs = data['startDate'];
-        DateTime? startDate;
-        if (startTs is Timestamp) startDate = startTs.toDate();
-        if (startTs is String) startDate = DateTime.tryParse(startTs);
-
-        final mapped = {
-          'id': doc.id,
-          'name': data['name'],
-          'dose': data['dose'],
-          'dosePerUnit': data['dosePerUnit'],
-          'pillCount': data['pillCount'],
-          'concentrationMg': data['concentrationMg'],
-          'concentrationMl': data['concentrationMl'],
-          'intakeMl': data['intakeMl'],
-          'unit': data['unit'],
-          'type': data['type'],
-          'intervalDays': data['intervalDays'],
-          'times': (data['times'] as List?)?.cast<String>() ?? <String>[],
-          'purposes': (data['purposes'] as List?)?.cast<String>() ?? <String>[],
-          'note': data['note'],
-          'startDate': startDate?.toString(),
-          'isActive': data['isActive'] ?? true,
-          'bodySymptoms':
-              (data['bodySymptoms'] as List?)?.cast<String>() ?? <String>[],
-          'purposeOther': data['purposeOther'],
-          'createdAt': DateTime.now().toString(),
-          'updatedAt': DateTime.now().toString(),
-          'lastChangeAt': (data['lastChangeAt'] is Timestamp)
-              ? (data['lastChangeAt'] as Timestamp).toDate().toString()
-              : data['lastChangeAt']?.toString(),
-        };
-
-        await MedicationLocalDB().addMedication(uid, mapped);
-      }
-    } catch (e) {
-      debugPrint('症狀比對頁同步 Firebase 失敗：$e');
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !_dataLoading) {
+      _reloadOptions();
     }
   }
 
   @override
   void dispose() {
-    _tts.stop();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
-  Future<void> _speakAnchorDate() async {
-    try {
-      final y = _anchorDate.year;
-      final m = _anchorDate.month;
-      final d = _anchorDate.day;
-      final text = '調整日期為 $y 年 $m 月 $d 日';
-      await _tts.speak(text);
-    } catch (_) {
-      // ignore TTS errors silently
-    }
+  void _selectMedication(
+    String? optionKey,
+    List<MedicationCompareOption> options,
+  ) {
+    if (optionKey == null) return;
+    final option = options.firstWhere((item) => item.key == optionKey);
+    setState(() {
+      _selectedOptionKey = optionKey;
+      _selectedEvent = null;
+      _medEvents = const [];
+      _clearResults();
+      _error = null;
+    });
+    final normalizedName = MedicationCompareOption.normalizedName(option.name);
+    final selectedEvents = _allEvents.where((event) {
+      if (option.medDocId != null && event.medDocId.isNotEmpty) {
+        return event.medDocId == option.medDocId;
+      }
+      return event.medDocId.isEmpty &&
+          MedicationCompareOption.normalizedName(event.medName) ==
+              normalizedName;
+    }).toList();
+    setState(() {
+      _medEvents = selectedEvents;
+      _selectedEvent = null;
+    });
   }
 
-  // -----------------------------
-  // UI: 藥物選擇
-  // -----------------------------
-  Widget _buildMedPicker(String uid) {
-    return _Card(
-      title: '選擇藥物',
-      child: FutureBuilder<List<Map<String, dynamic>>>(
-        future: _getMedsForCompare(uid),
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: LinearProgressIndicator(),
-            );
-          }
-          if (snap.hasError) {
-            return Text('讀取藥物失敗：${snap.error}');
-          }
-
-          final meds = snap.data ?? [];
-          if (meds.isEmpty) {
-            return const Text('尚未建立藥物清單');
-          }
-
-          // Dropdown items
-          final items = meds.map((med) {
-            final name = (med['name'] ?? '').toString().trim();
-            final medId = (med['id'] as String?) ?? '';
-            final display = name.isEmpty ? medId : name;
-            return DropdownMenuItem<String>(
-              value: medId,
-              child: Text(
-                display,
-                style: TextStyle(
-                  color: HealingDesignSystem.adaptivePrimaryText(context),
-                ),
-              ),
-            );
-          }).toList();
-
-          return DropdownButtonFormField<String>(
-            value: _selectedMedId,
-            items: items,
-            dropdownColor: HealingDesignSystem.adaptiveSurface(context),
-            style: TextStyle(
-              color: HealingDesignSystem.adaptivePrimaryText(context),
-            ),
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: HealingDesignSystem.adaptiveFill(context),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: HealingDesignSystem.adaptiveCardBorder(context),
-                ),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: HealingDesignSystem.adaptiveCardBorder(context),
-                ),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: HealingDesignSystem.adaptiveAccent(context),
-                  width: 1.2,
-                ),
-              ),
-              isDense: true,
-            ),
-            onChanged: (v) async {
-              final med = meds.firstWhere((x) => x['id'] == v);
-
-              setState(() {
-                _selectedMedId = v;
-                _selectedMedData = med;
-              });
-
-              // 從 medAdjustments 取該藥最近一筆調整日期
-              DateTime? medAdjustedDate;
-              try {
-                final uid2 = FirebaseAuth.instance.currentUser?.uid;
-                if (uid2 != null) {
-                  final adjustmentDocs =
-                      await HealthDataEncryptionService.getEncrypted(
-                    FirebaseFirestore.instance
-                        .collection('users')
-                        .doc(uid2)
-                        .collection('medAdjustments')
-                        .orderBy('date', descending: true),
-                  );
-
-                  for (final doc in adjustmentDocs) {
-                    final items = doc.data['items'];
-                    if (items is! List) continue;
-                    final hasThisMed = items.any((item) =>
-                        item is Map && item['medDocId']?.toString() == v);
-                    if (!hasThisMed) continue;
-
-                    final rawDate = doc.data['date'];
-                    if (rawDate is Timestamp) {
-                      medAdjustedDate = rawDate.toDate();
-                    } else if (rawDate is String) {
-                      medAdjustedDate = DateTime.tryParse(rawDate);
-                    }
-                    if (medAdjustedDate != null) break;
-                  }
-                }
-              } catch (e) {
-                debugPrint('取調整日期失敗：$e');
-              }
-
-              // fallback：lastChangeAt → startDate（不用 updatedAt，它會是今天）
-              if (medAdjustedDate == null) {
-                for (final key in ['lastChangeAt', 'startDate']) {
-                  final val = med[key];
-                  if (val == null) continue;
-                  if (val is DateTime) {
-                    medAdjustedDate = val;
-                  } else if (val is String) {
-                    medAdjustedDate = DateTime.tryParse(val);
-                  }
-                  if (medAdjustedDate != null) break;
-                }
-              }
-
-              if (medAdjustedDate != null) {
-                setState(() {
-                  _anchorDate = DateTime(
-                    medAdjustedDate!.year,
-                    medAdjustedDate.month,
-                    medAdjustedDate.day,
-                  );
-                });
-              }
-
-              await _speakAnchorDate();
-            },
-          );
-        },
-      ),
-    );
+  void _clearResults() {
+    _before = null;
+    _after = null;
+    _results = const [];
+    _concurrentEvents = const [];
+    _observationStatus = null;
+    _beforeAvailableDays = 0;
+    _afterAvailableDays = 0;
   }
 
-  // -----------------------------
-  // UI: 調整日（anchor）
-  // -----------------------------
-  Widget _buildAnchorPicker() {
-    return _Card(
-      title: '調整日期（比對基準日）',
-      subtitle: '例如回診調藥日，會拿前段 $_windowDays 天與後段 $_windowDays 天做比較',
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              '${_anchorDate.year.toString().padLeft(4, '0')}/'
-              '${_anchorDate.month.toString().padLeft(2, '0')}/'
-              '${_anchorDate.day.toString().padLeft(2, '0')}',
-              style: HealingDesignSystem.titleMedium.copyWith(
-                color: HealingDesignSystem.adaptivePrimaryText(context),
-              ),
-            ),
+  @override
+  Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final foreground = HealingDesignSystem.adaptiveAppBarForeground(context);
+    return Scaffold(
+      backgroundColor: HealingDesignSystem.adaptiveBackground(context),
+      appBar: AppBar(
+        backgroundColor: HealingDesignSystem.adaptiveAppBarBackground(context),
+        foregroundColor: foreground,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        title: const Text('調藥前後變化'),
+        actions: [
+          IconButton(
+            tooltip: '重新同步藥物與調藥事件',
+            onPressed: _dataLoading ? null : _reloadOptions,
+            icon: const Icon(Icons.sync),
           ),
-          TextButton.icon(
-            onPressed: _pickAnchorDate,
-            icon: const Icon(Icons.calendar_today_outlined),
-            label: const Text('選日期'),
+          IconButton(
+            tooltip: '重新計算',
+            onPressed: _selectedEvent == null || _loading ? null : _runCompare,
+            icon: const Icon(Icons.refresh),
           ),
         ],
       ),
-    );
-  }
-
-  Future<void> _pickAnchorDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _anchorDate,
-      firstDate: DateTime(2020, 1, 1),
-      lastDate: DateTime(2100, 12, 31),
-    );
-    if (picked == null) return;
-    setState(() => _anchorDate = picked);
-  }
-
-  // -----------------------------
-  // UI: 窗口天數
-  // -----------------------------
-  Widget _buildWindowPicker() {
-    return _Card(
-      title: '比較區間',
-      subtitle: '只有含日記紀錄的天數才計入比對',
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [3, 7, 14, 30].map((days) {
-          final sel = _windowDays == days;
-          return GestureDetector(
-            onTap: () => setState(() => _windowDays = days),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: sel
-                    ? HealingDesignSystem.adaptiveAccent(context)
-                        .withOpacity(0.18)
-                    : HealingDesignSystem.adaptiveFill(context),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: sel
-                      ? HealingDesignSystem.adaptiveAccent(context)
-                      : HealingDesignSystem.adaptiveCardBorder(context),
-                  width: sel ? 1.5 : 1,
+      body: uid == null
+          ? const Center(child: Text('請先登入後使用'))
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _buildMedicationPicker(),
+                const SizedBox(height: 12),
+                _buildEventPicker(),
+                const SizedBox(height: 12),
+                _buildWindowPicker(),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed:
+                      _selectedEvent == null || _loading ? null : _runCompare,
+                  icon: _loading
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.analytics_outlined),
+                  label: const Text('比較這次調整前後'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: HealingDesignSystem.primaryBlue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
                 ),
-              ),
-              child: Text(
-                '前後各 $days 天',
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(_error!,
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.error)),
+                ],
+                if (_syncWarning != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    _syncWarning!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                _buildResults(),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildMedicationPicker() => _SoftCard(
+        title: '1. 選擇藥物',
+        subtitle: '包含目前使用中、已停用及曾有調整紀錄的藥物',
+        child: FutureBuilder<List<MedicationCompareOption>>(
+          future: _optionsFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const LinearProgressIndicator();
+            }
+            if (snapshot.hasError) return Text('讀取藥物失敗：${snapshot.error}');
+            final options = snapshot.data ?? const [];
+            if (options.isEmpty) return const Text('尚未建立藥物或調藥歷史');
+            return DropdownButtonFormField<String>(
+              key: ValueKey(_selectedOptionKey),
+              initialValue:
+                  options.any((item) => item.key == _selectedOptionKey)
+                      ? _selectedOptionKey
+                      : null,
+              isExpanded: true,
+              decoration: _inputDecoration(context),
+              items: options.map((option) {
+                return DropdownMenuItem(
+                  value: option.key,
+                  child: Text('${option.name}｜${option.statusLabel}'),
+                );
+              }).toList(),
+              onChanged: (value) => _selectMedication(value, options),
+            );
+          },
+        ),
+      );
+
+  Widget _buildEventPicker() => _SoftCard(
+        title: '2. 選擇一次調藥事件',
+        subtitle: '一次分析只對應一個有效事件；維持原狀的紀錄不列入',
+        child: _dataLoading
+            ? const Row(
+                children: [
+                  SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  SizedBox(width: 10),
+                  Text('正在同步藥物與調藥事件…'),
+                ],
+              )
+            : _selectedOptionKey == null
+                ? const Text('請先選擇藥物')
+                : _medEvents.isEmpty
+                    ? const Text(
+                        '這項藥物缺少開始日期或調整紀錄，因此目前無法建立比較基準。\n'
+                        '請先補上開始服藥日期，或新增一筆調藥紀錄。',
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          DropdownButtonFormField<String>(
+                            key: ValueKey(_selectedEvent?.eventKey),
+                            initialValue: _selectedEvent?.eventKey,
+                            isExpanded: true,
+                            decoration: _inputDecoration(context),
+                            items: _medEvents
+                                .map((event) => DropdownMenuItem(
+                                      value: event.eventKey,
+                                      child: Text(
+                                        '${event.dateLabel} · ${event.typeLabel}${event.isInferred ? '（推定）' : ''} · ${event.changeSummary}',
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ))
+                                .toList(),
+                            onChanged: (key) {
+                              if (key == null) return;
+                              setState(() {
+                                _selectedEvent = _medEvents.firstWhere(
+                                    (event) => event.eventKey == key);
+                                _clearResults();
+                              });
+                            },
+                          ),
+                          if (_selectedEvent != null) ...[
+                            const SizedBox(height: 12),
+                            _EventSummary(event: _selectedEvent!),
+                          ],
+                        ],
+                      ),
+      );
+
+  Widget _buildWindowPicker() => _SoftCard(
+        title: '3. 選擇觀察窗口',
+        subtitle: '調整當天獨立排除，不納入前後比較',
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [3, 7, 14, 30].map((days) {
+            return ChoiceChip(
+              label: Text('前後各 $days 天'),
+              selected: _windowDays == days,
+              onSelected: (_) => setState(() {
+                _windowDays = days;
+                _clearResults();
+              }),
+            );
+          }).toList(),
+        ),
+      );
+
+  InputDecoration _inputDecoration(BuildContext context) => InputDecoration(
+        filled: true,
+        fillColor: HealingDesignSystem.adaptiveFill(context),
+        isDense: true,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      );
+
+  Future<void> _runCompare() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final event = _selectedEvent;
+    if (uid == null || event == null) return;
+    final requestedWindow = _windowDays;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final anchor =
+          DateTime(event.date.year, event.date.month, event.date.day);
+      final beforeStart = anchor.subtract(Duration(days: requestedWindow));
+      final beforeEndExclusive = anchor;
+      final afterStart = anchor.add(const Duration(days: 1));
+      final afterEndExclusive = afterStart.add(Duration(days: requestedWindow));
+      final observation = ObservationWindowStatus.calculate(
+        eventDate: anchor,
+        requestedDays: requestedWindow,
+      );
+      final documents = await Future.wait([
+        _fetchDailyRecords(uid, beforeStart, beforeEndExclusive),
+        _fetchDailyRecords(uid, afterStart, afterEndExclusive),
+      ]);
+      final before = DailyRecordAggregator.aggregate(
+        documents[0].map((document) => document.data),
+      );
+      final after = DailyRecordAggregator.aggregate(
+        documents[1].map((document) => document.data),
+      );
+      final concurrent = _allEvents.where((other) {
+        if (other.eventKey == event.eventKey) return false;
+        final day = DateTime(other.date.year, other.date.month, other.date.day);
+        return !day.isBefore(beforeStart) && day.isBefore(afterEndExclusive);
+      }).toList();
+      if (!mounted ||
+          _selectedEvent?.eventKey != event.eventKey ||
+          _windowDays != requestedWindow) {
+        return;
+      }
+      setState(() {
+        _before = before;
+        _after = after;
+        _results = CompareEngine.compare(
+          before,
+          after,
+          beforeAvailableDays: requestedWindow,
+          afterAvailableDays: observation.elapsedAfterDays,
+          hasConcurrentAdjustments: concurrent.isNotEmpty,
+        );
+        _concurrentEvents = concurrent;
+        _observationStatus = observation;
+        _beforeAvailableDays = requestedWindow;
+        _afterAvailableDays = observation.elapsedAfterDays;
+      });
+    } catch (error) {
+      if (!mounted ||
+          _selectedEvent?.eventKey != event.eventKey ||
+          _windowDays != requestedWindow) {
+        return;
+      }
+      setState(() => _error = '比對失敗：$error');
+    } finally {
+      if (mounted &&
+          _selectedEvent?.eventKey == event.eventKey &&
+          _windowDays == requestedWindow) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<List<LogicalDailyRecord>> _fetchDailyRecords(
+    String uid,
+    DateTime startInclusive,
+    DateTime endExclusive,
+  ) async {
+    String id(DateTime date) => '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
+
+    final reference = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('dailyRecords');
+    final byDate = await HealthDataEncryptionService.getEncrypted(
+      reference
+          .where('date',
+              isGreaterThanOrEqualTo: Timestamp.fromDate(startInclusive))
+          .where('date', isLessThan: Timestamp.fromDate(endExclusive)),
+    );
+    final byId = await HealthDataEncryptionService.getEncrypted(
+      reference
+          .where(FieldPath.documentId,
+              isGreaterThanOrEqualTo: id(startInclusive))
+          .where(
+            FieldPath.documentId,
+            isLessThanOrEqualTo:
+                id(endExclusive.subtract(const Duration(days: 1))),
+          ),
+    );
+    final documents = <String, HealthDocument>{
+      for (final document in byDate) document.id: document,
+      for (final document in byId) document.id: document,
+    }.values;
+    return deduplicateDailyRecords(
+      documents.map(
+        (document) => LogicalDailyRecord(id: document.id, data: document.data),
+      ),
+      onSkipped: debugPrint,
+    );
+  }
+
+  Widget _buildResults() {
+    final before = _before;
+    final after = _after;
+    if (before == null || after == null) {
+      return const _NoticeCard(
+        icon: Icons.info_outline,
+        text: '選擇明確的調藥事件後開始比較。結果只呈現時間上的關聯趨勢，不代表藥物造成變化。',
+      );
+    }
+    final observation = _observationStatus!;
+    final confidence = CompareConfidenceSummary.calculate(
+      before: before,
+      after: after,
+      beforeAvailableDays: _beforeAvailableDays,
+      afterAvailableDays: _afterAvailableDays,
+      hasConcurrentAdjustments: _concurrentEvents.isNotEmpty,
+    );
+    final insufficient = _results.where((item) => !item.canCalculate).toList();
+    final preliminary = _results
+        .where((item) => item.canCalculate && !item.canInterpret)
+        .toList();
+    final newly = _results
+        .where((item) => item.newlyAppeared && item.canInterpret)
+        .toList();
+    final attention = _results
+        .where((item) => item.needsAttention && !item.newlyAppeared)
+        .toList();
+    final improved = _results.where((item) => item.possiblyImproved).toList();
+    final mixed = _results
+        .where((item) =>
+            item.kind == CompareMetricKind.symptom &&
+            item.symptomPattern == SymptomChangePattern.mixed &&
+            item.canInterpret)
+        .toList();
+    final other = _results
+        .where((item) =>
+            item.canInterpret &&
+            !item.newlyAppeared &&
+            !item.needsAttention &&
+            !item.possiblyImproved &&
+            item.symptomPattern != SymptomChangePattern.mixed &&
+            item.magnitude != ChangeMagnitude.stable)
+        .toList();
+    final hasMeaningfulDisplayedResult = attention.isNotEmpty ||
+        improved.isNotEmpty ||
+        newly.isNotEmpty ||
+        mixed.isNotEmpty ||
+        other.isNotEmpty ||
+        preliminary.isNotEmpty ||
+        insufficient.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _ConfidenceCard(
+          before: before,
+          after: after,
+          beforeAvailableDays: _beforeAvailableDays,
+          afterAvailableDays: _afterAvailableDays,
+          confidence: confidence,
+          observation: observation,
+          hasConcurrentAdjustments: _concurrentEvents.isNotEmpty,
+        ),
+        if (attention.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _ResultSection(title: '需要優先留意', items: attention),
+        ],
+        if (improved.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _ResultSection(title: '可能改善的趨勢', items: improved),
+        ],
+        if (newly.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _ResultSection(title: '新出現症狀', items: newly),
+        ],
+        if (mixed.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _ResultSection(title: '變化不一致', items: mixed),
+        ],
+        if (other.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _ResultSection(title: '其他明顯變化', items: other),
+        ],
+        if (preliminary.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _ResultSection(title: '初步變化／資料有限', items: preliminary),
+        ],
+        if (insufficient.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _ResultSection(title: '資料不足項目', items: insufficient),
+        ],
+        if (!hasMeaningfulDisplayedResult && _results.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          const _NoticeCard(
+            icon: Icons.check_circle_outline,
+            text: '這段觀察期間未發現達到目前判定門檻的明顯變化。',
+          ),
+        ] else if (_results.isEmpty) ...[
+          const SizedBox(height: 12),
+          const _NoticeCard(
+              icon: Icons.inbox_outlined, text: '觀察期間沒有可比較的症狀或情緒資料。'),
+        ],
+        if (_concurrentEvents.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _ConcurrentAdjustmentCard(events: _concurrentEvents),
+        ],
+        if (!observation.completed) ...[
+          const SizedBox(height: 12),
+          _ObservationIncompleteCard(status: observation),
+        ],
+        const SizedBox(height: 12),
+        const _NoticeCard(
+          icon: Icons.health_and_safety_outlined,
+          text: '此結果僅描述調整前後同時出現的趨勢，不能證明因果。若症狀明顯或持續變化，請和醫療專業人員討論。',
+        ),
+      ],
+    );
+  }
+}
+
+class _EventSummary extends StatelessWidget {
+  const _EventSummary({required this.event});
+  final MedicationAdjustmentEvent event;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: HealingDesignSystem.adaptiveAccent(context)
+              .withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(event.medName, style: Theme.of(context).textTheme.titleSmall),
+            Text(event.dateLabel),
+            Text(event.changeSummary,
+                style: const TextStyle(fontWeight: FontWeight.w700)),
+            Text(event.typeLabel),
+            if (event.isInferred)
+              Text(
+                event.inferenceReason ?? '此事件為系統推定',
                 style: TextStyle(
-                  color: sel
-                      ? HealingDesignSystem.adaptiveAccent(context)
-                      : HealingDesignSystem.adaptivePrimaryText(context),
-                  fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
-                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontSize: 12,
                 ),
               ),
+          ],
+        ),
+      );
+}
+
+class _ConfidenceCard extends StatelessWidget {
+  const _ConfidenceCard({
+    required this.before,
+    required this.after,
+    required this.beforeAvailableDays,
+    required this.afterAvailableDays,
+    required this.confidence,
+    required this.observation,
+    required this.hasConcurrentAdjustments,
+  });
+  final DailyRecordAggregate before;
+  final DailyRecordAggregate after;
+  final int beforeAvailableDays;
+  final int afterAvailableDays;
+  final CompareConfidenceSummary confidence;
+  final ObservationWindowStatus observation;
+  final bool hasConcurrentAdjustments;
+
+  @override
+  Widget build(BuildContext context) => _SoftCard(
+        title: '觀察資料概況',
+        subtitle: '調整當天未納入統計',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+                '整體紀錄覆蓋率：前段 ${before.effectiveRecordDays}/$beforeAvailableDays 天'),
+            Text(
+                '整體紀錄覆蓋率：後段 ${after.effectiveRecordDays}/$afterAvailableDays 天'),
+            const SizedBox(height: 6),
+            Text('整體資料信心：${_confidenceLabel(confidence.overall)}'),
+            Text('症狀資料信心：${_confidenceLabel(confidence.symptom)}'),
+            Text('情緒資料信心：${_confidenceLabel(confidence.emotion)}'),
+            Text('每日狀態資料信心：${_confidenceLabel(confidence.state)}'),
+            const SizedBox(height: 6),
+            Text(
+              '症狀明確完成紀錄：前 ${before.symptomRecordSummary.confirmedRecordedDays} 天、'
+              '後 ${after.symptomRecordSummary.confirmedRecordedDays} 天',
+            ),
+            if (before.symptomRecordSummary.inferredRecordedDays > 0 ||
+                after.symptomRecordSummary.inferredRecordedDays > 0)
+              Text(
+                '症狀舊資料推定：前 ${before.symptomRecordSummary.inferredRecordedDays} 天、'
+                '後 ${after.symptomRecordSummary.inferredRecordedDays} 天',
+              ),
+            Text(
+              '情緒明確完成紀錄：前 ${before.emotionRecordSummary.confirmedRecordedDays} 天、'
+              '後 ${after.emotionRecordSummary.confirmedRecordedDays} 天',
+            ),
+            if (before.emotionRecordSummary.inferredRecordedDays > 0 ||
+                after.emotionRecordSummary.inferredRecordedDays > 0)
+              Text(
+                '情緒舊資料推定：前 ${before.emotionRecordSummary.inferredRecordedDays} 天、'
+                '後 ${after.emotionRecordSummary.inferredRecordedDays} 天',
+              ),
+            Text(
+              '每日狀態明確完成紀錄：前 ${before.stateRecordSummary.confirmedRecordedDays} 天、'
+              '後 ${after.stateRecordSummary.confirmedRecordedDays} 天',
+            ),
+            if (before.stateRecordSummary.inferredRecordedDays > 0 ||
+                after.stateRecordSummary.inferredRecordedDays > 0)
+              Text(
+                '每日狀態舊資料推定：前 ${before.stateRecordSummary.inferredRecordedDays} 天、'
+                '後 ${after.stateRecordSummary.inferredRecordedDays} 天',
+              ),
+            Text(
+                '觀察期完成度：${observation.elapsedAfterDays}/${observation.requestedDays} 天'),
+            Text('同期調藥影響：${hasConcurrentAdjustments ? '有，解讀時需留意' : '未發現'}'),
+            if (_hasInferredData(before) || _hasInferredData(after)) ...[
+              const SizedBox(height: 6),
+              const Text(
+                '部分較早的紀錄缺少完整填寫狀態，系統會依現有內容推估；推定資料已降低分析信心。',
+              ),
+            ],
+          ],
+        ),
+      );
+
+  static bool _hasInferredData(DailyRecordAggregate aggregate) =>
+      aggregate.symptomRecordSummary.containsInferredData ||
+      aggregate.emotionRecordSummary.containsInferredData ||
+      aggregate.stateRecordSummary.containsInferredData;
+}
+
+class _ConcurrentAdjustmentCard extends StatelessWidget {
+  const _ConcurrentAdjustmentCard({required this.events});
+  final List<MedicationAdjustmentEvent> events;
+
+  @override
+  Widget build(BuildContext context) {
+    final groups = groupAdjustmentEvents(events);
+    return _SoftCard(
+      title: '同期其他調藥提醒',
+      subtitle:
+          '此期間另有 ${groups.length} 筆調藥紀錄，共包含 ${events.length} 項其他藥物變動，結果可能受到影響。',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: groups.values.map((group) {
+          final first = group.first;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(first.dateLabel,
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+                ...group.map((event) => Text(
+                    '• ${event.medName}：${MedicationAdjustmentFormatter.shortSummary(event)}')),
+              ],
             ),
           );
         }).toList(),
       ),
     );
   }
+}
 
-  // -----------------------------
-  // 從本地 DB 獲取服用中的藥物
-  Future<List<Map<String, dynamic>>> _getMedsForCompare(String uid) async {
-    final all = await MedicationLocalDB().getMedicationsForDisplay(uid);
-    return all.where((m) => (m['isActive'] ?? true) == true).toList();
-  }
+class _ObservationIncompleteCard extends StatelessWidget {
+  const _ObservationIncompleteCard({required this.status});
+  final ObservationWindowStatus status;
 
-  // 計算主流程
-  // -----------------------------
-  Future<void> _runCompare() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    if (_selectedMedId == null) return;
-
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
-    try {
-      final beforeRange = _dateRange(
-        start: _anchorDate.subtract(Duration(days: _windowDays)),
-        endExclusive: _anchorDate, // 不含 anchor 當天
+  @override
+  Widget build(BuildContext context) => _NoticeCard(
+        icon: Icons.hourglass_bottom,
+        text: '本次 ${status.requestedDays} 天觀察期尚未完成\n'
+            '目前已觀察 ${status.elapsedAfterDays}/${status.requestedDays} 天\n'
+            '預計於 ${_dateLabel(status.expectedCompletionDate)} 完成。'
+            '尚未到來的日期不計為缺漏。',
       );
+}
 
-      final afterRange = _dateRange(
-        start: _anchorDate, // 從調整當天開始
-        endExclusive: _anchorDate.add(Duration(days: _windowDays)),
-      );
+class _ResultSection extends StatelessWidget {
+  const _ResultSection({required this.title, required this.items});
+  final String title;
+  final List<CompareMetricResult> items;
 
-      final beforeDocs =
-          await _fetchDailyRecords(uid, beforeRange.$1, beforeRange.$2);
-      final afterDocs =
-          await _fetchDailyRecords(uid, afterRange.$1, afterRange.$2);
-
-      final beforeAgg = _aggregateDailyRecords(beforeDocs);
-      final afterAgg = _aggregateDailyRecords(afterDocs);
-
-      setState(() {
-        _beforeSymptomRates = beforeAgg.symptomRate;
-        _afterSymptomRates = afterAgg.symptomRate;
-        _beforeAvgEmotions = beforeAgg.emotionAvg;
-        _afterAvgEmotions = afterAgg.emotionAvg;
-        _beforeDaysCount = beforeAgg.daysCount;
-        _afterDaysCount = afterAgg.daysCount;
-      });
-    } catch (e) {
-      setState(() => _error = '比對失敗：$e');
-    } finally {
-      setState(() => _loading = false);
-    }
-  }
-
-  // 回傳 (startInclusive, endExclusive)
-  (DateTime, DateTime) _dateRange(
-      {required DateTime start, required DateTime endExclusive}) {
-    final s = DateTime(start.year, start.month, start.day);
-    final e = DateTime(endExclusive.year, endExclusive.month, endExclusive.day);
-    return (s, e);
-  }
-
-  Future<List<HealthDocument>> _fetchDailyRecords(
-    String uid,
-    DateTime startInclusive,
-    DateTime endExclusive,
-  ) async {
-    if (!startInclusive.isBefore(endExclusive)) {
-      return [];
-    }
-
-    String id(DateTime d) => '${d.year.toString().padLeft(4, '0')}-'
-        '${d.month.toString().padLeft(2, '0')}-'
-        '${d.day.toString().padLeft(2, '0')}';
-
-    final recordsRef = FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('dailyRecords');
-
-    final byDate = await HealthDataEncryptionService.getEncrypted(recordsRef
-        .where('date',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(startInclusive))
-        .where('date', isLessThan: Timestamp.fromDate(endExclusive)));
-
-    final startId = id(startInclusive);
-    // endExclusive 不含，所以用「前一天」作為 endId（含）
-    final endId = id(endExclusive.subtract(const Duration(days: 1)));
-
-    final byDocId = await HealthDataEncryptionService.getEncrypted(recordsRef
-        .where(FieldPath.documentId, isGreaterThanOrEqualTo: startId)
-        .where(FieldPath.documentId, isLessThanOrEqualTo: endId));
-
-    final merged = <String, HealthDocument>{
-      for (final d in byDate) d.id: d,
-      for (final d in byDocId) d.id: d,
-    };
-
-    return merged.values.toList();
-  }
-
-  // -----------------------------
-  // 解析 + 平均計算（你最可能需要微調的地方）
-  // -----------------------------
-  _AggResult _aggregateDailyRecords(List<HealthDocument> docs) {
-    // 累積 sum & count
-    final symptomDays = <String, int>{};
-    final emotionSum = <String, double>{};
-    final emotionCount = <String, int>{};
-
-    int daysWithAny = 0;
-
-    for (final d in docs) {
-      final data = d.data;
-
-      final symptomNames = _normalizeSymptomNameSet(
-        data['symptoms'] ?? data['bodySymptoms'] ?? data['symptomScores'],
-      );
-      var emotions = _normalizeNameScoreMap(
-        data['emotions'] ?? data['emotionScores'],
-      );
-
-      // 某些資料只存 overallMood，補成可比較欄位避免後段空白。
-      if (emotions.isEmpty) {
-        final overall = _toDouble(data['overallMood']);
-        if (overall != null) {
-          emotions = {'整體情緒': overall};
-        }
-      }
-
-      if (symptomNames.isNotEmpty || emotions.isNotEmpty) {
-        daysWithAny += 1;
-      }
-
-      for (final name in symptomNames) {
-        symptomDays[name] = (symptomDays[name] ?? 0) + 1;
-      }
-      for (final e in emotions.entries) {
-        emotionSum[e.key] = (emotionSum[e.key] ?? 0) + e.value;
-        emotionCount[e.key] = (emotionCount[e.key] ?? 0) + 1;
-      }
-    }
-
-    final symptomRate = <String, double>{};
-    if (daysWithAny > 0) {
-      for (final e in symptomDays.entries) {
-        symptomRate[e.key] = (e.value / daysWithAny) * 100;
-      }
-    }
-
-    Map<String, double> toAvg(Map<String, double> sum, Map<String, int> cnt) {
-      final out = <String, double>{};
-      for (final k in sum.keys) {
-        final c = cnt[k] ?? 0;
-        if (c <= 0) continue;
-        out[k] = sum[k]! / c;
-      }
-      return out;
-    }
-
-    return _AggResult(
-      daysCount: daysWithAny,
-      symptomRate: symptomRate,
-      emotionAvg: toAvg(emotionSum, emotionCount),
-    );
-  }
-
-  Set<String> _normalizeSymptomNameSet(dynamic raw) {
-    final out = <String>{};
-    if (raw == null) return out;
-
-    if (raw is List) {
-      for (final item in raw) {
-        if (item is String) {
-          final name = item.trim();
-          if (name.isNotEmpty) out.add(name);
-          continue;
-        }
-
-        if (item is Map) {
-          final name = (item['name'] ?? item['title'] ?? item['symptom'] ?? '')
-              .toString()
-              .trim();
-          if (name.isNotEmpty) out.add(name);
-        }
-      }
-      return out;
-    }
-
-    if (raw is Map) {
-      for (final k in raw.keys) {
-        final name = (k ?? '').toString().trim();
-        if (name.isNotEmpty) out.add(name);
-      }
-      return out;
-    }
-
-    return out;
-  }
-
-  /// 支援兩種常見結構：
-  /// A) Map<String, num>：{'焦慮': 3, '頭痛': 2}
-  /// B) List<Map>：[{'name':'焦慮','score':3}, {'name':'頭痛','score':2}]
-  Map<String, double> _normalizeNameScoreMap(dynamic raw) {
-    final out = <String, double>{};
-    if (raw == null) return out;
-
-    if (raw is Map) {
-      raw.forEach((k, v) {
-        final name = (k ?? '').toString().trim();
-        final score = _toDouble(v);
-        if (name.isNotEmpty && score != null) out[name] = score;
-      });
-      return out;
-    }
-
-    if (raw is List) {
-      for (final item in raw) {
-        if (item is Map) {
-          final name = (item['name'] ?? item['title'] ?? '').toString().trim();
-          final score = _toDouble(item['score'] ?? item['value']);
-          if (name.isNotEmpty && score != null) out[name] = score;
-        }
-      }
-      return out;
-    }
-
-    return out;
-  }
-
-  double? _toDouble(dynamic v) {
-    if (v == null) return null;
-    if (v is num) return v.toDouble();
-    final s = v.toString().trim();
-    if (s.isEmpty) return null;
-    return double.tryParse(s);
-  }
-
-  // -----------------------------
-  // 結果 UI
-  // -----------------------------
-  Widget _buildResultSection() {
-    if (_beforeDaysCount == 0 && _afterDaysCount == 0) {
-      return const _Hint(
-        text: '尚未計算或沒有資料。請先選藥物、選基準日，按「開始比對」。',
-      );
-    }
-
-    final symptomDeltas = _buildSymptomDeltas(
-      before: _beforeSymptomRates,
-      after: _afterSymptomRates,
-      worsenThreshold: 30,
-    );
-
-    final emotionDeltas = _buildEmotionDeltas(
-      before: _beforeAvgEmotions,
-      after: _afterAvgEmotions,
-      worsenThreshold: 3,
-    );
-
-    final symptomItems =
-        symptomDeltas.map((d) => _toCompareItem(d, true)).toList();
-    final emotionItems =
-        emotionDeltas.map((d) => _toCompareItem(d, false)).toList();
-
-    final attentionCount = symptomDeltas
-            .where((x) =>
-                x.kind == _DeltaKind.newlyAppeared ||
-                x.kind == _DeltaKind.worsened)
-            .length +
-        emotionDeltas
-            .where((x) =>
-                x.kind == _DeltaKind.newlyAppeared ||
-                x.kind == _DeltaKind.worsened)
-            .length;
-    final improvedCount =
-        symptomDeltas.where((x) => x.kind == _DeltaKind.improved).length +
-            emotionDeltas.where((x) => x.kind == _DeltaKind.improved).length;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _ResultSummaryCard(
-          medName:
-              (_selectedMedData?['name'] ?? _selectedMedId ?? '').toString(),
-          windowDays: _windowDays,
-          beforeDays: _beforeDaysCount,
-          afterDays: _afterDaysCount,
-          confidence: _confidenceText(_beforeDaysCount, _afterDaysCount),
-          attentionCount: attentionCount,
-          improvedCount: improvedCount,
+  @override
+  Widget build(BuildContext context) => _SoftCard(
+        title: title,
+        child: Column(
+          children: items
+              .map((item) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _MetricRow(item: item),
+                  ))
+              .toList(),
         ),
-        const SizedBox(height: 14),
-        SymptomCompareResultPanel(
-          symptomItems: symptomItems,
-          emotionItems: emotionItems,
-        ),
-      ],
+      );
+}
+
+class _MetricRow extends StatelessWidget {
+  const _MetricRow({required this.item});
+  final CompareMetricResult item;
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = <String>[];
+    if (!item.canCalculate) {
+      lines.add('資料不足，無法判定變化');
+    } else if (item.kind == CompareMetricKind.symptom) {
+      lines.add(
+          '出現率：${_percent(item.beforeOccurrenceRate)} → ${_percent(item.afterOccurrenceRate)}');
+      lines.add(
+          '出現天數：${item.beforePresentDays}/${item.beforeRecordedDays} → ${item.afterPresentDays}/${item.afterRecordedDays} 天');
+      if (item.beforeAverageScore != null || item.afterAverageScore != null) {
+        lines.add(
+            '平均強度：${_score(item.beforeAverageScore)} → ${_score(item.afterAverageScore)}');
+        lines.add(
+            '最高強度：${_score(item.beforeMaximumScore)} → ${_score(item.afterMaximumScore)}');
+      }
+      lines.add(
+          '頻率變化：${_changeText(item.occurrenceDirection, item.occurrenceMagnitude)}');
+      lines.add(
+          '強度變化：${_changeText(item.severityDirection, item.severityMagnitude)}');
+    } else {
+      lines.add(
+          '平均分：${_score(item.beforeAverageScore)} → ${_score(item.afterAverageScore)}');
+      lines
+          .add('有效樣本：${item.beforeRecordedDays} → ${item.afterRecordedDays} 天');
+    }
+    lines.add('資料信心：${_confidenceLabel(item.confidence)}');
+    if (item.dataAdequacy == DataAdequacy.veryLimited) {
+      lines.add('資料非常有限，目前僅能視為初步變化。');
+    } else if (item.dataAdequacy == DataAdequacy.limited) {
+      lines.add('資料有限，目前屬初步趨勢。');
+    }
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: HealingDesignSystem.adaptiveFill(context),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                  child: Text(item.name,
+                      style: const TextStyle(fontWeight: FontWeight.w800))),
+              _Tag(text: _label(item)),
+            ],
+          ),
+          if (item.newlyAppeared)
+            Text(item.afterPresentDays == 1
+                ? '後段新出現 1 次，仍需更多紀錄確認'
+                : '後段新出現 ${item.afterPresentDays} 次'),
+          if (item.disappeared) const Text('觀察期間後段未再出現'),
+          ...lines.map((line) => Text(line)),
+        ],
+      ),
     );
   }
 
-  String _confidenceText(int beforeDays, int afterDays) {
-    final minSide = beforeDays < afterDays ? beforeDays : afterDays;
-    if (minSide >= 5) return '高（前後至少 5 天）';
-    if (minSide >= 3) return '中（前後至少 3 天）';
-    return '低（資料天數偏少）';
-  }
-
-  CompareItem _toCompareItem(_MetricDelta d, bool isPercentage) {
-    String fmt(double? v) {
-      if (v == null) return '—';
-      final base = v.toStringAsFixed(1);
-      return isPercentage ? '$base%' : base;
+  static String _label(CompareMetricResult item) {
+    if (!item.canCalculate) return '資料不足';
+    if (item.dataAdequacy == DataAdequacy.veryLimited) {
+      return switch (item.direction) {
+        ChangeDirection.increased => '初步上升',
+        ChangeDirection.decreased => '初步下降',
+        _ => item.newlyAppeared ? '初步新出現' : '初步變化',
+      };
     }
-
-    final diffVal = d.before == null ? null : (d.after - d.before!);
-    final diffText = diffVal == null
-        ? '新出現'
-        : (isPercentage
-            ? '${diffVal >= 0 ? '+' : ''}${diffVal.toStringAsFixed(1)}%'
-            : '${diffVal >= 0 ? '+' : ''}${diffVal.toStringAsFixed(1)}');
-
-    final type = switch (d.kind) {
-      _DeltaKind.improved => CompareChangeType.improved,
-      _DeltaKind.worsened => CompareChangeType.worsened,
-      _DeltaKind.newlyAppeared => CompareChangeType.newAppeared,
-      _DeltaKind.minor => CompareChangeType.mild,
+    if (item.symptomPattern == SymptomChangePattern.mixed) return '變化不一致';
+    if (item.newlyAppeared) {
+      return item.afterPresentDays == 1 ? '新出現／初步變化' : '新出現';
+    }
+    if (item.needsAttention) return '需要留意';
+    if (item.possiblyImproved) return '可能改善';
+    final direction = switch (item.direction) {
+      ChangeDirection.increased => '上升',
+      ChangeDirection.decreased => '下降',
+      ChangeDirection.stable => '穩定',
+      ChangeDirection.unknown => '未判定',
     };
-
-    return CompareItem(
-      name: d.name,
-      before: fmt(d.before),
-      after: fmt(d.after),
-      diff: diffText,
-      type: type,
-    );
+    final magnitude = switch (item.magnitude) {
+      ChangeMagnitude.highAttention || ChangeMagnitude.meaningful => '明顯',
+      ChangeMagnitude.minor => '輕度',
+      ChangeMagnitude.stable => '無明顯',
+    };
+    return '$magnitude$direction';
   }
 
-  List<_MetricDelta> _buildSymptomDeltas({
-    required Map<String, double> before,
-    required Map<String, double> after,
-    required double worsenThreshold,
-  }) {
-    final keys = {...before.keys, ...after.keys};
-    final out = <_MetricDelta>[];
+  static String _percent(double? value) =>
+      value == null ? '未記錄' : '${value.toStringAsFixed(1)}%';
+  static String _score(double? value) =>
+      value == null ? '未記錄' : value.toStringAsFixed(1);
 
-    for (final k in keys) {
-      final b = before[k];
-      final bVal = (b ?? 0);
-      final a = after[k] ?? 0;
-      if (a <= 0 && bVal <= 0) continue;
-
-      if (b == null || bVal <= 0) {
-        out.add(_MetricDelta(
-          name: k,
-          before: b,
-          after: a,
-          kind: a >= 60 ? _DeltaKind.newlyAppeared : _DeltaKind.minor,
-          severityScore: a,
-          isEmotion: false,
-        ));
-        continue;
-      }
-
-      final diff = a - bVal;
-      if (diff >= 30) {
-        out.add(_MetricDelta(
-          name: k,
-          before: b,
-          after: a,
-          kind: _DeltaKind.worsened,
-          severityScore: diff,
-          isEmotion: false,
-        ));
-      } else if (diff <= -30) {
-        out.add(_MetricDelta(
-          name: k,
-          before: b,
-          after: a,
-          kind: _DeltaKind.improved,
-          severityScore: -diff,
-          isEmotion: false,
-        ));
-      } else if (diff.abs() > 0) {
-        out.add(_MetricDelta(
-          name: k,
-          before: b,
-          after: a,
-          kind: _DeltaKind.minor,
-          severityScore: diff.abs(),
-          isEmotion: false,
-        ));
-      }
-    }
-
-    out.sort((x, y) => y.severityScore.compareTo(x.severityScore));
-    return out;
-  }
-
-  List<_MetricDelta> _buildEmotionDeltas({
-    required Map<String, double> before,
-    required Map<String, double> after,
-    required double worsenThreshold,
-  }) {
-    final keys = {...before.keys, ...after.keys};
-    final out = <_MetricDelta>[];
-
-    for (final k in keys) {
-      final b = before[k];
-      final a = after[k];
-      if (a == null) continue;
-
-      if (b == null) {
-        if (a < 1) continue;
-        out.add(_MetricDelta(
-          name: k,
-          before: null,
-          after: a,
-          kind: a >= 6 ? _DeltaKind.newlyAppeared : _DeltaKind.minor,
-          severityScore: a,
-          positiveEmotion: false,
-          isEmotion: true,
-        ));
-        continue;
-      }
-
-      final rawDiff = a - b;
-      if (rawDiff >= 3) {
-        out.add(_MetricDelta(
-          name: k,
-          before: b,
-          after: a,
-          kind: _DeltaKind.worsened,
-          severityScore: rawDiff,
-          positiveEmotion: false,
-          isEmotion: true,
-        ));
-      } else if (rawDiff <= -3) {
-        out.add(_MetricDelta(
-          name: k,
-          before: b,
-          after: a,
-          kind: _DeltaKind.improved,
-          severityScore: -rawDiff,
-          positiveEmotion: false,
-          isEmotion: true,
-        ));
-      } else if (rawDiff.abs() >= 1) {
-        out.add(_MetricDelta(
-          name: k,
-          before: b,
-          after: a,
-          kind: _DeltaKind.minor,
-          severityScore: rawDiff.abs(),
-          positiveEmotion: false,
-          isEmotion: true,
-        ));
-      }
-    }
-
-    out.sort((x, y) => y.severityScore.compareTo(x.severityScore));
-    return out;
-  }
-
-  bool _isPositiveEmotion(String name) {
-    const positiveKeywords = [
-      '開心',
-      '快樂',
-      '愉悅',
-      '平靜',
-      '安定',
-      '動力',
-      '能量',
-      '希望',
-      '專注',
-      '食慾',
-      '活動量',
-    ];
-    return positiveKeywords.any((k) => name.contains(k));
+  static String _changeText(
+    ChangeDirection direction,
+    ChangeMagnitude magnitude,
+  ) {
+    if (direction == ChangeDirection.unknown) return '無可比較分數';
+    final prefix = switch (magnitude) {
+      ChangeMagnitude.highAttention || ChangeMagnitude.meaningful => '明顯',
+      ChangeMagnitude.minor => '初步',
+      ChangeMagnitude.stable => '無明顯',
+    };
+    final suffix = switch (direction) {
+      ChangeDirection.increased => '增加',
+      ChangeDirection.decreased => '下降',
+      ChangeDirection.stable => '變化',
+      ChangeDirection.unknown => '',
+    };
+    return '$prefix$suffix';
   }
 }
 
-// -----------------------------
-// 小元件
-// -----------------------------
-class _Card extends StatelessWidget {
+class _Tag extends StatelessWidget {
+  const _Tag({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: HealingDesignSystem.adaptiveAccent(context)
+              .withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(text,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+      );
+}
+
+class _SoftCard extends StatelessWidget {
+  const _SoftCard({required this.title, required this.child, this.subtitle});
   final String title;
   final String? subtitle;
   final Widget child;
 
-  const _Card({required this.title, required this.child, this.subtitle});
-
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: HealingDesignSystem.adaptiveCardDecoration(
-        context,
-        radius: 18,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              color: HealingDesignSystem.adaptivePrimaryText(context),
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          if (subtitle != null) ...[
-            const SizedBox(height: 3),
-            Text(
-              subtitle!,
-              style: TextStyle(
-                color: HealingDesignSystem.adaptiveSecondaryText(context),
-                fontSize: 12,
-              ),
-            ),
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: HealingDesignSystem.adaptiveSurface(context),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+              color: HealingDesignSystem.adaptiveCardBorder(context)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title,
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w800)),
+            if (subtitle != null) ...[
+              const SizedBox(height: 4),
+              Text(subtitle!, style: Theme.of(context).textTheme.bodySmall),
+            ],
+            const SizedBox(height: 12),
+            child,
           ],
-          const SizedBox(height: 12),
-          child,
-        ],
-      ),
-    );
-  }
+        ),
+      );
 }
 
-class _Hint extends StatelessWidget {
+class _NoticeCard extends StatelessWidget {
+  const _NoticeCard({required this.icon, required this.text});
+  final IconData icon;
   final String text;
-  const _Hint({required this.text});
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: HealingDesignSystem.adaptiveSurface(context),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: HealingDesignSystem.adaptiveCardBorder(context),
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: HealingDesignSystem.adaptiveSurface(context),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+              color: HealingDesignSystem.adaptiveCardBorder(context)),
         ),
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.info_outline_rounded,
-            size: 18,
-            color: HealingDesignSystem.primaryBlue,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              text,
-              style: TextStyle(
-                color: HealingDesignSystem.adaptiveSecondaryText(context),
-                fontSize: 13,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CompareTable extends StatelessWidget {
-  final String title;
-  final Map<String, double> before;
-  final Map<String, double> after;
-  final bool isPercentage;
-  final double? highlightThreshold;
-
-  const _CompareTable({
-    required this.title,
-    required this.before,
-    required this.after,
-    this.isPercentage = false,
-    this.highlightThreshold,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final keys = {...before.keys, ...after.keys}.toList()..sort();
-
-    if (keys.isEmpty) {
-      return _Hint(text: '$title：沒有資料');
-    }
-
-    return Card(
-      color: HealingDesignSystem.adaptiveSurface(context),
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: HealingDesignSystem.adaptiveCardBorder(context),
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              title,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: HealingDesignSystem.adaptivePrimaryText(context),
-                  ),
-            ),
-            const SizedBox(height: 10),
-            ...keys.map((k) {
-              final b = before[k];
-              final a = after[k];
-              final diff = (a ?? 0) - (b ?? 0);
-
-              String fmt(double? x) {
-                if (x == null) return '—';
-                final base = x.toStringAsFixed(isPercentage ? 1 : 2);
-                return isPercentage ? '$base%' : base;
-              }
-
-              String fmtDiff(double? b, double? a) {
-                if (b == null || a == null) return '—';
-                final value = (a - b).toStringAsFixed(isPercentage ? 1 : 2);
-                return isPercentage ? '$value%' : value;
-              }
-
-              Color? highlightColor(double? value) {
-                if (value == null || !isPercentage) return null;
-                if (highlightThreshold == null) return null;
-                if (value >= highlightThreshold!) {
-                  return Theme.of(context).colorScheme.error;
-                }
-                return null;
-              }
-
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        k,
-                        style: TextStyle(
-                          color:
-                              HealingDesignSystem.adaptivePrimaryText(context),
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 70,
-                      child: Text(
-                        fmt(b),
-                        textAlign: TextAlign.right,
-                        style: TextStyle(color: highlightColor(b)),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    SizedBox(
-                      width: 70,
-                      child: Text(
-                        fmt(a),
-                        textAlign: TextAlign.right,
-                        style: TextStyle(color: highlightColor(a)),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    SizedBox(
-                      width: 80,
-                      child: Text(
-                        fmtDiff(b, a),
-                        textAlign: TextAlign.right,
-                        style: TextStyle(
-                          color: (b == null || a == null)
-                              ? null
-                              : (diff > 0
-                                  ? Theme.of(context).colorScheme.error
-                                  : (diff < 0 ? Colors.green : null)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-            const SizedBox(height: 4),
-            Text(
-              '欄位：前段 / 後段 / 差值（後-前）${isPercentage ? '，單位 %' : ''}',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: HealingDesignSystem.adaptiveSecondaryText(context),
-                  ),
-            ),
+            Icon(icon, size: 20),
+            const SizedBox(width: 10),
+            Expanded(child: Text(text)),
           ],
         ),
-      ),
-    );
-  }
+      );
 }
 
-class _AfterOnlyTable extends StatelessWidget {
-  final String title;
-  final Map<String, double> data;
-  final bool isPercentage;
+String _confidenceLabel(CompareConfidence value) => switch (value) {
+      CompareConfidence.high => '高',
+      CompareConfidence.medium => '中',
+      CompareConfidence.low => '低',
+    };
 
-  const _AfterOnlyTable({
-    required this.title,
-    required this.data,
-    this.isPercentage = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final keys = data.keys.toList()..sort();
-    if (keys.isEmpty) {
-      return _Hint(text: '$title：沒有新項目');
-    }
-
-    String fmt(double x) {
-      final base = x.toStringAsFixed(isPercentage ? 1 : 2);
-      return isPercentage ? '$base%' : base;
-    }
-
-    return Card(
-      color: HealingDesignSystem.adaptiveSurface(context),
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: HealingDesignSystem.adaptiveCardBorder(context),
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: HealingDesignSystem.adaptivePrimaryText(context),
-                  ),
-            ),
-            const SizedBox(height: 10),
-            ...keys.map((k) {
-              final v = data[k]!;
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        k,
-                        style: TextStyle(
-                          color:
-                              HealingDesignSystem.adaptivePrimaryText(context),
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 90,
-                      child: Text(
-                        fmt(v),
-                        textAlign: TextAlign.right,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-            const SizedBox(height: 4),
-            Text(
-              '只顯示前段未出現、後段才出現的項目。',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: HealingDesignSystem.adaptiveSecondaryText(context),
-                  ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-enum _DeltaKind { newlyAppeared, worsened, improved, minor }
-
-class _MetricDelta {
-  final String name;
-  final double? before;
-  final double after;
-  final _DeltaKind kind;
-  final double severityScore;
-  final bool positiveEmotion;
-  final bool isEmotion;
-
-  const _MetricDelta({
-    required this.name,
-    required this.before,
-    required this.after,
-    required this.kind,
-    required this.severityScore,
-    this.positiveEmotion = false,
-    this.isEmotion = false,
-  });
-}
-
-class _DeltaTable extends StatelessWidget {
-  final String title;
-  final List<_MetricDelta> rows;
-  final bool isPercentage;
-
-  const _DeltaTable({
-    required this.title,
-    required this.rows,
-    this.isPercentage = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (rows.isEmpty) {
-      return _Hint(text: '$title：沒有項目');
-    }
-
-    String fmt(double? v) {
-      if (v == null) return '—';
-      final base = v.toStringAsFixed(isPercentage ? 1 : 2);
-      return isPercentage ? '$base%' : base;
-    }
-
-    String diffText(_MetricDelta d) {
-      if (d.before == null) return '新出現';
-      final diff = d.after - d.before!;
-      final sign = diff >= 0 ? '+' : '';
-      final val = diff.toStringAsFixed(isPercentage ? 1 : 2);
-      return isPercentage ? '$sign$val%' : '$sign$val';
-    }
-
-    String kindText(_DeltaKind k) {
-      switch (k) {
-        case _DeltaKind.newlyAppeared:
-          return '新出現';
-        case _DeltaKind.worsened:
-          return '惡化';
-        case _DeltaKind.improved:
-          return '改善';
-        case _DeltaKind.minor:
-          return '輕微';
-      }
-    }
-
-    Color? kindColor(BuildContext context, _DeltaKind k) {
-      switch (k) {
-        case _DeltaKind.newlyAppeared:
-        case _DeltaKind.worsened:
-          return Theme.of(context).colorScheme.error;
-        case _DeltaKind.improved:
-          return Colors.green;
-        case _DeltaKind.minor:
-          return Theme.of(context).colorScheme.onSurfaceVariant;
-      }
-    }
-
-    return Card(
-      color: HealingDesignSystem.adaptiveSurface(context),
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: HealingDesignSystem.adaptiveCardBorder(context),
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: HealingDesignSystem.adaptivePrimaryText(context),
-                  ),
-            ),
-            const SizedBox(height: 10),
-            ...rows.map((row) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        row.name,
-                        style: TextStyle(
-                          color:
-                              HealingDesignSystem.adaptivePrimaryText(context),
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 60,
-                      child: Text(fmt(row.before), textAlign: TextAlign.right),
-                    ),
-                    const SizedBox(width: 8),
-                    SizedBox(
-                      width: 60,
-                      child: Text(fmt(row.after), textAlign: TextAlign.right),
-                    ),
-                    const SizedBox(width: 8),
-                    SizedBox(
-                      width: 70,
-                      child: Text(diffText(row), textAlign: TextAlign.right),
-                    ),
-                    const SizedBox(width: 8),
-                    SizedBox(
-                      width: 50,
-                      child: Text(
-                        kindText(row.kind),
-                        textAlign: TextAlign.right,
-                        style: TextStyle(color: kindColor(context, row.kind)),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-            const SizedBox(height: 4),
-            Text(
-              '欄位：前段 / 後段 / 差值 / 分類${isPercentage ? '（單位 %）' : ''}',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: HealingDesignSystem.adaptiveSecondaryText(context),
-                  ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// -----------------------------
-// 分析摘要卡
-// -----------------------------
-class _ResultSummaryCard extends StatelessWidget {
-  final String medName;
-  final int windowDays;
-  final int beforeDays;
-  final int afterDays;
-  final String confidence;
-  final int attentionCount;
-  final int improvedCount;
-
-  const _ResultSummaryCard({
-    required this.medName,
-    required this.windowDays,
-    required this.beforeDays,
-    required this.afterDays,
-    required this.confidence,
-    required this.attentionCount,
-    required this.improvedCount,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final confShort = confidence.split('（').first;
-    final confColor = confShort == '高'
-        ? HealingDesignSystem.successGreen
-        : (confShort == '中'
-            ? HealingDesignSystem.warningOrange
-            : HealingDesignSystem.dangerRed);
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: HealingDesignSystem.adaptiveCardDecoration(
-        context,
-        radius: 20,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  gradient: HealingDesignSystem.primaryGradient(),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.insights_rounded,
-                    color: Colors.white, size: 20),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '分析摘要',
-                      style: TextStyle(
-                        color: HealingDesignSystem.adaptivePrimaryText(context),
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    if (medName.isNotEmpty)
-                      Text(
-                        medName,
-                        style: TextStyle(
-                          color: HealingDesignSystem.adaptiveSecondaryText(
-                              context),
-                          fontSize: 12,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: confColor.withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: confColor.withOpacity(0.30)),
-                ),
-                child: Text(
-                  '信心：$confShort',
-                  style: TextStyle(
-                    color: confColor,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _InfoPill(
-                  label: '前段納入',
-                  value: '$beforeDays 天',
-                  color: HealingDesignSystem.adaptiveSecondaryText(context),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _InfoPill(
-                  label: '後段納入',
-                  value: '$afterDays 天',
-                  color: HealingDesignSystem.primaryBlue,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _InfoPill(
-                  label: '比對窗口',
-                  value: '$windowDays 天',
-                  color: HealingDesignSystem.adaptivePrimaryText(context),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _CountPill(
-                  label: '需關注',
-                  count: attentionCount,
-                  color: HealingDesignSystem.dangerRed,
-                  icon: Icons.warning_amber_rounded,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _CountPill(
-                  label: '可能改善',
-                  count: improvedCount,
-                  color: HealingDesignSystem.successGreen,
-                  icon: Icons.trending_down_rounded,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _InfoPill extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color color;
-
-  const _InfoPill({
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.07),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.20)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-                color: color, fontSize: 11, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: TextStyle(
-                color: color, fontSize: 15, fontWeight: FontWeight.w800),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CountPill extends StatelessWidget {
-  final String label;
-  final int count;
-  final Color color;
-  final IconData icon;
-
-  const _CountPill({
-    required this.label,
-    required this.count,
-    required this.color,
-    required this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.07),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withOpacity(0.22)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 20),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '$count 項',
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                Text(
-                  label,
-                  style: TextStyle(
-                      color: color, fontSize: 12, fontWeight: FontWeight.w600),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// -----------------------------
-// 聚合結果
-// -----------------------------
-class _AggResult {
-  final int daysCount;
-  final Map<String, double> symptomRate;
-  final Map<String, double> emotionAvg;
-
-  _AggResult({
-    required this.daysCount,
-    required this.symptomRate,
-    required this.emotionAvg,
-  });
-}
-
-enum CompareChangeType {
-  improved,
-  worsened,
-  newAppeared,
-  mild,
-}
-
-class CompareItem {
-  final String name;
-  final String before;
-  final String after;
-  final String diff;
-  final CompareChangeType type;
-
-  const CompareItem({
-    required this.name,
-    required this.before,
-    required this.after,
-    required this.diff,
-    required this.type,
-  });
-}
-
-class SymptomCompareResultPanel extends StatelessWidget {
-  final List<CompareItem> symptomItems;
-  final List<CompareItem> emotionItems;
-
-  const SymptomCompareResultPanel({
-    super.key,
-    required this.symptomItems,
-    required this.emotionItems,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final allItems = [...symptomItems, ...emotionItems];
-
-    final warningItems = allItems
-        .where((e) =>
-            e.type == CompareChangeType.worsened ||
-            e.type == CompareChangeType.newAppeared)
-        .toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (warningItems.isNotEmpty) ...[
-          _HighlightCard(items: warningItems),
-          const SizedBox(height: 12),
-        ],
-        if (symptomItems.isNotEmpty) ...[
-          _CompareSectionCard(
-            title: '症狀比對',
-            subtitle: '調藥前後身體症狀出現率的變化（單位 %）',
-            items: symptomItems,
-          ),
-          const SizedBox(height: 12),
-        ],
-        if (emotionItems.isNotEmpty) ...[
-          _CompareSectionCard(
-            title: '情緒比對',
-            subtitle: '調藥前後情緒指標平均分的變化',
-            items: emotionItems,
-          ),
-          const SizedBox(height: 12),
-        ],
-        const _DisclaimerCard(),
-      ],
-    );
-  }
-}
-
-class _AnalysisSummaryCard extends StatelessWidget {
-  final int improved;
-  final int worsened;
-  final int newAppeared;
-
-  const _AnalysisSummaryCard({
-    required this.improved,
-    required this.worsened,
-    required this.newAppeared,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return _SoftCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.insights_rounded,
-                color: HealingDesignSystem.adaptiveAccent(context),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '本次分析摘要',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: HealingDesignSystem.adaptivePrimaryText(context),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Row(
-            children: [
-              Expanded(
-                child: _SummaryPill(
-                  label: '改善',
-                  value: improved.toString(),
-                  color: const Color(0xFF2E7D32),
-                  icon: Icons.trending_down_rounded,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _SummaryPill(
-                  label: '惡化',
-                  value: worsened.toString(),
-                  color: const Color(0xFFD05A5A),
-                  icon: Icons.trending_up_rounded,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _SummaryPill(
-                  label: '新出現',
-                  value: newAppeared.toString(),
-                  color: const Color(0xFFF2994A),
-                  icon: Icons.auto_awesome_rounded,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Text(
-            '提醒：此結果呈現關聯趨勢，不等於因果。請搭配睡眠、壓力、生活事件與回診狀況一起判斷。',
-            style: TextStyle(
-              fontSize: 14,
-              height: 1.6,
-              color: HealingDesignSystem.adaptiveSecondaryText(context),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SummaryPill extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color color;
-  final IconData icon;
-
-  const _SummaryPill({
-    required this.label,
-    required this.value,
-    required this.color,
-    required this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.10),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: color.withOpacity(0.22)),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 22),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: TextStyle(
-              color: color,
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HighlightCard extends StatelessWidget {
-  final List<CompareItem> items;
-
-  const _HighlightCard({required this.items});
-
-  @override
-  Widget build(BuildContext context) {
-    return _SoftCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: HealingDesignSystem.dangerRed.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.warning_amber_rounded,
-                  size: 18,
-                  color: HealingDesignSystem.dangerRed,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                '需要優先留意',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: HealingDesignSystem.adaptivePrimaryText(context),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          ...items.map((item) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _CompareRow(item: item, compact: true),
-              )),
-        ],
-      ),
-    );
-  }
-}
-
-class _CompareSectionCard extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final List<CompareItem> items;
-
-  const _CompareSectionCard({
-    required this.title,
-    required this.subtitle,
-    required this.items,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (items.isEmpty) return const SizedBox.shrink();
-
-    return _SoftCard(
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          initiallyExpanded: true,
-          tilePadding: EdgeInsets.zero,
-          childrenPadding: EdgeInsets.zero,
-          iconColor: HealingDesignSystem.primaryBlue,
-          collapsedIconColor:
-              HealingDesignSystem.adaptiveSecondaryText(context),
-          title: Text(
-            title,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-              color: HealingDesignSystem.adaptivePrimaryText(context),
-            ),
-          ),
-          subtitle: Padding(
-            padding: const EdgeInsets.only(top: 3),
-            child: Text(
-              subtitle,
-              style: TextStyle(
-                color: HealingDesignSystem.adaptiveSecondaryText(context),
-                fontSize: 12,
-              ),
-            ),
-          ),
-          children: [
-            const SizedBox(height: 8),
-            ...items.map(
-              (item) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _CompareRow(item: item),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CompareRow extends StatelessWidget {
-  final CompareItem item;
-  final bool compact;
-
-  const _CompareRow({
-    required this.item,
-    this.compact = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final color = item.type == CompareChangeType.mild
-        ? HealingDesignSystem.adaptiveSecondaryText(context)
-        : _typeColor(item.type);
-    final label = _typeLabel(item.type);
-    final icon = _typeIcon(item.type);
-
-    return Container(
-      padding: EdgeInsets.all(compact ? 11 : 13),
-      decoration: BoxDecoration(
-        color: HealingDesignSystem.adaptiveFill(context),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: HealingDesignSystem.adaptiveCardBorder(context),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: color, size: 20),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.name,
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: HealingDesignSystem.adaptivePrimaryText(context),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 3,
-                  children: [
-                    Text(
-                      '前：${item.before}',
-                      style: TextStyle(
-                        color:
-                            HealingDesignSystem.adaptiveSecondaryText(context),
-                        fontSize: 12,
-                      ),
-                    ),
-                    Text(
-                      '後：${item.after}',
-                      style: TextStyle(
-                        color:
-                            HealingDesignSystem.adaptiveSecondaryText(context),
-                        fontSize: 12,
-                      ),
-                    ),
-                    Text(
-                      '差異：${item.diff}',
-                      style: TextStyle(
-                        color: color,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              label,
-              style: TextStyle(
-                color: color,
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Color _typeColor(CompareChangeType type) {
-    switch (type) {
-      case CompareChangeType.improved:
-        return HealingDesignSystem.successGreen;
-      case CompareChangeType.worsened:
-        return HealingDesignSystem.dangerRed;
-      case CompareChangeType.newAppeared:
-        return HealingDesignSystem.warningOrange;
-      case CompareChangeType.mild:
-        return HealingDesignSystem.mutedText;
-    }
-  }
-
-  String _typeLabel(CompareChangeType type) {
-    switch (type) {
-      case CompareChangeType.improved:
-        return '改善';
-      case CompareChangeType.worsened:
-        return '惡化';
-      case CompareChangeType.newAppeared:
-        return '新出現';
-      case CompareChangeType.mild:
-        return '輕微';
-    }
-  }
-
-  IconData _typeIcon(CompareChangeType type) {
-    switch (type) {
-      case CompareChangeType.improved:
-        return Icons.arrow_downward_rounded;
-      case CompareChangeType.worsened:
-        return Icons.arrow_upward_rounded;
-      case CompareChangeType.newAppeared:
-        return Icons.auto_awesome_rounded;
-      case CompareChangeType.mild:
-        return Icons.remove_rounded;
-    }
-  }
-}
-
-class _DisclaimerCard extends StatelessWidget {
-  const _DisclaimerCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: HealingDesignSystem.warningOrange.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-            color: HealingDesignSystem.warningOrange.withOpacity(0.30)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.info_outline_rounded,
-            color: HealingDesignSystem.warningOrange,
-            size: 18,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              '本頁顯示的是關聯趨勢，不代表因果。若症狀明顯惡化，建議記錄後於回診時提供醫師參考。',
-              style: TextStyle(
-                fontSize: 13,
-                height: 1.6,
-                color: HealingDesignSystem.adaptivePrimaryText(context),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SoftCard extends StatelessWidget {
-  final Widget child;
-
-  const _SoftCard({required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: HealingDesignSystem.adaptiveCardDecoration(
-        context,
-        radius: 18,
-      ),
-      child: child,
-    );
-  }
-}
+String _dateLabel(DateTime date) => '${date.year.toString().padLeft(4, '0')}/'
+    '${date.month.toString().padLeft(2, '0')}/'
+    '${date.day.toString().padLeft(2, '0')}';

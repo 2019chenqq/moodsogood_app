@@ -9,6 +9,7 @@ import '../utils/firebase_sync_config.dart';
 import 'medication_local_db.dart';
 import 'medication_reminder_service.dart';
 import 'medication_dose_units.dart';
+import 'medication_adjustment_service.dart';
 import '../analytics_service.dart';
 
 const double kMaxDose = 50000;
@@ -17,7 +18,14 @@ const int kDoseSliderDivisions = 5000;
 const List<String> kOralTimeSlots = ['早上', '中午', '下午', '晚上', '睡前', '需要時'];
 
 class AddMedicationPage extends StatefulWidget {
-  const AddMedicationPage({super.key});
+  const AddMedicationPage({
+    super.key,
+    this.initialStartDate,
+    this.adjustmentEventSource = 'standaloneMedicationCreate',
+  });
+
+  final DateTime? initialStartDate;
+  final String adjustmentEventSource;
 
   @override
   State<AddMedicationPage> createState() => _AddMedicationPageState();
@@ -81,6 +89,14 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
   @override
   void initState() {
     super.initState();
+    final initialStartDate = widget.initialStartDate;
+    if (initialStartDate != null) {
+      _startDate = DateTime(
+        initialStartDate.year,
+        initialStartDate.month,
+        initialStartDate.day,
+      );
+    }
     DrugDictionaryService.instance.ensureLoaded();
     AnalyticsService.logPage('add_medication_page');
   }
@@ -1013,6 +1029,17 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
 
       // 1️⃣ 先存本地端（一定要存）
       await MedicationLocalDB().addMedication(uid, medicationData);
+      await MedicationAdjustmentService().recordAdded(
+        uid: uid,
+        medDocId: docId,
+        medication: medicationData,
+        effectiveDate: DateTime(
+          _startDate.year,
+          _startDate.month,
+          _startDate.day,
+        ),
+        source: widget.adjustmentEventSource,
+      );
       debugPrint('✅ 本地已保存: $docId');
 
       // 2️⃣ 再上傳 Firebase（如果啟用同步）

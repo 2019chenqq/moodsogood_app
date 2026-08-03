@@ -7,6 +7,7 @@ import '../utils/firebase_sync_config.dart';
 import 'drug_dictionary_service.dart';
 import 'medication_local_db.dart';
 import 'medication_reminder_service.dart';
+import 'medication_adjustment_service.dart';
 import '../analytics_service.dart';
 
 const double kMaxDose = 50000;
@@ -959,20 +960,18 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
         'bodySymptoms': bodySymptoms,
         'purposeOther': purposeOther.isEmpty ? null : purposeOther,
         'updatedAt': now.toString(),
-        'lastChangeAt': now.toString(),
+        'lastChangeAt': widget.initialData['lastChangeAt'],
       };
 
-      final timelineItems = _buildEditTimelineItems(
-        oldData: widget.initialData,
-        newData: medicationData,
+      final timelineItems = MedicationChangeDetector.detect(
+        medDocId: widget.docId,
+        before: widget.initialData,
+        after: medicationData,
+        source: 'detailEdit',
       );
-
-      final timelineId = FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('medAdjustments')
-          .doc()
-          .id;
+      if (timelineItems.isNotEmpty) {
+        medicationData['lastChangeAt'] = now.toString();
+      }
 
       debugPrint('💊 [SAVE] 藥物編輯：type=$_medType, intervalDays=$_intervalDays');
 
@@ -980,26 +979,18 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
       await MedicationLocalDB()
           .updateMedication(uid, widget.docId, medicationData);
       if (timelineItems.isNotEmpty) {
-        await MedicationLocalDB().addAdjustmentRecord(uid, timelineId, {
-          'date': _fmtYmd(now),
-          'note': '藥物詳細頁調整',
-          'items': timelineItems,
-          'createdAt': now.toString(),
-        });
+        await MedicationAdjustmentService().recordItems(
+          uid: uid,
+          effectiveDate: now,
+          source: 'detailEdit',
+          note: '藥物詳細頁調整',
+          items: timelineItems,
+        );
       }
       debugPrint('✅ 本地已更新: ${widget.docId}');
 
       // 2️⃣ 再更新 Firebase（如果啟用同步）
       if (FirebaseSyncConfig.shouldSync()) {
-        if (timelineItems.isNotEmpty) {
-          await MedicationLocalDB().addAdjustmentRecord(uid, timelineId, {
-            'date': Timestamp.fromDate(DateTime(now.year, now.month, now.day)),
-            'note': '藥物詳細頁調整',
-            'items': timelineItems,
-            'createdAt': FieldValue.serverTimestamp(),
-          });
-        }
-
         debugPrint('🔥 Firebase 已同步: ${widget.docId}');
       }
 
@@ -1018,131 +1009,6 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
-  }
-
-  double? _toDouble(dynamic v) {
-    if (v is num) return v.toDouble();
-    if (v is String) return double.tryParse(v);
-    return null;
-  }
-
-  bool _sameDose(dynamic a, dynamic b) {
-    final av = _toDouble(a);
-    final bv = _toDouble(b);
-    if (av == null && bv == null) return true;
-    if (av == null || bv == null) return false;
-    return (av - bv).abs() < 0.0001;
-  }
-
-  List<String> _toStrList(dynamic raw) {
-    if (raw is List) {
-      return raw
-          .whereType<String>()
-          .map((s) => s.trim())
-          .where((s) => s.isNotEmpty)
-          .toList();
-    }
-    if (raw is String && raw.trim().isNotEmpty) {
-      return raw
-          .split(',')
-          .map((s) => s.trim())
-          .where((s) => s.isNotEmpty)
-          .toList();
-    }
-    return <String>[];
-  }
-
-  bool _sameSlots(dynamic a, dynamic b) {
-    final as = _toStrList(a).toSet();
-    final bs = _toStrList(b).toSet();
-    if (as.length != bs.length) return false;
-    return as.containsAll(bs);
-  }
-
-  bool _toBool(dynamic v, {bool fallback = true}) {
-    if (v is bool) return v;
-    if (v is int) return v != 0;
-    if (v is String) {
-      final s = v.toLowerCase().trim();
-      if (s == 'true' || s == '1') return true;
-      if (s == 'false' || s == '0') return false;
-    }
-    return fallback;
-  }
-
-  List<Map<String, dynamic>> _buildEditTimelineItems({
-    required Map<String, dynamic> oldData,
-    required Map<String, dynamic> newData,
-  }) {
-    final items = <Map<String, dynamic>>[];
-
-    final name = (newData['name'] ?? oldData['name'] ?? '未命名藥物').toString();
-    final unit = (newData['unit'] ?? oldData['unit'] ?? 'mg').toString();
-
-    final oldDose = oldData['dose'];
-    final newDose = newData['dose'];
-    final oldDosePerUnit = oldData['dosePerUnit'];
-    final newDosePerUnit = newData['dosePerUnit'];
-    final oldPillCount = oldData['pillCount'];
-    final newPillCount = newData['pillCount'];
-    final oldTimes = _toStrList(oldData['times']);
-    final newTimes = _toStrList(newData['times']);
-
-    final doseChanged = !_sameDose(oldDose, newDose) ||
-        !_sameDose(oldDosePerUnit, newDosePerUnit) ||
-        !_sameDose(oldPillCount, newPillCount);
-    final scheduleChanged = !_sameSlots(oldTimes, newTimes);
-
-    final oldActive = _toBool(oldData['isActive'], fallback: true);
-    final newActive = _toBool(newData['isActive'], fallback: true);
-
-    if (doseChanged) {
-      items.add({
-        'medDocId': widget.docId,
-        'name': name,
-        'type': 'doseChanged',
-        'oldDose': oldDose,
-        'newDose': newDose,
-        'oldDosePerUnit': oldDosePerUnit,
-        'newDosePerUnit': newDosePerUnit,
-        'oldPillCount': oldPillCount,
-        'newPillCount': newPillCount,
-        'oldTimes': oldTimes,
-        'newTimes': newTimes,
-        'unit': unit,
-        'from': 'detailEdit',
-      });
-    }
-
-    if (!doseChanged && scheduleChanged) {
-      items.add({
-        'medDocId': widget.docId,
-        'name': name,
-        'type': 'scheduleChanged',
-        'oldDose': oldDose,
-        'newDose': newDose,
-        'oldTimes': oldTimes,
-        'newTimes': newTimes,
-        'unit': unit,
-        'from': 'detailEdit',
-      });
-    }
-
-    if (oldActive != newActive) {
-      items.add({
-        'medDocId': widget.docId,
-        'name': name,
-        'type': newActive ? 'resumed' : 'stopped',
-        'oldDose': oldDose,
-        'newDose': newDose,
-        'oldTimes': oldTimes,
-        'newTimes': newTimes,
-        'unit': unit,
-        'from': 'detailEdit',
-      });
-    }
-
-    return items;
   }
 
   String _fmtYmd(DateTime dt) {
