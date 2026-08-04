@@ -122,4 +122,52 @@ void main() {
     expect(draft.bodyMeasurement?.measurementTiming,
         MeasurementTiming.beforeSleep);
   });
+
+  test('AI draft merges body measurements across separate messages', () {
+    final draft = InneraAiRecordDraft.empty(DateTime(2026, 8, 4))
+        .mergeExplicitRecordFacts('起床後量體重 75.5 公斤')
+        .mergeExplicitRecordFacts('體脂率 39.2%，腰圍 88 公分');
+
+    expect(draft.bodyMeasurement?.weightKg, 75.5);
+    expect(draft.bodyMeasurement?.bodyFatPercent, 39.2);
+    expect(draft.bodyMeasurement?.waistCm, 88);
+    expect(
+      draft.bodyMeasurement?.measurementTiming,
+      MeasurementTiming.afterWaking,
+    );
+  });
+
+  test('AI patch preserves existing body fields when adding one value', () {
+    final draft = InneraAiRecordDraft.fromMap({
+      'dateKey': '2026-08-04',
+      'bodyMeasurement': {
+        'weightKg': 75.5,
+        'measurementTiming': 'beforeBreakfast',
+      },
+    }).mergePatch({
+      'bodyMeasurement': {
+        'weightKg': null,
+        'bodyFatPercent': 39.2,
+        'waistCm': null,
+        'measurementTiming': null,
+      },
+    });
+
+    expect(draft.bodyMeasurement?.weightKg, 75.5);
+    expect(draft.bodyMeasurement?.bodyFatPercent, 39.2);
+    expect(
+      draft.bodyMeasurement?.measurementTiming,
+      MeasurementTiming.beforeBreakfast,
+    );
+  });
+
+  test('draft state changes can be corrected or removed before saving', () {
+    final draft = InneraAiRecordDraft.empty(DateTime(2026, 8, 4))
+        .withStateChange('energy_change', 2)
+        .withStateChange('appetite_change', 4)
+        .withStateChange('energy_change', 3)
+        .withStateChange('appetite_change', null);
+
+    expect(draft.stateChanges, {'energy_change': 3});
+  });
 }
