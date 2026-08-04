@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../constants/healing_design_system.dart';
+import '../../daily/daily_state_dimensions.dart';
+import '../../models/daily_record.dart';
 import '../innera_ai_record_draft.dart';
 
 class AiRecordDraftCard extends StatelessWidget {
@@ -41,10 +43,25 @@ class AiRecordDraftCard extends StatelessWidget {
       summary.add('症狀：${draft.symptoms.join('、')}');
     }
     if (draft.stateChanges.isNotEmpty) {
-      summary.add('狀態變化：已補充 ${draft.stateChanges.length} 項');
+      final values = draft.stateChanges.entries.map((entry) {
+        final dimension = kDailyStateDimensionsById[entry.key];
+        return dimension == null
+            ? null
+            : '${dimension.displayName} ${entry.value}/5';
+      }).whereType<String>();
+      summary.add('狀態變化：${values.join('、')}');
     }
     if (draft.bodyMeasurement?.hasData == true) {
-      summary.add('身體數據：已補充');
+      final measurement = draft.bodyMeasurement!;
+      final values = <String>[
+        if (measurement.weightKg != null) '體重 ${measurement.weightKg} kg',
+        if (measurement.bodyFatPercent != null)
+          '體脂 ${measurement.bodyFatPercent}%',
+        if (measurement.waistCm != null) '腰圍 ${measurement.waistCm} cm',
+        if (measurement.measurementTiming != null)
+          measurement.measurementTiming!.displayName,
+      ];
+      summary.add('身體組成：${values.join('、')}');
     }
     if (draft.sleep.hasData) {
       summary.add('睡眠：已補充');

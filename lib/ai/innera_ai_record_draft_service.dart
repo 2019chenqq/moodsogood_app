@@ -102,6 +102,15 @@ class InneraAiRecordDraftService {
           {...currentSymptoms, ...legacySymptoms, ...draft.symptoms}.toList();
       final currentStateChanges = _stateChanges(current['stateChanges']);
       currentStateChanges.addAll(draft.stateChanges);
+      final bodyMeasurement = Map<String, dynamic>.from(
+        current['bodyMeasurement'] is Map
+            ? current['bodyMeasurement'] as Map
+            : const <String, dynamic>{},
+      );
+      final draftBodyMeasurement = draft.bodyMeasurement?.toJson();
+      draftBodyMeasurement?.forEach((key, value) {
+        if (value != null) bodyMeasurement[key] = value;
+      });
       final sleep = Map<String, dynamic>.from(
         current['sleep'] is Map
             ? current['sleep'] as Map
@@ -128,9 +137,8 @@ class InneraAiRecordDraftService {
         'stateChanges': currentStateChanges,
         'symptomSectionCompleted': true,
         'emotionSectionCompleted': true,
-        'stateSectionCompleted': true,
-        if (draft.bodyMeasurement != null)
-          'bodyMeasurement': draft.bodyMeasurement!.toJson(),
+        if (draft.stateChanges.isNotEmpty) 'stateSectionCompleted': true,
+        if (bodyMeasurement.isNotEmpty) 'bodyMeasurement': bodyMeasurement,
         'sleep': sleep,
         'updatedAt': FieldValue.serverTimestamp(),
       };

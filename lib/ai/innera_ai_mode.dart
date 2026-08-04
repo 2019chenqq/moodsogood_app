@@ -15,7 +15,7 @@ extension InneraAiModeX on InneraAiMode {
       case InneraAiMode.dailyRecord:
         return '今日記錄';
       case InneraAiMode.emotionalSupport:
-        return '我想聊聊';
+        return '我想說說近況';
       case InneraAiMode.recentReview:
         return '狀態回顧';
       case InneraAiMode.physicalHealth:

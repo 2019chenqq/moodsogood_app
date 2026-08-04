@@ -530,7 +530,10 @@ class InneraAiRecordDraft {
       emotions: emotionByName.values.toList(),
       symptoms: _sanitizeSymptoms(symptomSet.toList()),
       stateChanges: {...stateChanges, ...parsed.stateChanges},
-      bodyMeasurement: parsed.bodyMeasurement ?? bodyMeasurement,
+      bodyMeasurement: _mergeBodyMeasurements(
+        bodyMeasurement,
+        parsed.bodyMeasurement,
+      ),
       sleep: sleep.merge(parsed.sleep),
       events: {...events, ...parsed.events}.toList(),
       rawUserEntries: entries,
@@ -679,7 +682,10 @@ class InneraAiRecordDraft {
       emotions: emotionByName.values.toList(),
       symptoms: _sanitizeSymptoms(symptomSet.toList()),
       stateChanges: {...stateChanges, ...explicitStateChanges},
-      bodyMeasurement: explicitBodyMeasurement ?? bodyMeasurement,
+      bodyMeasurement: _mergeBodyMeasurements(
+        bodyMeasurement,
+        explicitBodyMeasurement,
+      ),
       sleep: AiSleepDraft(
         sleepTime: sleep.sleepTime,
         wakeTime: explicitSleepTimes.wakeTime ?? sleep.wakeTime,
@@ -788,6 +794,46 @@ class InneraAiRecordDraft {
         hasExistingRecord: hasExistingRecord,
       );
 
+  InneraAiRecordDraft withStateChange(String id, int? value) {
+    if (!kDailyStateDimensionsById.containsKey(id)) return this;
+    final updated = <String, int>{...stateChanges};
+    if (value == null) {
+      updated.remove(id);
+    } else {
+      updated[id] = value.clamp(1, 5);
+    }
+    return _copyWithRecordFields(stateChanges: updated);
+  }
+
+  InneraAiRecordDraft withBodyMeasurement(BodyMeasurement? value) =>
+      _copyWithRecordFields(
+        bodyMeasurement: value?.hasData == true ? value : null,
+        replaceBodyMeasurement: true,
+      );
+
+  InneraAiRecordDraft _copyWithRecordFields({
+    Map<String, int>? stateChanges,
+    BodyMeasurement? bodyMeasurement,
+    bool replaceBodyMeasurement = false,
+  }) =>
+      InneraAiRecordDraft(
+        dateKey: dateKey,
+        overallMood: overallMood,
+        emotions: emotions,
+        symptoms: symptoms,
+        stateChanges: stateChanges ?? this.stateChanges,
+        bodyMeasurement:
+            replaceBodyMeasurement ? bodyMeasurement : this.bodyMeasurement,
+        sleep: sleep,
+        events: events,
+        rawUserEntries: rawUserEntries,
+        diaryText: diaryText,
+        missingFields: missingFields,
+        updatedAt: DateTime.now(),
+        confirmed: false,
+        hasExistingRecord: hasExistingRecord,
+      );
+
   InneraAiRecordDraft _withRawEntry(String? rawUserEntry) {
     final entry = rawUserEntry?.trim();
     if (entry == null || entry.isEmpty) return this;
@@ -865,6 +911,21 @@ class InneraAiRecordDraft {
     if (value is! Map) return null;
     final parsed = BodyMeasurement.fromJson(value.cast<String, dynamic>());
     return parsed.hasData && parsed.isValid ? parsed : null;
+  }
+
+  static BodyMeasurement? _mergeBodyMeasurements(
+    BodyMeasurement? existing,
+    BodyMeasurement? patch,
+  ) {
+    if (patch == null) return existing;
+    final merged = BodyMeasurement(
+      weightKg: patch.weightKg ?? existing?.weightKg,
+      bodyFatPercent: patch.bodyFatPercent ?? existing?.bodyFatPercent,
+      waistCm: patch.waistCm ?? existing?.waistCm,
+      measuredAt: patch.measuredAt ?? existing?.measuredAt,
+      measurementTiming: patch.measurementTiming ?? existing?.measurementTiming,
+    );
+    return merged.hasData && merged.isValid ? merged : existing;
   }
 
   static Map<String, int> _explicitStateChanges(String text) {

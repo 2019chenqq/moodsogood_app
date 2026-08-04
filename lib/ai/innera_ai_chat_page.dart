@@ -8,7 +8,9 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../constants/healing_design_system.dart';
+import '../daily/daily_state_dimensions.dart';
 import '../daily/emotion_dimensions.dart';
+import '../models/daily_record.dart';
 import 'ai_callable_diagnostics.dart';
 import 'ai_diary_draft_service.dart';
 import 'innera_ai_conversation_service.dart';
@@ -736,6 +738,149 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                   ? '尚未補充'
                   : workingDraft.symptoms.join('、')),
               const SizedBox(height: 14),
+              Text('狀態變化', style: Theme.of(context).textTheme.titleSmall),
+              ...kDailyStateDimensions.map((dimension) {
+                final value = workingDraft.stateChanges[dimension.id];
+                return Row(
+                  children: [
+                    Expanded(child: Text(dimension.displayName)),
+                    DropdownButton<int>(
+                      value: value,
+                      hint: const Text('尚未填寫'),
+                      items: List.generate(
+                        5,
+                        (index) => DropdownMenuItem(
+                          value: index + 1,
+                          child: Text(
+                            '${index + 1}｜${dailyStateValueLabel(dimension, index + 1)}',
+                          ),
+                        ),
+                      ),
+                      onChanged: (next) => setSheetState(() {
+                        workingDraft =
+                            workingDraft.withStateChange(dimension.id, next);
+                      }),
+                    ),
+                    if (value != null)
+                      IconButton(
+                        tooltip: '清除${dimension.displayName}',
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => setSheetState(() {
+                          workingDraft =
+                              workingDraft.withStateChange(dimension.id, null);
+                        }),
+                      ),
+                  ],
+                );
+              }),
+              const SizedBox(height: 14),
+              Text('身體組成', style: Theme.of(context).textTheme.titleSmall),
+              Row(
+                children: [
+                  Expanded(
+                    child: _draftMeasurementField(
+                      label: '體重',
+                      suffix: 'kg',
+                      value: workingDraft.bodyMeasurement?.weightKg,
+                      min: 20,
+                      max: 300,
+                      onChanged: (value) {
+                        final current = workingDraft.bodyMeasurement ??
+                            const BodyMeasurement();
+                        workingDraft = workingDraft.withBodyMeasurement(
+                          BodyMeasurement(
+                            weightKg: value,
+                            bodyFatPercent: current.bodyFatPercent,
+                            waistCm: current.waistCm,
+                            measuredAt: current.measuredAt,
+                            measurementTiming: current.measurementTiming,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _draftMeasurementField(
+                      label: '體脂率',
+                      suffix: '%',
+                      value: workingDraft.bodyMeasurement?.bodyFatPercent,
+                      min: 1,
+                      max: 70,
+                      onChanged: (value) {
+                        final current = workingDraft.bodyMeasurement ??
+                            const BodyMeasurement();
+                        workingDraft = workingDraft.withBodyMeasurement(
+                          BodyMeasurement(
+                            weightKg: current.weightKg,
+                            bodyFatPercent: value,
+                            waistCm: current.waistCm,
+                            measuredAt: current.measuredAt,
+                            measurementTiming: current.measurementTiming,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: _draftMeasurementField(
+                      label: '腰圍',
+                      suffix: 'cm',
+                      value: workingDraft.bodyMeasurement?.waistCm,
+                      min: 30,
+                      max: 250,
+                      onChanged: (value) {
+                        final current = workingDraft.bodyMeasurement ??
+                            const BodyMeasurement();
+                        workingDraft = workingDraft.withBodyMeasurement(
+                          BodyMeasurement(
+                            weightKg: current.weightKg,
+                            bodyFatPercent: current.bodyFatPercent,
+                            waistCm: value,
+                            measuredAt: current.measuredAt,
+                            measurementTiming: current.measurementTiming,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: DropdownButtonFormField<MeasurementTiming>(
+                      initialValue:
+                          workingDraft.bodyMeasurement?.measurementTiming,
+                      decoration: const InputDecoration(labelText: '測量時機'),
+                      items: MeasurementTiming.values
+                          .map(
+                            (timing) => DropdownMenuItem(
+                              value: timing,
+                              child: Text(timing.displayName),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (timing) {
+                        final current = workingDraft.bodyMeasurement ??
+                            const BodyMeasurement();
+                        workingDraft = workingDraft.withBodyMeasurement(
+                          BodyMeasurement(
+                            weightKg: current.weightKg,
+                            bodyFatPercent: current.bodyFatPercent,
+                            waistCm: current.waistCm,
+                            measuredAt: current.measuredAt,
+                            measurementTiming: timing,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
               Text('睡眠', style: Theme.of(context).textTheme.titleSmall),
               Text(_sleepPreview(workingDraft)),
               const SizedBox(height: 14),
@@ -922,6 +1067,36 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     } finally {
       if (mounted) setState(() => _isExtractingDiary = false);
     }
+  }
+
+  Widget _draftMeasurementField({
+    required String label,
+    required String suffix,
+    required double? value,
+    required double min,
+    required double max,
+    required ValueChanged<double?> onChanged,
+  }) {
+    return TextFormField(
+      initialValue: value == null
+          ? ''
+          : value == value.roundToDouble()
+              ? value.toInt().toString()
+              : value.toString(),
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      decoration: InputDecoration(labelText: label, suffixText: suffix),
+      onChanged: (raw) {
+        final text = raw.trim();
+        if (text.isEmpty) {
+          onChanged(null);
+          return;
+        }
+        final parsed = double.tryParse(text);
+        if (parsed != null && parsed >= min && parsed <= max) {
+          onChanged(parsed);
+        }
+      },
+    );
   }
 
   String _sleepPreview(InneraAiRecordDraft draft) {

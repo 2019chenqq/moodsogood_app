@@ -27,7 +27,7 @@ const lastFmApiKey = defineSecret("LASTFM_API_KEY");
 const spotifyClientId = defineSecret("SPOTIFY_CLIENT_ID");
 const spotifyClientSecret = defineSecret("SPOTIFY_CLIENT_SECRET");
 const DEFAULT_AI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
-const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v7-emotion-subject";
+const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v8-state-body-measurement";
 const DIARY_EXTRACTION_PROMPT_VERSION = "diary_extraction_v1";
 
 async function requireAiCapacity(uid, feature) {
