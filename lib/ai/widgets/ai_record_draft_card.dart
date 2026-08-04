@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../constants/healing_design_system.dart';
 import '../../daily/daily_state_dimensions.dart';
+import '../../daily/body_measurement_input.dart';
 import '../../models/daily_record.dart';
 import '../innera_ai_record_draft.dart';
 
@@ -54,12 +55,15 @@ class AiRecordDraftCard extends StatelessWidget {
     if (draft.bodyMeasurement?.hasData == true) {
       final measurement = draft.bodyMeasurement!;
       final values = <String>[
-        if (measurement.weightKg != null) '體重 ${measurement.weightKg} kg',
+        if (measurement.weightKg != null)
+          '體重 ${formatBodyMeasurementNumber(measurement.weightKg)} kg',
         if (measurement.bodyFatPercent != null)
-          '體脂 ${measurement.bodyFatPercent}%',
-        if (measurement.waistCm != null) '腰圍 ${measurement.waistCm} cm',
+          '體脂 ${formatBodyMeasurementNumber(measurement.bodyFatPercent)}%',
+        if (measurement.waistCm != null)
+          '腰圍 ${formatBodyMeasurementNumber(measurement.waistCm)} cm',
         if (measurement.measurementTiming != null)
-          measurement.measurementTiming!.displayName,
+          measurement.measurementTimeDisplay ??
+              measurement.measurementTiming!.displayName,
       ];
       summary.add('身體組成：${values.join('、')}');
     }

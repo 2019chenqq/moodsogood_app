@@ -111,6 +111,10 @@ class InneraAiRecordDraftService {
       draftBodyMeasurement?.forEach((key, value) {
         if (value != null) bodyMeasurement[key] = value;
       });
+      if (draft.bodyMeasurement?.measurementTiming != null) {
+        bodyMeasurement['customMeasurementTime'] =
+            draft.bodyMeasurement?.effectiveCustomMeasurementTime;
+      }
       final sleep = Map<String, dynamic>.from(
         current['sleep'] is Map
             ? current['sleep'] as Map
@@ -159,12 +163,12 @@ class InneraAiRecordDraftService {
         moodKeyword: existingDiary?.moodKeyword,
       ));
     }
-    await _draftRef(uid, draft.dateKey).set(
+    await HealthDataEncryptionService.setEncrypted(
+      _draftRef(uid, draft.dateKey),
       {
         ...draft.copyWith(confirmed: true).toFirestore(),
-        'confirmedAt': FieldValue.serverTimestamp()
+        'confirmedAt': FieldValue.serverTimestamp(),
       },
-      SetOptions(merge: true),
     );
   }
 

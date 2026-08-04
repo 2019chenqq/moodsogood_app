@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../constants/healing_design_system.dart';
 import '../daily/daily_state_dimensions.dart';
+import '../daily/body_measurement_input.dart';
 import '../daily/emotion_dimensions.dart';
 import '../models/daily_record.dart';
 import 'ai_callable_diagnostics.dart';
@@ -613,6 +614,11 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     final draft = _recordDraft;
     if (draft == null) return;
     var workingDraft = draft;
+    final bodyInputValidity = <String, bool>{
+      'weightKg': true,
+      'bodyFatPercent': true,
+      'waistCm': true,
+    };
     final confirmedDraft = await showModalBottomSheet<InneraAiRecordDraft>(
       context: context,
       useSafeArea: true,
@@ -779,6 +785,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                 children: [
                   Expanded(
                     child: _draftMeasurementField(
+                      fieldKey: 'weightKg',
                       label: '體重',
                       suffix: 'kg',
                       value: workingDraft.bodyMeasurement?.weightKg,
@@ -794,14 +801,20 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                             waistCm: current.waistCm,
                             measuredAt: current.measuredAt,
                             measurementTiming: current.measurementTiming,
+                            customMeasurementTime:
+                                current.customMeasurementTime,
                           ),
                         );
                       },
+                      onValidityChanged: (valid) => setSheetState(
+                        () => bodyInputValidity['weightKg'] = valid,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: _draftMeasurementField(
+                      fieldKey: 'bodyFatPercent',
                       label: '體脂率',
                       suffix: '%',
                       value: workingDraft.bodyMeasurement?.bodyFatPercent,
@@ -817,9 +830,14 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                             waistCm: current.waistCm,
                             measuredAt: current.measuredAt,
                             measurementTiming: current.measurementTiming,
+                            customMeasurementTime:
+                                current.customMeasurementTime,
                           ),
                         );
                       },
+                      onValidityChanged: (valid) => setSheetState(
+                        () => bodyInputValidity['bodyFatPercent'] = valid,
+                      ),
                     ),
                   ),
                 ],
@@ -829,6 +847,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                 children: [
                   Expanded(
                     child: _draftMeasurementField(
+                      fieldKey: 'waistCm',
                       label: '腰圍',
                       suffix: 'cm',
                       value: workingDraft.bodyMeasurement?.waistCm,
@@ -844,9 +863,14 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                             waistCm: value,
                             measuredAt: current.measuredAt,
                             measurementTiming: current.measurementTiming,
+                            customMeasurementTime:
+                                current.customMeasurementTime,
                           ),
                         );
                       },
+                      onValidityChanged: (valid) => setSheetState(
+                        () => bodyInputValidity['waistCm'] = valid,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -866,20 +890,58 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                       onChanged: (timing) {
                         final current = workingDraft.bodyMeasurement ??
                             const BodyMeasurement();
-                        workingDraft = workingDraft.withBodyMeasurement(
-                          BodyMeasurement(
-                            weightKg: current.weightKg,
-                            bodyFatPercent: current.bodyFatPercent,
-                            waistCm: current.waistCm,
-                            measuredAt: current.measuredAt,
-                            measurementTiming: timing,
-                          ),
-                        );
+                        setSheetState(() {
+                          workingDraft = workingDraft.withBodyMeasurement(
+                            BodyMeasurement(
+                              weightKg: current.weightKg,
+                              bodyFatPercent: current.bodyFatPercent,
+                              waistCm: current.waistCm,
+                              measuredAt: current.measuredAt,
+                              measurementTiming: timing,
+                              customMeasurementTime:
+                                  timing == MeasurementTiming.other
+                                      ? current.customMeasurementTime
+                                      : null,
+                            ),
+                          );
+                        });
                       },
                     ),
                   ),
                 ],
               ),
+              if (workingDraft.bodyMeasurement?.measurementTiming ==
+                  MeasurementTiming.other) ...[
+                const SizedBox(height: 10),
+                TextFormField(
+                  key: const ValueKey('draft-custom-measurement-time'),
+                  initialValue: workingDraft
+                          .bodyMeasurement?.effectiveCustomMeasurementTime ??
+                      '',
+                  decoration: const InputDecoration(
+                    labelText: '自訂測量時間',
+                    hintText: '例如：運動後、下午三點',
+                  ),
+                  autovalidateMode: AutovalidateMode.onUserInteraction,
+                  validator: (value) =>
+                      value?.trim().isEmpty == false ? null : '選擇其他時間時請填寫',
+                  onChanged: (value) {
+                    final current =
+                        workingDraft.bodyMeasurement ?? const BodyMeasurement();
+                    workingDraft = workingDraft.withBodyMeasurement(
+                      BodyMeasurement(
+                        weightKg: current.weightKg,
+                        bodyFatPercent: current.bodyFatPercent,
+                        waistCm: current.waistCm,
+                        measuredAt: current.measuredAt,
+                        measurementTiming: MeasurementTiming.other,
+                        customMeasurementTime: value.trim(),
+                      ),
+                    );
+                    setSheetState(() {});
+                  },
+                ),
+              ],
               const SizedBox(height: 14),
               Text('睡眠', style: Theme.of(context).textTheme.titleSmall),
               Text(_sleepPreview(workingDraft)),
@@ -901,8 +963,11 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
               const SizedBox(height: 24),
               FilledButton(
                 onPressed: workingDraft.emotions.any(
-                  (item) => !item.hasValidDimension || item.score == null,
-                )
+                          (item) =>
+                              !item.hasValidDimension || item.score == null,
+                        ) ||
+                        bodyInputValidity.values.any((valid) => !valid) ||
+                        workingDraft.bodyMeasurement?.isValid == false
                     ? null
                     : () => Navigator.pop(context, workingDraft),
                 child: const Text('儲存草稿'),
@@ -1070,30 +1135,41 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
   }
 
   Widget _draftMeasurementField({
+    required String fieldKey,
     required String label,
     required String suffix,
     required double? value,
     required double min,
     required double max,
     required ValueChanged<double?> onChanged,
+    required ValueChanged<bool> onValidityChanged,
   }) {
     return TextFormField(
-      initialValue: value == null
-          ? ''
-          : value == value.roundToDouble()
-              ? value.toInt().toString()
-              : value.toString(),
+      key: ValueKey('draft-measurement-$fieldKey'),
+      initialValue: formatBodyMeasurementNumber(value),
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: const [OneDecimalTextInputFormatter()],
       decoration: InputDecoration(labelText: label, suffixText: suffix),
+      autovalidateMode: AutovalidateMode.onUserInteraction,
+      validator: (raw) => validateBodyMeasurementNumber(
+        raw,
+        min: min,
+        max: max,
+        unit: suffix,
+      ),
       onChanged: (raw) {
         final text = raw.trim();
         if (text.isEmpty) {
+          onValidityChanged(true);
           onChanged(null);
           return;
         }
-        final parsed = double.tryParse(text);
+        final parsed = parseBodyMeasurementNumber(text);
         if (parsed != null && parsed >= min && parsed <= max) {
+          onValidityChanged(true);
           onChanged(parsed);
+        } else {
+          onValidityChanged(false);
         }
       },
     );

@@ -22,7 +22,7 @@ class InneraAiPromptBuilder {
 目標是協助完成紀錄，而不是陪聊無限延伸。每次最多詢問一至兩個最重要的缺漏欄位，並更新 recordDraft。
 分類優先順序：睡眠資訊放入 sleep；正式情緒放入 emotionMentions；與平常相比的能量、食慾、活動量方向放入 stateChanges；具體身體或行為表現放入 symptoms；明確數值與單位放入 bodyMeasurement。同一句可以拆到不同欄位，四類資料不得互相取代。
 stateChanges 只允許 energy_change、appetite_change、activity_change，分數 1～5，3 代表和平常相同；沒有比較證據時不得自動填 3。方向明確但程度不明時保守使用 2 或 4，不得自行填 1 或 5。
-bodyMeasurement 只在明確出現數值與單位時填入 weightKg、bodyFatPercent、waistCm；measurementTiming 只允許 afterWaking、beforeBreakfast、afterMeal、beforeSleep、other。不得從「變胖」等敘述猜數字。
+bodyMeasurement 只在使用者明確出現數值與單位時填入 weightKg、bodyFatPercent、waistCm，不得從「變胖」等敘述猜數字。數值最多保留小數一位且不得截斷多位整數；合理範圍為體重 20～300 kg、體脂率 1～70%、腰圍 30～250 cm，超出範圍時不要填入數值，原句保留在 rawUserEntries 供確認。measurementTiming 只允許 afterWaking、afterBreakfast、afterLunch、afterDinner、beforeSleep、other：「晚餐後量的」填 afterDinner，「起床量 75.5 公斤」填 afterWaking；無法對應固定選項但明確提到時間時填 other，並將原本的時間描述放入 customMeasurementTime；沒有提到測量時間時 measurementTiming 與 customMeasurementTime 都保持 null，不得猜測。
 疲倦、白天嗜睡、身體沉重、食慾降低、一直想吃東西、噁心反胃等具體表現屬於 symptoms；能量、食慾、活動量都絕對不得建立為 emotionMentions 或要求情緒分數。
 抽取情緒前必須先判定主體。每個 emotionMention 必須保留 rawText、normalizedDimensionId、normalizedDimensionName、confidence、needsConfirmation、value、timeContext、evidence、subjectType、subjectText、isQuotedSpeech。只有使用者自己的明確感受，或省略主詞但語境明確在說使用者本人時，才可進入 emotionMentions。爸爸、媽媽、手足、朋友、同事、醫師、對方、他／她的情緒，以及引述、歌詞、電影、文章或貼文中的情緒都放入 events／diaryText，不得當成使用者情緒。混合句要按逗號與轉折詞拆開判定主體。
 「嗆他、摔門、不理他」是行為，不是明確情緒；若推測情緒，source=inferred、needsConfirmation=true、confidence<=0.75，證據不足就不建立。情緒沒有分數時 value=null、mentioned=true、needsFollowUp=true、source=explicit；不得自動填 3 分或套用整體情緒分數。早上與下午的不同情緒都要保留。

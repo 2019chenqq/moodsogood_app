@@ -482,17 +482,18 @@ const inneraChatSchema = {
         bodyMeasurement: {
           type: "object",
           additionalProperties: false,
-          required: ["weightKg", "bodyFatPercent", "waistCm", "measurementTiming"],
+          required: ["weightKg", "bodyFatPercent", "waistCm", "measurementTiming", "customMeasurementTime"],
           properties: {
             weightKg: { anyOf: [{ type: "number" }, { type: "null" }] },
             bodyFatPercent: { anyOf: [{ type: "number" }, { type: "null" }] },
             waistCm: { anyOf: [{ type: "number" }, { type: "null" }] },
             measurementTiming: {
               anyOf: [
-                { type: "string", enum: ["afterWaking", "beforeBreakfast", "afterMeal", "beforeSleep", "other"] },
+                { type: "string", enum: ["afterWaking", "afterBreakfast", "afterLunch", "afterDinner", "beforeSleep", "other"] },
                 { type: "null" },
               ],
             },
+            customMeasurementTime: nullableStringSchema,
           },
         },
         sleep: {
@@ -604,7 +605,9 @@ const DAILY_RECORD_CLASSIFICATION_PROMPT = `
 1. 睡眠時間、入睡、夜醒、早醒、睡眠品質優先放入 sleep。
 2. 明確情緒詞先保留為 emotionMentions.rawText，再嘗試映射到系統提供的正式情緒維度。
 3. 與平常相比的能量、食慾、活動量方向放入 stateChanges；只允許 energy_change、appetite_change、activity_change。3 代表和平常相同，沒有比較證據不得填 3；只有方向時保守使用 2 或 4。
-4. 具體身體或行為表現放入 symptoms；明確測量數值與單位放入 bodyMeasurement，禁止從模糊敘述猜數字。
+4. 具體身體或行為表現放入 symptoms；只有使用者明確提供測量數值與單位時才放入 bodyMeasurement，禁止從「變胖了」等模糊敘述猜數字。
+5. bodyMeasurement 數值最多一位小數且不得截斷多位整數。只接受體重 20～300 kg、體脂率 1～70%、腰圍 30～250 cm；超出範圍不要寫入數值，原句保留在 rawUserEntries 供確認。
+6. measurementTiming 只允許 afterWaking、afterBreakfast、afterLunch、afterDinner、beforeSleep、other。「晚餐後量的」對應 afterDinner；「起床量 75.5 公斤」對應 afterWaking。無法對應固定選項但有明確時間描述時使用 other，並把原本時間描述放入 customMeasurementTime。沒提時間時兩欄皆為 null，不得猜測。
 5. 同一句可以拆到多個欄位。
 5. 情緒沒有明確 1～5 分時仍必須保留，value=null、mentioned=true、needsFollowUp=true。
 6. 使用者明確說出的情緒 source=explicit。每筆保留 rawText、confidence、needsConfirmation、timeContext 和 evidence。
@@ -1461,7 +1464,10 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
   const validMeasurement = (value, min, max) => {
     if (value == null || value === "") return null;
     const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : null;
+    if (!Number.isFinite(parsed) || parsed < min || parsed > max) return null;
+    const scaled = parsed * 10;
+    if (Math.abs(scaled - Math.round(scaled)) > 1e-9) return null;
+    return Math.round(scaled) / 10;
   };
   const nextBody = raw.bodyMeasurement && typeof raw.bodyMeasurement === "object"
     ? raw.bodyMeasurement
@@ -1469,13 +1475,24 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
   const oldBody = existing.bodyMeasurement && typeof existing.bodyMeasurement === "object"
     ? existing.bodyMeasurement
     : {};
-  const timingValues = new Set(["afterWaking", "beforeBreakfast", "afterMeal", "beforeSleep", "other"]);
+  const timingValues = new Set(["afterWaking", "afterBreakfast", "afterLunch", "afterDinner", "beforeSleep", "other"]);
   const requestedTiming = nextBody.measurementTiming ?? oldBody.measurementTiming;
+  let measurementTiming = timingValues.has(requestedTiming) ? requestedTiming : null;
+  const customMeasurementTime = measurementTiming === "other"
+    ? safeText(nextBody.customMeasurementTime, 100) ||
+      (oldBody.measurementTiming === "other"
+        ? safeText(oldBody.customMeasurementTime, 100)
+        : "")
+    : "";
+  if (measurementTiming === "other" && !customMeasurementTime) {
+    measurementTiming = null;
+  }
   const bodyMeasurement = {
     weightKg: validMeasurement(nextBody.weightKg, 20, 300) ?? validMeasurement(oldBody.weightKg, 20, 300),
     bodyFatPercent: validMeasurement(nextBody.bodyFatPercent, 1, 70) ?? validMeasurement(oldBody.bodyFatPercent, 1, 70),
     waistCm: validMeasurement(nextBody.waistCm, 30, 250) ?? validMeasurement(oldBody.waistCm, 30, 250),
-    measurementTiming: timingValues.has(requestedTiming) ? requestedTiming : null,
+    measurementTiming,
+    customMeasurementTime: measurementTiming === "other" ? customMeasurementTime : null,
   };
   const otherSubjectPattern = /(爸爸|爸媽|媽媽|母親|父親|弟弟|妹妹|哥哥|姊姊|姐姐|家人|朋友|同事|同學|老師|醫師|醫生|護理師|伴侶|男友|女友|先生|太太|孩子|兒子|女兒|對方|他們|她們|他|她)/;
   const explicitUserPattern = /(我(?:自己|本人|也|還|真的|其實|現在|今天|當下|開始|感到|感覺|覺得|變得|很|好|超|有點|有些|有一點|心裡|心情)?|讓我|害我|使我|令我|我的)/;

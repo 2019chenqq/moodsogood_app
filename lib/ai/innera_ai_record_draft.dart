@@ -918,12 +918,24 @@ class InneraAiRecordDraft {
     BodyMeasurement? patch,
   ) {
     if (patch == null) return existing;
+    final measurementTiming =
+        patch.measurementTiming ?? existing?.measurementTiming;
+    final customMeasurementTime = measurementTiming == MeasurementTiming.other
+        ? patch.effectiveCustomMeasurementTime ??
+            (existing?.measurementTiming == MeasurementTiming.other
+                ? existing?.effectiveCustomMeasurementTime
+                : null)
+        : null;
     final merged = BodyMeasurement(
       weightKg: patch.weightKg ?? existing?.weightKg,
       bodyFatPercent: patch.bodyFatPercent ?? existing?.bodyFatPercent,
       waistCm: patch.waistCm ?? existing?.waistCm,
       measuredAt: patch.measuredAt ?? existing?.measuredAt,
-      measurementTiming: patch.measurementTiming ?? existing?.measurementTiming,
+      measurementTiming: measurementTiming == MeasurementTiming.other &&
+              customMeasurementTime == null
+          ? null
+          : measurementTiming,
+      customMeasurementTime: customMeasurementTime,
     );
     return merged.hasData && merged.isValid ? merged : existing;
   }
@@ -959,29 +971,56 @@ class InneraAiRecordDraft {
   }
 
   static BodyMeasurement? _explicitBodyMeasurement(String text) {
+    const number = r'(?<![\d.])(\d{1,3}(?:\.\d)?)(?![\d.])';
     final weight =
-        RegExp(r'(\d{2,3}(?:\.\d{1,2})?)\s*(?:公斤|kg)', caseSensitive: false)
+        RegExp('$number\\s*(?:公斤|kg)', caseSensitive: false).firstMatch(text);
+    final bodyFat =
+        RegExp('(?:體脂(?:率)?)[^\\d]{0,4}$number\\s*%').firstMatch(text);
+    final waist =
+        RegExp('(?:腰圍)[^\\d]{0,4}$number\\s*(?:公分|cm)', caseSensitive: false)
             .firstMatch(text);
-    final bodyFat = RegExp(r'(?:體脂(?:率)?)[^\d]{0,4}(\d{1,2}(?:\.\d{1,2})?)\s*%')
-        .firstMatch(text);
-    final waist = RegExp(r'(?:腰圍)[^\d]{0,4}(\d{2,3}(?:\.\d{1,2})?)\s*(?:公分|cm)',
-            caseSensitive: false)
-        .firstMatch(text);
+    final weightKg = _measurementInRange(weight?.group(1), 20, 300);
+    final bodyFatPercent = _measurementInRange(bodyFat?.group(1), 1, 70);
+    final waistCm = _measurementInRange(waist?.group(1), 30, 250);
+
+    MeasurementTiming? timing;
+    if (text.contains('晚餐後')) {
+      timing = MeasurementTiming.afterDinner;
+    } else if (text.contains('午餐後')) {
+      timing = MeasurementTiming.afterLunch;
+    } else if (text.contains('早餐後')) {
+      timing = MeasurementTiming.afterBreakfast;
+    } else if (RegExp(r'起床(?:後)?(?:量|測)?').hasMatch(text)) {
+      timing = MeasurementTiming.afterWaking;
+    } else if (text.contains('睡前')) {
+      timing = MeasurementTiming.beforeSleep;
+    }
+
+    String? customMeasurementTime;
+    if (timing == null) {
+      final customTiming = RegExp(
+        r'(?:運動|洗澡|回家|下班|服藥|吃藥)後|(?:早上|上午|中午|下午|傍晚|晚上|凌晨)\s*\d{1,2}(?::\d{2}|點(?:半)?)?(?:左右)?',
+      ).firstMatch(text);
+      if (customTiming != null) {
+        timing = MeasurementTiming.other;
+        customMeasurementTime = customTiming.group(0)?.trim();
+      }
+    }
     final measurement = BodyMeasurement(
-      weightKg: double.tryParse(weight?.group(1) ?? ''),
-      bodyFatPercent: double.tryParse(bodyFat?.group(1) ?? ''),
-      waistCm: double.tryParse(waist?.group(1) ?? ''),
-      measurementTiming: text.contains('睡前')
-          ? MeasurementTiming.beforeSleep
-          : text.contains('起床後')
-              ? MeasurementTiming.afterWaking
-              : text.contains('早餐前')
-                  ? MeasurementTiming.beforeBreakfast
-                  : text.contains('飯後')
-                      ? MeasurementTiming.afterMeal
-                      : null,
+      weightKg: weightKg,
+      bodyFatPercent: bodyFatPercent,
+      waistCm: waistCm,
+      measurementTiming: timing,
+      customMeasurementTime: customMeasurementTime,
     );
     return measurement.hasData && measurement.isValid ? measurement : null;
+  }
+
+  static double? _measurementInRange(String? raw, double min, double max) {
+    if (raw == null) return null;
+    final value = double.tryParse(raw);
+    if (value == null || value < min || value > max) return null;
+    return (value * 10).roundToDouble() / 10;
   }
 
   static String? _timeContext(String clause) {
