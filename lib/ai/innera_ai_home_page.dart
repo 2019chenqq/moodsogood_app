@@ -20,7 +20,9 @@ class InneraAiHomePage extends StatelessWidget {
 
   void _openSubscription(BuildContext context) {
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const ProPage()),
+      MaterialPageRoute(
+        builder: (_) => const ProPage(source: 'ai_limit_reached'),
+      ),
     );
   }
 

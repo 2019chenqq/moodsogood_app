@@ -8,7 +8,9 @@ import '../providers/pro_provider.dart';
 import '../analytics_service.dart';
 
 class ProPage extends StatefulWidget {
-  const ProPage({super.key});
+  const ProPage({super.key, this.source = 'unknown'});
+
+  final String source;
 
   @override
   State<ProPage> createState() => _ProPageState();
@@ -30,7 +32,7 @@ class _ProPageState extends State<ProPage> {
   @override
   void initState() {
     super.initState();
-    AnalyticsService.logPage('pro_page');
+    AnalyticsService.logProPageView(source: widget.source);
     _loadOfferings();
   }
 
@@ -49,6 +51,11 @@ class _ProPageState extends State<ProPage> {
     }
 
     if (!isRevenueCatConfigured) {
+      await AnalyticsService.logPurchaseError(
+        productId: 'unknown',
+        errorCode: 'revenuecat_not_configured',
+        errorStage: 'product_load',
+      );
       if (!mounted) return;
       setState(() {
         final detail = revenueCatInitializationError;
@@ -66,11 +73,22 @@ class _ProPageState extends State<ProPage> {
       });
 
       if (_offering == null) {
+        await AnalyticsService.logPurchaseError(
+          productId: 'unknown',
+          errorCode: 'offering_unavailable',
+          errorStage: 'product_load',
+        );
+        if (!mounted) return;
         setState(() {
           _errorMessage = '目前找不到可用訂閱方案。請到 RevenueCat 檢查 Offering / Package 設定。';
         });
       }
     } catch (e) {
+      await AnalyticsService.logPurchaseError(
+        productId: 'unknown',
+        errorCode: 'offerings_load_failed',
+        errorStage: 'product_load',
+      );
       if (!mounted) return;
       setState(() {
         _errorMessage = '載入訂閱方案失敗：$e';
@@ -79,6 +97,13 @@ class _ProPageState extends State<ProPage> {
   }
 
   Future<void> _buyPackage(Package package) async {
+    final product = package.storeProduct;
+    await AnalyticsService.logPurchaseClick(
+      productId: product.identifier,
+      price: product.price,
+      currency: product.currencyCode,
+    );
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -94,15 +119,39 @@ class _ProPageState extends State<ProPage> {
           false;
 
       if (!mounted) return;
-      await context.read<ProProvider>().refreshFromRevenueCat();
+      final proProvider = context.read<ProProvider>();
+      await proProvider.refreshFromRevenueCat();
 
       if (!mounted) return;
 
-      if (isActive) {
+      if (isActive && proProvider.isPro) {
+        final transactionId =
+            purchaseResult.storeTransaction.transactionIdentifier;
+        if (transactionId.isEmpty) {
+          await AnalyticsService.logPurchaseError(
+            productId: product.identifier,
+            errorCode: 'transaction_id_missing',
+            errorStage: 'verification',
+          );
+        } else {
+          await AnalyticsService.logPurchase(
+            transactionId: transactionId,
+            value: product.price,
+            currency: product.currencyCode,
+            productId: product.identifier,
+          );
+        }
+        if (!mounted) return;
         setState(() {
           _statusMessage = '升級成功！歡迎加入 Pro 會員';
         });
       } else {
+        await AnalyticsService.logPurchaseError(
+          productId: product.identifier,
+          errorCode: 'entitlement_inactive',
+          errorStage: 'verification',
+        );
+        if (!mounted) return;
         setState(() {
           _errorMessage =
               '購買已完成，但未拿到 premium entitlement，請檢查 RevenueCat entitlement id。';
@@ -111,15 +160,28 @@ class _ProPageState extends State<ProPage> {
     } on PlatformException catch (e) {
       final code = PurchasesErrorHelper.getErrorCode(e);
       if (code == PurchasesErrorCode.purchaseCancelledError) {
+        if (!mounted) return;
         setState(() {
           _statusMessage = '已取消購買';
         });
       } else {
+        await AnalyticsService.logPurchaseError(
+          productId: product.identifier,
+          errorCode: code.name,
+          errorStage: 'purchase',
+        );
+        if (!mounted) return;
         setState(() {
           _errorMessage = '購買失敗：${e.message ?? e.code}';
         });
       }
     } catch (e) {
+      await AnalyticsService.logPurchaseError(
+        productId: product.identifier,
+        errorCode: 'unexpected_purchase_error',
+        errorStage: 'purchase',
+      );
+      if (!mounted) return;
       setState(() {
         _errorMessage = '購買失敗：$e';
       });

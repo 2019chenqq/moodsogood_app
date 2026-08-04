@@ -458,7 +458,6 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage>
       afterAvailableDays: _afterAvailableDays,
       hasConcurrentAdjustments: _concurrentEvents.isNotEmpty,
     );
-    final insufficient = _results.where((item) => !item.canCalculate).toList();
     final preliminary = _results
         .where((item) => item.canCalculate && !item.canInterpret)
         .toList();
@@ -489,8 +488,7 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage>
         newly.isNotEmpty ||
         mixed.isNotEmpty ||
         other.isNotEmpty ||
-        preliminary.isNotEmpty ||
-        insufficient.isNotEmpty;
+        preliminary.isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -528,11 +526,8 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage>
           const SizedBox(height: 12),
           _ResultSection(title: '初步變化／資料有限', items: preliminary),
         ],
-        if (insufficient.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          _ResultSection(title: '資料不足項目', items: insufficient),
-        ],
-        if (!hasMeaningfulDisplayedResult && _results.isNotEmpty) ...[
+        if (!hasMeaningfulDisplayedResult &&
+            _results.any((item) => item.canCalculate)) ...[
           const SizedBox(height: 12),
           const _NoticeCard(
             icon: Icons.check_circle_outline,
@@ -630,42 +625,25 @@ class _ConfidenceCard extends StatelessWidget {
             Text('每日狀態資料信心：${_confidenceLabel(confidence.state)}'),
             const SizedBox(height: 6),
             Text(
-              '症狀明確完成紀錄：前 ${before.symptomRecordSummary.confirmedRecordedDays} 天、'
-              '後 ${after.symptomRecordSummary.confirmedRecordedDays} 天',
+              '症狀可用紀錄：前 ${before.symptomRecordSummary.usableRecordedDays} 天、'
+              '後 ${after.symptomRecordSummary.usableRecordedDays} 天',
             ),
-            if (before.symptomRecordSummary.inferredRecordedDays > 0 ||
-                after.symptomRecordSummary.inferredRecordedDays > 0)
-              Text(
-                '症狀舊資料推定：前 ${before.symptomRecordSummary.inferredRecordedDays} 天、'
-                '後 ${after.symptomRecordSummary.inferredRecordedDays} 天',
-              ),
             Text(
-              '情緒明確完成紀錄：前 ${before.emotionRecordSummary.confirmedRecordedDays} 天、'
-              '後 ${after.emotionRecordSummary.confirmedRecordedDays} 天',
+              '情緒可用紀錄：前 ${before.emotionRecordSummary.usableRecordedDays} 天、'
+              '後 ${after.emotionRecordSummary.usableRecordedDays} 天',
             ),
-            if (before.emotionRecordSummary.inferredRecordedDays > 0 ||
-                after.emotionRecordSummary.inferredRecordedDays > 0)
-              Text(
-                '情緒舊資料推定：前 ${before.emotionRecordSummary.inferredRecordedDays} 天、'
-                '後 ${after.emotionRecordSummary.inferredRecordedDays} 天',
-              ),
             Text(
-              '每日狀態明確完成紀錄：前 ${before.stateRecordSummary.confirmedRecordedDays} 天、'
-              '後 ${after.stateRecordSummary.confirmedRecordedDays} 天',
+              '每日狀態可用紀錄：前 ${before.stateRecordSummary.usableRecordedDays} 天、'
+              '後 ${after.stateRecordSummary.usableRecordedDays} 天',
             ),
-            if (before.stateRecordSummary.inferredRecordedDays > 0 ||
-                after.stateRecordSummary.inferredRecordedDays > 0)
-              Text(
-                '每日狀態舊資料推定：前 ${before.stateRecordSummary.inferredRecordedDays} 天、'
-                '後 ${after.stateRecordSummary.inferredRecordedDays} 天',
-              ),
             Text(
                 '觀察期完成度：${observation.elapsedAfterDays}/${observation.requestedDays} 天'),
-            Text('同期調藥影響：${hasConcurrentAdjustments ? '有，解讀時需留意' : '未發現'}'),
+            Text(
+                '同期調藥影響：${hasConcurrentAdjustments ? '同期有其他藥物調整，因此本次分析無法單獨判斷目前藥物的影響，信心等級已下調。' : '未發現'}'),
             if (_hasInferredData(before) || _hasInferredData(after)) ...[
               const SizedBox(height: 6),
               const Text(
-                '部分較早的紀錄缺少完整填寫狀態，系統會依現有內容推估；推定資料已降低分析信心。',
+                '部分紀錄的填寫資訊較不完整，本次結果需保守解讀。',
               ),
             ],
           ],
