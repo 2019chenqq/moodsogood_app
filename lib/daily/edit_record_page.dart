@@ -1,7 +1,6 @@
 // lib/edit_record_page.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/services.dart';
 
 import 'record_detail_screen.dart';
 import '../utils/date_helper.dart';
@@ -14,6 +13,7 @@ import '../models/daily_record.dart';
 import 'widgets/night_awakening_editor.dart';
 import 'daily_state_dimensions.dart';
 import 'symptom_definitions.dart';
+import 'body_measurement_input.dart';
 
 class EditRecordPage extends StatefulWidget {
   final String uid;
@@ -203,6 +203,7 @@ class _EditRecordPageState extends State<EditRecordPage> {
   late final TextEditingController _weightCtrl;
   late final TextEditingController _bodyFatCtrl;
   late final TextEditingController _waistCtrl;
+  late final TextEditingController _customMeasurementTimeCtrl;
   MeasurementTiming? _measurementTiming;
   TimeOfDay? _sleepTime;
   TimeOfDay? _estimatedSleepTime;
@@ -247,11 +248,19 @@ class _EditRecordPageState extends State<EditRecordPage> {
     stateChanges = Map<String, int>.from(parsedRecord.stateChanges);
     _initialBodyMeasurement = parsedRecord.bodyMeasurement;
     _weightCtrl = TextEditingController(
-        text: _initialBodyMeasurement?.weightKg?.toString() ?? '');
+      text: formatBodyMeasurementNumber(_initialBodyMeasurement?.weightKg),
+    );
     _bodyFatCtrl = TextEditingController(
-        text: _initialBodyMeasurement?.bodyFatPercent?.toString() ?? '');
+      text: formatBodyMeasurementNumber(
+        _initialBodyMeasurement?.bodyFatPercent,
+      ),
+    );
     _waistCtrl = TextEditingController(
-        text: _initialBodyMeasurement?.waistCm?.toString() ?? '');
+      text: formatBodyMeasurementNumber(_initialBodyMeasurement?.waistCm),
+    );
+    _customMeasurementTimeCtrl = TextEditingController(
+      text: _initialBodyMeasurement?.effectiveCustomMeasurementTime ?? '',
+    );
     _measurementTiming = _initialBodyMeasurement?.measurementTiming;
 
     sleep = Map<String, dynamic>.from((init['sleep'] as Map?) ?? const {});
@@ -287,6 +296,7 @@ class _EditRecordPageState extends State<EditRecordPage> {
     _weightCtrl.dispose();
     _bodyFatCtrl.dispose();
     _waistCtrl.dispose();
+    _customMeasurementTimeCtrl.dispose();
     super.dispose();
   }
 
@@ -383,11 +393,14 @@ class _EditRecordPageState extends State<EditRecordPage> {
 
   BodyMeasurement? get _currentBodyMeasurement {
     final measurement = BodyMeasurement(
-      weightKg: double.tryParse(_weightCtrl.text.trim()),
-      bodyFatPercent: double.tryParse(_bodyFatCtrl.text.trim()),
-      waistCm: double.tryParse(_waistCtrl.text.trim()),
+      weightKg: parseBodyMeasurementNumber(_weightCtrl.text),
+      bodyFatPercent: parseBodyMeasurementNumber(_bodyFatCtrl.text),
+      waistCm: parseBodyMeasurementNumber(_waistCtrl.text),
       measuredAt: _initialBodyMeasurement?.measuredAt,
       measurementTiming: _measurementTiming,
+      customMeasurementTime: _measurementTiming == MeasurementTiming.other
+          ? _customMeasurementTimeCtrl.text.trim()
+          : null,
     );
     return measurement.hasData ? measurement : null;
   }
@@ -405,17 +418,17 @@ class _EditRecordPageState extends State<EditRecordPage> {
         controller: controller,
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
         inputFormatters: [
-          FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+          const OneDecimalTextInputFormatter(),
         ],
         decoration: InputDecoration(labelText: label, suffixText: unit),
         autovalidateMode: AutovalidateMode.onUserInteraction,
         validator: (raw) {
-          final text = raw?.trim() ?? '';
-          if (text.isEmpty) return null;
-          final value = double.tryParse(text);
-          if (value == null) return '請輸入有效數字';
-          if (value < min || value > max) return '請輸入 $min～$max $unit';
-          return null;
+          return validateBodyMeasurementNumber(
+            raw,
+            min: min,
+            max: max,
+            unit: unit,
+          );
         },
       ),
     );
@@ -773,9 +786,24 @@ class _EditRecordPageState extends State<EditRecordPage> {
                           child: Text(value.displayName),
                         )),
                   ],
-                  onChanged: (value) =>
-                      setState(() => _measurementTiming = value),
+                  onChanged: (value) => setState(() {
+                    _measurementTiming = value;
+                    if (value != MeasurementTiming.other) {
+                      _customMeasurementTimeCtrl.clear();
+                    }
+                  }),
                 ),
+                if (_measurementTiming == MeasurementTiming.other)
+                  TextFormField(
+                    controller: _customMeasurementTimeCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '自訂測量時間',
+                      hintText: '例如：運動後、下午三點',
+                    ),
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
+                    validator: (value) =>
+                        value?.trim().isEmpty == false ? null : '選擇其他時間時請填寫',
+                  ),
               ],
             ),
           ),

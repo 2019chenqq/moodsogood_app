@@ -1,6 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
 import 'package:moodsogood_app/ai/innera_ai_record_draft.dart';
 import 'package:moodsogood_app/daily/emotion_dimensions.dart';
+import 'package:moodsogood_app/daily/body_measurement_input.dart';
+import 'package:moodsogood_app/daily/widgets/body_measurement_page.dart';
 import 'package:moodsogood_app/daily/symptom_definitions.dart';
 import 'package:moodsogood_app/models/daily_record.dart';
 
@@ -142,7 +145,7 @@ void main() {
       'dateKey': '2026-08-04',
       'bodyMeasurement': {
         'weightKg': 75.5,
-        'measurementTiming': 'beforeBreakfast',
+        'measurementTiming': 'afterBreakfast',
       },
     }).mergePatch({
       'bodyMeasurement': {
@@ -157,8 +160,115 @@ void main() {
     expect(draft.bodyMeasurement?.bodyFatPercent, 39.2);
     expect(
       draft.bodyMeasurement?.measurementTiming,
-      MeasurementTiming.beforeBreakfast,
+      MeasurementTiming.afterBreakfast,
     );
+  });
+
+  test('body measurement supports one decimal without truncating integers', () {
+    expect(parseBodyMeasurementNumber('75.5'), 75.5);
+    expect(parseBodyMeasurementNumber('120.8'), 120.8);
+    expect(parseBodyMeasurementNumber('7.55'), isNull);
+    expect(parseBodyMeasurementNumber('40..2'), isNull);
+    expect(parseBodyMeasurementNumber('-7'), isNull);
+    expect(parseBodyMeasurementNumber('abc'), isNull);
+    expect(parseBodyMeasurementNumber('75,5'), 75.5);
+    expect(formatBodyMeasurementNumber(75.5), '75.5');
+    expect(formatBodyMeasurementNumber(86), '86');
+  });
+
+  testWidgets('decimal point survives parent value echo while typing',
+      (tester) async {
+    BodyMeasurement? value;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) => Scaffold(
+            body: BodyMeasurementPage(
+              value: value,
+              onChanged: (next) => setState(() => value = next),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byType(ExpansionTile));
+    await tester.pumpAndSettle();
+    final weightField = find.byType(TextFormField).first;
+    await tester.enterText(weightField, '75.');
+    await tester.pump();
+
+    expect(tester.widget<TextFormField>(weightField).controller?.text, '75.');
+    await tester.enterText(weightField, '75.5');
+    await tester.pump();
+    expect(tester.widget<TextFormField>(weightField).controller?.text, '75.5');
+    expect(value?.weightKg, 75.5);
+  });
+
+  test('body measurement timing and custom time round trip', () {
+    const measurement = BodyMeasurement(
+      weightKg: 75.5,
+      bodyFatPercent: 40.2,
+      waistCm: 86,
+      measurementTiming: MeasurementTiming.other,
+      customMeasurementTime: '運動後',
+    );
+
+    final json = measurement.toJson();
+    final parsed = BodyMeasurement.fromJson(json);
+    expect(json['measurementTiming'], 'other');
+    expect(json['customMeasurementTime'], '運動後');
+    expect(parsed.measurementTimeDisplay, '運動後');
+    expect(parsed.isValid, isTrue);
+    expect(
+      const BodyMeasurement(measurementTiming: MeasurementTiming.other).isValid,
+      isFalse,
+    );
+  });
+
+  test('legacy timing keys load safely', () {
+    final parsed = BodyMeasurement.fromJson({
+      'weightKg': 75.5,
+      'measurementTiming': 'afterMeal',
+    });
+
+    expect(parsed.measurementTiming, MeasurementTiming.other);
+    expect(parsed.customMeasurementTime, '飯後（舊版）');
+  });
+
+  test('AI maps fixed and custom measurement times without guessing', () {
+    final dinner = InneraAiRecordDraft.empty(DateTime(2026, 8, 4))
+        .mergeExplicitRecordFacts('晚餐後量的，體重 75.5 公斤');
+    final waking = InneraAiRecordDraft.empty(DateTime(2026, 8, 4))
+        .mergeExplicitRecordFacts('起床量 75.5 公斤');
+    final custom = InneraAiRecordDraft.empty(DateTime(2026, 8, 4))
+        .mergeExplicitRecordFacts('運動後量體重 75.5 公斤');
+    final noTiming = InneraAiRecordDraft.empty(DateTime(2026, 8, 4))
+        .mergeExplicitRecordFacts('體重 75.5 公斤');
+
+    expect(dinner.bodyMeasurement?.measurementTiming,
+        MeasurementTiming.afterDinner);
+    expect(waking.bodyMeasurement?.measurementTiming,
+        MeasurementTiming.afterWaking);
+    expect(custom.bodyMeasurement?.measurementTiming, MeasurementTiming.other);
+    expect(custom.bodyMeasurement?.customMeasurementTime, '運動後');
+    expect(noTiming.bodyMeasurement?.measurementTiming, isNull);
+  });
+
+  test('AI rejects over-precision and out-of-range values', () {
+    const original = '體重 75.55 公斤，腰圍 999 公分';
+    final draft = InneraAiRecordDraft.empty(DateTime(2026, 8, 4)).mergePatch(
+      {
+        'bodyMeasurement': {
+          'weightKg': 75.55,
+          'waistCm': 999,
+        },
+      },
+      rawUserEntry: original,
+    ).mergeExplicitRecordFacts('體重 75.55 公斤，腰圍 999 公分');
+
+    expect(draft.bodyMeasurement, isNull);
+    expect(draft.rawUserEntries, contains(original));
   });
 
   test('draft state changes can be corrected or removed before saving', () {

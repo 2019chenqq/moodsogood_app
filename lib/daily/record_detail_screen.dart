@@ -11,6 +11,7 @@ import '../analytics_service.dart';
 import '../utils/health_data_encryption_service.dart';
 import 'daily_state_dimensions.dart';
 import 'symptom_definitions.dart';
+import 'body_measurement_input.dart';
 
 class RecordDetailScreen extends StatefulWidget {
   final String uid;
@@ -518,19 +519,19 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                     children: [
                       if (record.bodyMeasurement!.weightKg != null)
                         _detailTile(context, '體重',
-                            '${record.bodyMeasurement!.weightKg} kg'),
+                            '${formatBodyMeasurementNumber(record.bodyMeasurement!.weightKg)} kg'),
                       if (record.bodyMeasurement!.bodyFatPercent != null)
                         _detailTile(context, '體脂率',
-                            '${record.bodyMeasurement!.bodyFatPercent}%'),
+                            '${formatBodyMeasurementNumber(record.bodyMeasurement!.bodyFatPercent)}%'),
                       if (record.bodyMeasurement!.waistCm != null)
                         _detailTile(context, '腰圍',
-                            '${record.bodyMeasurement!.waistCm} cm'),
+                            '${formatBodyMeasurementNumber(record.bodyMeasurement!.waistCm)} cm'),
                       if (record.bodyMeasurement!.measurementTiming != null)
                         _detailTile(
                           context,
                           '測量時間',
-                          record
-                              .bodyMeasurement!.measurementTiming!.displayName,
+                          record.bodyMeasurement!.measurementTimeDisplay ??
+                              '未填寫',
                         ),
                     ],
                   ),

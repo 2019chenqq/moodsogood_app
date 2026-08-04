@@ -249,8 +249,9 @@ class DailyStateItem {
 
 enum MeasurementTiming {
   afterWaking,
-  beforeBreakfast,
-  afterMeal,
+  afterBreakfast,
+  afterLunch,
+  afterDinner,
   beforeSleep,
   other
 }
@@ -258,8 +259,9 @@ enum MeasurementTiming {
 extension MeasurementTimingDisplay on MeasurementTiming {
   String get displayName => switch (this) {
         MeasurementTiming.afterWaking => '起床後',
-        MeasurementTiming.beforeBreakfast => '早餐前',
-        MeasurementTiming.afterMeal => '飯後',
+        MeasurementTiming.afterBreakfast => '早餐後',
+        MeasurementTiming.afterLunch => '午餐後',
+        MeasurementTiming.afterDinner => '晚餐後',
         MeasurementTiming.beforeSleep => '睡前',
         MeasurementTiming.other => '其他時間',
       };
@@ -272,6 +274,7 @@ class BodyMeasurement {
     this.waistCm,
     this.measuredAt,
     this.measurementTiming,
+    this.customMeasurementTime,
   });
 
   final double? weightKg;
@@ -279,17 +282,36 @@ class BodyMeasurement {
   final double? waistCm;
   final DateTime? measuredAt;
   final MeasurementTiming? measurementTiming;
+  final String? customMeasurementTime;
+
+  String? get effectiveCustomMeasurementTime {
+    if (measurementTiming != MeasurementTiming.other) return null;
+    final value = customMeasurementTime?.trim() ?? '';
+    return value.isEmpty ? null : value;
+  }
+
+  String? get measurementTimeDisplay {
+    final timing = measurementTiming;
+    if (timing == null) return null;
+    if (timing == MeasurementTiming.other) {
+      return effectiveCustomMeasurementTime ?? timing.displayName;
+    }
+    return timing.displayName;
+  }
 
   bool get hasData =>
       weightKg != null ||
       bodyFatPercent != null ||
       waistCm != null ||
-      measurementTiming != null;
+      measurementTiming != null ||
+      (customMeasurementTime?.trim().isNotEmpty == true);
 
   bool get isValid =>
       _inRange(weightKg, 20, 300) &&
       _inRange(bodyFatPercent, 1, 70) &&
-      _inRange(waistCm, 30, 250);
+      _inRange(waistCm, 30, 250) &&
+      (measurementTiming != MeasurementTiming.other ||
+          effectiveCustomMeasurementTime != null);
 
   Map<String, dynamic> toJson() => {
         'weightKg': weightKg,
@@ -297,26 +319,54 @@ class BodyMeasurement {
         'waistCm': waistCm,
         'measuredAt': measuredAt?.toIso8601String(),
         'measurementTiming': measurementTiming?.name,
+        'customMeasurementTime': effectiveCustomMeasurementTime,
       };
 
   factory BodyMeasurement.fromJson(Map<String, dynamic> json) {
     final timingName = json['measurementTiming']?.toString();
-    final timings = MeasurementTiming.values.where((e) => e.name == timingName);
+    final parsedTiming = _parseTiming(timingName);
+    final legacyCustomTime = switch (timingName) {
+      'beforeBreakfast' => '早餐前（舊版）',
+      'afterMeal' => '飯後（舊版）',
+      _ => null,
+    };
     return BodyMeasurement(
-      weightKg: _asDouble(json['weightKg']),
-      bodyFatPercent: _asDouble(json['bodyFatPercent']),
-      waistCm: _asDouble(json['waistCm']),
+      weightKg: _asOneDecimal(json['weightKg']),
+      bodyFatPercent: _asOneDecimal(json['bodyFatPercent']),
+      waistCm: _asOneDecimal(json['waistCm']),
       measuredAt: _asDate(json['measuredAt']),
-      measurementTiming: timings.isEmpty ? null : timings.first,
+      measurementTiming: parsedTiming,
+      customMeasurementTime: parsedTiming == MeasurementTiming.other
+          ? ((json['customMeasurementTime']?.toString().trim().isNotEmpty ==
+                  true)
+              ? json['customMeasurementTime'].toString().trim()
+              : legacyCustomTime)
+          : null,
     );
   }
 
   static bool _inRange(double? value, double min, double max) =>
       value == null || (value >= min && value <= max);
 
-  static double? _asDouble(dynamic value) => value is num
-      ? value.toDouble()
-      : double.tryParse(value?.toString() ?? '');
+  static double? _asOneDecimal(dynamic value) {
+    final parsed = value is num
+        ? value.toDouble()
+        : double.tryParse(value?.toString() ?? '');
+    if (parsed == null || !parsed.isFinite || parsed < 0) return null;
+    final scaled = parsed * 10;
+    if ((scaled - scaled.round()).abs() > 0.000000001) return null;
+    return (parsed * 10).roundToDouble() / 10;
+  }
+
+  static MeasurementTiming? _parseTiming(String? value) {
+    if (value == 'beforeBreakfast' || value == 'afterMeal') {
+      return MeasurementTiming.other;
+    }
+    for (final timing in MeasurementTiming.values) {
+      if (timing.name == value) return timing;
+    }
+    return null;
+  }
 
   static DateTime? _asDate(dynamic value) {
     if (value is Timestamp) return value.toDate();
