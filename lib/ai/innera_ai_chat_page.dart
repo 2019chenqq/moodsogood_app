@@ -390,6 +390,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
   Future<void> _send({
     String? overrideText,
     InneraAiImageAttachment? overrideImage,
+    bool isRetry = false,
   }) async {
     final enteredText = (overrideText ?? _controller.text).trim();
     final pendingBytes = overrideText == null ? _pendingImageBytes : null;
@@ -542,13 +543,32 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
         aiCallableErrorMessage(
           error,
           functionName: AiCallableEndpoints.chat,
+          isSignedIn: FirebaseAuth.instance.currentUser != null,
         ),
         image: image,
+        canRetry: !isRetry,
+      );
+    } on FirebaseException catch (error, stackTrace) {
+      debugPrint('InneraAiChatPage Firebase request failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      _showSendError(
+        text,
+        aiFirebaseErrorMessage(
+          error,
+          isSignedIn: FirebaseAuth.instance.currentUser != null,
+        ),
+        image: image,
+        canRetry: !isRetry,
       );
     } catch (error, stackTrace) {
       debugPrint('InneraAiChatPage send failed: $error');
       debugPrintStack(stackTrace: stackTrace);
-      _showSendError(text, _messageForError(error), image: image);
+      _showSendError(
+        text,
+        _messageForError(error),
+        image: image,
+        canRetry: !isRetry,
+      );
     } finally {
       if (temporaryImage != null) {
         try {
@@ -572,12 +592,13 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     String text,
     String message, {
     InneraAiImageAttachment? image,
+    required bool canRetry,
   }) {
     if (!mounted) return;
     setState(() {
       _messages.removeWhere((message) => message.isLoading);
-      _lastFailedInput = text;
-      _lastFailedImage = image;
+      _lastFailedInput = canRetry ? text : null;
+      _lastFailedImage = canRetry ? image : null;
       _messages.add(
         InneraAiMessage(
           id: 'err-${DateTime.now().microsecondsSinceEpoch}',
@@ -585,7 +606,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
           text: message,
           createdAt: DateTime.now(),
           isError: true,
-          canRetry: true,
+          canRetry: canRetry,
         ),
       );
       _isSending = false;
@@ -1024,6 +1045,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     setState(() => _isExtractingDiary = true);
     try {
       var draft = await _diaryDraftService.generate(messages: _messages);
+      var regenerationCount = 0;
       DiaryDraftConfirmation? confirmation;
       while (mounted) {
         final existing =
@@ -1044,6 +1066,15 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
           break;
         }
         if (result is String && result.startsWith('regenerate:')) {
+          if (regenerationCount >= 1) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('每次 AI 整理最多重新產生一次，請稍後再試。')),
+              );
+            }
+            return;
+          }
+          regenerationCount += 1;
           final field = result.substring('regenerate:'.length);
           draft = await _diaryDraftService.generate(
             messages: _messages,
@@ -1103,6 +1134,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
               aiCallableErrorMessage(
                 error,
                 functionName: AiCallableEndpoints.diaryDraft,
+                isSignedIn: FirebaseAuth.instance.currentUser != null,
               ),
             ),
           ),
@@ -1393,15 +1425,19 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                     return AiMessageBubble(
                       message: message,
                       userPhotoUrl: FirebaseAuth.instance.currentUser?.photoURL,
-                      onRetry: _lastFailedInput == null
+                      onRetry: !message.canRetry || _lastFailedInput == null
                           ? null
                           : () {
+                              final retryText = _lastFailedInput;
+                              final retryImage = _lastFailedImage;
+                              if (retryText == null) return;
                               setState(() {
                                 _messages.removeWhere((item) => item.isError);
                               });
                               _send(
-                                overrideText: _lastFailedInput,
-                                overrideImage: _lastFailedImage,
+                                overrideText: retryText,
+                                overrideImage: retryImage,
+                                isRetry: true,
                               );
                             },
                     );

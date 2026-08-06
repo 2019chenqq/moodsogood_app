@@ -149,10 +149,14 @@ class SleepTrendChart extends StatefulWidget {
     super.key,
     required this.points,
     required this.summary,
+    this.showTotalSeries = true,
+    this.showPointDetails = true,
   });
 
   final List<SleepTrendPoint> points;
   final SleepPeriodSummary summary;
+  final bool showTotalSeries;
+  final bool showPointDetails;
 
   @override
   State<SleepTrendChart> createState() => _SleepTrendChartState();
@@ -173,7 +177,7 @@ class _SleepTrendChartState extends State<SleepTrendChart> {
         .expand((point) => [
               point.nightMinutes,
               if (point.napMinutes > 0) point.napMinutes,
-              if (_showTotal) point.totalMinutes,
+              if (_showTotal && widget.showTotalSeries) point.totalMinutes,
             ])
         .whereType<int>()
         .fold<int>(0, math.max);
@@ -186,7 +190,7 @@ class _SleepTrendChartState extends State<SleepTrendChart> {
       if (point.nightMinutes != null) {
         nightSpots.add(FlSpot(index.toDouble(), point.nightMinutes! / 60));
       }
-      if (_showTotal && point.totalMinutes != null) {
+      if (_showTotal && widget.showTotalSeries && point.totalMinutes != null) {
         totalSpots.add(FlSpot(index.toDouble(), point.totalMinutes! / 60));
       }
       if (point.napMinutes > 0) {
@@ -203,21 +207,22 @@ class _SleepTrendChartState extends State<SleepTrendChart> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                '每日夜間睡眠與全日睡眠',
-                style: Theme.of(context).textTheme.bodyMedium,
+        if (widget.showTotalSeries)
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '每日夜間睡眠與全日睡眠',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
               ),
-            ),
-            Switch.adaptive(
-              value: _showTotal,
-              onChanged: (value) => setState(() => _showTotal = value),
-            ),
-            const Text('全日'),
-          ],
-        ),
+              Switch.adaptive(
+                value: _showTotal,
+                onChanged: (value) => setState(() => _showTotal = value),
+              ),
+              const Text('全日'),
+            ],
+          ),
         const SizedBox(height: 8),
         SizedBox(
           height: 250,
@@ -321,7 +326,7 @@ class _SleepTrendChartState extends State<SleepTrendChart> {
                     barWidth: 3,
                     dotData: const FlDotData(show: true),
                   ),
-                  if (_showTotal)
+                  if (_showTotal && widget.showTotalSeries)
                     LineChartBarData(
                       spots: totalSpots,
                       isCurved: false,
@@ -362,13 +367,15 @@ class _SleepTrendChartState extends State<SleepTrendChart> {
             _Legend(label: '生理期區間', color: Color(0x55F19AB5)),
           ],
         ),
-        const SizedBox(height: 10),
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 180),
-          child: selected == null
-              ? const Text('點選圖表資料點可查看當日紀錄。')
-              : _PointDetails(key: ValueKey(selected.date), point: selected),
-        ),
+        if (widget.showPointDetails) ...[
+          const SizedBox(height: 10),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            child: selected == null
+                ? const Text('點選圖表資料點可查看當日紀錄。')
+                : _PointDetails(key: ValueKey(selected.date), point: selected),
+          ),
+        ],
       ],
     );
   }

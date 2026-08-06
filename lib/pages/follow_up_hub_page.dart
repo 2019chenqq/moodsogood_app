@@ -1,33 +1,25 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:qr/qr.dart';
 
 import '../analytics_service.dart';
 import '../constants/healing_design_system.dart';
-import '../daily/daily_record_helpers.dart';
+import '../models/follow_up_ai_summary.dart';
 import 'trend_review_hub_page.dart';
-import '../meds/med_symptom_compare_page.dart';
-import '../meds/medication_local_db.dart';
 import '../meds/record_adjustment_page.dart';
 import '../services/follow_up_service.dart';
+import '../services/follow_up_reminder_service.dart';
 import '../widgets/main_drawer.dart';
-import 'export_report_page.dart';
-
-const _discussionTopicOptions = [
-  '情緒變化',
-  '睡眠狀況',
-  '藥效與劑量',
-  '藥物副作用',
-  '身體不適',
-  '食慾變化',
-  '生活壓力',
-  '工作／學業',
-  '人際關係',
-  '其他',
-];
+import 'follow_up_summary_page.dart';
+import 'follow_up_summary_history_page.dart';
 
 class FollowUpHubPage extends StatefulWidget {
-  const FollowUpHubPage({super.key});
+  const FollowUpHubPage({
+    super.key,
+    this.promptAddAppointment = false,
+    this.aiOutput,
+  });
+
+  final bool promptAddAppointment;
+  final FollowUpAiOutput? aiOutput;
 
   @override
   State<FollowUpHubPage> createState() => _FollowUpHubPageState();
@@ -39,24 +31,40 @@ class _FollowUpHubPageState extends State<FollowUpHubPage> {
   FollowUpWorkspace _workspace = const FollowUpWorkspace();
   final _instructionsController = TextEditingController();
   final _discussionDetailsController = TextEditingController();
+  final _additionalNotesController = TextEditingController();
   final Set<String> _selectedTopics = {};
   List<FollowUpInstructionHistoryItem> _instructionHistory = const [];
   bool _isLoadingWorkspace = true;
   bool _isSavingWorkspace = false;
-  bool _isPreparingReport = false;
+  bool _isOpeningMedicationAdjustment = false;
+  final _reminderService = FollowUpReminderService();
+  FollowUpReminderSettings _reminderSettings = const FollowUpReminderSettings();
+  bool _isLoadingReminderSettings = true;
+  bool _isSavingReminderSettings = false;
+  List<FollowUpScheduledReminder> _scheduledReminders = const [];
 
   @override
   void initState() {
     super.initState();
     AnalyticsService.logPage('follow_up_hub_page');
-    _loadAppointments();
-    _loadWorkspace();
+    _initializePage();
+    if (widget.promptAddAppointment) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _addAppointment();
+      });
+    }
+  }
+
+  Future<void> _initializePage() async {
+    await Future.wait([_loadAppointments(), _loadWorkspace()]);
+    await _loadReminderSettings(reschedule: true);
   }
 
   @override
   void dispose() {
     _instructionsController.dispose();
     _discussionDetailsController.dispose();
+    _additionalNotesController.dispose();
     super.dispose();
   }
 
@@ -74,15 +82,135 @@ class _FollowUpHubPageState extends State<FollowUpHubPage> {
     final history = await FollowUpService.getInstructionHistory();
     if (!mounted) return;
     _instructionsController.text = workspace.medicalInstructions;
-    _discussionDetailsController.text = workspace.discussionDetails;
+    final migratedTopicNotes = workspace.aiDiscussionTopics
+        .where((topic) => topic.note.trim().isNotEmpty)
+        .map((topic) => '${topic.label}：${topic.note.trim()}')
+        .join('\n');
+    _discussionDetailsController.text = workspace.aiDiscussionDetails.isNotEmpty
+        ? workspace.aiDiscussionDetails
+        : migratedTopicNotes.isNotEmpty
+            ? migratedTopicNotes
+            : workspace.discussionDetails;
+    _additionalNotesController.text = workspace.aiAdditionalNotes;
     setState(() {
       _workspace = workspace;
       _selectedTopics
         ..clear()
-        ..addAll(workspace.discussionTopics);
+        ..addAll(
+          workspace.aiDiscussionTopics.isNotEmpty
+              ? workspace.aiDiscussionTopics
+                  .where((topic) => topic.selected)
+                  .map((topic) => _normalizedTopicType(topic.type))
+              : kTopicOptions
+                  .where((topic) => _legacyTopicSelected(
+                        topic,
+                        workspace.discussionTopics,
+                      ))
+                  .map((topic) => topic.type),
+        );
       _instructionHistory = history;
       _isLoadingWorkspace = false;
     });
+  }
+
+  bool _legacyTopicSelected(
+      FollowUpTopicOption option, List<String> savedLabels) {
+    final aliases = <String, List<String>>{
+      'mood': const ['情緒狀況', '情緒變化'],
+      'sleep': const ['睡眠品質', '睡眠狀況'],
+      'medicationSideEffects': const ['藥物副作用', '藥效與劑量'],
+      'lifeUpdates': const ['生活近況', '食慾變化'],
+      'workOrStudy': const ['工作／學業', '工作/學業'],
+    };
+    final labels = aliases[option.type] ?? <String>[option.label];
+    return labels.any(savedLabels.contains);
+  }
+
+  String _normalizedTopicType(String type) =>
+      type == 'appetite' ? 'lifeUpdates' : type;
+
+  List<FollowUpDiscussionTopicInput> get _sharedDiscussionTopics =>
+      kTopicOptions
+          .map(
+            (topic) => FollowUpDiscussionTopicInput(
+              type: topic.type,
+              label: topic.label,
+              selected: _selectedTopics.contains(topic.type),
+              note: '',
+            ),
+          )
+          .toList();
+
+  Future<void> _loadReminderSettings({bool reschedule = false}) async {
+    final settings = await _reminderService.loadSettings();
+    if (!mounted) return;
+    setState(() {
+      _reminderSettings = settings;
+      _isLoadingReminderSettings = false;
+    });
+    if (reschedule) {
+      final result = await _reminderService.reschedule(
+        settings: settings,
+        appointments: _appointments,
+      );
+      if (mounted) {
+        setState(() => _scheduledReminders = result.reminders);
+      }
+    }
+  }
+
+  Future<void> _updateReminderSettings(
+      FollowUpReminderSettings settings) async {
+    if (_isSavingReminderSettings) return;
+    final previous = _reminderSettings;
+    setState(() {
+      _reminderSettings = settings;
+      _isSavingReminderSettings = true;
+    });
+    try {
+      final result = await _reminderService.saveAndReschedule(
+        settings: settings,
+        appointments: _appointments,
+      );
+      if (!mounted) return;
+      setState(() => _scheduledReminders = result.reminders);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_appointments.isEmpty
+              ? '設定已儲存；新增回診日期後會自動建立提醒'
+              : '回診提醒已更新（已排程 ${result.count} 筆）'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _reminderSettings = previous);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('更新回診提醒失敗：$error')),
+      );
+    } finally {
+      if (mounted) setState(() => _isSavingReminderSettings = false);
+    }
+  }
+
+  Future<void> _pickReminderTime() async {
+    if (_isSavingReminderSettings) return;
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(
+        hour: _reminderSettings.reminderHour,
+        minute: _reminderSettings.reminderMinute,
+      ),
+      helpText: '選擇回診提醒時間',
+      cancelText: '取消',
+      confirmText: '確定',
+    );
+    if (picked == null || !mounted) return;
+    await _updateReminderSettings(
+      _reminderSettings.copyWith(
+        reminderHour: picked.hour,
+        reminderMinute: picked.minute,
+      ),
+    );
   }
 
   Future<void> _refresh() async {
@@ -90,6 +218,7 @@ class _FollowUpHubPageState extends State<FollowUpHubPage> {
       _loadAppointments(),
       _loadWorkspace(),
     ]);
+    await _loadReminderSettings(reschedule: true);
   }
 
   Future<void> _saveMedicalInstructions() async {
@@ -125,26 +254,27 @@ class _FollowUpHubPageState extends State<FollowUpHubPage> {
   Future<void> _saveDiscussion() async {
     if (_isSavingWorkspace) return;
     setState(() => _isSavingWorkspace = true);
-    final topics = _discussionTopicOptions
-        .where(_selectedTopics.contains)
-        .toList(growable: false);
     final details = _discussionDetailsController.text.trim();
+    final additionalNotes = _additionalNotesController.text.trim();
+    final topics = _sharedDiscussionTopics;
 
     try {
-      await FollowUpService.saveDiscussion(
-        topics: topics,
-        details: details,
+      await FollowUpService.saveAiPreparation(
+        discussionTopics: topics,
+        discussionDetails: details,
+        additionalNotes: additionalNotes,
       );
       if (!mounted) return;
       setState(() {
         _workspace = _workspace.copyWith(
-          discussionTopics: topics,
-          discussionDetails: details,
+          aiDiscussionTopics: topics,
+          aiDiscussionDetails: details,
+          aiAdditionalNotes: additionalNotes,
           updatedAt: DateTime.now(),
         );
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已儲存下次回診想討論的問題')),
+        const SnackBar(content: Text('已同步至準備回診摘要')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -227,6 +357,11 @@ class _FollowUpHubPageState extends State<FollowUpHubPage> {
     if (appointment == null) return;
     await FollowUpService.addAppointment(appointment);
     await _loadAppointments();
+    final result = await _reminderService.reschedule(
+      settings: _reminderSettings,
+      appointments: _appointments,
+    );
+    if (mounted) setState(() => _scheduledReminders = result.reminders);
   }
 
   Future<void> _editAppointment(FollowUpAppointment existing) async {
@@ -234,6 +369,11 @@ class _FollowUpHubPageState extends State<FollowUpHubPage> {
     if (appointment == null) return;
     await FollowUpService.updateAppointment(appointment);
     await _loadAppointments();
+    final result = await _reminderService.reschedule(
+      settings: _reminderSettings,
+      appointments: _appointments,
+    );
+    if (mounted) setState(() => _scheduledReminders = result.reminders);
   }
 
   Future<void> _deleteAppointment(FollowUpAppointment appointment) async {
@@ -261,114 +401,35 @@ class _FollowUpHubPageState extends State<FollowUpHubPage> {
     if (confirmed != true) return;
     await FollowUpService.deleteAppointment(appointment.id);
     await _loadAppointments();
+    final result = await _reminderService.reschedule(
+      settings: _reminderSettings,
+      appointments: _appointments,
+    );
+    if (mounted) setState(() => _scheduledReminders = result.reminders);
   }
 
   Future<FollowUpAppointment?> _showAppointmentEditor({
     FollowUpAppointment? existing,
   }) async {
-    DateTime? selectedDate = existing?.date;
-    final labelController = TextEditingController(text: existing?.label ?? '');
-    final noteController = TextEditingController(text: existing?.note ?? '');
-
-    final result = await showDialog<FollowUpAppointment>(
+    return showDialog<FollowUpAppointment>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(existing == null ? '新增回診' : '編輯回診'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () async {
-                    final now = DateTime.now();
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate:
-                          selectedDate ?? now.add(const Duration(days: 30)),
-                      firstDate: DateTime(now.year - 1),
-                      lastDate: DateTime(now.year + 5),
-                      helpText: '選擇回診日期',
-                    );
-                    if (picked != null) {
-                      setDialogState(() => selectedDate = picked);
-                    }
-                  },
-                  child: InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: '回診日期',
-                      prefixIcon: Icon(Icons.calendar_today_outlined),
-                    ),
-                    child: Text(
-                      selectedDate == null
-                          ? '請選擇日期'
-                          : _formatDate(selectedDate!),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: labelController,
-                  decoration: const InputDecoration(
-                    labelText: '科別／院所（可選）',
-                    hintText: '例如：身心科、○○診所',
-                    prefixIcon: Icon(Icons.local_hospital_outlined),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: noteController,
-                  minLines: 2,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: '備註（可選）',
-                    hintText: '例如：抽血、看報告、記得帶藥袋',
-                    prefixIcon: Icon(Icons.notes_outlined),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: selectedDate == null
-                  ? null
-                  : () {
-                      Navigator.pop(
-                        dialogContext,
-                        FollowUpAppointment(
-                          id: existing?.id ??
-                              DateTime.now().millisecondsSinceEpoch.toString(),
-                          date: selectedDate!,
-                          label: labelController.text.trim(),
-                          note: noteController.text.trim().isEmpty
-                              ? null
-                              : noteController.text.trim(),
-                        ),
-                      );
-                    },
-              child: Text(existing == null ? '新增' : '儲存'),
-            ),
-          ],
-        ),
-      ),
+      builder: (_) => _AppointmentEditorDialog(existing: existing),
     );
-
-    labelController.dispose();
-    noteController.dispose();
-    return result;
   }
 
-  void _openMedicationAdjustment() {
-    Navigator.push<bool>(
-      context,
-      MaterialPageRoute(builder: (_) => const RecordAdjustmentPage()),
-    );
+  Future<void> _openMedicationAdjustment() async {
+    if (_isOpeningMedicationAdjustment) return;
+    setState(() => _isOpeningMedicationAdjustment = true);
+    try {
+      await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(builder: (_) => const RecordAdjustmentPage()),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isOpeningMedicationAdjustment = false);
+      }
+    }
   }
 
   void _openRecentTrends() {
@@ -380,136 +441,34 @@ class _FollowUpHubPageState extends State<FollowUpHubPage> {
     );
   }
 
-  void _openMedicationTrends() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const MedSymptomComparePage()),
-    );
-  }
-
-  Future<void> _openPdfReport() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null || _isPreparingReport) return;
-    setState(() => _isPreparingReport = true);
-
-    try {
-      final results = await Future.wait<dynamic>([
-        loadAllRecords(uid),
-        MedicationLocalDB().getMedicationsForDisplay(uid),
-      ]);
-      final records = results[0] as List;
-      final medicationMaps = results[1] as List<Map<String, dynamic>>;
-      final medications = medicationMaps
-          .where((medication) => medication['isActive'] != false)
-          .map(_formatMedication)
-          .where((medication) => medication.isNotEmpty)
-          .toList();
-
-      if (!mounted) return;
-      await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ExportReportPage(
-            records: records.cast(),
-            medications: medications,
-            followUpNotes: _buildReportLines(),
-          ),
-        ),
+  Future<void> _openFollowUpSummary() async {
+    if (_isLoadingWorkspace) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('正在載入共同主題，請稍候再試')),
       );
-    } catch (e) {
+      return;
+    }
+    try {
+      await FollowUpService.saveAiPreparation(
+        discussionTopics: _sharedDiscussionTopics,
+        discussionDetails: _discussionDetailsController.text,
+        additionalNotes: _additionalNotesController.text,
+      );
+    } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('準備報告失敗：$e')),
+        SnackBar(content: Text('同步共同主題失敗：$error')),
       );
-    } finally {
-      if (mounted) setState(() => _isPreparingReport = false);
+      return;
     }
-  }
-
-  String _formatMedication(Map<String, dynamic> medication) {
-    final name = (medication['name'] ?? '').toString().trim();
-    if (name.isEmpty) return '';
-    final dose = medication['dose'];
-    final unit = (medication['unit'] ?? '').toString().trim();
-    final times = (medication['times'] as List?)
-            ?.map((time) => time.toString())
-            .where((time) => time.isNotEmpty)
-            .join('、') ??
-        '';
-    return [
-      name,
-      if (dose != null) '$dose$unit',
-      if (times.isNotEmpty) times,
-    ].join('・');
-  }
-
-  List<String> _buildReportLines() {
-    final nextAppointments = _appointments
-        .where((appointment) => appointment.daysUntil >= 0)
-        .toList();
-    return [
-      if (nextAppointments.isNotEmpty) ...[
-        '【下次回診】',
-        '${_formatDate(nextAppointments.first.date)}'
-            '${nextAppointments.first.label.isEmpty ? '' : '・${nextAppointments.first.label}'}',
-        '',
-      ],
-      '【本次回診醫囑與醫師叮嚀】',
-      _instructionsController.text.trim().isEmpty
-          ? '尚未填寫'
-          : _instructionsController.text.trim(),
-      '',
-      '【下次回診想討論的議題】',
-      _selectedTopics.isEmpty ? '尚未選擇' : _selectedTopics.join('、'),
-      '',
-      '【詳細記錄】',
-      _discussionDetailsController.text.trim().isEmpty
-          ? '尚未填寫'
-          : _discussionDetailsController.text.trim(),
-    ];
-  }
-
-  String _buildQrPayload() {
-    final fullText = _buildReportLines().join('\n');
-    return _truncateForQr(fullText, 800);
-  }
-
-  void _showQrReport() {
-    final payload = _buildQrPayload();
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('回診摘要 QR Code'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                color: Colors.white,
-                padding: const EdgeInsets.all(12),
-                child: SizedBox.square(
-                  dimension: 220,
-                  child: CustomPaint(painter: _QrCodePainter(payload)),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                '掃描後可查看回診日期、醫囑與待討論問題。QR Code 只包含目前畫面上的文字，不會公開雲端資料。',
-                style: HealingDesignSystem.bodySmall.copyWith(
-                  color: HealingDesignSystem.adaptiveSecondaryText(context),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('完成'),
-          ),
-        ],
+    if (!mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FollowUpSummaryPage(aiOutput: widget.aiOutput),
       ),
     );
+    if (mounted) await _loadWorkspace();
   }
 
   @override
@@ -546,7 +505,25 @@ class _FollowUpHubPageState extends State<FollowUpHubPage> {
               ),
             ),
             const SizedBox(height: 16),
+            FollowUpAiHighlightsCard(
+              output: widget.aiOutput,
+              onTap: _openFollowUpSummary,
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const FollowUpSummaryHistoryPage(),
+                ),
+              ),
+              icon: const Icon(Icons.history_rounded),
+              label: const Text('歷次回診摘要'),
+            ),
+            const SizedBox(height: 16),
             _buildAppointmentsSection(context),
+            const SizedBox(height: 16),
+            _buildReminderSettingsSection(context),
             const SizedBox(height: 16),
             _buildMedicationAdjustmentSection(context),
             const SizedBox(height: 16),
@@ -555,8 +532,6 @@ class _FollowUpHubPageState extends State<FollowUpHubPage> {
             _buildDiscussionSection(context),
             const SizedBox(height: 16),
             _buildRecentTrendsSection(context),
-            const SizedBox(height: 16),
-            _buildReportSection(context),
           ],
         ),
       ),
@@ -669,6 +644,163 @@ class _FollowUpHubPageState extends State<FollowUpHubPage> {
     );
   }
 
+  Widget _buildReminderSettingsSection(BuildContext context) {
+    return _FollowUpSection(
+      icon: Icons.notifications_active_outlined,
+      title: '回診前提醒',
+      subtitle: '設定提醒時間，也可以開啟 AI 回診前關心',
+      child: _isLoadingReminderSettings
+          ? const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '回診前多久提醒',
+                  style: HealingDesignSystem.titleSmall.copyWith(
+                    color: HealingDesignSystem.adaptivePrimaryText(context),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: SegmentedButton<int>(
+                    segments: const [
+                      ButtonSegment(value: 1, label: Text('前 1 天')),
+                      ButtonSegment(value: 3, label: Text('前 3 天')),
+                      ButtonSegment(value: 7, label: Text('前 7 天')),
+                    ],
+                    selected: {_reminderSettings.reminderDays},
+                    onSelectionChanged: _isSavingReminderSettings
+                        ? null
+                        : (selection) => _updateReminderSettings(
+                              _reminderSettings.copyWith(
+                                reminderDays: selection.first,
+                              ),
+                            ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                InkWell(
+                  key: const ValueKey('follow-up-reminder-time'),
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: _isSavingReminderSettings ? null : _pickReminderTime,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 11,
+                    ),
+                    decoration: BoxDecoration(
+                      color: HealingDesignSystem.adaptiveFill(context),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: HealingDesignSystem.adaptiveCardBorder(context),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.schedule_rounded),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '提醒時間',
+                                style: HealingDesignSystem.bodySmall.copyWith(
+                                  color:
+                                      HealingDesignSystem.adaptiveSecondaryText(
+                                          context),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                TimeOfDay(
+                                  hour: _reminderSettings.reminderHour,
+                                  minute: _reminderSettings.reminderMinute,
+                                ).format(context),
+                                style: HealingDesignSystem.titleSmall.copyWith(
+                                  color:
+                                      HealingDesignSystem.adaptivePrimaryText(
+                                          context),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right_rounded),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('開啟回診前 AI 關心'),
+                  subtitle: const Text('提醒時邀請你直接進入 AI 回診整理'),
+                  secondary: const Icon(Icons.auto_awesome_rounded),
+                  value: _reminderSettings.aiCheckInEnabled,
+                  onChanged: _isSavingReminderSettings
+                      ? null
+                      : (value) => _updateReminderSettings(
+                            _reminderSettings.copyWith(
+                              aiCheckInEnabled: value,
+                            ),
+                          ),
+                ),
+                const SizedBox(height: 8),
+                ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  childrenPadding: const EdgeInsets.only(bottom: 4),
+                  leading: const Icon(Icons.event_available_outlined),
+                  title: Text('已排程 ${_scheduledReminders.length} 筆通知'),
+                  subtitle: const Text('展開查看通知時間與對應回診'),
+                  children: _scheduledReminders.isEmpty
+                      ? [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
+                            child: Text(
+                              _appointments.isEmpty
+                                  ? '尚未新增未來回診日期。'
+                                  : '目前沒有可排程通知；可能是所選提醒日期與時間已經過去。',
+                              style: HealingDesignSystem.bodySmall.copyWith(
+                                color:
+                                    HealingDesignSystem.adaptiveSecondaryText(
+                                        context),
+                              ),
+                            ),
+                          ),
+                        ]
+                      : _scheduledReminders
+                          .map(
+                            (reminder) => ListTile(
+                              dense: true,
+                              contentPadding:
+                                  const EdgeInsets.symmetric(horizontal: 8),
+                              leading: const Icon(
+                                Icons.notifications_none_rounded,
+                                size: 20,
+                              ),
+                              title: Text(
+                                '通知：${_formatDateTime(reminder.scheduledAt)}',
+                              ),
+                              subtitle: Text(
+                                '回診：${_formatDate(reminder.appointmentDate)}'
+                                '・${reminder.appointmentLabel}',
+                              ),
+                            ),
+                          )
+                          .toList(),
+                ),
+                if (_isSavingReminderSettings)
+                  const LinearProgressIndicator(minHeight: 2),
+              ],
+            ),
+    );
+  }
+
   Widget _buildMedicationAdjustmentSection(BuildContext context) {
     return _FollowUpSection(
       icon: Icons.medication_liquid_rounded,
@@ -687,8 +819,15 @@ class _FollowUpHubPageState extends State<FollowUpHubPage> {
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              onPressed: _openMedicationAdjustment,
-              icon: const Icon(Icons.edit_note_rounded),
+              onPressed: _isOpeningMedicationAdjustment
+                  ? null
+                  : _openMedicationAdjustment,
+              icon: _isOpeningMedicationAdjustment
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.edit_note_rounded),
               label: const Text('記錄這次調藥'),
             ),
           ),
@@ -742,54 +881,109 @@ class _FollowUpHubPageState extends State<FollowUpHubPage> {
   Widget _buildDiscussionSection(BuildContext context) {
     return _FollowUpSection(
       icon: Icons.checklist_rounded,
-      title: '下次回診想跟醫師討論的問題',
-      subtitle: '先勾選議題，再補充你觀察到的細節',
+      title: '想跟醫師討論的主題',
+      subtitle: '與準備回診摘要共用主題與補充內容',
       child: _isLoadingWorkspace
           ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _discussionTopicOptions.map((topic) {
-                    final selected = _selectedTopics.contains(topic);
-                    return FilterChip(
-                      label: Text(topic),
-                      selected: selected,
-                      showCheckmark: true,
-                      onSelected: (value) {
-                        setState(() {
-                          if (value) {
-                            _selectedTopics.add(topic);
-                          } else {
-                            _selectedTopics.remove(topic);
-                          }
-                        });
-                      },
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color:
+                        HealingDesignSystem.primaryBlue.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text('此處與「準備回診摘要」共用，任一處儲存後都會同步。'),
+                ),
+                const SizedBox(height: 12),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: kTopicOptions.length,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
+                    mainAxisExtent: 44,
+                  ),
+                  itemBuilder: (context, index) {
+                    final topic = kTopicOptions[index];
+                    final selected = _selectedTopics.contains(topic.type);
+                    return SizedBox.expand(
+                      child: FilterChip(
+                        key: ValueKey('hub-topic-${topic.type}'),
+                        label: SizedBox(
+                          width: double.infinity,
+                          child: Text(topic.label, textAlign: TextAlign.center),
+                        ),
+                        selected: selected,
+                        showCheckmark: true,
+                        onSelected: (value) {
+                          setState(() {
+                            if (value) {
+                              _selectedTopics.add(topic.type);
+                            } else {
+                              _selectedTopics.remove(topic.type);
+                            }
+                          });
+                        },
+                      ),
                     );
-                  }).toList(),
+                  },
                 ),
                 const SizedBox(height: 16),
+                Divider(
+                  color: HealingDesignSystem.adaptiveCardBorder(context),
+                ),
+                const SizedBox(height: 8),
                 Text(
-                  '詳細記錄',
+                  '想討論的內容（可選）',
                   style: HealingDesignSystem.titleSmall.copyWith(
                     color: HealingDesignSystem.adaptivePrimaryText(context),
                   ),
                 ),
                 const SizedBox(height: 8),
                 TextField(
+                  key: const ValueKey('hub-discussion-details'),
                   controller: _discussionDetailsController,
-                  minLines: 5,
-                  maxLines: 10,
+                  minLines: 3,
+                  maxLines: 7,
                   decoration: _followUpInputDecoration(
                     context,
-                    '例如：換藥後第三天開始比較難入睡，想確認是否需要調整服藥時間。',
+                    '統一補充上述主題想和醫師討論的內容',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '其他想討論的事（可選）',
+                  style: HealingDesignSystem.titleSmall.copyWith(
+                    color: HealingDesignSystem.adaptivePrimaryText(context),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '可補充未包含在上方主題中的事情，內容會原樣保留。',
+                  style: HealingDesignSystem.bodySmall.copyWith(
+                    color: HealingDesignSystem.adaptiveSecondaryText(context),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  key: const ValueKey('hub-additional-notes'),
+                  controller: _additionalNotesController,
+                  minLines: 3,
+                  maxLines: 7,
+                  decoration: _followUpInputDecoration(
+                    context,
+                    '例如：近期生活事件、開心的事，或其他想讓醫師知道的內容',
                   ),
                 ),
                 const SizedBox(height: 12),
                 _buildSaveButton(
-                  label: '儲存待討論問題',
+                  label: '儲存共同主題內容',
                   onPressed: _saveDiscussion,
                 ),
               ],
@@ -801,63 +995,14 @@ class _FollowUpHubPageState extends State<FollowUpHubPage> {
     return _FollowUpSection(
       icon: Icons.insights_rounded,
       title: '近期趨勢',
-      subtitle: '回顧情緒、睡眠、症狀與調藥後的變化',
-      child: Column(
-        children: [
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _openRecentTrends,
-              icon: const Icon(Icons.show_chart_rounded),
-              label: const Text('查看情緒與睡眠趨勢'),
-            ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _openMedicationTrends,
-              icon: const Icon(Icons.medication_outlined),
-              label: const Text('比較調藥與症狀趨勢'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildReportSection(BuildContext context) {
-    return _FollowUpSection(
-      icon: Icons.auto_awesome_outlined,
-      title: '回診摘要',
-      subtitle: '開發中・即將推出',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '未來會協助整理近期情緒、睡眠、症狀、用藥變化與想和醫師討論的重點。Beta 期間不會把尚未完成的摘要列為付費權益。',
-            style: HealingDesignSystem.bodyMedium.copyWith(
-              color: HealingDesignSystem.adaptiveSecondaryText(context),
-              height: 1.5,
-            ),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: null,
-              icon: const Icon(Icons.schedule_rounded),
-              label: const Text('開發中・即將推出'),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '回診專區目前免費開放測試；內容僅供整理與溝通參考，不取代醫師診斷。',
-            style: HealingDesignSystem.bodySmall.copyWith(
-              color: HealingDesignSystem.adaptiveSecondaryText(context),
-            ),
-          ),
-        ],
+      subtitle: '集中查看情緒、睡眠、症狀與調藥後的變化',
+      child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: _openRecentTrends,
+          icon: const Icon(Icons.insights_rounded),
+          label: const Text('前往趨勢回顧'),
+        ),
       ),
     );
   }
@@ -1087,6 +1232,128 @@ class _EmptyAppointment extends StatelessWidget {
   }
 }
 
+class _AppointmentEditorDialog extends StatefulWidget {
+  const _AppointmentEditorDialog({this.existing});
+
+  final FollowUpAppointment? existing;
+
+  @override
+  State<_AppointmentEditorDialog> createState() =>
+      _AppointmentEditorDialogState();
+}
+
+class _AppointmentEditorDialogState extends State<_AppointmentEditorDialog> {
+  late final TextEditingController _labelController;
+  late final TextEditingController _noteController;
+  DateTime? _selectedDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDate = widget.existing?.date;
+    _labelController = TextEditingController(
+      text: widget.existing?.label ?? '',
+    );
+    _noteController = TextEditingController(
+      text: widget.existing?.note ?? '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _labelController.dispose();
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate ?? now.add(const Duration(days: 30)),
+      firstDate: DateTime(now.year - 1),
+      lastDate: DateTime(now.year + 5),
+      helpText: '選擇回診日期',
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _selectedDate = picked);
+  }
+
+  void _submit() {
+    final selectedDate = _selectedDate;
+    if (selectedDate == null) return;
+    final note = _noteController.text.trim();
+    Navigator.pop(
+      context,
+      FollowUpAppointment(
+        id: widget.existing?.id ??
+            DateTime.now().millisecondsSinceEpoch.toString(),
+        date: selectedDate,
+        label: _labelController.text.trim(),
+        note: note.isEmpty ? null : note,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isEditing = widget.existing != null;
+    return AlertDialog(
+      title: Text(isEditing ? '編輯回診' : '新增回診'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: _pickDate,
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: '回診日期',
+                  prefixIcon: Icon(Icons.calendar_today_outlined),
+                ),
+                child: Text(
+                  _selectedDate == null ? '請選擇日期' : _formatDate(_selectedDate!),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _labelController,
+              decoration: const InputDecoration(
+                labelText: '科別／院所（可選）',
+                hintText: '例如：身心科、○○診所',
+                prefixIcon: Icon(Icons.local_hospital_outlined),
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _noteController,
+              minLines: 2,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: '備註（可選）',
+                hintText: '例如：抽血、看報告、記得帶藥袋',
+                prefixIcon: Icon(Icons.notes_outlined),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _selectedDate == null ? null : _submit,
+          child: Text(isEditing ? '儲存' : '新增'),
+        ),
+      ],
+    );
+  }
+}
+
 class _BetaBadge extends StatelessWidget {
   const _BetaBadge();
 
@@ -1120,52 +1387,4 @@ String _formatDateTime(DateTime date) {
   final hour = date.hour.toString().padLeft(2, '0');
   final minute = date.minute.toString().padLeft(2, '0');
   return '${_formatDate(date)} $hour:$minute';
-}
-
-String _truncateForQr(String value, int maxLength) {
-  if (value.length <= maxLength) return value;
-  return '${value.substring(0, maxLength)}…';
-}
-
-class _QrCodePainter extends CustomPainter {
-  _QrCodePainter(String data)
-      : _image = QrImage(
-          QrCode.fromData(
-            data: data,
-            errorCorrectLevel: QrErrorCorrectLevel.L,
-          ),
-        );
-
-  final QrImage _image;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final background = Paint()..color = Colors.white;
-    canvas.drawRect(Offset.zero & size, background);
-
-    const quietZone = 4;
-    final totalModules = _image.moduleCount + quietZone * 2;
-    final moduleSize = size.shortestSide / totalModules;
-    final darkPaint = Paint()..color = Colors.black;
-
-    for (var row = 0; row < _image.moduleCount; row++) {
-      for (var column = 0; column < _image.moduleCount; column++) {
-        if (!_image.isDark(row, column)) continue;
-        canvas.drawRect(
-          Rect.fromLTWH(
-            (column + quietZone) * moduleSize,
-            (row + quietZone) * moduleSize,
-            moduleSize + 0.1,
-            moduleSize + 0.1,
-          ),
-          darkPaint,
-        );
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _QrCodePainter oldDelegate) {
-    return false;
-  }
 }

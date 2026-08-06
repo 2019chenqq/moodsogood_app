@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../utils/date_helper.dart';
+import '../utils/sleep_record_parser.dart';
 
 /// ------------------------------------------------------
 /// 1. 小睡模型
@@ -168,8 +169,14 @@ class SleepData {
     };
   }
 
-  factory SleepData.fromMap(Map<String, dynamic>? map) {
-    if (map == null) return SleepData.empty();
+  factory SleepData.fromMap(
+    Map<String, dynamic>? map, {
+    Map<String, dynamic>? record,
+  }) {
+    if (map == null) {
+      final quality = SleepRecordParser.quality(null, record: record);
+      return quality == null ? SleepData.empty() : SleepData(quality: quality);
+    }
     final sleepTimeStr = map['sleepTime'];
     final wakeTimeStr = map['wakeTime'];
     final finalWakeTimeStr = map['finalWakeTime'];
@@ -186,7 +193,7 @@ class SleepData {
               .map(NightAwakeningItem.fromMap)
               .toList() ??
           const [],
-      quality: (map['quality'] as num?)?.toInt(),
+      quality: SleepRecordParser.quality(map, record: record),
       tookHypnotic: map['tookHypnotic'] == true,
       hypnoticName: map['hypnoticName'] as String?,
       hypnoticDose: map['hypnoticDose'] as String?,
@@ -466,6 +473,7 @@ class DailyRecord {
     final stateChanges = _parseStateChanges(data['stateChanges']);
     final sleep = SleepData.fromMap(
       rawSleep is Map ? rawSleep.cast<String, dynamic>() : null,
+      record: data,
     );
 
     return DailyRecord(

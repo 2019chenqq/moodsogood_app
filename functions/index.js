@@ -1,4 +1,4 @@
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
@@ -18,6 +18,23 @@ const {
   previousTaipeiDayRange,
   summarizeAiUsageEvents,
 } = require("./ai_usage_aggregation");
+const {
+  createFollowUpSummaryFallbackResponse,
+  createNoFollowUpQuestionsResponse,
+  isFollowUpQuestionRequest,
+  isFollowUpSummaryRequest,
+  mergeCompletionUsage,
+  parseFollowUpQuestionsCompletion,
+  normalizeFollowUpSummaryReply,
+  parseFollowUpSummaryCompletion,
+  parseInneraChatCompletion,
+} = require("./innera_ai_response");
+const {
+  authorizeShareRevocation,
+  buildShareDocument,
+  hashToken,
+  validateShareDocument,
+} = require("./follow_up_share");
 
 // 初始化 Admin SDK (擁有繞過 Security Rules 的最高權限)
 admin.initializeApp();
@@ -27,7 +44,7 @@ const lastFmApiKey = defineSecret("LASTFM_API_KEY");
 const spotifyClientId = defineSecret("SPOTIFY_CLIENT_ID");
 const spotifyClientSecret = defineSecret("SPOTIFY_CLIENT_SECRET");
 const DEFAULT_AI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
-const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v8-state-body-measurement";
+const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v9-nonempty-retry";
 const DIARY_EXTRACTION_PROMPT_VERSION = "diary_extraction_v1";
 
 async function requireAiCapacity(uid, feature) {
@@ -121,6 +138,163 @@ exports.aggregateDailyAiUsage = onSchedule(
     });
   },
 );
+
+exports.createFollowUpSummaryShare = onCall(async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError("unauthenticated", "請先登入後再建立分享。");
+  }
+  let share;
+  const summaryId = String(request.data?.summaryId || "").trim();
+  if (!summaryId || summaryId.length > 128) {
+    throw new HttpsError("invalid-argument", "缺少有效的摘要識別碼。");
+  }
+  try {
+    share = buildShareDocument({
+      ownerUid: request.auth.uid,
+      summarySnapshot: request.data?.summarySnapshot,
+    });
+  } catch (_) {
+    throw new HttpsError("invalid-argument", "摘要分享資料格式不正確。");
+  }
+  await db.collection("follow_up_summary_shares").doc(share.shareId).set({
+    ...share.document,
+    sourceSummaryId: summaryId,
+    createdAt: admin.firestore.Timestamp.fromDate(share.document.createdAt),
+    expiresAt: admin.firestore.Timestamp.fromDate(share.expiresAt),
+  });
+  const baseUrl = process.env.FOLLOW_UP_SHARE_BASE_URL ||
+    "https://moodsogood-9e45b.web.app/follow-up-share.html";
+  return {
+    shareId: share.shareId,
+    token: share.token,
+    url: `${baseUrl}?token=${encodeURIComponent(share.token)}`,
+    expiresAt: share.expiresAt.toISOString(),
+  };
+});
+
+exports.getFollowUpShareStatuses = onCall(async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError("unauthenticated", "請先登入後再查看分享狀態。");
+  }
+  const summaryIds = Array.isArray(request.data?.summaryIds)
+    ? [...new Set(request.data.summaryIds
+      .map((value) => String(value || "").trim())
+      .filter((value) => value && value.length <= 128))].slice(0, 100)
+    : [];
+  if (summaryIds.length === 0) {
+    return { activeSummaryIds: [], activeShares: [] };
+  }
+  const snapshot = await db.collection("follow_up_summary_shares")
+    .where("ownerUid", "==", request.auth.uid)
+    .limit(500)
+    .get();
+  const now = Date.now();
+  const requested = new Set(summaryIds);
+  const active = new Set();
+  const activeShares = [];
+  for (const document of snapshot.docs) {
+    const data = document.data();
+    const summaryId = String(data.sourceSummaryId || "");
+    const expiresAt = data.expiresAt?.toDate?.();
+    if (requested.has(summaryId) && !data.revokedAt &&
+        expiresAt instanceof Date && expiresAt.getTime() > now) {
+      active.add(summaryId);
+      activeShares.push({
+        summaryId,
+        shareId: document.id,
+        expiresAt: expiresAt.toISOString(),
+      });
+    }
+  }
+  return { activeSummaryIds: [...active], activeShares };
+});
+
+exports.revokeFollowUpShare = onCall(async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError("unauthenticated", "請先登入後再停止分享。");
+  }
+  const shareId = String(request.data?.shareId || "").trim();
+  if (!shareId || shareId.length > 128) {
+    throw new HttpsError("invalid-argument", "缺少有效的分享識別碼。");
+  }
+
+  const reference = db.collection("follow_up_summary_shares").doc(shareId);
+  const snapshot = await reference.get();
+  const authorization = authorizeShareRevocation({
+    document: snapshot.exists ? snapshot.data() : null,
+    ownerUid: request.auth.uid,
+  });
+  if (!authorization.ok) {
+    if (authorization.reason === "forbidden") {
+      throw new HttpsError("permission-denied", "你無權停止此分享。");
+    }
+    throw new HttpsError("not-found", "找不到此分享。");
+  }
+  if (authorization.alreadyRevoked) {
+    return { revoked: true, alreadyRevoked: true };
+  }
+
+  await reference.update({
+    revokedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return { revoked: true, alreadyRevoked: false };
+});
+
+exports.revokeFollowUpSummaryShare = onCall(async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError("unauthenticated", "請先登入後再停止分享。");
+  }
+  const token = String(request.data?.token || "").trim();
+  if (!token) throw new HttpsError("invalid-argument", "缺少分享 token。");
+  const reference = db.collection("follow_up_summary_shares").doc(hashToken(token));
+  const snapshot = await reference.get();
+  if (!snapshot.exists || snapshot.data()?.ownerUid !== request.auth.uid) {
+    throw new HttpsError("not-found", "找不到可停止的分享。");
+  }
+  await reference.update({
+    revokedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return { revoked: true };
+});
+
+exports.getFollowUpSummaryShare = onRequest(async (request, response) => {
+  response.set("Cache-Control", "no-store, max-age=0");
+  response.set("Access-Control-Allow-Origin", "*");
+  if (request.method === "OPTIONS") {
+    response.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+    response.status(204).send("");
+    return;
+  }
+  if (request.method !== "GET") {
+    response.status(405).json({ error: "method_not_allowed" });
+    return;
+  }
+  const token = String(request.query.token || "").trim();
+  if (!token) {
+    response.status(404).json({ error: "share_not_available" });
+    return;
+  }
+  const matches = await db
+    .collection("follow_up_summary_shares")
+    .where("tokenHash", "==", hashToken(token))
+    .limit(1)
+    .get();
+  const snapshot = matches.docs[0];
+  const result = validateShareDocument({
+    document: snapshot?.data() || null,
+    token,
+  });
+  if (!result.ok) {
+    response.status(result.reason === "expired" ? 410 : 404).json({
+      error: "share_not_available",
+    });
+    return;
+  }
+  response.status(200).json({
+    summary: result.summarySnapshot,
+    expiresAt: result.expiresAt.toISOString(),
+  });
+});
 
 exports.cleanupExpiredAiChatImages = onSchedule(
   {
@@ -579,6 +753,70 @@ const inneraChatSchema = {
       ],
     },
     requiresFixedSafetyUi: { type: "boolean" },
+  },
+};
+
+const followUpSummarySchema = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "keyChanges",
+    "discussionItems",
+    "userSharedNotes",
+    "dataLimitations",
+    "diaryHighlights",
+  ],
+  properties: {
+    keyChanges: {
+      type: "array",
+      minItems: 3,
+      maxItems: 5,
+      items: { type: "string", minLength: 1 },
+    },
+    discussionItems: {
+      type: "array",
+      minItems: 1,
+      maxItems: 5,
+      items: { type: "string", minLength: 1 },
+    },
+    userSharedNotes: {
+      type: "array",
+      items: { type: "string", minLength: 1 },
+    },
+    dataLimitations: {
+      type: "array",
+      items: { type: "string", minLength: 1 },
+    },
+    diaryHighlights: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["date", "category", "summary", "source"],
+        properties: {
+          date: { type: "string", minLength: 1 },
+          category: {
+            type: "string",
+            enum: ["life_event", "subjective_feeling", "sleep_note", "symptom_note", "share_with_doctor"],
+          },
+          summary: { type: "string", minLength: 1 },
+          source: { type: "string", enum: ["diary"] },
+        },
+      },
+    },
+  },
+};
+
+const followUpQuestionsSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["questions"],
+  properties: {
+    questions: {
+      type: "array",
+      maxItems: 4,
+      items: { type: "string" },
+    },
   },
 };
 
@@ -2504,6 +2742,7 @@ exports.generateInneraAiChat = onCall(
     });
     await usageTracker.start();
     let completion;
+    const completionAttempts = [];
 
     try {
       const apiKey = openAiApiKey.value();
@@ -2566,88 +2805,242 @@ exports.generateInneraAiChat = onCall(
       }
 
       const client = new OpenAI({ apiKey });
-      completion = await client.chat.completions.create({
+      const isDirectFollowUpSummary = isFollowUpSummaryRequest(mode, message);
+      const isDirectFollowUpQuestions = isFollowUpQuestionRequest(mode, message);
+      const completionMessages = [
+        {
+          role: "system",
+          content: [
+            "You are Innera AI, a mental-health record and reflection assistant.",
+            "Reply in Traditional Chinese with a gentle, respectful, non-judgmental tone.",
+            "You are not a doctor, therapist, or emergency service.",
+            "Do not diagnose, claim causation, recommend medication changes, or invent records.",
+            "When an image is provided, describe only what is visibly supported and clearly state uncertainty. Do not identify a person, diagnose from an image, or treat image interpretation as a confirmed medical fact.",
+            "Image-derived observations must never be added to recordDraft automatically. Only facts explicitly stated in the user's text may update the daily record; ask the user to confirm any image-derived detail first.",
+            "Medication records may contain Chinese product names and English generic names or active ingredients. When discussing a recorded medication, use nameEn and ingredientLines as the primary identification evidence, understand English ingredient names even when the user writes in Chinese, and explain in Traditional Chinese.",
+            "Clearly separate facts present in the user's medication record from general medication knowledge. If an ingredient is missing, ambiguous, misspelled, or unfamiliar, say that it cannot be identified reliably and suggest confirming the package, prescription, doctor, or pharmacist; never guess the ingredient, indication, interaction, side effect, or clinical effect.",
+            "Do not minimize self-harm, violence, or medical emergency risk.",
+            "Return only JSON with reply, followUpQuestion, sources, suggestedActions, recordDraft, safetyLevel, requiresFixedSafetyUi.",
+            ...(supportsDailyRecordDraft
+              ? [
+                  "Daily record, emotional support, and physical health modes support the shared daily record. Update recordDraft only with facts the user explicitly states about today.",
+                  "Do not copy historical context, general questions, guesses, or assistant content into today's recordDraft.",
+                  "Outside dailyRecord mode, keep the selected mode's conversation goal primary and update recordDraft silently; do not change the topic or ask form-like questions just to complete the record.",
+                  `${DAILY_RECORD_CLASSIFICATION_PROMPT}\n正式情緒維度：${JSON.stringify(emotionDimensions)}`,
+                ]
+              : [
+                  "Recent review mode never reads, creates, or updates today's recordDraft. Return recordDraft as null.",
+                  "Focus on dailyRecordStats, recentDailyRecords, and recentDiaries across the supplied date range. Do not reduce the review to today only.",
+                  "When at least two distinct dates are available, cite cross-date evidence and summarize recurring patterns or changes. If the data covers only one day, state that a trend cannot be determined.",
+                  "For bedtime claims, sleepTimeStats and its bedtimeEvidence are authoritative. Never infer a late bedtime from fatigue, dreams, low sleep quality, sleep flags, wake time, or previous assistant messages.",
+                  "Only say that sleeping after midnight is frequent when sleepTimeStats.frequentAfterMidnightSleep is true. State afterMidnightSleepDays / validSleepTimeDays and relevant dates; otherwise do not describe the user as often or generally sleeping late.",
+                  "If a previous assistant claim conflicts with the supplied records or computed stats, correct it explicitly. Previous assistant text is conversation context, not record evidence.",
+                  "For emotion frequency claims, emotionStats is authoritative. A value of 4 or 5 is intensity on that date, not evidence that the emotion occurred frequently.",
+                  "Use emotionStats.emotions occurrenceDays, dates, and frequent fields. Only describe an emotion as frequent or dominant when its computed frequency supports that wording, and state the count. Prefer mostFrequentEmotions when summarizing the main emotions.",
+                ]),
+            "sources must only reuse the supplied contextSources without private text.",
+            "requiresFixedSafetyUi must be false unless an urgent risk needs emergency help.",
+            mode === "physicalHealth"
+              ? "Separate observations, missing information, what to keep recording, and when to seek care. Do not diagnose."
+              : mode === "recentReview"
+                ? "Separate record facts, possible relationships, and directions to notice. State the actual recorded-day count and covered period. Missing data does not mean an event did not occur."
+                : "Respond to emotions first. Ask at most one open question and encourage real-world support when appropriate.",
+          ].join("\n"),
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            mode,
+            context,
+            contextSources,
+            ...(supportsDailyRecordDraft
+              ? {
+                  recordDraft: existingRecordDraft,
+                  emotionDimensions,
+                }
+              : {}),
+          }),
+        },
+        ...safeHistory,
+        {
+          role: "user",
+          content: currentUserContent,
+        },
+      ];
+      const providerMessages = isDirectFollowUpSummary
+        ? [
+            ...completionMessages.slice(0, -1),
+            {
+              role: "user",
+              content:
+                `${currentUserContent}\n\n` +
+                "後端格式要求：直接回傳摘要 JSON 物件本身，不要建立 reply 欄位，" +
+                "不要 Markdown 或前後說明。頂層只能有 keyChanges、discussionItems、" +
+                "userSharedNotes、dataLimitations、diaryHighlights。" +
+                "discussionItems 必須把已選主題、discussionDetails 與補問回答整合成 1 至 5 項可直接給醫師閱讀的中性完整句；" +
+                "不得保留 Q/A、問題或回答標籤，不得逐字複製補問題目或原始回答；" +
+                "補問題目與原始回答僅供內部整理，不得放入 keyChanges、userSharedNotes 或 dataLimitations；" +
+                "症狀、睡眠、情緒與身體紀錄只能放在主要變化；" +
+                "不得輸出 timelineRelations，也不得讓主要變化逐字重複藥物調整時間軸；" +
+                "日記只可產生 diaryHighlights 候選；日記藥名不代表目前用藥，" +
+                "不得依日記診斷或判定躁期、鬱期，與結構化資料衝突時以結構化資料為準；" +
+                "userSharedNotes 只能忠實保留使用者自由補充原文，不得擴寫。" +
+                "主要變化不得重複睡眠卡已有的平均、最低、最高或事件天數；" +
+                "睡眠只在 App 提供的 comparison 有明顯增減時描述與前期相差多少。",
+            },
+          ]
+        : isDirectFollowUpQuestions
+          ? [
+              ...completionMessages.slice(0, -1),
+              {
+                role: "user",
+                content:
+                  `${currentUserContent}\n\n` +
+                  "後端格式要求：直接回傳 questions JSON 物件本身，不要建立 reply 欄位，" +
+                  "不要 Markdown 或前後說明。頂層只能有 questions。" +
+                  "只詢問結構化資料與使用者輸入中尚未回答、且會影響回診討論的重要缺漏；" +
+                  "有重要缺漏時提出 2 至 4 個簡短問題，沒有重要缺漏時才回傳空陣列。",
+              },
+            ]
+          : completionMessages;
+      const completionRequest = {
         model: DEFAULT_AI_MODEL,
         temperature: 0.55,
         response_format: {
           type: "json_schema",
           json_schema: {
-            name: "innera_chat_response",
+            name: isDirectFollowUpSummary
+              ? "follow_up_summary_response"
+              : isDirectFollowUpQuestions
+                ? "follow_up_questions_response"
+                : "innera_chat_response",
             strict: true,
-            schema: inneraChatSchema,
+            schema: isDirectFollowUpSummary
+              ? followUpSummarySchema
+              : isDirectFollowUpQuestions
+                ? followUpQuestionsSchema
+                : inneraChatSchema,
           },
         },
-        messages: [
-          {
-            role: "system",
-            content: [
-              "You are Innera AI, a mental-health record and reflection assistant.",
-              "Reply in Traditional Chinese with a gentle, respectful, non-judgmental tone.",
-              "You are not a doctor, therapist, or emergency service.",
-              "Do not diagnose, claim causation, recommend medication changes, or invent records.",
-              "When an image is provided, describe only what is visibly supported and clearly state uncertainty. Do not identify a person, diagnose from an image, or treat image interpretation as a confirmed medical fact.",
-              "Image-derived observations must never be added to recordDraft automatically. Only facts explicitly stated in the user's text may update the daily record; ask the user to confirm any image-derived detail first.",
-              "Medication records may contain Chinese product names and English generic names or active ingredients. When discussing a recorded medication, use nameEn and ingredientLines as the primary identification evidence, understand English ingredient names even when the user writes in Chinese, and explain in Traditional Chinese.",
-              "Clearly separate facts present in the user's medication record from general medication knowledge. If an ingredient is missing, ambiguous, misspelled, or unfamiliar, say that it cannot be identified reliably and suggest confirming the package, prescription, doctor, or pharmacist; never guess the ingredient, indication, interaction, side effect, or clinical effect.",
-              "Do not minimize self-harm, violence, or medical emergency risk.",
-              "Return only JSON with reply, followUpQuestion, sources, suggestedActions, recordDraft, safetyLevel, requiresFixedSafetyUi.",
-              ...(supportsDailyRecordDraft
-                ? [
-                    "Daily record, emotional support, and physical health modes support the shared daily record. Update recordDraft only with facts the user explicitly states about today.",
-                    "Do not copy historical context, general questions, guesses, or assistant content into today's recordDraft.",
-                    "Outside dailyRecord mode, keep the selected mode's conversation goal primary and update recordDraft silently; do not change the topic or ask form-like questions just to complete the record.",
-                    `${DAILY_RECORD_CLASSIFICATION_PROMPT}\n正式情緒維度：${JSON.stringify(emotionDimensions)}`,
-                  ]
-                : [
-                    "Recent review mode never reads, creates, or updates today's recordDraft. Return recordDraft as null.",
-                    "Focus on dailyRecordStats, recentDailyRecords, and recentDiaries across the supplied date range. Do not reduce the review to today only.",
-                    "When at least two distinct dates are available, cite cross-date evidence and summarize recurring patterns or changes. If the data covers only one day, state that a trend cannot be determined.",
-                    "For bedtime claims, sleepTimeStats and its bedtimeEvidence are authoritative. Never infer a late bedtime from fatigue, dreams, low sleep quality, sleep flags, wake time, or previous assistant messages.",
-                    "Only say that sleeping after midnight is frequent when sleepTimeStats.frequentAfterMidnightSleep is true. State afterMidnightSleepDays / validSleepTimeDays and relevant dates; otherwise do not describe the user as often or generally sleeping late.",
-                    "If a previous assistant claim conflicts with the supplied records or computed stats, correct it explicitly. Previous assistant text is conversation context, not record evidence.",
-                    "For emotion frequency claims, emotionStats is authoritative. A value of 4 or 5 is intensity on that date, not evidence that the emotion occurred frequently.",
-                    "Use emotionStats.emotions occurrenceDays, dates, and frequent fields. Only describe an emotion as frequent or dominant when its computed frequency supports that wording, and state the count. Prefer mostFrequentEmotions when summarizing the main emotions.",
-                  ]),
-              "sources must only reuse the supplied contextSources without private text.",
-              "requiresFixedSafetyUi must be false unless an urgent risk needs emergency help.",
-              mode === "physicalHealth"
-                  ? "Separate observations, missing information, what to keep recording, and when to seek care. Do not diagnose."
-                  : mode === "recentReview"
-                    ? "Separate record facts, possible relationships, and directions to notice. State the actual recorded-day count and covered period. Missing data does not mean an event did not occur."
-                    : "Respond to emotions first. Ask at most one open question and encourage real-world support when appropriate.",
-            ].join("\n"),
-          },
-          {
-            role: "user",
-            content: JSON.stringify({
-              mode,
-              context,
-              contextSources,
-              ...(supportsDailyRecordDraft
-                ? {
-                    recordDraft: existingRecordDraft,
-                    emotionDimensions,
-                  }
-                : {}),
-            }),
-          },
-          ...safeHistory,
-          {
-            role: "user",
-            content: currentUserContent,
-          },
-        ],
-      });
+        messages: providerMessages,
+      };
 
-      const rawText = String(completion.choices?.[0]?.message?.content || "").trim();
-      if (!rawText) {
-        throw new Error("Empty OpenAI response");
+      const parseCompletion = isDirectFollowUpSummary
+        ? parseFollowUpSummaryCompletion
+        : isDirectFollowUpQuestions
+          ? parseFollowUpQuestionsCompletion
+          : parseInneraChatCompletion;
+
+      completion = await client.chat.completions.create(completionRequest);
+      completionAttempts.push(completion);
+      let normalized = parseCompletion(completion);
+
+      if (!normalized.reply) {
+        console.warn("generateInneraAiChat retrying empty provider response", {
+          mode,
+          failure: normalized.failure,
+          ...normalized.diagnostics,
+        });
+        completion = await client.chat.completions.create({
+          ...completionRequest,
+          temperature: 0.2,
+          messages: [
+            providerMessages[0],
+            {
+              role: "system",
+              content:
+                isDirectFollowUpSummary
+                  ? "The previous response was empty or invalid. Return a complete direct follow-up summary object matching the JSON schema, with 3 to 5 non-empty keyChanges."
+                  : isDirectFollowUpQuestions
+                    ? "Return the direct follow-up questions JSON object matching the schema. Ask 2 to 4 short questions only when important information is missing; otherwise return an empty questions array."
+                    : "The previous provider response was empty or invalid. Return a complete response matching the JSON schema. reply must contain at least one non-whitespace character.",
+            },
+            ...providerMessages.slice(1),
+          ],
+        });
+        completionAttempts.push(completion);
+        normalized = parseCompletion(completion);
       }
-      const parsed = JSON.parse(stripMarkdownFence(rawText));
-      const reply = String(parsed.reply || "").trim().slice(0, 6000);
-      if (!reply) {
-        throw new Error("Missing AI reply");
+
+      if (normalized.reply && isFollowUpSummaryRequest(mode, message)) {
+        let summaryReply = normalizeFollowUpSummaryReply(normalized.reply);
+        if (!summaryReply.reply) {
+          console.warn("generateInneraAiChat retrying invalid follow-up summary", {
+            mode,
+            failure: summaryReply.failure,
+            attempts: completionAttempts.length,
+            ...normalized.diagnostics,
+          });
+          completion = await client.chat.completions.create({
+            ...completionRequest,
+            temperature: 0.2,
+            messages: [
+              completionMessages[0],
+              {
+                role: "system",
+                content:
+                  "The previous reply string was not a valid follow-up summary. " +
+                  "Return the direct follow-up summary JSON object with keyChanges (3 to 5 non-empty strings), discussionItems (1 to 5 concise clinician-readable sentences), userSharedNotes, dataLimitations, and diaryHighlights. Do not return Q/A labels, raw follow-up questions or raw answers. Do not return timelineRelations. Diary highlights are candidates only; diary medication mentions are not current medications and diary text must not be used for diagnosis. Health records must never be placed in userSharedNotes.",
+              },
+              ...completionMessages.slice(1),
+            ],
+          });
+          completionAttempts.push(completion);
+          normalized = parseCompletion(completion);
+          summaryReply = normalizeFollowUpSummaryReply(normalized.reply);
+        }
+
+        if (summaryReply.reply) {
+          normalized = {
+            ...normalized,
+            reply: summaryReply.reply,
+            parsed: {...normalized.parsed, reply: summaryReply.reply},
+            failure: null,
+          };
+        } else {
+          normalized = {
+            ...normalized,
+            reply: "",
+            failure: summaryReply.failure,
+          };
+        }
       }
+
+      if (!normalized.reply && isFollowUpQuestionRequest(mode, message)) {
+        console.warn("generateInneraAiChat using no-question fallback", {
+          mode,
+          failure: normalized.failure,
+          attempts: completionAttempts.length,
+          ...normalized.diagnostics,
+        });
+        normalized = {
+          ...normalized,
+          ...createNoFollowUpQuestionsResponse(),
+          failure: null,
+        };
+      }
+
+      if (!normalized.reply && isFollowUpSummaryRequest(mode, message)) {
+        console.warn("generateInneraAiChat using local-summary fallback", {
+          mode,
+          failure: normalized.failure,
+          attempts: completionAttempts.length,
+          ...normalized.diagnostics,
+        });
+        normalized = {
+          ...normalized,
+          ...createFollowUpSummaryFallbackResponse(),
+          failure: null,
+        };
+      }
+
+      if (!normalized.reply || !normalized.parsed) {
+        const failure = normalized.failure || "missing_reply";
+        throw new Error(`Invalid AI response: ${failure}`);
+      }
+
+      const parsed = normalized.parsed;
+      const reply = normalized.reply;
 
       const normalizedRecordDraft = supportsDailyRecordDraft
         ? normalizeInneraRecordDraft(
@@ -2666,6 +3059,7 @@ exports.generateInneraAiChat = onCall(
         normalizedRecordDraft.excludedEmotionTerms.some((term) =>
           rawFollowUpQuestion.includes(term),
         );
+      const usageCompletion = mergeCompletionUsage(completionAttempts);
       const result = {
         reply,
         followUpQuestion: asksExcludedEmotionScore ? "" : rawFollowUpQuestion,
@@ -2678,13 +3072,13 @@ exports.generateInneraAiChat = onCall(
         requiresFixedSafetyUi: false,
         model: DEFAULT_AI_MODEL,
         promptVersion: INNERA_AI_PROMPT_VERSION,
-        inputTokens: completion.usage?.prompt_tokens ?? null,
-        outputTokens: completion.usage?.completion_tokens ?? null,
+        inputTokens: usageCompletion?.usage?.prompt_tokens ?? null,
+        outputTokens: usageCompletion?.usage?.completion_tokens ?? null,
       };
-      await usageTracker.succeed(completion);
+      await usageTracker.succeed(usageCompletion);
       return result;
     } catch (error) {
-      await usageTracker.fail(error, completion);
+      await usageTracker.fail(error, mergeCompletionUsage(completionAttempts));
       console.error("generateInneraAiChat failed", {
         name: error?.name,
         message: error?.message,

@@ -12,6 +12,7 @@ import '../analytics_service.dart';
 import '../models/daily_record.dart';
 import 'widgets/night_awakening_editor.dart';
 import 'daily_state_dimensions.dart';
+import 'emotion_dimensions.dart';
 import 'symptom_definitions.dart';
 import 'body_measurement_input.dart';
 
@@ -74,7 +75,7 @@ class _EditRecordPageState extends State<EditRecordPage> {
       newSleep['hypnoticName'] = _hypNameCtrl.text.trim();
       newSleep['hypnoticDose'] = _hypDoseCtrl.text.trim();
 
-// 準備睡覺時間、推估入睡時間、起床時間
+// 準備睡覺、推估入睡、甦醒與離床活動時間
       if (_sleepTime != null) {
         newSleep['sleepTime'] = DateHelper.formatTime(_sleepTime);
       } else {
@@ -92,6 +93,12 @@ class _EditRecordPageState extends State<EditRecordPage> {
         newSleep['wakeTime'] = DateHelper.formatTime(_wakeTime);
       } else {
         newSleep.remove('wakeTime');
+      }
+
+      if (_finalWakeTime != null) {
+        newSleep['finalWakeTime'] = DateHelper.formatTime(_finalWakeTime);
+      } else {
+        newSleep.remove('finalWakeTime');
       }
 
       newSleep['nightAwakenings'] =
@@ -118,6 +125,8 @@ class _EditRecordPageState extends State<EditRecordPage> {
 // 最後再組 payload
       final payload = <String, dynamic>{
         'emotions': emotions,
+        'overallMood': _overallMood,
+        'moodScale': 5,
         'symptoms': symptoms.map(normalizeSymptomName).toSet().toList(),
         'stateChanges': stateChanges,
         'symptomSectionCompleted': true,
@@ -159,6 +168,7 @@ class _EditRecordPageState extends State<EditRecordPage> {
               .toSet()
               .toList(),
           sleep: newSleep,
+          moodScale: 5,
         );
         debugPrint('✅ 本地數據已保存');
       } catch (e) {
@@ -209,6 +219,7 @@ class _EditRecordPageState extends State<EditRecordPage> {
   TimeOfDay? _estimatedSleepTime;
   final List<NightAwakeningItem> _nightAwakenings = [];
   TimeOfDay? _wakeTime;
+  TimeOfDay? _finalWakeTime;
   int? _sleepQuality; // null 代表 '-'
   bool _tookHypnotic = false;
 
@@ -233,8 +244,13 @@ class _EditRecordPageState extends State<EditRecordPage> {
     // ===== 初始化：把每日紀錄的內容帶進來 =====
     final init = widget.initData;
 
+    final sourceMoodScale = (init['moodScale'] as num?)?.toInt() == 10 ? 10 : 5;
     emotions = ((init['emotions'] as List?) ?? const [])
         .map((e) => Map<String, dynamic>.from(e as Map))
+        .map((emotion) => {
+              ...emotion,
+              'value': _toFivePointValue(emotion['value'], sourceMoodScale),
+            })
         .toList();
 
     symptoms = ((init['symptoms'] as List?) ??
@@ -281,6 +297,7 @@ class _EditRecordPageState extends State<EditRecordPage> {
     _sleepTime = DateHelper.parseTime(sleep['sleepTime']);
     _estimatedSleepTime = DateHelper.parseTime(sleep['estimatedSleepTime']);
     _wakeTime = DateHelper.parseTime(sleep['wakeTime']);
+    _finalWakeTime = DateHelper.parseTime(sleep['finalWakeTime']);
     final savedSleepQuality = sleep['quality'];
     _sleepQuality = savedSleepQuality is num
         ? savedSleepQuality.round().clamp(1, 5).toInt()
@@ -306,6 +323,25 @@ class _EditRecordPageState extends State<EditRecordPage> {
       context: context,
       initialTime: initial ?? now,
     );
+  }
+
+  static int _toFivePointValue(dynamic value, int sourceScale) {
+    final score = value is num ? value.round() : 1;
+    if (sourceScale == 10) {
+      return ((score.clamp(1, 10) + 1) ~/ 2).clamp(1, 5);
+    }
+    return score.clamp(1, 5);
+  }
+
+  double? get _overallMood {
+    final values = emotions
+        .where((emotion) => emotion['name'] != '整體情緒')
+        .map((emotion) => emotion['value'])
+        .whereType<num>()
+        .map((value) => value.toDouble())
+        .toList();
+    if (values.isEmpty) return null;
+    return values.reduce((total, value) => total + value) / values.length;
   }
 
   Widget _buildNightAwakeningsEditor() {
@@ -494,11 +530,11 @@ class _EditRecordPageState extends State<EditRecordPage> {
                             color: HealingDesignSystem.adaptivePrimaryText(
                                 context))),
                     subtitle: Slider(
-                      value: ((m['value'] as num?)?.toDouble() ?? 1).clamp(
-                          1, widget.initData['moodScale'] == 10 ? 10 : 5),
+                      value:
+                          ((m['value'] as num?)?.toDouble() ?? 1).clamp(1, 5),
                       min: 1,
-                      max: widget.initData['moodScale'] == 10 ? 10 : 5,
-                      divisions: widget.initData['moodScale'] == 10 ? 9 : 4,
+                      max: 5,
+                      divisions: 4,
                       label: '${m['value'] ?? 1}',
                       activeColor: HealingDesignSystem.primaryBlue,
                       inactiveColor: HealingDesignSystem.lineColor,
@@ -521,42 +557,84 @@ class _EditRecordPageState extends State<EditRecordPage> {
             margin: const EdgeInsets.only(bottom: 18),
             decoration: HealingDesignSystem.adaptiveCardDecoration(context),
             child: ExpansionTile(
-              title: const Text('請和平常的自己相比'),
-              subtitle: const Text('3 分代表和平常差不多；未操作不會儲存'),
-              children: kDailyStateDimensions.map((dimension) {
-                final value = stateChanges[dimension.id];
-                return Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(children: [
-                        Expanded(child: Text(dimension.displayName)),
-                        if (value == null)
-                          const Text('尚未填寫')
-                        else
-                          TextButton(
-                            onPressed: () => setState(
-                                () => stateChanges.remove(dimension.id)),
-                            child: const Text('清除'),
-                          ),
-                      ]),
-                      Text(dimension.question),
-                      Slider(
-                        value: (value ?? 3).toDouble(),
-                        min: 1,
-                        max: 5,
-                        divisions: 4,
-                        label: value?.toString() ?? '尚未填寫',
-                        onChanged: (next) => setState(
-                          () => stateChanges[dimension.id] = next.round(),
-                        ),
-                      ),
-                    ],
+              title: const Text('今天的狀態變化'),
+              subtitle: const Text('選填・請和平常的自己相比'),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: Text(
+                    '請和平常的自己相比。3 分代表和平常差不多，越靠左代表降低，越靠右代表增加；未操作不會儲存。',
+                    style: HealingDesignSystem.bodySmall.copyWith(
+                      color: HealingDesignSystem.adaptiveSecondaryText(context),
+                    ),
                   ),
-                );
-              }).toList(),
+                ),
+                ...kDailyStateDimensions.map((dimension) {
+                  final value = stateChanges[dimension.id];
+                  return Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [
+                          Expanded(child: Text(dimension.displayName)),
+                          if (value == null)
+                            const Text('尚未填寫')
+                          else
+                            TextButton(
+                              onPressed: () => setState(
+                                  () => stateChanges.remove(dimension.id)),
+                              child: const Text('清除'),
+                            ),
+                        ]),
+                        Text(dimension.question),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                dimension.lowLabel,
+                                textAlign: TextAlign.left,
+                              ),
+                            ),
+                            Expanded(
+                              child: Text(
+                                dimension.middleLabel,
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                            Expanded(
+                              child: Text(
+                                dimension.highLabel,
+                                textAlign: TextAlign.right,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Slider(
+                          value: (value ?? 3).toDouble(),
+                          min: 1,
+                          max: 5,
+                          divisions: 4,
+                          label: value == null
+                              ? '尚未填寫'
+                              : '$value：${dailyStateValueLabel(dimension, value)}',
+                          onChanged: (next) => setState(
+                            () => stateChanges[dimension.id] = next.round(),
+                          ),
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children:
+                              List.generate(5, (index) => Text('${index + 1}')),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                    ),
+                  );
+                }),
+              ],
             ),
           ),
 
@@ -625,7 +703,7 @@ class _EditRecordPageState extends State<EditRecordPage> {
                           color: HealingDesignSystem.adaptivePrimaryText(
                               context))),
                   value: _tookHypnotic,
-                  activeColor: HealingDesignSystem.primaryBlue,
+                  activeThumbColor: HealingDesignSystem.primaryBlue,
                   onChanged: (v) => setState(() => _tookHypnotic = v),
                   contentPadding: EdgeInsets.zero,
                 ),
@@ -664,7 +742,21 @@ class _EditRecordPageState extends State<EditRecordPage> {
                 ),
                 _buildNightAwakeningsEditor(),
                 ListTile(
-                  title: Text('起床時間',
+                  title: Text('甦醒時刻（睜開眼）',
+                      style: HealingDesignSystem.bodyMedium.copyWith(
+                          color: HealingDesignSystem.adaptivePrimaryText(
+                              context))),
+                  trailing: Text(DateHelper.formatTime(_finalWakeTime),
+                      style: HealingDesignSystem.bodyMedium.copyWith(
+                          color: HealingDesignSystem.adaptivePrimaryText(
+                              context))),
+                  onTap: () async {
+                    final t = await _pickTime(_finalWakeTime);
+                    if (t != null) setState(() => _finalWakeTime = t);
+                  },
+                ),
+                ListTile(
+                  title: Text('離床活動時間',
                       style: HealingDesignSystem.bodyMedium.copyWith(
                           color: HealingDesignSystem.adaptivePrimaryText(
                               context))),
@@ -714,7 +806,7 @@ class _EditRecordPageState extends State<EditRecordPage> {
                                   context))),
                       selected: selected,
                       selectedColor: HealingDesignSystem.adaptiveAccent(context)
-                          .withOpacity(0.22),
+                          .withValues(alpha: 0.22),
                       checkmarkColor:
                           HealingDesignSystem.adaptiveAccent(context),
                       backgroundColor:
@@ -758,52 +850,6 @@ class _EditRecordPageState extends State<EditRecordPage> {
                     if (v != null) setState(() => sleep['note'] = v);
                   },
                 ),
-              ],
-            ),
-          ),
-
-          const Divider(height: 32),
-
-          _sectionHeader('身體數據（選填）'),
-          Container(
-            margin: const EdgeInsets.only(bottom: 18),
-            padding: const EdgeInsets.all(12),
-            decoration: HealingDesignSystem.adaptiveCardDecoration(context),
-            child: ExpansionTile(
-              initiallyExpanded: _initialBodyMeasurement?.hasData == true,
-              title: const Text('今天實際測量的數字'),
-              children: [
-                _measurementField(_weightCtrl, '體重', 'kg', 20, 300),
-                _measurementField(_bodyFatCtrl, '體脂率', '%', 1, 70),
-                _measurementField(_waistCtrl, '腰圍', 'cm', 30, 250),
-                DropdownButtonFormField<MeasurementTiming?>(
-                  value: _measurementTiming,
-                  decoration: const InputDecoration(labelText: '測量時間'),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('尚未填寫')),
-                    ...MeasurementTiming.values.map((value) => DropdownMenuItem(
-                          value: value,
-                          child: Text(value.displayName),
-                        )),
-                  ],
-                  onChanged: (value) => setState(() {
-                    _measurementTiming = value;
-                    if (value != MeasurementTiming.other) {
-                      _customMeasurementTimeCtrl.clear();
-                    }
-                  }),
-                ),
-                if (_measurementTiming == MeasurementTiming.other)
-                  TextFormField(
-                    controller: _customMeasurementTimeCtrl,
-                    decoration: const InputDecoration(
-                      labelText: '自訂測量時間',
-                      hintText: '例如：運動後、下午三點',
-                    ),
-                    autovalidateMode: AutovalidateMode.onUserInteraction,
-                    validator: (value) =>
-                        value?.trim().isEmpty == false ? null : '選擇其他時間時請填寫',
-                  ),
               ],
             ),
           ),
@@ -862,6 +908,52 @@ class _EditRecordPageState extends State<EditRecordPage> {
                     onTap: () => _editNap(idx),
                   );
                 }).toList()),
+              ],
+            ),
+          ),
+
+          const Divider(height: 32),
+
+          _sectionHeader('身體數據（選填）'),
+          Container(
+            margin: const EdgeInsets.only(bottom: 18),
+            padding: const EdgeInsets.all(12),
+            decoration: HealingDesignSystem.adaptiveCardDecoration(context),
+            child: ExpansionTile(
+              initiallyExpanded: _initialBodyMeasurement?.hasData == true,
+              title: const Text('今天實際測量的數字'),
+              children: [
+                _measurementField(_weightCtrl, '體重', 'kg', 20, 300),
+                _measurementField(_bodyFatCtrl, '體脂率', '%', 1, 70),
+                _measurementField(_waistCtrl, '腰圍', 'cm', 30, 250),
+                DropdownButtonFormField<MeasurementTiming?>(
+                  initialValue: _measurementTiming,
+                  decoration: const InputDecoration(labelText: '測量時間'),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('尚未填寫')),
+                    ...MeasurementTiming.values.map((value) => DropdownMenuItem(
+                          value: value,
+                          child: Text(value.displayName),
+                        )),
+                  ],
+                  onChanged: (value) => setState(() {
+                    _measurementTiming = value;
+                    if (value != MeasurementTiming.other) {
+                      _customMeasurementTimeCtrl.clear();
+                    }
+                  }),
+                ),
+                if (_measurementTiming == MeasurementTiming.other)
+                  TextFormField(
+                    controller: _customMeasurementTimeCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '自訂測量時間',
+                      hintText: '例如：運動後、下午三點',
+                    ),
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
+                    validator: (value) =>
+                        value?.trim().isEmpty == false ? null : '選擇其他時間時請填寫',
+                  ),
               ],
             ),
           ),
@@ -950,82 +1042,165 @@ class _EditRecordPageState extends State<EditRecordPage> {
 
   // ====== 互動：新增 / 編輯 ======
   Future<void> _addEmotion() async {
-    String name = '';
-    double value = 5;
-    final ok = await showDialog<bool>(
+    final existingNames = emotions
+        .map((emotion) => emotion['name']?.toString())
+        .whereType<String>()
+        .toSet();
+    final selectedNames = <String>{};
+    final additions = await showDialog<Set<String>>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('新增情緒'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              decoration: const InputDecoration(
-                labelText: '名稱',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-              onChanged: (v) => name = v.trim(),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('選擇情緒'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: kEmotionCheckboxCategories.entries.map((category) {
+                return ExpansionTile(
+                  title: Text(category.key),
+                  initiallyExpanded: category.key == '喜悅',
+                  children: category.value.map((name) {
+                    final alreadyAdded = existingNames.contains(name);
+                    return CheckboxListTile(
+                      dense: true,
+                      title: Text(name),
+                      value: alreadyAdded || selectedNames.contains(name),
+                      onChanged: alreadyAdded
+                          ? null
+                          : (selected) => setDialogState(() {
+                                if (selected == true) {
+                                  selectedNames.add(name);
+                                } else {
+                                  selectedNames.remove(name);
+                                }
+                              }),
+                    );
+                  }).toList(),
+                );
+              }).toList(),
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Text('強度 0-10'),
-                Expanded(
-                  child: Slider(
-                    value: value,
-                    min: 0,
-                    max: 10,
-                    divisions: 10,
-                    label: value.round().toString(),
-                    onChanged: (v) => setState(() => value = v),
-                  ),
-                ),
-              ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: selectedNames.isEmpty
+                  ? null
+                  : () => Navigator.pop(dialogContext, selectedNames),
+              child: const Text('加入'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('加入')),
-        ],
       ),
     );
-    if (ok == true && name.isNotEmpty) {
-      setState(() => emotions.add({'name': name, 'value': value.round()}));
+    if (additions != null && additions.isNotEmpty) {
+      setState(() {
+        emotions.addAll(
+          kEmotionCheckboxNames
+              .where(additions.contains)
+              .map((name) => <String, dynamic>{'name': name, 'value': 3}),
+        );
+      });
     }
   }
 
   Future<void> _addSymptom() async {
-    String s = '';
-    final ok = await showDialog<bool>(
+    final existingNames = symptoms.map(normalizeSymptomName).toSet();
+    final selectedNames = <String>{};
+    var customName = '';
+    final additions = await showDialog<List<String>>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('新增症狀'),
-        content: TextField(
-          decoration: const InputDecoration(
-            labelText: '症狀',
-            border: OutlineInputBorder(),
-            isDense: true,
-          ),
-          onChanged: (v) => s = v.trim(),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('加入')),
-        ],
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final normalizedCustom = normalizeSymptomName(customName);
+          final canAddCustom = normalizedCustom.isNotEmpty &&
+              !existingNames.contains(normalizedCustom);
+          final canSubmit = selectedNames.isNotEmpty || canAddCustom;
+
+          return AlertDialog(
+            title: const Text('選擇或新增症狀'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  ...kSymptomCategories.entries.map((category) {
+                    return ExpansionTile(
+                      title: Text(category.key),
+                      initiallyExpanded: category.key == '心血管與呼吸',
+                      children: category.value.map((name) {
+                        final alreadyAdded = existingNames.contains(name);
+                        return CheckboxListTile(
+                          dense: true,
+                          title: Text(name),
+                          value: alreadyAdded || selectedNames.contains(name),
+                          onChanged: alreadyAdded
+                              ? null
+                              : (selected) => setDialogState(() {
+                                    if (selected == true) {
+                                      selectedNames.add(name);
+                                    } else {
+                                      selectedNames.remove(name);
+                                    }
+                                  }),
+                        );
+                      }).toList(),
+                    );
+                  }),
+                  const SizedBox(height: 12),
+                  TextField(
+                    decoration: const InputDecoration(
+                      labelText: '自訂症狀（選填）',
+                      hintText: '輸入清單中沒有的症狀',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (value) => setDialogState(
+                      () => customName = value.trim(),
+                    ),
+                  ),
+                  if (customName.isNotEmpty && !canAddCustom)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 6),
+                      child: Text('這個症狀已經在紀錄中'),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: canSubmit
+                    ? () {
+                        final result = <String>[
+                          ...kSymptomCategories.values
+                              .expand((items) => items)
+                              .where(selectedNames.contains),
+                          if (canAddCustom) normalizedCustom,
+                        ];
+                        Navigator.pop(dialogContext, result);
+                      }
+                    : null,
+                child: const Text('加入'),
+              ),
+            ],
+          );
+        },
       ),
     );
-    if (ok == true && s.isNotEmpty) {
-      setState(() => symptoms.add(s));
+    if (additions != null && additions.isNotEmpty) {
+      setState(() {
+        symptoms = {
+          ...symptoms.map(normalizeSymptomName),
+          ...additions.map(normalizeSymptomName),
+        }.toList();
+      });
     }
   }
 

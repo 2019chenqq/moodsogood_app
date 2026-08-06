@@ -35,7 +35,12 @@ void logAiCallableFailure({
 String aiCallableErrorMessage(
   FirebaseFunctionsException error, {
   required String functionName,
+  required bool isSignedIn,
 }) {
+  if (_looksLikeAppCheckTokenFailure(error)) {
+    return 'App Check Token 取得失敗，請稍候再試；若持續發生，請完整關閉並重新啟動 App。';
+  }
+
   switch (error.code) {
     case 'not-found':
       return functionName == AiCallableEndpoints.diaryDraft
@@ -44,9 +49,13 @@ String aiCallableErrorMessage(
     case 'unavailable':
       return '目前無法連線到 AI 服務，可能是網路或 Firebase Functions 暫時不可用，請稍後再試。';
     case 'unauthenticated':
-      return '登入狀態已失效，請重新登入後再試。';
+      return isSignedIn
+          ? 'App Check 驗證失敗，請確認使用最新版 App，並稍候再試。'
+          : '目前尚未登入，請先登入後再使用 AI。';
     case 'permission-denied':
-      return 'AI 服務拒絕此請求，請確認帳號權限與 Firebase App Check 設定。';
+      return _looksLikeAppCheckRejection(error)
+          ? 'App Check 驗證失敗，請確認使用最新版 App，並稍候再試。'
+          : 'AI 服務拒絕此請求，請確認帳號權限。';
     case 'deadline-exceeded':
       return 'AI 回應逾時，請稍後再試；目前草稿已保留。';
     case 'resource-exhausted':
@@ -66,6 +75,49 @@ String aiCallableErrorMessage(
     default:
       return 'AI 服務發生錯誤（${error.code}），請稍後再試；目前草稿已保留。';
   }
+}
+
+bool _looksLikeAppCheckTokenFailure(FirebaseFunctionsException error) {
+  return _looksLikeAppCheckTokenFailureText(
+    '${error.code} ${error.message ?? ''} ${error.details ?? ''}',
+  );
+}
+
+String aiFirebaseErrorMessage(
+  FirebaseException error, {
+  required bool isSignedIn,
+}) {
+  final text = '${error.plugin} ${error.code} ${error.message ?? ''}';
+  if (_looksLikeAppCheckTokenFailureText(text)) {
+    return 'App Check Token 取得失敗，請稍候再試；若持續發生，請完整關閉並重新啟動 App。';
+  }
+  if (error.code == 'unauthenticated') {
+    return isSignedIn
+        ? 'App Check 驗證失敗，請確認使用最新版 App，並稍候再試。'
+        : '目前尚未登入，請先登入後再使用 AI。';
+  }
+  return 'Firebase 服務暫時發生錯誤（${error.code}），請稍後再試。';
+}
+
+bool _looksLikeAppCheckTokenFailureText(String value) {
+  final text = value.toLowerCase();
+  return const <String>[
+    'too many attempts',
+    'too-many-attempts',
+    'too many requests',
+    'too-many-requests',
+    'failed to get app check token',
+    'failed to fetch app check token',
+    'token exchange failed',
+    'token retrieval failed',
+  ].any(text.contains);
+}
+
+bool _looksLikeAppCheckRejection(FirebaseFunctionsException error) {
+  final text = '${error.message ?? ''} ${error.details ?? ''}'.toLowerCase();
+  return text.contains('app check') ||
+      text.contains('appcheck') ||
+      text.contains('attestation');
 }
 
 String _safeDetails(dynamic value, {int depth = 0}) {

@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../daily/daily_state_dimensions.dart';
 import '../daily/emotion_trend_calculator.dart';
+import '../daily/symptom_definitions.dart';
+import '../utils/sleep_record_parser.dart';
 
 const meaningfulAdjustmentTypes = <String>{
   'added',
@@ -499,6 +501,14 @@ class DailyRecordAggregate {
 class DailyRecordAggregator {
   const DailyRecordAggregator._();
 
+  /// Parses the symptom formats used by both current and legacy daily
+  /// records. This is intentionally data-only and contains no medication
+  /// causality or before/after interpretation.
+  static Map<String, double?> symptomValues(Map<String, dynamic> data) =>
+      _symptoms(
+        data['symptoms'] ?? data['bodySymptoms'] ?? data['symptomScores'],
+      );
+
   static DailyRecordAggregate aggregate(
       Iterable<Map<String, dynamic>> records) {
     final symptomDays = <String, int>{};
@@ -579,9 +589,7 @@ class DailyRecordAggregator {
 
       if (hasSymptoms) {
         symptomRecorded++;
-        final values = _symptoms(
-          data['symptoms'] ?? data['bodySymptoms'] ?? data['symptomScores'],
-        );
+        final values = symptomValues(data);
         for (final entry in values.entries) {
           symptomDays[entry.key] = (symptomDays[entry.key] ?? 0) + 1;
           if (entry.value != null) {
@@ -616,7 +624,10 @@ class DailyRecordAggregator {
         }
         final sleep = data['sleep'];
         if (sleep is Map) {
-          final quality = _number(sleep['quality'] ?? sleep['sleepQuality']);
+          final quality = SleepRecordParser.quality(
+            sleep.cast<String, dynamic>(),
+            record: data,
+          )?.toDouble();
           if (quality != null) {
             stateScores.putIfAbsent('睡眠品質', () => []).add(quality);
             final counts = stateStatus == SectionRecordStatus.completed
@@ -703,9 +714,7 @@ class DailyRecordAggregator {
         data,
         const ['symptomSectionCompleted', 'symptomsCompleted'],
       ) ??
-      (_symptoms(
-        data['symptoms'] ?? data['bodySymptoms'] ?? data['symptomScores'],
-      ).isNotEmpty
+      (symptomValues(data).isNotEmpty
           ? SectionRecordStatus.legacyInferred
           : SectionRecordStatus.notCompleted);
 
@@ -737,8 +746,10 @@ class DailyRecordAggregator {
 
   static double? _sleepQuality(Map<String, dynamic> data) {
     final sleep = data['sleep'];
-    if (sleep is! Map) return null;
-    return _number(sleep['quality'] ?? sleep['sleepQuality']);
+    return SleepRecordParser.quality(
+      sleep is Map ? sleep.cast<String, dynamic>() : null,
+      record: data,
+    )?.toDouble();
   }
 
   static bool _hasMeaningfulContent(dynamic value) {
@@ -761,12 +772,14 @@ class DailyRecordAggregator {
     if (raw is List) {
       for (final item in raw) {
         if (item is String) {
-          final name = item.trim();
+          final name = normalizeSymptomName(item.trim());
           if (name.isNotEmpty) result[name] = null;
         } else if (item is Map) {
-          final name = (item['name'] ?? item['title'] ?? item['symptom'] ?? '')
-              .toString()
-              .trim();
+          final name = normalizeSymptomName(
+            (item['name'] ?? item['title'] ?? item['symptom'] ?? '')
+                .toString()
+                .trim(),
+          );
           final value = item['score'] ?? item['value'] ?? item['intensity'];
           if (name.isNotEmpty && _isPresent(value, missingMeansPresent: true)) {
             result[name] = _positiveNumber(value);
@@ -775,7 +788,7 @@ class DailyRecordAggregator {
       }
     } else if (raw is Map) {
       raw.forEach((key, value) {
-        final name = key.toString().trim();
+        final name = normalizeSymptomName(key.toString().trim());
         if (name.isNotEmpty && _isPresent(value)) {
           result[name] = _positiveNumber(value);
         }
