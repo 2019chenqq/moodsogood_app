@@ -554,8 +554,7 @@ class FollowUpSummaryRecord {
           options.medicationAdjustments ? medicationTimeline : const [],
       'highFrequencySymptoms':
           options.emotionsAndSymptoms ? highFrequencySymptoms : const [],
-      'bodyMeasurements':
-          options.emotionsAndSymptoms ? bodyMeasurements : const [],
+      'bodyMeasurements': options.bodyMeasurements ? bodyMeasurements : const [],
       'schemaVersion': schemaVersion,
       'display': display.toJson(),
     };
@@ -734,6 +733,42 @@ class FollowUpSummaryTextFormatter {
           .where((item) => !isQuestionAnswerTranscript(item))
           .toList(growable: false);
 
+  static List<String> preserveUserEnteredNotes(
+    Iterable<String> preservedValues, {
+    Iterable<String> derivedValues = const [],
+  }) {
+    final seen = <String>{};
+    final items = <String>[];
+
+    void append(
+      Iterable<String> values, {
+      required bool filterQuestionAnswerTranscript,
+    }) {
+      for (final item in values
+          .expand((value) => value.split(RegExp(r'[\r\n]+')))
+          .map(sentence)
+          .where((item) => item.isNotEmpty)) {
+        if (filterQuestionAnswerTranscript &&
+            isQuestionAnswerTranscript(item)) {
+          continue;
+        }
+        if (seen.add(comparisonKey(item))) {
+          items.add(item);
+        }
+      }
+    }
+
+    append(
+      preservedValues,
+      filterQuestionAnswerTranscript: false,
+    );
+    append(
+      derivedValues,
+      filterQuestionAnswerTranscript: true,
+    );
+    return items;
+  }
+
   static List<String> safeDiscussionItems(Iterable<String> values) =>
       withoutQuestionAnswerTranscripts(values).take(5).toList(growable: false);
 }
@@ -746,6 +781,7 @@ class FollowUpSummaryShareOptions {
     required this.medicationAdjustments,
     required this.lifeUpdates,
     required this.dataLimitations,
+    required this.bodyMeasurements,
   });
 
   static const none = FollowUpSummaryShareOptions(
@@ -755,6 +791,7 @@ class FollowUpSummaryShareOptions {
     medicationAdjustments: false,
     lifeUpdates: false,
     dataLimitations: false,
+    bodyMeasurements: false,
   );
   static const all = FollowUpSummaryShareOptions(
     discussionTopics: true,
@@ -763,6 +800,7 @@ class FollowUpSummaryShareOptions {
     medicationAdjustments: true,
     lifeUpdates: true,
     dataLimitations: true,
+    bodyMeasurements: true,
   );
 
   final bool discussionTopics;
@@ -771,6 +809,7 @@ class FollowUpSummaryShareOptions {
   final bool medicationAdjustments;
   final bool lifeUpdates;
   final bool dataLimitations;
+  final bool bodyMeasurements;
 
   bool get hasSelection =>
       discussionTopics ||
@@ -778,7 +817,8 @@ class FollowUpSummaryShareOptions {
       emotionsAndSymptoms ||
       medicationAdjustments ||
       lifeUpdates ||
-      dataLimitations;
+      dataLimitations ||
+      bodyMeasurements;
 
   FollowUpSummaryShareOptions copyWith({
     bool? discussionTopics,
@@ -787,6 +827,7 @@ class FollowUpSummaryShareOptions {
     bool? medicationAdjustments,
     bool? lifeUpdates,
     bool? dataLimitations,
+    bool? bodyMeasurements,
   }) =>
       FollowUpSummaryShareOptions(
         discussionTopics: discussionTopics ?? this.discussionTopics,
@@ -796,6 +837,7 @@ class FollowUpSummaryShareOptions {
             medicationAdjustments ?? this.medicationAdjustments,
         lifeUpdates: lifeUpdates ?? this.lifeUpdates,
         dataLimitations: dataLimitations ?? this.dataLimitations,
+        bodyMeasurements: bodyMeasurements ?? this.bodyMeasurements,
       );
 }
 
@@ -806,7 +848,8 @@ class FollowUpSummaryDisplayModel {
     required this.discussionItems,
     required this.keyChanges,
     required this.timelineRelations,
-    required this.symptomAndBodyChanges,
+    required this.symptoms,
+    required this.bodyMeasurements,
     required this.userSharedNotes,
     required this.sleepSummaryItems,
     required this.sleepTrend,
@@ -821,7 +864,8 @@ class FollowUpSummaryDisplayModel {
   final List<String> discussionItems;
   final List<String> keyChanges;
   final List<String> timelineRelations;
-  final List<String> symptomAndBodyChanges;
+  final List<String> symptoms;
+  final List<String> bodyMeasurements;
   final List<String> userSharedNotes;
   final List<String> sleepSummaryItems;
   final List<Map<String, dynamic>> sleepTrend;
@@ -842,14 +886,18 @@ class FollowUpSummaryDisplayModel {
     final legacy = output.userSharedNotes.isEmpty
         ? output.userReportedConcerns
         : const <String>[];
-    final notes = <String>[
-      if (record.additionalNotes.trim().isNotEmpty) record.additionalNotes,
-      ...output.userSharedNotes,
-      ...output.diaryHighlights.map(_formatDiaryHighlight),
-      ...legacy.where((item) =>
-          FollowUpSummaryTextFormatter.comparisonKey(item) ==
-          FollowUpSummaryTextFormatter.comparisonKey(record.additionalNotes)),
-    ];
+    final notes = FollowUpSummaryTextFormatter.preserveUserEnteredNotes(
+      [
+        if (record.additionalNotes.trim().isNotEmpty) record.additionalNotes,
+      ],
+      derivedValues: [
+        ...output.userSharedNotes,
+        ...output.diaryHighlights.map(_formatDiaryHighlight),
+        ...legacy.where((item) =>
+            FollowUpSummaryTextFormatter.comparisonKey(item) ==
+            FollowUpSummaryTextFormatter.comparisonKey(record.additionalNotes)),
+      ],
+    );
     final movedLegacy = legacy.where((item) {
       final key = FollowUpSummaryTextFormatter.comparisonKey(item);
       return key.isNotEmpty &&
@@ -862,37 +910,37 @@ class FollowUpSummaryDisplayModel {
     });
     return FollowUpSummaryDisplayModel(
       visitInfo: [
-        if (record.appointmentDate != null)
-          '回診日期：${_displayDate(record.appointmentDate!)}',
         '統計期間：${_displayDate(record.periodStart)}～${_displayDate(record.periodEnd)}',
         '有效紀錄天數：${record.validRecordDays} 天',
       ],
       topicLabels: options.discussionTopics ? labels : const [],
       discussionItems: options.discussionTopics
-          ? FollowUpSummaryTextFormatter.safeDiscussionItems(
-              output.discussionItems.isNotEmpty
-                  ? output.discussionItems
-                  : [
-                      if (record.discussionDetails.trim().isNotEmpty)
-                        record.discussionDetails,
-                      ...output.discussionPriorities,
-                    ],
-            )
+          ? FollowUpSummaryTextFormatter.safeDiscussionItems([
+              if (record.discussionDetails.trim().isNotEmpty)
+                record.discussionDetails,
+              ...output.discussionItems,
+              ...output.discussionPriorities,
+            ])
           : const [],
       keyChanges: options.emotionsAndSymptoms
           ? _withoutMedicationTimelineDuplicates(
               record,
-              _keyChangeItems(record, [...output.keyChanges, ...movedLegacy]),
+              _keyChangeItems(
+                record,
+                source: [...output.keyChanges, ...movedLegacy],
+                includeBodyMeasurements: options.bodyMeasurements,
+              ),
             ).take(5).toList(growable: false)
           : const [],
       // Kept in the view model only for wire compatibility. Renderers must
       // ignore legacy timeline relations.
       timelineRelations: const [],
-      symptomAndBodyChanges:
-          options.emotionsAndSymptoms ? _symptomAndBodyItems(record) : const [],
-      userSharedNotes: options.lifeUpdates
-          ? FollowUpSummaryTextFormatter.withoutQuestionAnswerTranscripts(notes)
+      symptoms: options.emotionsAndSymptoms
+          ? _symptomItems(record)
           : const [],
+      bodyMeasurements:
+          options.bodyMeasurements ? _bodyMeasurementItems(record) : const [],
+      userSharedNotes: options.lifeUpdates ? notes : const [],
       sleepSummaryItems: options.sleep
           ? _sleepSummaryItems(
               record.sleepSummary,
@@ -918,6 +966,7 @@ class FollowUpSummaryDisplayModel {
         if (options.medicationAdjustments) 'medicationAdjustments',
         if (options.lifeUpdates) 'lifeUpdates',
         if (options.dataLimitations) 'dataLimitations',
+        if (options.bodyMeasurements) 'bodyMeasurements',
       ],
     );
   }
@@ -929,7 +978,8 @@ class FollowUpSummaryDisplayModel {
         'discussionItems': discussionItems,
         'keyChanges': keyChanges,
         'timelineRelations': timelineRelations,
-        'symptomAndBodyChanges': symptomAndBodyChanges,
+        'symptoms': symptoms,
+        'bodyMeasurements': bodyMeasurements,
         'userSharedNotes': userSharedNotes,
         'sleepSummaryItems': sleepSummaryItems,
         'sleepTrend': sleepTrend,
@@ -941,11 +991,20 @@ class FollowUpSummaryDisplayModel {
       };
 
   static List<String> _keyChangeItems(
-    FollowUpSummaryRecord record,
-    List<String> source,
-  ) {
+    FollowUpSummaryRecord record, {
+    required List<String> source,
+    bool includeBodyMeasurements = true,
+  }) {
     final duration = _map(record.sleepSummary['durationHours']);
-    final values = source.where((item) => !item.contains('睡眠')).toList();
+    var values = source.where((item) => !item.contains('睡眠')).toList();
+    
+    // Always filter out body measurement values from key changes
+    // Actual values should never appear in keyChanges, only in bodyMeasurements
+    values = values.where((item) {
+      // Remove items that contain body measurement data with actual values
+      return !_isBodyMeasurementWithValues(item);
+    }).toList();
+    
     final comparison = _map(duration['comparison']);
     final change = comparison['change'] is num
         ? comparison['change'] as num
@@ -958,6 +1017,23 @@ class FollowUpSummaryDisplayModel {
     return FollowUpSummaryTextFormatter.withoutQuestionAnswerTranscripts(
       values,
     );
+  }
+  
+  static bool _isBodyMeasurementWithValues(String text) {
+    // Check if the text contains body measurement patterns with actual values
+    // Patterns like: "體重：75kg → 74.5kg" or "體重從 75kg 變化到 74.5kg"
+    final bodyMeasurementPattern = RegExp(
+      r'(體重|體脂率|腰圍|body\s*weight|body\s*fat|waist)',
+      caseSensitive: false,
+    );
+    
+    if (!bodyMeasurementPattern.hasMatch(text)) {
+      return false;
+    }
+    
+    // If it mentions body measurement, check if it has actual numeric values
+    final hasNumbers = RegExp(r'\d+\.?\d*\s*(kg|%|cm|公斤|公分|百分比)').hasMatch(text);
+    return hasNumbers;
   }
 
   static List<String> _withoutMedicationTimelineDuplicates(
@@ -1012,7 +1088,7 @@ class FollowUpSummaryDisplayModel {
         sleepTrend: sleepTrend,
       ).displayItems;
 
-  static List<String> _symptomAndBodyItems(FollowUpSummaryRecord record) {
+  static List<String> _symptomItems(FollowUpSummaryRecord record) {
     String compact(dynamic value) {
       final number = value is num
           ? value.toDouble()
@@ -1023,78 +1099,105 @@ class FollowUpSummaryDisplayModel {
           : number.toStringAsFixed(1);
     }
 
-    return FollowUpSummaryTextFormatter.sentences([
-      ...record.highFrequencySymptoms.map((symptom) {
-        final name = symptom['name']?.toString().trim() ?? '';
-        final days = (symptom['occurrenceDays'] as num?)?.toInt();
-        final severity = symptom['averageSeverity'];
-        return [
-          name,
-          if (days != null) '出現 $days 天',
-          if (severity is num) '平均程度 ${compact(severity)}',
-        ].where((part) => part.isNotEmpty).join('，');
-      }),
-      ...record.bodyMeasurements.map((measurement) {
-        final name = measurement['name']?.toString().trim() ?? '';
-        final unit = measurement['unit']?.toString().trim() ?? '';
-        final start = compact(measurement['startValue']);
-        final latest = compact(measurement['latestValue']);
-        final change = compact(measurement['change']);
-        if (name.isEmpty || start.isEmpty || latest.isEmpty) return '';
-        return '$name：$start$unit → $latest$unit'
-            '${change.isEmpty ? '' : '（差值 $change$unit）'}';
-      }),
-    ]);
+    final symptoms = record.highFrequencySymptoms.take(5).map((symptom) {
+      final name = symptom['name']?.toString().trim() ?? '';
+      final days = (symptom['occurrenceDays'] as num?)?.toInt();
+      final severity = symptom['averageSeverity'];
+      return [
+        name,
+        if (days != null) '出現 $days 天',
+        if (severity is num) '平均程度 ${compact(severity)}',
+      ].where((part) => part.isNotEmpty).join('，');
+    });
+
+    return FollowUpSummaryTextFormatter.sentences(symptoms);
+  }
+
+  static List<String> _bodyMeasurementItems(FollowUpSummaryRecord record) {
+    String compact(dynamic value) {
+      final number = value is num
+          ? value.toDouble()
+          : double.tryParse(value?.toString() ?? '');
+      if (number == null) return value?.toString().trim() ?? '';
+      return number == number.roundToDouble()
+          ? number.toInt().toString()
+          : number.toStringAsFixed(1);
+    }
+
+    final measurements = record.bodyMeasurements.map((measurement) {
+      final name = measurement['name']?.toString().trim() ?? '';
+      final unit = measurement['unit']?.toString().trim() ?? '';
+      final change = compact(measurement['change']);
+      if (name.isEmpty) return '';
+      final changeNum = double.tryParse(change);
+      if (changeNum == null || changeNum == 0) {
+        return '$name：無明顯變化';
+      }
+      final direction = changeNum > 0 ? '增加' : '減少';
+      final absChange = changeNum.abs().toString();
+      return '$name：$direction $absChange$unit';
+    });
+
+    return FollowUpSummaryTextFormatter.sentences(measurements);
   }
 
   static String _formatMedicationEvent(Map<String, dynamic> event) {
     final date = event['date']?.toString().trim() ?? '';
     final name = event['medicationName']?.toString().trim() ?? '';
+    final prefix = [date, name].where((part) => part.isNotEmpty).join(' ');
     final type = event['type']?.toString().trim() ?? '';
+    final beforeDose = _dose(event['beforeDose']);
+    final afterDose = _dose(event['afterDose']);
+    final rawBeforeUnit = event['beforeUnit']?.toString().trim() ?? '';
+    final rawAfterUnit = event['afterUnit']?.toString().trim() ?? '';
+    final beforeUnit = rawBeforeUnit.isEmpty ? rawAfterUnit : rawBeforeUnit;
+    final afterUnit = rawAfterUnit.isEmpty ? rawBeforeUnit : rawAfterUnit;
     final beforeTimes = _strings(event['beforeTimes']).join('、');
     final afterTimes = _strings(event['afterTimes']).join('、');
-    String? dose(dynamic value) {
-      final number =
-          value is num ? value.toDouble() : double.tryParse('$value');
-      if (number == null) return null;
-      return number == number.roundToDouble()
-          ? number.toInt().toString()
-          : number.toString();
+
+    String doseWithUnit(String? dose, String unit) =>
+        dose == null ? '' : '$dose${unit.isEmpty ? '' : ' $unit'}';
+    String doseChange(String label) {
+      final before = doseWithUnit(beforeDose, beforeUnit);
+      final after = doseWithUnit(afterDose, afterUnit);
+      if (before.isNotEmpty && after.isNotEmpty && before != after) {
+        return '$label：$before → $after';
+      }
+      final value = after.isNotEmpty ? after : before;
+      return value.isEmpty ? label : '劑量：$value';
     }
 
-    final before = dose(event['beforeDose']);
-    final after = dose(event['afterDose']);
-    final unit =
-        (event['afterUnit'] ?? event['beforeUnit'] ?? '').toString().trim();
-    final beforeText =
-        before == null ? '' : '$before${unit.isEmpty ? '' : ' $unit'}';
-    final afterText =
-        after == null ? '' : '$after${unit.isEmpty ? '' : ' $unit'}';
     final detail = switch (type) {
       'scheduleChanged' => beforeTimes.isNotEmpty &&
               afterTimes.isNotEmpty &&
               beforeTimes != afterTimes
           ? '服藥時間：$beforeTimes → $afterTimes'
-          : '服藥時間調整',
-      'added' => afterText.isEmpty ? '新增' : '新增，劑量 $afterText',
+          : (afterTimes.isNotEmpty || beforeTimes.isNotEmpty)
+              ? '服藥時間：${afterTimes.isNotEmpty ? afterTimes : beforeTimes}'
+              : '服藥時間調整',
+      'added' => afterDose == null
+          ? '新增'
+          : '新增，劑量 ${doseWithUnit(afterDose, afterUnit)}',
+      'increased' => doseChange('劑量增加'),
+      'decreased' => doseChange('劑量減少'),
+      'doseChanged' => doseChange('劑量調整'),
       'stopped' => '停用',
-      'increased' =>
-        beforeText.isNotEmpty && afterText.isNotEmpty && beforeText != afterText
-            ? '劑量增加：$beforeText → $afterText'
-            : '劑量增加',
-      'decreased' =>
-        beforeText.isNotEmpty && afterText.isNotEmpty && beforeText != afterText
-            ? '劑量減少：$beforeText → $afterText'
-            : '劑量減少',
-      _ =>
-        beforeText.isNotEmpty && afterText.isNotEmpty && beforeText != afterText
-            ? '劑量調整：$beforeText → $afterText'
-            : type,
+      'resumed' => afterDose == null
+          ? '恢復使用'
+          : '恢復使用，劑量 ${doseWithUnit(afterDose, afterUnit)}',
+      _ => type,
     };
-    return [
-      [date, name].where((x) => x.isNotEmpty).join(' '),
-      detail
-    ].where((x) => x.isNotEmpty).join('：');
+    return [prefix, detail].where((part) => part.isNotEmpty).join('：');
+  }
+
+  static String? _dose(dynamic value) {
+    final number = value is num
+        ? value.toDouble()
+        : double.tryParse(value?.toString().trim() ?? '');
+    if (number == null) return null;
+    return number == number.roundToDouble()
+        ? number.toInt().toString()
+        : number.toStringAsFixed(2).replaceFirst(RegExp(r'0+$'), '');
   }
 
   static String _displayDate(DateTime value) =>

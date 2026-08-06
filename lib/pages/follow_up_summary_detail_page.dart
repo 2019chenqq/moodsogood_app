@@ -261,8 +261,10 @@ class _FollowUpSummaryDetailPageState extends State<FollowUpSummaryDetailPage>
             _discussionCard(display),
             _card('主要變化', display.keyChanges),
             FollowUpSleepTrendCard.fromRecord(record: _summary),
-            _card('症狀與身體變化', display.symptomAndBodyChanges,
-                emptyText: '此摘要沒有可顯示的症狀或身體測量資料'),
+            _card('身體症狀', display.symptoms,
+                emptyText: '此摘要沒有可顯示的症狀資料'),
+            _card('身體測量', display.bodyMeasurements,
+                emptyText: '此摘要沒有可顯示的體重、體脂率或腰圍資料'),
             _card('藥物調整時間軸', display.medicationTimeline,
                 emptyText: '此摘要沒有藥物調整紀錄'),
             _card('其他想跟醫師說的內容', display.userSharedNotes,
@@ -391,15 +393,12 @@ class _SummaryEditorState extends State<_SummaryEditor> {
       'notes': TextEditingController(text: widget.summary.additionalNotes),
       'changes': TextEditingController(text: output.keyChanges.join('\n')),
       'discussionItems': TextEditingController(
-        text: FollowUpSummaryTextFormatter.safeDiscussionItems(
-          output.discussionItems.isNotEmpty
-              ? output.discussionItems
-              : [
-                  if (widget.summary.discussionDetails.trim().isNotEmpty)
-                    widget.summary.discussionDetails,
-                  ...output.discussionPriorities,
-                ],
-        ).join('\n'),
+        text: FollowUpSummaryTextFormatter.safeDiscussionItems([
+          if (widget.summary.discussionDetails.trim().isNotEmpty)
+            widget.summary.discussionDetails,
+          ...output.discussionItems,
+          ...output.discussionPriorities,
+        ]).join('\n'),
       ),
       'sharedNotes':
           TextEditingController(text: output.userSharedNotes.join('\n')),
