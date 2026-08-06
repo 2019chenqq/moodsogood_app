@@ -9,7 +9,7 @@ void main() {
     );
 
     expect(find.text('趨勢回顧'), findsOneWidget);
-    expect(find.text('睡眠摘要'), findsOneWidget);
+    expect(find.text('睡眠洞察'), findsOneWidget);
     expect(find.text('情緒趨勢'), findsOneWidget);
     expect(find.text('症狀比對'), findsOneWidget);
   });
