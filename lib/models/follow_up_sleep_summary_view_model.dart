@@ -48,15 +48,38 @@ class FollowUpSleepSummaryViewModel {
     final qualityDays = _integer(quality['recordedDays']);
     final averageQuality = _number(quality['average']);
 
-    int conditionDays(String code, String label, String legacyKey) {
-      for (final condition in conditions) {
-        if (condition['code']?.toString() == code ||
-            condition['label']?.toString() == label) {
-          return _integer(condition['occurrenceDays']);
+    final conditionMetrics = <FollowUpSleepMetric>[];
+    final seenConditions = <String>{};
+    for (final condition in conditions) {
+      final code = condition['code']?.toString().trim() ?? '';
+      final label = condition['label']?.toString().trim() ?? '';
+      final days = _integer(condition['occurrenceDays']);
+      final key = code.isNotEmpty ? code : label;
+      if (label.isEmpty || days <= 0 || !seenConditions.add(key)) continue;
+      conditionMetrics.add(
+        FollowUpSleepMetric(label: label, value: '$days 天'),
+      );
+    }
+
+    // Old summaries predate the dynamic `conditions` array. These aliases are
+    // read only as a compatibility fallback and never restrict new records.
+    if (conditionMetrics.isEmpty) {
+      const legacyConditions = <String, String>{
+        'sleepOnsetDifficulty': '入睡困難',
+        'earlyAwakening': '早醒',
+        'nightInterruption': '睡眠中斷',
+        'dreams': '多夢',
+      };
+      for (final entry in legacyConditions.entries) {
+        final days = _integer(_map(sleep[entry.key])['occurrenceDays']);
+        if (days > 0) {
+          conditionMetrics.add(
+            FollowUpSleepMetric(label: entry.value, value: '$days 天'),
+          );
         }
       }
-      return _integer(_map(sleep[legacyKey])['occurrenceDays']);
     }
+    final napDays = _integer(naps['days']);
 
     String hours(double? value) =>
         value == null ? '無資料' : '${_compact(value)} 小時';
@@ -77,25 +100,8 @@ class FollowUpSleepSummaryViewModel {
         FollowUpSleepMetric(label: '最短', value: hours(minimum)),
         FollowUpSleepMetric(label: '最長', value: hours(maximum)),
         FollowUpSleepMetric(label: '睡眠品質', value: qualityValue),
-        FollowUpSleepMetric(
-          label: '入睡困難',
-          value:
-              '${conditionDays('initInsomnia', '入睡困難', 'sleepOnsetDifficulty')} 天',
-        ),
-        FollowUpSleepMetric(
-          label: '早醒',
-          value: '${conditionDays('earlyWake', '早醒', 'earlyAwakening')} 天',
-        ),
-        FollowUpSleepMetric(
-          label: '睡眠中斷',
-          value:
-              '${conditionDays('interrupted', '睡眠中斷', 'nightInterruption')} 天',
-        ),
-        FollowUpSleepMetric(
-          label: '多夢',
-          value: '${conditionDays('dreams', '多夢', 'dreams')} 天',
-        ),
-        FollowUpSleepMetric(label: '小睡', value: '${_integer(naps['days'])} 天'),
+        ...conditionMetrics,
+        if (napDays > 0) FollowUpSleepMetric(label: '小睡', value: '$napDays 天'),
       ],
     );
   }

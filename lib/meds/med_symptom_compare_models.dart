@@ -504,10 +504,20 @@ class DailyRecordAggregator {
   /// Parses the symptom formats used by both current and legacy daily
   /// records. This is intentionally data-only and contains no medication
   /// causality or before/after interpretation.
-  static Map<String, double?> symptomValues(Map<String, dynamic> data) =>
-      _symptoms(
-        data['symptoms'] ?? data['bodySymptoms'] ?? data['symptomScores'],
-      );
+  static Map<String, double?> symptomValues(Map<String, dynamic> data) {
+    final result = <String, double?>{};
+    for (final raw in [
+      data['symptoms'],
+      data['bodySymptoms'],
+      data['symptomScores'],
+    ]) {
+      for (final entry in _symptoms(raw).entries) {
+        final existing = result[entry.key];
+        result[entry.key] = entry.value ?? existing;
+      }
+    }
+    return result;
+  }
 
   static DailyRecordAggregate aggregate(
       Iterable<Map<String, dynamic>> records) {

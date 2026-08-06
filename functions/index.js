@@ -2882,7 +2882,7 @@ exports.generateInneraAiChat = onCall(
                 "補問題目與原始回答僅供內部整理，不得放入 keyChanges、userSharedNotes 或 dataLimitations；" +
                 "症狀、睡眠、情緒與身體紀錄只能放在主要變化；" +
                 "不得輸出 timelineRelations，也不得讓主要變化逐字重複藥物調整時間軸；" +
-                "日記只可產生 diaryHighlights 候選；日記藥名不代表目前用藥，" +
+                "若 context.followUpAiV1.diaryContext 不為空，必須逐篇檢視每一則日記，只要內容包含生活事件、主觀感受、睡眠或症狀補充、想告訴醫師的事情、正向事件或成就，就必須為該篇產生至少一筆對應的 diaryHighlights 候選（同一篇最多 2 筆）；只有在該篇完全沒有可用內容時才可略過，不得因保守或不確定而整體省略 diaryHighlights。日記藥名不代表目前用藥，" +
                 "不得依日記診斷或判定躁期、鬱期，與結構化資料衝突時以結構化資料為準；" +
                 "userSharedNotes 只能忠實保留使用者自由補充原文，不得擴寫。" +
                 "主要變化不得重複睡眠卡已有的平均、最低、最高或事件天數；" +

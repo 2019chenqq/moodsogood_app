@@ -74,6 +74,11 @@ class _FollowUpSharePreviewPageState extends State<FollowUpSharePreviewPage> {
                   _check('情緒症狀', _options.emotionsAndSymptoms,
                       (value) => _options.copyWith(emotionsAndSymptoms: value)),
                   _check(
+                      '身體測量（體重、體脂率、腰圍）',
+                      _options.bodyMeasurements,
+                      (value) =>
+                          _options.copyWith(bodyMeasurements: value)),
+                  _check(
                       '藥物調整',
                       _options.medicationAdjustments,
                       (value) =>
@@ -97,8 +102,11 @@ class _FollowUpSharePreviewPageState extends State<FollowUpSharePreviewPage> {
           if (_options.sleep)
             FollowUpSleepTrendCard.fromRecord(record: widget.summary),
           if (_options.emotionsAndSymptoms)
-            _card('症狀與身體變化', display.symptomAndBodyChanges,
-                emptyText: '此摘要沒有可顯示的症狀或身體測量資料'),
+            _card('身體症狀', display.symptoms,
+                emptyText: '此摘要沒有可顯示的症狀資料'),
+          if (_options.bodyMeasurements)
+            _card('身體測量', display.bodyMeasurements,
+                emptyText: '此摘要沒有可顯示的體重、體脂率或腰圍資料'),
           if (_options.medicationAdjustments)
             _card('藥物調整時間軸', display.medicationTimeline,
                 emptyText: '此摘要沒有藥物調整紀錄'),

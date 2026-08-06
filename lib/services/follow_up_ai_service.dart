@@ -135,7 +135,7 @@ class FollowUpAiService {
     final response = await _send(
       input,
       '''你正在產生可供回診使用的資料摘要。補問題目與原始回答只供這次整理使用，不得逐字放入任何輸出欄位：${jsonEncode(followUpAnswers)}
-只能描述資料支持的觀察與日期先後；不得診斷躁期或鬱期、不得斷言或暗示藥物因果、不得建議自行停藥或調藥。有價值的日期先後資訊可放入 keyChanges，但不得與 App 的藥物調整時間軸逐字重複。睡眠、症狀及其他基本紀錄只能放在 keyChanges，不得放入 userSharedNotes。請把已選主題、discussionDetails，以及有內容的補問題目與答案整合成 discussionItems：共 1～5 項，每項為可直接提供醫師閱讀的完整中性句子；合併相近內容，移除口語贅詞、聊天語氣、表情符號與重複內容；保留使用者明確提到的時間、頻率、程度及生活影響；不得加入未說過的資訊。discussionItems 不得保留 Q／A 格式，也不得出現「使用者回答」、「AI 提問」、「AI 補問」、「問題一」、「問：」或「答：」。userSharedNotes 只可忠實保留 additionalNotes，不得放入任何補問原始回答，不得擴寫、推測或放入症狀、睡眠、情緒、藥物、身體數據。若 diaryContext 不為空，可從中擷取重要生活事件、主觀感受、睡眠或症狀補充、想告訴醫師的事情、正向事件與成就，放入 diaryHighlights 候選。日記提到藥名不得視為目前用藥；不得依日記判定躁期、鬱期或診斷；與結構化資料衝突時以結構化資料為準。diaryHighlights 只摘要原意，不得加入醫療推論。主要變化不得重複睡眠卡已有的平均、最低、最高與事件天數；睡眠只在 App 提供的 comparison 顯示明顯增減時，簡短描述與前期相差多少。keyChanges 必須 3～5 項。請將下列格式的摘要 JSON 序列化後放在 reply 字串中，不要在 reply 加入 Markdown 或其他說明：
+只能描述資料支持的觀察與日期先後；不得診斷躁期或鬱期、不得斷言或暗示藥物因果、不得建議自行停藥或調藥。有價值的日期先後資訊可放入 keyChanges，但不得與 App 的藥物調整時間軸逐字重複。睡眠、症狀及其他基本紀錄只能放在 keyChanges，不得放入 userSharedNotes。請把已選主題、discussionDetails，以及有內容的補問題目與答案整合成 discussionItems：共 1～5 項，每項為可直接提供醫師閱讀的完整中性句子；合併相近內容，移除口語贅詞、聊天語氣、表情符號與重複內容；保留使用者明確提到的時間、頻率、程度及生活影響；不得加入未說過的資訊。discussionItems 不得保留 Q／A 格式，也不得出現「使用者回答」、「AI 提問」、「AI 補問」、「問題一」、「問：」或「答：」。userSharedNotes 只可忠實保留 additionalNotes，不得放入任何補問原始回答，不得擴寫、推測或放入症狀、睡眠、情緒、藥物、身體數據。若 diaryContext 不為空，必須逐篇檢視每一則日記，只要內容包含重要生活事件、主觀感受、睡眠或症狀補充、想告訴醫師的事情、正向事件或成就，就必須為該篇產生至少一筆對應的 diaryHighlights 候選（同一篇最多 2 筆）；只有在該篇完全沒有可用內容時才可略過，不得因保守或不確定而整體省略 diaryHighlights。日記提到藥名不得視為目前用藥；不得依日記判定躁期、鬱期或診斷；與結構化資料衝突時以結構化資料為準。diaryHighlights 只摘要原意，不得加入醫療推論。主要變化不得重複睡眠卡已有的平均、最低、最高與事件天數；睡眠只在 App 提供的 comparison 顯示明顯增減時，簡短描述與前期相差多少。keyChanges 必須 3～5 項。請將下列格式的摘要 JSON 序列化後放在 reply 字串中，不要在 reply 加入 Markdown 或其他說明：
 {"keyChanges":["主要變化一（附資料）","主要變化二（附資料）","主要變化三（附資料）"],"discussionItems":["可直接提供醫師閱讀的完整句子。"],"userSharedNotes":[],"dataLimitations":[],"diaryHighlights":[{"date":"YYYY-MM-DD","category":"life_event|subjective_feeling|sleep_note|symptom_note|share_with_doctor","summary":"忠於原意的簡短摘要","source":"diary"}]}''',
     );
     final json = _tryReplyJson(response.reply);
@@ -354,8 +354,15 @@ class FollowUpAiService {
       keyChanges.add('目前可用紀錄較少，這次摘要以使用者提供的內容為主要依據。');
     }
 
+    // Even in fallback mode, an answered follow-up question must still show
+    // up somewhere in the visible summary, not only in the private
+    // followUpResponses field.
+    final answeredFollowUps = followUpAnswers.values
+        .map((answer) => answer.trim())
+        .where((answer) => answer.isNotEmpty);
     final discussionItems = FollowUpSummaryTextFormatter.safeDiscussionItems([
       if (input.discussionDetails.trim().isNotEmpty) input.discussionDetails,
+      ...answeredFollowUps,
     ]);
     final sharedNotes = <String>[
       if (input.additionalNotes.trim().isNotEmpty) input.additionalNotes.trim(),
@@ -414,7 +421,11 @@ class FollowUpAiService {
     final userSharedNotes = <String>{
       if (input.additionalNotes.trim().isNotEmpty) input.additionalNotes.trim(),
     }.toList();
-    final blockedRawKeys = _followUpRawKeys(followUpAnswers);
+    // Only block items that merely echo the raw question text (i.e. the AI
+    // repeated the prompt instead of summarizing an answer). Items that
+    // reflect the user's actual answer must be kept, or the follow-up
+    // question's information disappears from the summary entirely.
+    final blockedQuestionKeys = _followUpQuestionKeys(followUpAnswers);
     final keyChanges = _withoutMedicationTimelineDuplicates(
       input,
       _withoutDuplicateSleepDetails(
@@ -422,7 +433,7 @@ class FollowUpAiService {
         output.keyChanges.where(
           (item) =>
               !FollowUpSummaryTextFormatter.isQuestionAnswerTranscript(item) &&
-              !blockedRawKeys.contains(_summaryComparisonKey(item)),
+              !blockedQuestionKeys.contains(_summaryComparisonKey(item)),
         ),
       ),
     );
@@ -452,6 +463,7 @@ class FollowUpAiService {
           : FollowUpSummaryTextFormatter.safeDiscussionItems([
               if (input.discussionDetails.trim().isNotEmpty)
                 input.discussionDetails,
+              ...followUpAnswers.values.map((answer) => answer.trim()),
             ]),
       followUpResponses: _followUpResponses(followUpAnswers),
       timelineRelations: const [],
@@ -511,18 +523,21 @@ class FollowUpAiService {
     Iterable<String> values,
     Map<String, String> followUpAnswers,
   ) {
-    final rawKeys = _followUpRawKeys(followUpAnswers);
+    final blockedQuestionKeys = _followUpQuestionKeys(followUpAnswers);
     return FollowUpSummaryTextFormatter.safeDiscussionItems(values)
-        .where((item) => !rawKeys.contains(_summaryComparisonKey(item)))
+        .where((item) =>
+            !blockedQuestionKeys.contains(_summaryComparisonKey(item)))
         .take(5)
         .toList(growable: false);
   }
 
-  static Set<String> _followUpRawKeys(Map<String, String> answers) => {
+  /// Only the literal question text is blocked here: an item that merely
+  /// repeats the prompt back conveys no information. An item that reflects
+  /// the user's actual answer must be kept, otherwise the follow-up
+  /// question's content disappears from the summary entirely.
+  static Set<String> _followUpQuestionKeys(Map<String, String> answers) => {
         for (final entry in answers.entries)
           if (entry.key.trim().isNotEmpty) _summaryComparisonKey(entry.key),
-        for (final entry in answers.entries)
-          if (entry.value.trim().isNotEmpty) _summaryComparisonKey(entry.value),
       };
 
   static List<Map<String, String>> _followUpResponses(

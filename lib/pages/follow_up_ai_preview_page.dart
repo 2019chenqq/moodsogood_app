@@ -55,15 +55,12 @@ class _FollowUpAiPreviewPageState extends State<FollowUpAiPreviewPage> {
     final previousControllers = _controllers;
     _summary = value;
     _selectedDiaryHighlights.clear();
-    final discussionItems = FollowUpSummaryTextFormatter.safeDiscussionItems(
-      value.discussionItems.isNotEmpty
-          ? value.discussionItems
-          : [
-              if (widget.aiInput?.discussionDetails.trim().isNotEmpty == true)
-                widget.aiInput!.discussionDetails,
-              ...value.discussionPriorities,
-            ],
-    );
+    final discussionItems = FollowUpSummaryTextFormatter.safeDiscussionItems([
+      if (widget.aiInput?.discussionDetails.trim().isNotEmpty == true)
+        widget.aiInput!.discussionDetails,
+      ...value.discussionItems,
+      ...value.discussionPriorities,
+    ]);
     _controllers = {
       'keyChanges': _make(value.keyChanges),
       'discussionItems': _make(discussionItems),
@@ -211,7 +208,17 @@ class _FollowUpAiPreviewPageState extends State<FollowUpAiPreviewPage> {
           _section('主要變化', 'keyChanges', showWhenEmpty: true),
           if (widget.aiInput != null)
             FollowUpSleepTrendCard(input: widget.aiInput!),
-          _symptomAndBodySection(),
+          if (widget.aiInput != null) ...[
+            _readOnlySection('身體症狀', _symptomItems(),
+                emptyText: '此摘要沒有可顯示的症狀資料'),
+            _readOnlySection('身體測量', _bodyMeasurementItems(),
+                emptyText: '此摘要沒有可顯示的體重、體脂率或腰圍資料'),
+          ] else ...[
+            _readOnlySection('身體症狀', const [],
+                emptyText: '此摘要沒有可顯示的症狀資料'),
+            _readOnlySection('身體測量', const [],
+                emptyText: '此摘要沒有可顯示的體重、體脂率或腰圍資料'),
+          ],
           _diaryHighlightsSection(),
           _medicationTimelineSection(),
           _additionalNotesSection(),
@@ -235,42 +242,59 @@ class _FollowUpAiPreviewPageState extends State<FollowUpAiPreviewPage> {
     ]);
   }
 
-  Widget _symptomAndBodySection() {
+  List<String> _symptomItems() {
     final input = widget.aiInput;
-    if (input == null) {
-      return _readOnlySection('症狀與身體變化', const [],
-          emptyText: '此摘要沒有可顯示的症狀或身體測量資料');
-    }
+    if (input == null) return const [];
     String compact(dynamic value) {
-      if (value is! num) return value?.toString() ?? '';
-      final number = value.toDouble();
+      final number = value is num
+          ? value.toDouble()
+          : double.tryParse(value?.toString() ?? '');
+      if (number == null) return value?.toString().trim() ?? '';
       return number == number.roundToDouble()
           ? number.toInt().toString()
-          : number.toString();
+          : number.toStringAsFixed(1);
     }
 
-    final items = <String>[
-      ...input.highFrequencySymptoms.map((symptom) {
-        final name = symptom['name']?.toString().trim() ?? '';
-        final days = (symptom['occurrenceDays'] as num?)?.toInt();
-        final severity = symptom['averageSeverity'];
-        return [
-          name,
-          if (days != null) '出現 $days 天',
-          if (severity is num) '平均程度 ${compact(severity)}',
-        ].where((part) => part.isNotEmpty).join('，');
-      }),
-      ...input.bodyMeasurements.map((measurement) {
-        final name = measurement['name']?.toString().trim() ?? '';
-        final unit = measurement['unit']?.toString().trim() ?? '';
-        final start = compact(measurement['startValue']);
-        final latest = compact(measurement['latestValue']);
-        final change = compact(measurement['change']);
-        return '$name：$start$unit → $latest$unit'
-            '${change.isEmpty ? '' : '（差值 $change$unit）'}';
-      }),
-    ].where((item) => item.trim().isNotEmpty).toList();
-    return _readOnlySection('症狀與身體變化', items, emptyText: '此摘要沒有可顯示的症狀或身體測量資料');
+    final symptoms = input.highFrequencySymptoms.take(5).map((symptom) {
+      final name = symptom['name']?.toString().trim() ?? '';
+      final days = (symptom['occurrenceDays'] as num?)?.toInt();
+      final severity = symptom['averageSeverity'];
+      return [
+        name,
+        if (days != null) '出現 $days 天',
+        if (severity is num) '平均程度 ${compact(severity)}',
+      ].where((part) => part.isNotEmpty).join('，');
+    }).where((item) => item.trim().isNotEmpty);
+    return FollowUpSummaryTextFormatter.sentences(symptoms);
+  }
+
+  List<String> _bodyMeasurementItems() {
+    final input = widget.aiInput;
+    if (input == null) return const [];
+    String compact(dynamic value) {
+      final number = value is num
+          ? value.toDouble()
+          : double.tryParse(value?.toString() ?? '');
+      if (number == null) return value?.toString().trim() ?? '';
+      return number == number.roundToDouble()
+          ? number.toInt().toString()
+          : number.toStringAsFixed(1);
+    }
+
+    final measurements = input.bodyMeasurements.map((measurement) {
+      final name = measurement['name']?.toString().trim() ?? '';
+      final unit = measurement['unit']?.toString().trim() ?? '';
+      final change = compact(measurement['change']);
+      if (name.isEmpty) return '';
+      final changeNum = double.tryParse(change);
+      if (changeNum == null || changeNum == 0) {
+        return '$name：無明顯變化';
+      }
+      final direction = changeNum > 0 ? '增加' : '減少';
+      final absChange = changeNum.abs().toString();
+      return '$name：$direction $absChange$unit';
+    }).where((item) => item.trim().isNotEmpty);
+    return FollowUpSummaryTextFormatter.sentences(measurements);
   }
 
   Widget _medicationTimelineSection() {
