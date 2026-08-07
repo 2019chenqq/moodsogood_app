@@ -11,6 +11,7 @@ class DiaryEntry {
   final String title;
   final String content;
   final double? moodScore;
+  final double? overallHealth;
   final String? moodKeyword;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -37,6 +38,7 @@ class DiaryEntry {
     required this.title,
     required this.content,
     this.moodScore,
+    this.overallHealth,
     this.moodKeyword,
     this.themeSong,
     this.highlight,
@@ -65,6 +67,7 @@ class DiaryEntry {
     String? title,
     String? content,
     double? moodScore,
+    double? overallHealth,
     String? moodKeyword,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -91,6 +94,7 @@ class DiaryEntry {
       title: title ?? this.title,
       content: content ?? this.content,
       moodScore: moodScore ?? this.moodScore,
+      overallHealth: overallHealth ?? this.overallHealth,
       moodKeyword: moodKeyword ?? this.moodKeyword,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -120,6 +124,7 @@ class DiaryEntry {
         'title': title,
         'content': content,
         'moodScore': moodScore,
+        'overallHealth': overallHealth,
         'moodKeyword': moodKeyword,
         'createdAt': createdAt.toIso8601String(),
         'updatedAt': updatedAt.toIso8601String(),
@@ -232,6 +237,7 @@ class DiaryRepository {
       'imageRefsEncrypted': true,
       'imageEncryptionVersion': DiaryImageEncryptionService.migrationVersion,
       'overallMood': entry.moodScore,
+      'overallHealth': entry.overallHealth,
       'updatedAt': FieldValue.serverTimestamp(),
       'isEncrypted': true,
     }, SetOptions(merge: true));
@@ -304,6 +310,7 @@ class DiaryRepository {
           encryption,
         ),
         moodScore: (data['overallMood'] as num?)?.toDouble(),
+        overallHealth: (data['overallHealth'] as num?)?.toDouble(),
         createdAt: _asDate(data['createdAt']),
         updatedAt: _asDate(data['updatedAt']),
       );

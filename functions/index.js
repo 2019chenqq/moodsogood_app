@@ -568,6 +568,7 @@ const inneraChatSchema = {
         "date",
         "moodScale",
         "overallMood",
+        "overallHealth",
         "emotionMentions",
         "symptoms",
         "stateChanges",
@@ -581,6 +582,7 @@ const inneraChatSchema = {
         date: { type: "string" },
         moodScale: { type: "integer", enum: [5] },
         overallMood: nullableScoreSchema,
+        overallHealth: nullableScoreSchema,
         emotionMentions: {
           type: "array",
           maxItems: 20,
@@ -850,6 +852,7 @@ const DAILY_RECORD_CLASSIFICATION_PROMPT = `
 5. 情緒沒有明確 1～5 分時仍必須保留，value=null、mentioned=true、needsFollowUp=true。
 6. 使用者明確說出的情緒 source=explicit。每筆保留 rawText、confidence、needsConfirmation、timeContext 和 evidence。
 7. 不得把早上興奮、下午無聊簡化成只有 overallMood。
+7.1 若使用者提到整體健康或身體狀況，也要同步更新 overallHealth（1～5 分）。
 8. 不得把入睡困難放入 symptoms。
 9. normalizedDimensionId 與 normalizedDimensionName 只能使用請求中 emotionDimensions 的成對值。
 10. 無法可靠映射時兩者都輸出 null、needsConfirmation=true；不得建立新維度，也不得使用「無聊程度、空虛程度、興奮程度、焦慮程度」等舊名稱。
@@ -2022,6 +2025,7 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
     naps: Array.isArray(nextSleep.naps) ? nextSleep.naps.slice(0, 6) : (Array.isArray(oldSleep.naps) ? oldSleep.naps.slice(0, 6) : []),
   };
   const overallMood = validScore(raw.overallMood) ?? validScore(existing.overallMood);
+  const overallHealth = validScore(raw.overallHealth) ?? validScore(existing.overallHealth);
   const pendingEmotionFields = [...emotionMap.values()]
     .filter((item) => item.value == null || item.normalizedDimensionId == null)
     .map((item) => `${item.rawText}的正式情緒與強度`);
@@ -2029,6 +2033,7 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
     date: safeText(raw.date || existing.date, 10),
     moodScale: 5,
     overallMood: overallMood,
+    overallHealth: overallHealth,
     emotionMentions: [...emotionMap.values()].slice(0, 20),
     symptoms: symptoms.slice(0, 30),
     stateChanges,
