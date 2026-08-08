@@ -24,6 +24,7 @@ class HealthDataEncryptionService {
 
   static const _collections = <String>[
     'dailyRecords',
+    'healthEvents',
     'medications',
     'medicationCheckins',
     'medAdjustments',
@@ -39,6 +40,7 @@ class HealthDataEncryptionService {
 
   static const _queryFieldsByCollection = <String, Set<String>>{
     'dailyRecords': {'date', 'isTestData', 'isDevSeedOwned'},
+    'healthEvents': {'timestamp'},
     'medications': <String>{},
     'medicationCheckins': {'date'},
     'medAdjustments': {'date'},
@@ -46,7 +48,7 @@ class HealthDataEncryptionService {
     'healthProfile': <String>{},
     'followUpWorkspace': <String>{},
     'followUpInstructionHistory': {'archivedAt'},
-    'followUpSummaries': {'createdAt', 'updatedAt'},
+    'followUpSummaries': <String>{},
     'periodTracker': <String>{},
     'aiConversations': {'dateKey'},
     'aiJournalReflections': {'generatedAt'},

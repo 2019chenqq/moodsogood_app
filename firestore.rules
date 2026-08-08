@@ -2,12 +2,6 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Public follow-up shares are created, validated, and revoked only by
-    // trusted Firebase Functions. Clients never read the snapshots directly.
-    match /follow_up_summary_shares/{shareId} {
-      allow read, write: if false;
-    }
-
     // =========================
     // 使用者自己的資料（完全私有）
     // =========================

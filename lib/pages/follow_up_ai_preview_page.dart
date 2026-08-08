@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../constants/healing_design_system.dart';
 import '../models/follow_up_ai_summary.dart';
-import '../services/follow_up_ai_service.dart';
 import '../widgets/follow_up_sleep_trend_card.dart';
 
 class FollowUpAiPreviewPage extends StatefulWidget {
@@ -41,7 +40,6 @@ class _FollowUpAiPreviewPageState extends State<FollowUpAiPreviewPage> {
   late final TextEditingController _additionalNotesController;
   bool _regenerating = false;
   String? _error;
-  final Set<String> _selectedDiaryHighlights = {};
 
   @override
   void initState() {
@@ -54,16 +52,9 @@ class _FollowUpAiPreviewPageState extends State<FollowUpAiPreviewPage> {
   void _replaceSummary(FollowUpAiOutput value) {
     final previousControllers = _controllers;
     _summary = value;
-    _selectedDiaryHighlights.clear();
-    final discussionItems = FollowUpSummaryTextFormatter.safeDiscussionItems([
-      if (widget.aiInput?.discussionDetails.trim().isNotEmpty == true)
-        widget.aiInput!.discussionDetails,
-      ...value.discussionItems,
-      ...value.discussionPriorities,
-    ]);
     _controllers = {
       'keyChanges': _make(value.keyChanges),
-      'discussionItems': _make(discussionItems),
+      'discussionPriorities': _make(value.discussionPriorities),
       'timelineRelations': _make(value.timelineRelations),
       'userSharedNotes': _make(value.userSharedNotes),
       'dataLimitations': _make(value.dataLimitations),
@@ -97,17 +88,10 @@ class _FollowUpAiPreviewPageState extends State<FollowUpAiPreviewPage> {
 
   FollowUpAiOutput _editedSummary() => FollowUpAiOutput(
         keyChanges: _texts('keyChanges'),
-        discussionPriorities: const [],
-        discussionItems: _texts('discussionItems'),
-        followUpResponses: _summary.followUpResponses,
+        discussionPriorities: _texts('discussionPriorities'),
         timelineRelations: _texts('timelineRelations'),
         userSharedNotes: _texts('userSharedNotes'),
         userReportedConcerns: _summary.userReportedConcerns,
-        diaryHighlights: _summary.diaryHighlights
-            .where((item) => _selectedDiaryHighlights.contains(
-                  _diaryHighlightKey(item),
-                ))
-            .toList(growable: false),
         dataLimitations: _texts('dataLimitations'),
         generatedAt: _summary.generatedAt,
         usedFallback: _summary.usedFallback,
@@ -203,260 +187,56 @@ class _FollowUpAiPreviewPageState extends State<FollowUpAiPreviewPage> {
             _ErrorBanner(message: _error!, onRetry: _regenerate),
           ],
           const SizedBox(height: 12),
-          _basicInfoSection(),
-          _discussionSection(),
-          _section('主要變化', 'keyChanges', showWhenEmpty: true),
+          Card(
+            elevation: 0,
+            color: HealingDesignSystem.adaptiveSurface(context),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '其他想討論的事（可選）',
+                    style: HealingDesignSystem.titleSmall,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '可補充未包含在上方主題中的事情，內容會原樣保留。',
+                    style: HealingDesignSystem.bodySmall.copyWith(
+                      color: HealingDesignSystem.adaptiveSecondaryText(context),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    key: const ValueKey('preview-additional-notes'),
+                    controller: _additionalNotesController,
+                    minLines: 3,
+                    maxLines: 7,
+                    decoration: const InputDecoration(
+                      hintText: '例如：近期生活事件、開心的事，或其他想讓醫師知道的內容',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
           if (widget.aiInput != null)
             FollowUpSleepTrendCard(input: widget.aiInput!),
-          if (widget.aiInput != null) ...[
-            _readOnlySection('身體症狀', _symptomItems(),
-                emptyText: '此摘要沒有可顯示的症狀資料'),
-            _readOnlySection('身體測量', _bodyMeasurementItems(),
-                emptyText: '此摘要沒有可顯示的體重、體脂率或腰圍資料'),
-          ] else ...[
-            _readOnlySection('身體症狀', const [],
-                emptyText: '此摘要沒有可顯示的症狀資料'),
-            _readOnlySection('身體測量', const [],
-                emptyText: '此摘要沒有可顯示的體重、體脂率或腰圍資料'),
-          ],
-          _diaryHighlightsSection(),
-          _medicationTimelineSection(),
-          _additionalNotesSection(),
-          _section('資料限制', 'dataLimitations', showWhenEmpty: true),
+          _discussionSection(),
+          _section('主要變化', 'keyChanges'),
+          _section('重要時間關聯', 'timelineRelations'),
+          _section('其他想跟醫師說的內容', 'userSharedNotes'),
+          _section('資料不足或限制', 'dataLimitations'),
           const SizedBox(height: 8),
         ],
       ),
     );
   }
 
-  Widget _basicInfoSection() {
-    final statistics = widget.aiInput?.statistics;
-    if (statistics == null) {
-      return _readOnlySection('基本資訊', const [], emptyText: '尚無基本資訊');
-    }
-    String date(DateTime value) =>
-        '${value.year}/${value.month.toString().padLeft(2, '0')}/${value.day.toString().padLeft(2, '0')}';
-    return _readOnlySection('基本資訊', [
-      '統計期間：${date(statistics.periodStart)}～${date(statistics.periodEnd)}',
-      '有效紀錄天數：${statistics.validRecordDays} 天',
-    ]);
-  }
-
-  List<String> _symptomItems() {
-    final input = widget.aiInput;
-    if (input == null) return const [];
-    String compact(dynamic value) {
-      final number = value is num
-          ? value.toDouble()
-          : double.tryParse(value?.toString() ?? '');
-      if (number == null) return value?.toString().trim() ?? '';
-      return number == number.roundToDouble()
-          ? number.toInt().toString()
-          : number.toStringAsFixed(1);
-    }
-
-    final symptoms = input.highFrequencySymptoms.take(5).map((symptom) {
-      final name = symptom['name']?.toString().trim() ?? '';
-      final days = (symptom['occurrenceDays'] as num?)?.toInt();
-      final severity = symptom['averageSeverity'];
-      return [
-        name,
-        if (days != null) '出現 $days 天',
-        if (severity is num) '平均程度 ${compact(severity)}',
-      ].where((part) => part.isNotEmpty).join('，');
-    }).where((item) => item.trim().isNotEmpty);
-    return FollowUpSummaryTextFormatter.sentences(symptoms);
-  }
-
-  List<String> _bodyMeasurementItems() {
-    final input = widget.aiInput;
-    if (input == null) return const [];
-    String compact(dynamic value) {
-      final number = value is num
-          ? value.toDouble()
-          : double.tryParse(value?.toString() ?? '');
-      if (number == null) return value?.toString().trim() ?? '';
-      return number == number.roundToDouble()
-          ? number.toInt().toString()
-          : number.toStringAsFixed(1);
-    }
-
-    final measurements = input.bodyMeasurements.map((measurement) {
-      final name = measurement['name']?.toString().trim() ?? '';
-      final unit = measurement['unit']?.toString().trim() ?? '';
-      final change = compact(measurement['change']);
-      if (name.isEmpty) return '';
-      final changeNum = double.tryParse(change);
-      if (changeNum == null || changeNum == 0) {
-        return '$name：無明顯變化';
-      }
-      final direction = changeNum > 0 ? '增加' : '減少';
-      final absChange = changeNum.abs().toString();
-      return '$name：$direction $absChange$unit';
-    }).where((item) => item.trim().isNotEmpty);
-    return FollowUpSummaryTextFormatter.sentences(measurements);
-  }
-
-  Widget _medicationTimelineSection() {
-    final items = widget.aiInput?.medicationTimeline
-            .map(FollowUpAiService.formatMedicationTimelineEvent)
-            .where((item) => item.isNotEmpty)
-            .toList() ??
-        const <String>[];
-    return _readOnlySection('藥物調整時間軸', items, emptyText: '此摘要沒有藥物調整紀錄');
-  }
-
-  String _diaryHighlightKey(FollowUpDiaryHighlight item) =>
-      '${item.date}|${item.category}|${item.summary}';
-
-  Widget _diaryHighlightsSection() {
-    if (_summary.diaryHighlights.isEmpty) return const SizedBox.shrink();
-    const labels = {
-      'life_event': '重要生活事件',
-      'subjective_feeling': '主觀感受',
-      'sleep_note': '睡眠補充',
-      'symptom_note': '症狀補充',
-      'share_with_doctor': '想告訴醫師的事情',
-    };
-    return Card(
-      elevation: 0,
-      color: HealingDesignSystem.adaptiveSurface(context),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('來自日記的候選重點', style: HealingDesignSystem.titleSmall),
-            const SizedBox(height: 6),
-            Text(
-              '只有勾選的摘要會加入正式摘要；日記原文不會放入 QR Code 或 PDF。',
-              style: HealingDesignSystem.bodySmall,
-            ),
-            const SizedBox(height: 8),
-            for (final item in _summary.diaryHighlights)
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
-                value: _selectedDiaryHighlights.contains(
-                  _diaryHighlightKey(item),
-                ),
-                title: Text(item.summary),
-                subtitle: Text(
-                  '${item.date}・${labels[item.category] ?? item.category}',
-                ),
-                onChanged: (selected) {
-                  setState(() {
-                    final key = _diaryHighlightKey(item);
-                    if (selected == true) {
-                      _selectedDiaryHighlights.add(key);
-                    } else {
-                      _selectedDiaryHighlights.remove(key);
-                    }
-                  });
-                },
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _additionalNotesSection() => Card(
-        elevation: 0,
-        color: HealingDesignSystem.adaptiveSurface(context),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('其他想跟醫師說的內容', style: HealingDesignSystem.titleSmall),
-              const SizedBox(height: 6),
-              Text(
-                '可補充未包含在上方主題中的事情，內容會原樣保留。',
-                style: HealingDesignSystem.bodySmall.copyWith(
-                  color: HealingDesignSystem.adaptiveSecondaryText(context),
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                key: const ValueKey('preview-additional-notes'),
-                controller: _additionalNotesController,
-                minLines: 3,
-                maxLines: 7,
-                decoration: const InputDecoration(
-                  hintText: '例如：近期生活事件、開心的事，或其他想讓醫師知道的內容',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              for (var index = 0;
-                  index < _controllers['userSharedNotes']!.length;
-                  index++)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Row(
-                    children: [
-                      const Padding(
-                        padding: EdgeInsets.only(right: 8),
-                        child: Text('•'),
-                      ),
-                      Expanded(
-                        child: TextField(
-                          key: ValueKey('userSharedNotes-$index'),
-                          controller: _controllers['userSharedNotes']![index],
-                          minLines: 1,
-                          maxLines: 4,
-                          decoration: const InputDecoration(
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-        ),
-      );
-
-  Widget _readOnlySection(
-    String title,
-    List<String> items, {
-    String emptyText = '尚無資料',
-  }) =>
-      Card(
-        elevation: 0,
-        color: HealingDesignSystem.adaptiveSurface(context),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: HealingDesignSystem.titleSmall),
-              const SizedBox(height: 8),
-              if (items.isEmpty)
-                Text(emptyText, style: HealingDesignSystem.bodySmall)
-              else
-                for (final item in items)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Text(
-                        '• ${FollowUpSummaryTextFormatter.sentence(item)}'),
-                  ),
-            ],
-          ),
-        ),
-      );
-
-  Widget _section(
-    String title,
-    String key, {
-    bool showWhenEmpty = false,
-  }) {
+  Widget _section(String title, String key) {
     final controllers = _controllers[key]!;
-    if (controllers.isEmpty && !showWhenEmpty) {
-      return const SizedBox.shrink();
-    }
+    if (controllers.isEmpty) return const SizedBox.shrink();
     return Card(
       elevation: 0,
       color: HealingDesignSystem.adaptiveSurface(context),
@@ -467,8 +247,6 @@ class _FollowUpAiPreviewPageState extends State<FollowUpAiPreviewPage> {
           children: [
             Text(title, style: HealingDesignSystem.titleSmall),
             const SizedBox(height: 8),
-            if (controllers.isEmpty)
-              Text('尚無資料', style: HealingDesignSystem.bodySmall),
             for (var index = 0; index < controllers.length; index++)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -519,8 +297,10 @@ class _FollowUpAiPreviewPageState extends State<FollowUpAiPreviewPage> {
             .map((topic) => topic.label)
             .toList() ??
         const <String>[];
-    final discussionItems = _controllers['discussionItems']!;
-    if (labels.isEmpty && discussionItems.isEmpty) {
+    final priorities = _controllers['discussionPriorities']!;
+    if (labels.isEmpty &&
+        (input?.discussionDetails.trim().isEmpty ?? true) &&
+        priorities.isEmpty) {
       return const SizedBox.shrink();
     }
     return Card(
@@ -539,7 +319,13 @@ class _FollowUpAiPreviewPageState extends State<FollowUpAiPreviewPage> {
                   labels.map((label) => Chip(label: Text(label))).toList(),
             ),
           ],
-          for (var index = 0; index < discussionItems.length; index++)
+          if (input?.discussionDetails.trim().isNotEmpty == true)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                  '• ${FollowUpSummaryTextFormatter.sentence(input!.discussionDetails)}'),
+            ),
+          for (var index = 0; index < priorities.length; index++)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child:
@@ -550,8 +336,7 @@ class _FollowUpAiPreviewPageState extends State<FollowUpAiPreviewPage> {
                 ),
                 Expanded(
                   child: TextField(
-                    key: ValueKey('discussionItems-$index'),
-                    controller: discussionItems[index],
+                    controller: priorities[index],
                     minLines: 1,
                     maxLines: 4,
                     decoration: const InputDecoration(

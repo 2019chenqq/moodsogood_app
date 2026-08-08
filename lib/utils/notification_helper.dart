@@ -6,14 +6,12 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../app_globals.dart';
 import '../pages/hub_pages.dart';
 import '../meds/medication_checkin_page.dart';
-import '../pages/follow_up_summary_page.dart';
 
 const _channelId = 'heartshine_general';
 const _channelName = '心域提醒';
 const _channelDescription = '心域的提醒與每日通知';
 const _dailyRecordPayload = 'open_daily_record';
 const _medicationCheckinPayload = 'open_medication_checkin';
-const _followUpSummaryPayload = 'open_follow_up_summary';
 
 class NotificationHelper {
   static final NotificationHelper _instance = NotificationHelper._internal();
@@ -22,7 +20,7 @@ class NotificationHelper {
 
   static const int kDailyAlarmId = 10001;
   static const String medicationCheckinPayload = _medicationCheckinPayload;
-  static const String followUpSummaryPayload = _followUpSummaryPayload;
+  static const String followUpSummaryPayload = 'open_follow_up_summary';
 
   final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
@@ -328,8 +326,11 @@ class NotificationHelper {
     }
   }
 
-  /// 建立單次通知。回診提醒使用一般精準度，避免為數天後的提醒額外要求
-  /// Android 精準鬧鐘權限。
+  Future<void> cancelNotification(int id) async {
+    await _notificationsPlugin.cancel(id);
+  }
+
+  /// 排程一筆「單次」通知（例如回診前提醒），回傳是否排程成功。
   Future<bool> scheduleOneTimeNotification({
     required int id,
     required String title,
@@ -337,45 +338,36 @@ class NotificationHelper {
     required DateTime scheduledAt,
     String? payload,
   }) async {
-    await init();
-    if (!await _ensurePermissions()) return false;
-    final scheduledDate = tz.TZDateTime.from(scheduledAt, tz.local);
-    if (!scheduledDate.isAfter(tz.TZDateTime.now(tz.local))) return false;
     try {
       await _notificationsPlugin.zonedSchedule(
         id,
         title,
         body,
-        scheduledDate,
-        NotificationDetails(
+        tz.TZDateTime.from(scheduledAt, tz.local),
+        const NotificationDetails(
           android: AndroidNotificationDetails(
             _channelId,
             _channelName,
             channelDescription: _channelDescription,
-            importance: Importance.high,
+            importance: Importance.max,
             priority: Priority.high,
-            icon: '@mipmap/ic_launcher',
+            enableVibration: true,
+            enableLights: true,
+            playSound: true,
           ),
-          iOS: const DarwinNotificationDetails(
-            presentAlert: true,
-            presentBadge: true,
-            presentSound: true,
-            interruptionLevel: InterruptionLevel.timeSensitive,
-          ),
+          iOS: DarwinNotificationDetails(),
         ),
-        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        androidScheduleMode: _exactAlarmAllowed
+            ? AndroidScheduleMode.exactAllowWhileIdle
+            : AndroidScheduleMode.inexactAllowWhileIdle,
         payload: payload,
       );
+      debugPrint('✅ 單次通知已排程（id=$id）：$title');
       return true;
-    } catch (error, stackTrace) {
-      debugPrint('❌ 建立單次通知失敗：$error');
-      debugPrintStack(stackTrace: stackTrace);
+    } catch (e) {
+      debugPrint('❌ 單次通知排程失敗：$e');
       return false;
     }
-  }
-
-  Future<void> cancelNotification(int id) async {
-    await _notificationsPlugin.cancel(id);
   }
 
   Future<void> requestExactAlarmPermission() async {
@@ -407,9 +399,6 @@ class NotificationHelper {
     if (payload == _medicationCheckinPayload) {
       return _navigateToMedicationCheckin();
     }
-    if (payload == _followUpSummaryPayload) {
-      return _navigateToFollowUpSummary();
-    }
     return false;
   }
 
@@ -430,17 +419,6 @@ class NotificationHelper {
 
     navigator.pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const MedicationCheckinPage()),
-      (_) => false,
-    );
-    return true;
-  }
-
-  bool _navigateToFollowUpSummary() {
-    final navigator = rootNavigatorKey.currentState;
-    if (navigator == null) return false;
-
-    navigator.pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const FollowUpSummaryPage()),
       (_) => false,
     );
     return true;

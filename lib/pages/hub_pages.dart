@@ -5,6 +5,7 @@ import '../widgets/main_drawer.dart';
 import '../ai/innera_ai_home_page.dart';
 import '../daily/daily_record_screen.dart';
 import '../daily/daily_record_history.dart';
+import '../daily/quick_record_home_card.dart';
 import '../daily/weekly_record_repository.dart';
 import '../daily/weekly_review_page.dart';
 import '../models/weekly_record.dart';
@@ -15,92 +16,19 @@ import '../community/community_home_page.dart';
 import '../analytics_service.dart';
 import '../tutorial/app_tutorial_service.dart';
 import '../settings_page.dart';
-import '../services/follow_up_service.dart';
 import 'feedback_page.dart';
 import 'follow_up_hub_page.dart';
 import 'life_overview_page.dart';
 import 'profile_page.dart';
 import 'trend_review_hub_page.dart';
 
-class HomeHubPage extends StatefulWidget {
+class HomeHubPage extends StatelessWidget {
   const HomeHubPage({super.key});
-
-  @override
-  State<HomeHubPage> createState() => _HomeHubPageState();
-}
-
-class _HomeHubPageState extends State<HomeHubPage> {
-  static String? _promptedVisitKey;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _maybePromptForNextAppointment();
-    });
-  }
 
   void _push(BuildContext context, Widget page) {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => page),
-    );
-  }
-
-  Future<void> _maybePromptForNextAppointment() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-
-    final appointments = await FollowUpService.getAppointments();
-    if (!mounted) return;
-
-    final todayAppointments = appointments
-        .where((appointment) => appointment.daysUntil == 0)
-        .toList();
-    final alreadyHasNextAppointment =
-        appointments.any((appointment) => appointment.daysUntil > 0);
-    if (todayAppointments.isEmpty || alreadyHasNextAppointment) return;
-
-    final now = DateTime.now();
-    final promptKey =
-        '$uid-${now.year}-${now.month.toString().padLeft(2, '0')}-'
-        '${now.day.toString().padLeft(2, '0')}';
-    if (_promptedVisitKey == promptKey) return;
-    _promptedVisitKey = promptKey;
-
-    final appointment = todayAppointments.first;
-    final visitLabel = appointment.label.trim();
-    final visitDescription =
-        visitLabel.isEmpty ? '今天是回診日' : '今天是 $visitLabel 的回診日';
-    final shouldAdd = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        icon: const Icon(Icons.event_available_rounded),
-        title: const Text('今天回診，要記下下一次日期嗎？'),
-        content: Text(
-          '$visitDescription。如果已經知道下一次回診日期，'
-          '現在順手記下，之後就能提前整理想跟醫師討論的事情。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('稍後再說'),
-          ),
-          FilledButton.icon(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('新增下次回診'),
-          ),
-        ],
-      ),
-    );
-
-    if (shouldAdd != true || !mounted) return;
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const FollowUpHubPage(promptAddAppointment: true),
-      ),
     );
   }
 
@@ -132,6 +60,8 @@ class _HomeHubPageState extends State<HomeHubPage> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
+            const QuickRecordHomeCard(),
+            const SizedBox(height: 16),
             _RecordEntryCard(
               icon: Icons.edit_note_rounded,
               title: '紀錄系統',
@@ -139,7 +69,6 @@ class _HomeHubPageState extends State<HomeHubPage> {
               color: const Color.fromARGB(255, 129, 199, 132),
               onTap: () => _push(context, const RecordHubPage()),
               actionLabel: '開始記錄',
-              height: 125,
             ),
             const SizedBox(height: 12),
             _RecordEntryCard(
@@ -149,7 +78,6 @@ class _HomeHubPageState extends State<HomeHubPage> {
               color: const Color(0xFF7DB7D8),
               onTap: () => _push(context, const InneraAiHomePage()),
               actionLabel: '開始對話',
-              height: 125,
             ),
             const SizedBox(height: 12),
             _RecordEntryCard(
@@ -159,7 +87,6 @@ class _HomeHubPageState extends State<HomeHubPage> {
               color: const Color(0xFF5C9BD5),
               onTap: () => _push(context, const LifeOverviewPage()),
               actionLabel: '查看軌跡',
-              height: 125,
             ),
             const SizedBox(height: 12),
             _RecordEntryCard(
@@ -169,7 +96,6 @@ class _HomeHubPageState extends State<HomeHubPage> {
               color: const Color(0xFF26A69A),
               onTap: () => _push(context, const FollowUpHubPage()),
               actionLabel: '前往專區',
-              height: 125,
             ),
             const SizedBox(height: 12),
             _RecordEntryCard(
@@ -179,7 +105,6 @@ class _HomeHubPageState extends State<HomeHubPage> {
               color: const Color(0xFF9575CD),
               onTap: () => _push(context, const ProfilePage()),
               actionLabel: '查看資料',
-              height: 125,
             ),
             const SizedBox(height: 12),
             _RecordEntryCard(
@@ -189,7 +114,6 @@ class _HomeHubPageState extends State<HomeHubPage> {
               color: const Color(0xFF78909C),
               onTap: () => _push(context, const SettingsPage()),
               actionLabel: '開啟設定',
-              height: 125,
             ),
             const SizedBox(height: 12),
             _RecordEntryCard(
@@ -199,7 +123,6 @@ class _HomeHubPageState extends State<HomeHubPage> {
               color: const Color(0xFFFFA25B),
               onTap: () => _push(context, const FeedbackPage()),
               actionLabel: '取得協助',
-              height: 125,
             ),
           ],
         ),
@@ -372,6 +295,8 @@ class _RecordHubPageState extends State<RecordHubPage> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
+            const QuickRecordHomeCard(),
+            const SizedBox(height: 12),
             _RecordEntryCard(
               icon: Icons.book_outlined,
               title: '日記',
@@ -557,7 +482,6 @@ class _RecordEntryCard extends StatefulWidget {
     required this.color,
     required this.onTap,
     this.actionLabel,
-    this.height = 120,
   });
 
   final IconData icon;
@@ -566,7 +490,6 @@ class _RecordEntryCard extends StatefulWidget {
   final Color color;
   final VoidCallback onTap;
   final String? actionLabel;
-  final double height;
 
   @override
   State<_RecordEntryCard> createState() => _RecordEntryCardState();
@@ -574,6 +497,8 @@ class _RecordEntryCard extends StatefulWidget {
 
 class _RecordEntryCardState extends State<_RecordEntryCard>
     with SingleTickerProviderStateMixin {
+  static const double _cardHeight = 120;
+
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
 
@@ -618,7 +543,7 @@ class _RecordEntryCardState extends State<_RecordEntryCard>
       child: ScaleTransition(
         scale: _scaleAnimation,
         child: SizedBox(
-          height: widget.height,
+          height: _cardHeight,
           child: Card(
             elevation: 4,
             shadowColor: widget.color.withValues(alpha: 0.4),

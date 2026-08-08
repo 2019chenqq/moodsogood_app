@@ -19,19 +19,10 @@ const ALLOWED_KEYS = new Set([
 const DISPLAY_KEYS = new Set([
   "schemaVersion", "visitInfo", "topicLabels", "discussionItems",
   "keyChanges", "timelineRelations", "userSharedNotes",
-  "symptoms", "bodyMeasurements", "sleepSummaryItems", "sleepTrend", "medicationTimeline",
+  "sleepSummaryItems", "sleepTrend", "medicationTimeline",
   "dataLimitations", "generatedAt", "disclaimer",
   "includedSections",
 ]);
-const PUBLIC_TEXT_ARRAY_KEYS = [
-  "discussionItems", "keyChanges", "userSharedNotes", "dataLimitations",
-  "symptoms", "bodyMeasurements",
-];
-
-function isQuestionAnswerTranscript(value) {
-  return /(AI\s*補問|使用者(?:原始)?回答|問題[一二三四五0-9]|(^|[\s　])問[：:]|(^|[\s　])答[：:]|回答[：:])/i
-    .test(String(value || ""));
-}
 
 function createToken() {
   return crypto.randomBytes(32).toString("base64url");
@@ -58,13 +49,6 @@ function sanitizeSummarySnapshot(value) {
       Object.entries(snapshot.display)
         .filter(([key]) => DISPLAY_KEYS.has(key)),
     );
-    for (const key of PUBLIC_TEXT_ARRAY_KEYS) {
-      if (Array.isArray(snapshot.display[key])) {
-        snapshot.display[key] = snapshot.display[key]
-          .filter((item) => typeof item === "string")
-          .filter((item) => !isQuestionAnswerTranscript(item));
-      }
-    }
     // New clients send the canonical display model. Do not retain parallel raw
     // fields that could contain unchecked user text.
     return {

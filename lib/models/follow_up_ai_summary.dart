@@ -1,7 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import 'follow_up_sleep_summary_view_model.dart';
-
 /// V0 contract between the follow-up summary UI/data layer and a future AI
 /// summarization service.
 ///
@@ -297,7 +295,6 @@ class FollowUpAiV1Input {
     required this.currentMedications,
     required this.medicationTimeline,
     required this.dataLimitations,
-    this.diaryContext = const [],
     this.schemaVersion = 1,
   });
 
@@ -313,12 +310,10 @@ class FollowUpAiV1Input {
   final List<Map<String, dynamic>> currentMedications;
   final List<Map<String, dynamic>> medicationTimeline;
   final List<String> dataLimitations;
-  final List<Map<String, dynamic>> diaryContext;
 
   FollowUpAiV1Input copyWith({
     String? discussionDetails,
     String? additionalNotes,
-    List<Map<String, dynamic>>? diaryContext,
   }) =>
       FollowUpAiV1Input(
         schemaVersion: schemaVersion,
@@ -333,7 +328,6 @@ class FollowUpAiV1Input {
         currentMedications: currentMedications,
         medicationTimeline: medicationTimeline,
         dataLimitations: dataLimitations,
-        diaryContext: diaryContext ?? this.diaryContext,
       );
 
   Map<String, dynamic> toJson() => {
@@ -350,37 +344,7 @@ class FollowUpAiV1Input {
         'currentMedications': currentMedications,
         'medicationTimeline': medicationTimeline,
         'dataLimitations': dataLimitations,
-        if (diaryContext.isNotEmpty) 'diaryContext': diaryContext,
       };
-}
-
-class FollowUpDiaryHighlight {
-  const FollowUpDiaryHighlight({
-    required this.date,
-    required this.category,
-    required this.summary,
-    this.source = 'diary',
-  });
-
-  final String date;
-  final String category;
-  final String summary;
-  final String source;
-
-  Map<String, dynamic> toJson() => {
-        'date': date,
-        'category': category,
-        'summary': summary,
-        'source': source,
-      };
-
-  factory FollowUpDiaryHighlight.fromJson(Map<String, dynamic> json) =>
-      FollowUpDiaryHighlight(
-        date: (json['date'] ?? '').toString().trim(),
-        category: (json['category'] ?? '').toString().trim(),
-        summary: (json['summary'] ?? '').toString().trim(),
-        source: (json['source'] ?? 'diary').toString().trim(),
-      );
 }
 
 /// Response shape reserved for the future AI integration.
@@ -389,11 +353,8 @@ class FollowUpAiOutput {
     required this.keyChanges,
     required this.timelineRelations,
     required this.discussionPriorities,
-    this.discussionItems = const [],
-    this.followUpResponses = const [],
     this.userSharedNotes = const [],
     this.userReportedConcerns = const [],
-    this.diaryHighlights = const [],
     required this.dataLimitations,
     required this.generatedAt,
     this.usedFallback = false,
@@ -402,19 +363,12 @@ class FollowUpAiOutput {
   final List<String> keyChanges;
   final List<String> timelineRelations;
   final List<String> discussionPriorities;
-  final List<String> discussionItems;
-
-  /// App-owned question/answer pairs from the pre-summary clarification step.
-  /// These are preserved verbatim instead of relying on the model to repeat
-  /// them in another output field.
-  final List<Map<String, String>> followUpResponses;
 
   /// User-authored free-form notes. Kept separate from observed health data.
   final List<String> userSharedNotes;
 
   /// Legacy transport/storage field. New UI must use [userSharedNotes].
   final List<String> userReportedConcerns;
-  final List<FollowUpDiaryHighlight> diaryHighlights;
   final List<String> dataLimitations;
   final DateTime generatedAt;
   final bool usedFallback;
@@ -423,12 +377,8 @@ class FollowUpAiOutput {
         'keyChanges': keyChanges,
         'timelineRelations': timelineRelations,
         'discussionPriorities': discussionPriorities,
-        'discussionItems': discussionItems,
-        'followUpResponses': followUpResponses,
         'userSharedNotes': userSharedNotes,
         'userReportedConcerns': userReportedConcerns,
-        'diaryHighlights':
-            diaryHighlights.map((item) => item.toJson()).toList(),
         'dataLimitations': dataLimitations,
         'generatedAt': generatedAt.toUtc().toIso8601String(),
         'usedFallback': usedFallback,
@@ -443,11 +393,8 @@ class FollowUpAiOutput {
       keyChanges: keyChanges,
       timelineRelations: _strings(json['timelineRelations']),
       discussionPriorities: _strings(json['discussionPriorities']),
-      discussionItems: _strings(json['discussionItems']),
-      followUpResponses: _questionAnswers(json['followUpResponses']),
       userSharedNotes: _strings(json['userSharedNotes']),
       userReportedConcerns: _strings(json['userReportedConcerns']),
-      diaryHighlights: _diaryHighlights(json['diaryHighlights']),
       dataLimitations: _strings(json['dataLimitations']),
       generatedAt: DateTime.parse(json['generatedAt'] as String),
       usedFallback: json['usedFallback'] == true,
@@ -472,8 +419,6 @@ class FollowUpSummaryRecord {
     required this.sleepSummary,
     required this.sleepTrend,
     required this.medicationTimeline,
-    this.highFrequencySymptoms = const [],
-    this.bodyMeasurements = const [],
     this.schemaVersion = 1,
   });
 
@@ -492,8 +437,6 @@ class FollowUpSummaryRecord {
   final Map<String, dynamic> sleepSummary;
   final List<Map<String, dynamic>> sleepTrend;
   final List<Map<String, dynamic>> medicationTimeline;
-  final List<Map<String, dynamic>> highFrequencySymptoms;
-  final List<Map<String, dynamic>> bodyMeasurements;
   final int schemaVersion;
 
   Map<String, dynamic> toMap() => {
@@ -511,8 +454,6 @@ class FollowUpSummaryRecord {
         'sleepSummary': sleepSummary,
         'sleepTrend': sleepTrend,
         'medicationTimeline': medicationTimeline,
-        'highFrequencySymptoms': highFrequencySymptoms,
-        'bodyMeasurements': bodyMeasurements,
         'schemaVersion': schemaVersion,
       };
 
@@ -537,12 +478,10 @@ class FollowUpSummaryRecord {
       'additionalNotes': options.lifeUpdates ? additionalNotes : '',
       'aiOutput': {
         'keyChanges': display.keyChanges,
-        'discussionItems': options.discussionTopics
-            ? display.discussionItems
+        'timelineRelations': display.timelineRelations,
+        'discussionPriorities': options.discussionTopics
+            ? aiOutput.discussionPriorities
             : const <String>[],
-        'diaryHighlights': options.lifeUpdates
-            ? aiOutput.diaryHighlights.map((item) => item.toJson()).toList()
-            : const [],
         'userSharedNotes': display.userSharedNotes,
         'userReportedConcerns': display.userSharedNotes,
         'dataLimitations': display.dataLimitations,
@@ -552,9 +491,6 @@ class FollowUpSummaryRecord {
       'sleepTrend': options.sleep ? sleepTrend : const [],
       'medicationTimeline':
           options.medicationAdjustments ? medicationTimeline : const [],
-      'highFrequencySymptoms':
-          options.emotionsAndSymptoms ? highFrequencySymptoms : const [],
-      'bodyMeasurements': options.bodyMeasurements ? bodyMeasurements : const [],
       'schemaVersion': schemaVersion,
       'display': display.toJson(),
     };
@@ -582,8 +518,6 @@ class FollowUpSummaryRecord {
         sleepSummary: sleepSummary,
         sleepTrend: sleepTrend,
         medicationTimeline: medicationTimeline,
-        highFrequencySymptoms: highFrequencySymptoms,
-        bodyMeasurements: bodyMeasurements,
         schemaVersion: schemaVersion,
       );
 
@@ -610,8 +544,6 @@ class FollowUpSummaryRecord {
       sleepSummary: _map(map['sleepSummary']),
       sleepTrend: _mapList(map['sleepTrend']),
       medicationTimeline: _mapList(map['medicationTimeline']),
-      highFrequencySymptoms: _mapList(map['highFrequencySymptoms']),
-      bodyMeasurements: _mapList(map['bodyMeasurements']),
       schemaVersion: (map['schemaVersion'] as num?)?.toInt() ?? 0,
     );
   }
@@ -639,9 +571,6 @@ FollowUpAiOutput _safeAiOutput(dynamic value, DateTime fallbackDate) {
     keyChanges: _strings(map['keyChanges']),
     timelineRelations: _strings(map['timelineRelations']),
     discussionPriorities: _strings(map['discussionPriorities']),
-    discussionItems: _strings(map['discussionItems']),
-    followUpResponses: _questionAnswers(map['followUpResponses']),
-    diaryHighlights: _diaryHighlights(map['diaryHighlights']),
     userSharedNotes: _strings(map['userSharedNotes']),
     userReportedConcerns: _strings(map['userReportedConcerns']),
     dataLimitations: _strings(map['dataLimitations']),
@@ -656,31 +585,6 @@ String _date(DateTime value) => '${value.year.toString().padLeft(4, '0')}-'
 
 List<String> _strings(dynamic value) => value is List
     ? value.map((item) => item.toString()).toList(growable: false)
-    : const [];
-
-List<Map<String, String>> _questionAnswers(dynamic value) => value is List
-    ? value
-        .whereType<Map>()
-        .map((item) => {
-              'question': (item['question'] ?? '').toString().trim(),
-              'answer': (item['answer'] ?? '').toString().trim(),
-            })
-        .where((item) =>
-            item['question']!.isNotEmpty && item['answer']!.isNotEmpty)
-        .toList(growable: false)
-    : const [];
-
-List<FollowUpDiaryHighlight> _diaryHighlights(dynamic value) => value is List
-    ? value
-        .whereType<Map>()
-        .map((item) => FollowUpDiaryHighlight.fromJson(
-              Map<String, dynamic>.from(item),
-            ))
-        .where((item) =>
-            item.date.isNotEmpty &&
-            item.summary.isNotEmpty &&
-            item.source == 'diary')
-        .toList(growable: false)
     : const [];
 
 /// Presentation-only normalization shared by App, PDF and QR snapshots.
@@ -716,61 +620,6 @@ class FollowUpSummaryTextFormatter {
         .where((item) => seen.add(comparisonKey(item)))
         .toList(growable: false);
   }
-
-  static bool isQuestionAnswerTranscript(String value) {
-    final text = value.trim();
-    if (text.isEmpty) return false;
-    return RegExp(
-      r'(AI\s*補問|使用者(?:原始)?回答|問題[一二三四五0-9]|(?:^|[\s　])問[：:]|(?:^|[\s　])答[：:]|回答[：:])',
-      caseSensitive: false,
-    ).hasMatch(text);
-  }
-
-  static List<String> withoutQuestionAnswerTranscripts(
-    Iterable<String> values,
-  ) =>
-      sentences(values)
-          .where((item) => !isQuestionAnswerTranscript(item))
-          .toList(growable: false);
-
-  static List<String> preserveUserEnteredNotes(
-    Iterable<String> preservedValues, {
-    Iterable<String> derivedValues = const [],
-  }) {
-    final seen = <String>{};
-    final items = <String>[];
-
-    void append(
-      Iterable<String> values, {
-      required bool filterQuestionAnswerTranscript,
-    }) {
-      for (final item in values
-          .expand((value) => value.split(RegExp(r'[\r\n]+')))
-          .map(sentence)
-          .where((item) => item.isNotEmpty)) {
-        if (filterQuestionAnswerTranscript &&
-            isQuestionAnswerTranscript(item)) {
-          continue;
-        }
-        if (seen.add(comparisonKey(item))) {
-          items.add(item);
-        }
-      }
-    }
-
-    append(
-      preservedValues,
-      filterQuestionAnswerTranscript: false,
-    );
-    append(
-      derivedValues,
-      filterQuestionAnswerTranscript: true,
-    );
-    return items;
-  }
-
-  static List<String> safeDiscussionItems(Iterable<String> values) =>
-      withoutQuestionAnswerTranscripts(values).take(5).toList(growable: false);
 }
 
 class FollowUpSummaryShareOptions {
@@ -781,7 +630,6 @@ class FollowUpSummaryShareOptions {
     required this.medicationAdjustments,
     required this.lifeUpdates,
     required this.dataLimitations,
-    required this.bodyMeasurements,
   });
 
   static const none = FollowUpSummaryShareOptions(
@@ -791,7 +639,6 @@ class FollowUpSummaryShareOptions {
     medicationAdjustments: false,
     lifeUpdates: false,
     dataLimitations: false,
-    bodyMeasurements: false,
   );
   static const all = FollowUpSummaryShareOptions(
     discussionTopics: true,
@@ -800,7 +647,6 @@ class FollowUpSummaryShareOptions {
     medicationAdjustments: true,
     lifeUpdates: true,
     dataLimitations: true,
-    bodyMeasurements: true,
   );
 
   final bool discussionTopics;
@@ -809,7 +655,6 @@ class FollowUpSummaryShareOptions {
   final bool medicationAdjustments;
   final bool lifeUpdates;
   final bool dataLimitations;
-  final bool bodyMeasurements;
 
   bool get hasSelection =>
       discussionTopics ||
@@ -817,8 +662,7 @@ class FollowUpSummaryShareOptions {
       emotionsAndSymptoms ||
       medicationAdjustments ||
       lifeUpdates ||
-      dataLimitations ||
-      bodyMeasurements;
+      dataLimitations;
 
   FollowUpSummaryShareOptions copyWith({
     bool? discussionTopics,
@@ -827,7 +671,6 @@ class FollowUpSummaryShareOptions {
     bool? medicationAdjustments,
     bool? lifeUpdates,
     bool? dataLimitations,
-    bool? bodyMeasurements,
   }) =>
       FollowUpSummaryShareOptions(
         discussionTopics: discussionTopics ?? this.discussionTopics,
@@ -837,7 +680,6 @@ class FollowUpSummaryShareOptions {
             medicationAdjustments ?? this.medicationAdjustments,
         lifeUpdates: lifeUpdates ?? this.lifeUpdates,
         dataLimitations: dataLimitations ?? this.dataLimitations,
-        bodyMeasurements: bodyMeasurements ?? this.bodyMeasurements,
       );
 }
 
@@ -848,8 +690,6 @@ class FollowUpSummaryDisplayModel {
     required this.discussionItems,
     required this.keyChanges,
     required this.timelineRelations,
-    required this.symptoms,
-    required this.bodyMeasurements,
     required this.userSharedNotes,
     required this.sleepSummaryItems,
     required this.sleepTrend,
@@ -864,8 +704,6 @@ class FollowUpSummaryDisplayModel {
   final List<String> discussionItems;
   final List<String> keyChanges;
   final List<String> timelineRelations;
-  final List<String> symptoms;
-  final List<String> bodyMeasurements;
   final List<String> userSharedNotes;
   final List<String> sleepSummaryItems;
   final List<Map<String, dynamic>> sleepTrend;
@@ -886,18 +724,13 @@ class FollowUpSummaryDisplayModel {
     final legacy = output.userSharedNotes.isEmpty
         ? output.userReportedConcerns
         : const <String>[];
-    final notes = FollowUpSummaryTextFormatter.preserveUserEnteredNotes(
-      [
-        if (record.additionalNotes.trim().isNotEmpty) record.additionalNotes,
-      ],
-      derivedValues: [
-        ...output.userSharedNotes,
-        ...output.diaryHighlights.map(_formatDiaryHighlight),
-        ...legacy.where((item) =>
-            FollowUpSummaryTextFormatter.comparisonKey(item) ==
-            FollowUpSummaryTextFormatter.comparisonKey(record.additionalNotes)),
-      ],
-    );
+    final notes = <String>[
+      if (record.additionalNotes.trim().isNotEmpty) record.additionalNotes,
+      ...output.userSharedNotes,
+      ...legacy.where((item) =>
+          FollowUpSummaryTextFormatter.comparisonKey(item) ==
+          FollowUpSummaryTextFormatter.comparisonKey(record.additionalNotes)),
+    ];
     final movedLegacy = legacy.where((item) {
       final key = FollowUpSummaryTextFormatter.comparisonKey(item);
       return key.isNotEmpty &&
@@ -910,43 +743,30 @@ class FollowUpSummaryDisplayModel {
     });
     return FollowUpSummaryDisplayModel(
       visitInfo: [
+        if (record.appointmentDate != null)
+          '回診日期：${_displayDate(record.appointmentDate!)}',
         '統計期間：${_displayDate(record.periodStart)}～${_displayDate(record.periodEnd)}',
         '有效紀錄天數：${record.validRecordDays} 天',
       ],
       topicLabels: options.discussionTopics ? labels : const [],
       discussionItems: options.discussionTopics
-          ? FollowUpSummaryTextFormatter.safeDiscussionItems([
+          ? FollowUpSummaryTextFormatter.sentences([
               if (record.discussionDetails.trim().isNotEmpty)
                 record.discussionDetails,
-              ...output.discussionItems,
               ...output.discussionPriorities,
             ])
           : const [],
       keyChanges: options.emotionsAndSymptoms
-          ? _withoutMedicationTimelineDuplicates(
-              record,
-              _keyChangeItems(
-                record,
-                source: [...output.keyChanges, ...movedLegacy],
-                includeBodyMeasurements: options.bodyMeasurements,
-              ),
-            ).take(5).toList(growable: false)
+          ? _keyChangeItems(record, [...output.keyChanges, ...movedLegacy])
           : const [],
-      // Kept in the view model only for wire compatibility. Renderers must
-      // ignore legacy timeline relations.
-      timelineRelations: const [],
-      symptoms: options.emotionsAndSymptoms
-          ? _symptomItems(record)
+      timelineRelations: options.emotionsAndSymptoms
+          ? FollowUpSummaryTextFormatter.sentences(output.timelineRelations)
           : const [],
-      bodyMeasurements:
-          options.bodyMeasurements ? _bodyMeasurementItems(record) : const [],
-      userSharedNotes: options.lifeUpdates ? notes : const [],
-      sleepSummaryItems: options.sleep
-          ? _sleepSummaryItems(
-              record.sleepSummary,
-              sleepTrend: record.sleepTrend,
-            )
+      userSharedNotes: options.lifeUpdates
+          ? FollowUpSummaryTextFormatter.sentences(notes)
           : const [],
+      sleepSummaryItems:
+          options.sleep ? _sleepSummaryItems(record.sleepSummary) : const [],
       sleepTrend: options.sleep ? record.sleepTrend : const [],
       medicationTimeline: options.medicationAdjustments
           ? FollowUpSummaryTextFormatter.sentences(
@@ -954,9 +774,7 @@ class FollowUpSummaryDisplayModel {
             )
           : const [],
       dataLimitations: options.dataLimitations
-          ? FollowUpSummaryTextFormatter.withoutQuestionAnswerTranscripts(
-              output.dataLimitations,
-            )
+          ? FollowUpSummaryTextFormatter.sentences(output.dataLimitations)
           : const [],
       generatedAt: _displayDateTime(output.generatedAt),
       includedSections: [
@@ -966,7 +784,6 @@ class FollowUpSummaryDisplayModel {
         if (options.medicationAdjustments) 'medicationAdjustments',
         if (options.lifeUpdates) 'lifeUpdates',
         if (options.dataLimitations) 'dataLimitations',
-        if (options.bodyMeasurements) 'bodyMeasurements',
       ],
     );
   }
@@ -978,8 +795,6 @@ class FollowUpSummaryDisplayModel {
         'discussionItems': discussionItems,
         'keyChanges': keyChanges,
         'timelineRelations': timelineRelations,
-        'symptoms': symptoms,
-        'bodyMeasurements': bodyMeasurements,
         'userSharedNotes': userSharedNotes,
         'sleepSummaryItems': sleepSummaryItems,
         'sleepTrend': sleepTrend,
@@ -991,83 +806,36 @@ class FollowUpSummaryDisplayModel {
       };
 
   static List<String> _keyChangeItems(
-    FollowUpSummaryRecord record, {
-    required List<String> source,
-    bool includeBodyMeasurements = true,
-  }) {
-    final duration = _map(record.sleepSummary['durationHours']);
-    var values = source.where((item) => !item.contains('睡眠')).toList();
-    
-    // Always filter out body measurement values from key changes
-    // Actual values should never appear in keyChanges, only in bodyMeasurements
-    values = values.where((item) {
-      // Remove items that contain body measurement data with actual values
-      return !_isBodyMeasurementWithValues(item);
-    }).toList();
-    
-    final comparison = _map(duration['comparison']);
-    final change = comparison['change'] is num
-        ? comparison['change'] as num
-        : _sleepTrendChange(record.sleepTrend);
-    if (change is num && change.abs() >= .4) {
-      values.add(
-        '睡眠時間較前期${change > 0 ? '增加' : '減少'}：${_compactNumber(change.abs())}小時',
-      );
-    }
-    return FollowUpSummaryTextFormatter.withoutQuestionAnswerTranscripts(
-      values,
-    );
-  }
-  
-  static bool _isBodyMeasurementWithValues(String text) {
-    // Check if the text contains body measurement patterns with actual values
-    // Patterns like: "體重：75kg → 74.5kg" or "體重從 75kg 變化到 74.5kg"
-    final bodyMeasurementPattern = RegExp(
-      r'(體重|體脂率|腰圍|body\s*weight|body\s*fat|waist)',
-      caseSensitive: false,
-    );
-    
-    if (!bodyMeasurementPattern.hasMatch(text)) {
-      return false;
-    }
-    
-    // If it mentions body measurement, check if it has actual numeric values
-    final hasNumbers = RegExp(r'\d+\.?\d*\s*(kg|%|cm|公斤|公分|百分比)').hasMatch(text);
-    return hasNumbers;
-  }
-
-  static List<String> _withoutMedicationTimelineDuplicates(
     FollowUpSummaryRecord record,
-    List<String> keyChanges,
+    List<String> source,
   ) {
-    final medicationKeys = record.medicationTimeline
-        .map(_formatMedicationEvent)
-        .map(FollowUpSummaryTextFormatter.comparisonKey)
-        .where((key) => key.isNotEmpty)
-        .toSet();
-    return keyChanges
-        .where((item) => !medicationKeys.contains(
-              FollowUpSummaryTextFormatter.comparisonKey(item),
-            ))
-        .toList(growable: false);
-  }
-
-  static String _formatDiaryHighlight(FollowUpDiaryHighlight highlight) =>
-      '${highlight.date}（來自日記）：${highlight.summary}';
-
-  static num? _sleepTrendChange(List<Map<String, dynamic>> trend) {
-    final values = trend
-        .map((point) => point['value'])
-        .whereType<num>()
-        .map((value) => value.toDouble())
-        .toList();
-    if (values.length < 3) return null;
-    final half = values.length ~/ 2;
-    double average(Iterable<double> items) =>
-        items.reduce((a, b) => a + b) / items.length;
-    final earlier = average(values.take(half));
-    final recent = average(values.skip(half));
-    return ((recent - earlier) * 100).round() / 100;
+    final duration = _map(record.sleepSummary['durationHours']);
+    final average = duration['average'];
+    final minimum = duration['minimum'];
+    final maximum = duration['maximum'];
+    final canUseStructuredSleep =
+        average is num || minimum is num || maximum is num;
+    var insertedSleep = false;
+    final values = <String>[];
+    for (final item in source) {
+      final isVerboseSleep = canUseStructuredSleep &&
+          item.contains('睡眠') &&
+          item.contains('平均') &&
+          (item.contains('最低') ||
+              item.contains('最高') ||
+              item.contains('範圍') ||
+              item.contains('趨勢'));
+      if (!isVerboseSleep) {
+        values.add(item);
+        continue;
+      }
+      if (insertedSleep) continue;
+      insertedSleep = true;
+      if (average is num) values.add('睡眠平均時間：${_compactNumber(average)}小時');
+      if (minimum is num) values.add('最低：${_compactNumber(minimum)}小時');
+      if (maximum is num) values.add('最高：${_compactNumber(maximum)}小時');
+    }
+    return FollowUpSummaryTextFormatter.sentences(values);
   }
 
   static String _compactNumber(num value) {
@@ -1079,125 +847,74 @@ class FollowUpSummaryDisplayModel {
         .replaceFirst(RegExp(r'\.$'), '');
   }
 
-  static List<String> _sleepSummaryItems(
-    Map<String, dynamic> sleep, {
-    List<Map<String, dynamic>>? sleepTrend,
-  }) =>
-      FollowUpSleepSummaryViewModel.fromData(
-        sleep,
-        sleepTrend: sleepTrend,
-      ).displayItems;
-
-  static List<String> _symptomItems(FollowUpSummaryRecord record) {
-    String compact(dynamic value) {
-      final number = value is num
-          ? value.toDouble()
-          : double.tryParse(value?.toString() ?? '');
-      if (number == null) return value?.toString().trim() ?? '';
-      return number == number.roundToDouble()
-          ? number.toInt().toString()
-          : number.toStringAsFixed(1);
-    }
-
-    final symptoms = record.highFrequencySymptoms.take(5).map((symptom) {
-      final name = symptom['name']?.toString().trim() ?? '';
-      final days = (symptom['occurrenceDays'] as num?)?.toInt();
-      final severity = symptom['averageSeverity'];
-      return [
-        name,
-        if (days != null) '出現 $days 天',
-        if (severity is num) '平均程度 ${compact(severity)}',
-      ].where((part) => part.isNotEmpty).join('，');
-    });
-
-    return FollowUpSummaryTextFormatter.sentences(symptoms);
-  }
-
-  static List<String> _bodyMeasurementItems(FollowUpSummaryRecord record) {
-    String compact(dynamic value) {
-      final number = value is num
-          ? value.toDouble()
-          : double.tryParse(value?.toString() ?? '');
-      if (number == null) return value?.toString().trim() ?? '';
-      return number == number.roundToDouble()
-          ? number.toInt().toString()
-          : number.toStringAsFixed(1);
-    }
-
-    final measurements = record.bodyMeasurements.map((measurement) {
-      final name = measurement['name']?.toString().trim() ?? '';
-      final unit = measurement['unit']?.toString().trim() ?? '';
-      final change = compact(measurement['change']);
-      if (name.isEmpty) return '';
-      final changeNum = double.tryParse(change);
-      if (changeNum == null || changeNum == 0) {
-        return '$name：無明顯變化';
-      }
-      final direction = changeNum > 0 ? '增加' : '減少';
-      final absChange = changeNum.abs().toString();
-      return '$name：$direction $absChange$unit';
-    });
-
-    return FollowUpSummaryTextFormatter.sentences(measurements);
+  static List<String> _sleepSummaryItems(Map<String, dynamic> sleep) {
+    final duration = _map(sleep['durationHours']);
+    final naps = _map(sleep['naps']);
+    String hours(String key) => duration[key] is num
+        ? '${(duration[key] as num).toStringAsFixed(1)} 小時'
+        : '無資料';
+    int days(String key) =>
+        (_map(sleep[key])['occurrenceDays'] as num?)?.toInt() ?? 0;
+    return [
+      '有效睡眠紀錄：${(duration['recordedDays'] as num?)?.toInt() ?? 0} 天',
+      '平均：${hours('average')}',
+      '最短：${hours('minimum')}',
+      '最長：${hours('maximum')}',
+      '入睡困難：${days('sleepOnsetDifficulty')} 天',
+      '早醒：${days('earlyAwakening')} 天',
+      '夜間中斷：${days('nightInterruption')} 天',
+      '小睡：${(naps['days'] as num?)?.toInt() ?? 0} 天',
+    ];
   }
 
   static String _formatMedicationEvent(Map<String, dynamic> event) {
     final date = event['date']?.toString().trim() ?? '';
     final name = event['medicationName']?.toString().trim() ?? '';
-    final prefix = [date, name].where((part) => part.isNotEmpty).join(' ');
     final type = event['type']?.toString().trim() ?? '';
-    final beforeDose = _dose(event['beforeDose']);
-    final afterDose = _dose(event['afterDose']);
-    final rawBeforeUnit = event['beforeUnit']?.toString().trim() ?? '';
-    final rawAfterUnit = event['afterUnit']?.toString().trim() ?? '';
-    final beforeUnit = rawBeforeUnit.isEmpty ? rawAfterUnit : rawBeforeUnit;
-    final afterUnit = rawAfterUnit.isEmpty ? rawBeforeUnit : rawAfterUnit;
     final beforeTimes = _strings(event['beforeTimes']).join('、');
     final afterTimes = _strings(event['afterTimes']).join('、');
-
-    String doseWithUnit(String? dose, String unit) =>
-        dose == null ? '' : '$dose${unit.isEmpty ? '' : ' $unit'}';
-    String doseChange(String label) {
-      final before = doseWithUnit(beforeDose, beforeUnit);
-      final after = doseWithUnit(afterDose, afterUnit);
-      if (before.isNotEmpty && after.isNotEmpty && before != after) {
-        return '$label：$before → $after';
-      }
-      final value = after.isNotEmpty ? after : before;
-      return value.isEmpty ? label : '劑量：$value';
+    String? dose(dynamic value) {
+      final number =
+          value is num ? value.toDouble() : double.tryParse('$value');
+      if (number == null) return null;
+      return number == number.roundToDouble()
+          ? number.toInt().toString()
+          : number.toString();
     }
 
+    final before = dose(event['beforeDose']);
+    final after = dose(event['afterDose']);
+    final unit =
+        (event['afterUnit'] ?? event['beforeUnit'] ?? '').toString().trim();
+    final beforeText =
+        before == null ? '' : '$before${unit.isEmpty ? '' : ' $unit'}';
+    final afterText =
+        after == null ? '' : '$after${unit.isEmpty ? '' : ' $unit'}';
     final detail = switch (type) {
       'scheduleChanged' => beforeTimes.isNotEmpty &&
               afterTimes.isNotEmpty &&
               beforeTimes != afterTimes
           ? '服藥時間：$beforeTimes → $afterTimes'
-          : (afterTimes.isNotEmpty || beforeTimes.isNotEmpty)
-              ? '服藥時間：${afterTimes.isNotEmpty ? afterTimes : beforeTimes}'
-              : '服藥時間調整',
-      'added' => afterDose == null
-          ? '新增'
-          : '新增，劑量 ${doseWithUnit(afterDose, afterUnit)}',
-      'increased' => doseChange('劑量增加'),
-      'decreased' => doseChange('劑量減少'),
-      'doseChanged' => doseChange('劑量調整'),
+          : '服藥時間調整',
+      'added' => afterText.isEmpty ? '新增' : '新增，劑量 $afterText',
       'stopped' => '停用',
-      'resumed' => afterDose == null
-          ? '恢復使用'
-          : '恢復使用，劑量 ${doseWithUnit(afterDose, afterUnit)}',
-      _ => type,
+      'increased' =>
+        beforeText.isNotEmpty && afterText.isNotEmpty && beforeText != afterText
+            ? '劑量增加：$beforeText → $afterText'
+            : '劑量增加',
+      'decreased' =>
+        beforeText.isNotEmpty && afterText.isNotEmpty && beforeText != afterText
+            ? '劑量減少：$beforeText → $afterText'
+            : '劑量減少',
+      _ =>
+        beforeText.isNotEmpty && afterText.isNotEmpty && beforeText != afterText
+            ? '劑量調整：$beforeText → $afterText'
+            : type,
     };
-    return [prefix, detail].where((part) => part.isNotEmpty).join('：');
-  }
-
-  static String? _dose(dynamic value) {
-    final number = value is num
-        ? value.toDouble()
-        : double.tryParse(value?.toString().trim() ?? '');
-    if (number == null) return null;
-    return number == number.roundToDouble()
-        ? number.toInt().toString()
-        : number.toStringAsFixed(2).replaceFirst(RegExp(r'0+$'), '');
+    return [
+      [date, name].where((x) => x.isNotEmpty).join(' '),
+      detail
+    ].where((x) => x.isNotEmpty).join('：');
   }
 
   static String _displayDate(DateTime value) =>

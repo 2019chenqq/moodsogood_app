@@ -160,7 +160,6 @@ class InneraAiRecordDraftService {
         title: existingDiary?.title ?? '每日紀錄',
         content: content,
         moodScore: draft.overallMood ?? existingDiary?.moodScore,
-        overallHealth: draft.overallHealth ?? existingDiary?.overallHealth,
         moodKeyword: existingDiary?.moodKeyword,
       ));
     }
@@ -200,7 +199,6 @@ class InneraAiRecordDraftService {
       dateKey: base.dateKey,
       // Never reinterpret a stored 10-point score as a new 5-point score.
       overallMood: isLegacyTenPoint ? null : _score(data['overallMood']),
-      overallHealth: _score(data['overallHealth']),
       emotions: emotions,
       symptoms: {
         ..._strings(data['symptoms']),

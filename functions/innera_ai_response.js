@@ -108,31 +108,6 @@ function normalizeStringArray(value) {
     .filter(Boolean);
 }
 
-function normalizeDiaryHighlights(value) {
-  if (value == null) return [];
-  if (!Array.isArray(value)) return null;
-  const categories = new Set([
-    "life_event", "subjective_feeling", "sleep_note",
-    "symptom_note", "share_with_doctor",
-  ]);
-  return value
-    .filter((item) => item && typeof item === "object")
-    .map((item) => ({
-      date: String(item.date || "").trim(),
-      category: String(item.category || "").trim(),
-      summary: String(item.summary || "").trim(),
-      source: "diary",
-    }))
-    .filter((item) => item.date && item.summary && categories.has(item.category));
-}
-
-function normalizeDiscussionItems(value) {
-  const items = normalizeStringArray(value);
-  if (!items) return null;
-  const transcript = /(AI\s*補問|使用者(?:原始)?回答|問題[一二三四五0-9]|(^|[\s　])問[：:]|(^|[\s　])答[：:]|回答[：:])/i;
-  return items.filter((item) => !transcript.test(item)).slice(0, 5);
-}
-
 function normalizeFollowUpSummaryReply(reply) {
   const value = parseJsonObjectFromText(reply);
   if (!value) {
@@ -140,11 +115,9 @@ function normalizeFollowUpSummaryReply(reply) {
   }
 
   const keyChanges = normalizeStringArray(value.keyChanges);
-  const discussionItems = value.discussionItems == null
-    ? normalizeDiscussionItems(value.discussionPriorities)
-    : normalizeDiscussionItems(value.discussionItems);
+  const discussionPriorities = normalizeStringArray(value.discussionPriorities);
+  const timelineRelations = normalizeStringArray(value.timelineRelations);
   const dataLimitations = normalizeStringArray(value.dataLimitations);
-  const diaryHighlights = normalizeDiaryHighlights(value.diaryHighlights);
   const userSharedNotes = value.userSharedNotes == null
     ? (value.userReportedConcerns == null
       ? []
@@ -154,19 +127,19 @@ function normalizeFollowUpSummaryReply(reply) {
   if (!keyChanges || keyChanges.length < 3 || keyChanges.length > 5) {
     return { reply: "", failure: "invalid_follow_up_key_changes" };
   }
-  if (!discussionItems || discussionItems.length > 5 ||
-      !userSharedNotes || !dataLimitations ||
-      !diaryHighlights) {
+  if (!discussionPriorities || !timelineRelations ||
+      !userSharedNotes || !dataLimitations) {
     return { reply: "", failure: "invalid_follow_up_summary_arrays" };
   }
 
   return {
     reply: JSON.stringify({
       keyChanges,
-      discussionItems,
+      discussionPriorities,
+      timelineRelations,
       userSharedNotes,
+      userReportedConcerns: userSharedNotes,
       dataLimitations,
-      diaryHighlights,
     }),
     failure: null,
   };
@@ -296,10 +269,11 @@ function createFollowUpSummaryFallbackResponse() {
   // keyChanges and builds its deterministic fallback from local structured data.
   const reply = JSON.stringify({
     keyChanges: [],
-    discussionItems: [],
+    discussionPriorities: [],
+    timelineRelations: [],
     userSharedNotes: [],
+    userReportedConcerns: [],
     dataLimitations: [],
-    diaryHighlights: [],
   });
   return {
     parsed: {

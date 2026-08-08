@@ -26,7 +26,6 @@ import 'providers/theme_provider.dart';
 
 import 'daily/daily_record_repository.dart';
 import 'app_lock_screen.dart';
-import 'utils/app_lock_session_service.dart';
 import 'providers/pro_provider.dart';
 import 'PDF/pdf_export_provider.dart'; // 引入 PDFExportProvider
 import 'UI/fortune_cookie_screen.dart';
@@ -84,8 +83,9 @@ Future<void> main() async {
           androidProvider: kDebugMode
               ? AndroidProvider.debug
               : AndroidProvider.playIntegrity,
-          appleProvider:
-              kDebugMode ? AppleProvider.debug : AppleProvider.appAttest,
+          appleProvider: kDebugMode
+              ? AppleProvider.debug
+              : AppleProvider.appAttestWithDeviceCheckFallback,
         );
         debugPrint('Firebase App Check activated');
       } catch (error, stackTrace) {
@@ -550,7 +550,6 @@ class _LockWrapperState extends State<LockWrapper> with WidgetsBindingObserver {
         break;
       case AppLifecycleState.hidden:
       case AppLifecycleState.paused:
-        AppLockSessionService.markBackgrounded();
         _wasBackgrounded = true;
         if (_lockEnabled && mounted && !_needLock) {
           setState(() => _needLock = true);
@@ -558,7 +557,6 @@ class _LockWrapperState extends State<LockWrapper> with WidgetsBindingObserver {
         _checkLock(showLoading: false);
         break;
       case AppLifecycleState.resumed:
-        AppLockSessionService.markResumed();
         if (_wasBackgrounded) {
           _wasBackgrounded = false;
           _checkLock(showLoading: false);
@@ -588,7 +586,6 @@ class _LockWrapperState extends State<LockWrapper> with WidgetsBindingObserver {
   }
 
   void _onUnlocked() {
-    AppLockSessionService.markVerified();
     setState(() {
       _needLock = false;
     });

@@ -7,7 +7,6 @@ import '../diary/diary_repository.dart';
 import '../models/daily_record.dart'; // 確保引用正確
 import '../models/weekly_record.dart';
 import '../utils/date_helper.dart'; // 確保引用正確
-import '../utils/sleep_record_parser.dart';
 import 'record_detail_screen.dart'; // 確保引用正確
 import '../models/period_cycle.dart';
 import '../widgets/main_drawer.dart';
@@ -647,7 +646,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
       nightAwakenings: _parseNightAwakeningsFromLocal(
         map['nightAwakenings'],
       ),
-      quality: SleepRecordParser.quality(map),
+      quality: (map['quality'] as num?)?.toInt(),
       tookHypnotic: map['tookHypnotic'] ?? false,
       hypnoticName: map['hypnoticName'],
       hypnoticDose: map['hypnoticDose'],

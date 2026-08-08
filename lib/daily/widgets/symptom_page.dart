@@ -531,7 +531,7 @@ class _PeriodCalendarCardState extends State<_PeriodCalendarCard> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Image.asset(
-                    'assets/icons/粉色水滴.png',
+                    'assets/icons/pink_drop.png',
                     width: 24,
                     height: 24,
                     fit: BoxFit.contain,

@@ -10,18 +10,7 @@ const _unset = Object();
 // 頂層 Helper Functions
 // ============================================================
 
-class DecryptedDailyRecordDocument {
-  const DecryptedDailyRecordDocument({required this.id, required this.data});
-
-  final String id;
-  final Map<String, dynamic> data;
-
-  DailyRecord get record => DailyRecord.fromData(id, data);
-}
-
-Future<List<DecryptedDailyRecordDocument>> loadAllRecordDocuments(
-  String uid,
-) async {
+Future<List<DailyRecord>> loadAllRecords(String uid) async {
   final snap = await FirebaseFirestore.instance
       .collection('users')
       .doc(uid)
@@ -31,13 +20,10 @@ Future<List<DecryptedDailyRecordDocument>> loadAllRecordDocuments(
   return Future.wait(
     snap.docs.map((doc) async {
       final data = await HealthDataEncryptionService.decryptData(doc.data());
-      return DecryptedDailyRecordDocument(id: doc.id, data: data);
+      return DailyRecord.fromData(doc.id, data);
     }),
   );
 }
-
-Future<List<DailyRecord>> loadAllRecords(String uid) async =>
-    (await loadAllRecordDocuments(uid)).map((item) => item.record).toList();
 
 double? overallFrom(Map<String, dynamic> data) {
   final v = data['overallMood'];

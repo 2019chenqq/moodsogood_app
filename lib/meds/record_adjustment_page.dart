@@ -14,6 +14,10 @@ import '../analytics_service.dart';
 import 'add_medication_page.dart';
 import 'record_adjustment_history_page.dart';
 
+/// 劑量編輯對話框由 [medication_dose_editor_dialog] 提供，
+/// 透過 export 直接對外輸出，供測試與外部頁面使用。
+export 'medication_dose_editor_dialog.dart' show MedicationDoseEditResult, MedicationDoseEditorDialog, MedicationOralDoseEditResult, MedicationOralDoseEditorDialog;
+
 enum MedChangeType {
   unchanged,
   added,
@@ -711,19 +715,85 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
     required String unit,
   }) async {
     final draft = _draftByDocId[docId]!;
-    final picked = await showDialog<MedicationDoseEditResult>(
+
+    final initText = draft.newDose == null
+        ? ''
+        : (draft.newDose! % 1 == 0
+            ? draft.newDose!.toInt().toString()
+            : draft.newDose!.toString());
+
+    final ctrl = TextEditingController(text: initText);
+    double? picked;
+    var pickedUnit = kMedicationDoseUnits.contains(unit) ? unit : 'mg';
+
+    await showDialog<void>(
       context: context,
-      builder: (_) => MedicationDoseEditorDialog(
-        initialDose: draft.newDose,
-        initialUnit: unit,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          void submit() {
+            final raw = ctrl.text.trim().replaceAll(',', '.');
+            final v = double.tryParse(raw);
+            if (v == null || v < 0) return;
+            picked = v;
+            Navigator.of(dialogContext).pop();
+          }
+
+          return AlertDialog(
+            title: const Text('輸入調整後劑量'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: ctrl,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  autofocus: true,
+                  onSubmitted: (_) => submit(),
+                  decoration: InputDecoration(
+                    suffixText: pickedUnit,
+                    hintText: '例如 0.5、1.25、25',
+                  ),
+                ),
+                const SizedBox(height: 14),
+                DropdownButtonFormField<String>(
+                  initialValue: pickedUnit,
+                  decoration: const InputDecoration(labelText: '劑量單位'),
+                  items: kMedicationDoseUnits
+                      .map(
+                        (value) => DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setDialogState(() => pickedUnit = value);
+                    }
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: submit,
+                child: const Text('確定'),
+              ),
+            ],
+          );
+        },
       ),
     );
 
-    if (picked == null || !mounted) return;
+    if (picked == null) return;
 
     setState(() {
-      draft.newDose = picked.dose;
-      draft.unit = picked.unit;
+      draft.newDose = picked;
+      draft.unit = pickedUnit;
     });
   }
 
@@ -732,22 +802,130 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
     required String unit,
   }) async {
     final draft = _draftByDocId[docId]!;
-    final picked = await showDialog<MedicationOralDoseEditResult>(
+    final dosePerUnitController = TextEditingController(
+      text: _formatNumber(draft.newDosePerUnit ?? draft.oldDosePerUnit),
+    );
+    final pillCountController = TextEditingController(
+      text: _formatNumber(draft.newPillCount ?? draft.oldPillCount),
+    );
+    double? pickedDosePerUnit;
+    double? pickedPillCount;
+    var pickedUnit = kMedicationDoseUnits.contains(unit) ? unit : 'mg';
+
+    await showDialog<void>(
       context: context,
-      builder: (_) => MedicationOralDoseEditorDialog(
-        initialDosePerUnit: draft.newDosePerUnit ?? draft.oldDosePerUnit,
-        initialPillCount: draft.newPillCount ?? draft.oldPillCount,
-        initialUnit: unit,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          double? readNumber(TextEditingController controller) {
+            return double.tryParse(
+              controller.text.trim().replaceAll(',', '.'),
+            );
+          }
+
+          final dosePerUnit = readNumber(dosePerUnitController);
+          final pillCount = readNumber(pillCountController);
+          final isValid = dosePerUnit != null &&
+              dosePerUnit >= 0 &&
+              pillCount != null &&
+              pillCount > 0;
+          final totalDose = isValid ? _round1(dosePerUnit * pillCount) : null;
+
+          void submit() {
+            if (!isValid) return;
+            pickedDosePerUnit = dosePerUnit;
+            pickedPillCount = pillCount;
+            Navigator.pop(dialogContext);
+          }
+
+          return AlertDialog(
+            title: const Text('調整後用量'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: dosePerUnitController,
+                  autofocus: true,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  onChanged: (_) => setDialogState(() {}),
+                  decoration: InputDecoration(
+                    labelText: '每顆劑量',
+                    hintText: '例如 25',
+                    suffixText: pickedUnit,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                DropdownButtonFormField<String>(
+                  initialValue: pickedUnit,
+                  decoration: const InputDecoration(labelText: '劑量單位'),
+                  items: kMedicationDoseUnits
+                      .map(
+                        (value) => DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setDialogState(() => pickedUnit = value);
+                    }
+                  },
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: pillCountController,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  onChanged: (_) => setDialogState(() {}),
+                  onSubmitted: (_) => submit(),
+                  decoration: const InputDecoration(
+                    labelText: '一次顆數',
+                    hintText: '例如 0.5、1、2',
+                    suffixText: '顆',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  totalDose == null
+                      ? '請輸入有效的劑量與顆數'
+                      : '每次總量：${_formatNumber(dosePerUnit!)} $pickedUnit × '
+                          '${_formatNumber(pillCount!)} 顆 = '
+                          '${_formatNumber(totalDose)} $pickedUnit',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: totalDose == null
+                            ? Theme.of(context).colorScheme.error
+                            : HealingDesignSystem.adaptivePrimaryText(context),
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: isValid ? submit : null,
+                child: const Text('確定'),
+              ),
+            ],
+          );
+        },
       ),
     );
 
-    if (picked == null || !mounted) return;
+    dosePerUnitController.dispose();
+    pillCountController.dispose();
+    if (pickedDosePerUnit == null || pickedPillCount == null) return;
 
     setState(() {
-      draft.newDosePerUnit = picked.dosePerUnit;
-      draft.newPillCount = picked.pillCount;
-      draft.newDose = _round1(picked.dosePerUnit * picked.pillCount);
-      draft.unit = picked.unit;
+      draft.newDosePerUnit = pickedDosePerUnit;
+      draft.newPillCount = pickedPillCount;
+      draft.newDose = _round1(pickedDosePerUnit! * pickedPillCount!);
+      draft.unit = pickedUnit;
     });
   }
 
@@ -1253,281 +1431,6 @@ class _MedDraft {
       newTimes: List<String>.from(oldTimes),
     );
   }
-}
-
-class MedicationDoseEditResult {
-  const MedicationDoseEditResult({required this.dose, required this.unit});
-
-  final double dose;
-  final String unit;
-}
-
-class MedicationDoseEditorDialog extends StatefulWidget {
-  const MedicationDoseEditorDialog({
-    super.key,
-    required this.initialDose,
-    required this.initialUnit,
-  });
-
-  final double? initialDose;
-  final String initialUnit;
-
-  @override
-  State<MedicationDoseEditorDialog> createState() =>
-      _MedicationDoseEditorDialogState();
-}
-
-class _MedicationDoseEditorDialogState
-    extends State<MedicationDoseEditorDialog> {
-  late final TextEditingController _doseController;
-  late String _unit;
-
-  @override
-  void initState() {
-    super.initState();
-    _doseController = TextEditingController(
-      text: widget.initialDose == null
-          ? ''
-          : _formatDoseEditorNumber(widget.initialDose!),
-    );
-    _unit = kMedicationDoseUnits.contains(widget.initialUnit)
-        ? widget.initialUnit
-        : 'mg';
-  }
-
-  @override
-  void dispose() {
-    _doseController.dispose();
-    super.dispose();
-  }
-
-  double? get _dose => double.tryParse(
-        _doseController.text.trim().replaceAll(',', '.'),
-      );
-
-  void _submit() {
-    final dose = _dose;
-    if (dose == null || dose < 0) return;
-    Navigator.pop(
-      context,
-      MedicationDoseEditResult(dose: dose, unit: _unit),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isValid = _dose != null && _dose! >= 0;
-    return AlertDialog(
-      title: const Text('輸入調整後劑量'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _doseController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            autofocus: true,
-            onChanged: (_) => setState(() {}),
-            onSubmitted: (_) => _submit(),
-            decoration: InputDecoration(
-              suffixText: _unit,
-              hintText: '例如 0.5、1.25、25',
-            ),
-          ),
-          const SizedBox(height: 14),
-          DropdownButtonFormField<String>(
-            initialValue: _unit,
-            decoration: const InputDecoration(labelText: '劑量單位'),
-            items: kMedicationDoseUnits
-                .map(
-                  (value) => DropdownMenuItem<String>(
-                    value: value,
-                    child: Text(value),
-                  ),
-                )
-                .toList(),
-            onChanged: (value) {
-              if (value != null) setState(() => _unit = value);
-            },
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: isValid ? _submit : null,
-          child: const Text('確定'),
-        ),
-      ],
-    );
-  }
-}
-
-class MedicationOralDoseEditResult {
-  const MedicationOralDoseEditResult({
-    required this.dosePerUnit,
-    required this.pillCount,
-    required this.unit,
-  });
-
-  final double dosePerUnit;
-  final double pillCount;
-  final String unit;
-}
-
-class MedicationOralDoseEditorDialog extends StatefulWidget {
-  const MedicationOralDoseEditorDialog({
-    super.key,
-    required this.initialDosePerUnit,
-    required this.initialPillCount,
-    required this.initialUnit,
-  });
-
-  final double initialDosePerUnit;
-  final double initialPillCount;
-  final String initialUnit;
-
-  @override
-  State<MedicationOralDoseEditorDialog> createState() =>
-      _MedicationOralDoseEditorDialogState();
-}
-
-class _MedicationOralDoseEditorDialogState
-    extends State<MedicationOralDoseEditorDialog> {
-  late final TextEditingController _dosePerUnitController;
-  late final TextEditingController _pillCountController;
-  late String _unit;
-
-  @override
-  void initState() {
-    super.initState();
-    _dosePerUnitController = TextEditingController(
-      text: _formatDoseEditorNumber(widget.initialDosePerUnit),
-    );
-    _pillCountController = TextEditingController(
-      text: _formatDoseEditorNumber(widget.initialPillCount),
-    );
-    _unit = kMedicationDoseUnits.contains(widget.initialUnit)
-        ? widget.initialUnit
-        : 'mg';
-  }
-
-  @override
-  void dispose() {
-    _dosePerUnitController.dispose();
-    _pillCountController.dispose();
-    super.dispose();
-  }
-
-  double? _readNumber(TextEditingController controller) => double.tryParse(
-        controller.text.trim().replaceAll(',', '.'),
-      );
-
-  double? get _dosePerUnit => _readNumber(_dosePerUnitController);
-  double? get _pillCount => _readNumber(_pillCountController);
-  bool get _isValid =>
-      _dosePerUnit != null &&
-      _dosePerUnit! >= 0 &&
-      _pillCount != null &&
-      _pillCount! > 0;
-
-  void _submit() {
-    if (!_isValid) return;
-    Navigator.pop(
-      context,
-      MedicationOralDoseEditResult(
-        dosePerUnit: _dosePerUnit!,
-        pillCount: _pillCount!,
-        unit: _unit,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final totalDose = _isValid
-        ? (_dosePerUnit! * _pillCount! * 10).roundToDouble() / 10
-        : null;
-    return AlertDialog(
-      title: const Text('調整後用量'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextField(
-            controller: _dosePerUnitController,
-            autofocus: true,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            onChanged: (_) => setState(() {}),
-            decoration: InputDecoration(
-              labelText: '每顆劑量',
-              hintText: '例如 25',
-              suffixText: _unit,
-            ),
-          ),
-          const SizedBox(height: 14),
-          DropdownButtonFormField<String>(
-            initialValue: _unit,
-            decoration: const InputDecoration(labelText: '劑量單位'),
-            items: kMedicationDoseUnits
-                .map(
-                  (value) => DropdownMenuItem<String>(
-                    value: value,
-                    child: Text(value),
-                  ),
-                )
-                .toList(),
-            onChanged: (value) {
-              if (value != null) setState(() => _unit = value);
-            },
-          ),
-          const SizedBox(height: 14),
-          TextField(
-            controller: _pillCountController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            onChanged: (_) => setState(() {}),
-            onSubmitted: (_) => _submit(),
-            decoration: const InputDecoration(
-              labelText: '一次顆數',
-              hintText: '例如 0.5、1、2',
-              suffixText: '顆',
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            totalDose == null
-                ? '請輸入有效的劑量與顆數'
-                : '每次總量：${_formatDoseEditorNumber(_dosePerUnit!)} $_unit × '
-                    '${_formatDoseEditorNumber(_pillCount!)} 顆 = '
-                    '${_formatDoseEditorNumber(totalDose)} $_unit',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: totalDose == null
-                      ? Theme.of(context).colorScheme.error
-                      : HealingDesignSystem.adaptivePrimaryText(context),
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: _isValid ? _submit : null,
-          child: const Text('確定'),
-        ),
-      ],
-    );
-  }
-}
-
-String _formatDoseEditorNumber(double value) {
-  if (value % 1 == 0) return value.toInt().toString();
-  return value.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
 }
 
 /* ====== 小元件：沿用你新增頁的風格 ====== */
