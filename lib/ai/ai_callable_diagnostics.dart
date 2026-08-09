@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
@@ -10,6 +12,24 @@ class AiCallableEndpoints {
   static const diaryDraft = 'generateInneraDiaryDraft';
   static const recommendSongs = 'recommendInneraSongs';
   static const searchSongs = 'searchInneraSongs';
+}
+
+String mapAiErrorType(Object error) {
+  if (error is FirebaseFunctionsException) {
+    switch (error.code) {
+      case 'deadline-exceeded':
+        return 'timeout';
+      case 'unavailable':
+        return 'network';
+      case 'resource-exhausted':
+        return 'quota';
+      default:
+        return 'api_error';
+    }
+  }
+  if (error is TimeoutException) return 'timeout';
+  if (error is FormatException) return 'parse_error';
+  return 'unknown';
 }
 
 void logAiCallableFailure({

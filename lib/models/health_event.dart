@@ -42,10 +42,12 @@ class HealthEvent {
   }
 
   factory HealthEvent.fromMap(String id, Map<String, dynamic> map) {
-    final timestamp = DateTime.tryParse(map['timestamp']?.toString() ?? '');
+    // Firestore 回傳的 timestamp 是 Timestamp（或被解密成一開始的 DateTime），
+    // 不能用 toString() 再 tryParse，否則會全部解析失敗而退回 epoch。
+    final timestamp = _asDate(map['timestamp']) ?? DateTime.fromMillisecondsSinceEpoch(0);
     return HealthEvent(
       id: id,
-      timestamp: timestamp ?? DateTime.fromMillisecondsSinceEpoch(0),
+      timestamp: timestamp,
       symptoms: _parseSymptoms(map['symptoms']),
       emotions: _parseEmotions(map['emotions']),
       stateChanges: _parseStateChanges(map['stateChanges']),

@@ -122,4 +122,56 @@ class AnalyticsService {
       ),
     );
   }
+
+  static Future<void> logAiFeatureOpen({required String aiMode}) async {
+    await _safely(
+      () => analytics.logEvent(
+        name: 'ai_feature_open',
+        parameters: {
+          'ai_mode': aiMode,
+          'platform': platform,
+        },
+      ),
+    );
+  }
+
+  static Future<void> logAiTaskStart({required String aiMode}) async {
+    await _safely(
+      () => analytics.logEvent(
+        name: 'ai_task_start',
+        parameters: {
+          'ai_mode': aiMode,
+          'platform': platform,
+        },
+      ),
+    );
+  }
+
+  static Future<void> logAiTaskComplete({required String aiMode}) async {
+    await _safely(
+      () => analytics.logEvent(
+        name: 'ai_task_complete',
+        parameters: {
+          'ai_mode': aiMode,
+          'platform': platform,
+        },
+      ),
+    );
+  }
+
+  static Future<void> logAiTaskError({
+    required String aiMode,
+    required String errorType,
+  }) async {
+    await _safely(
+      () => analytics.logEvent(
+        name: 'ai_task_error',
+        parameters: {
+          'ai_mode': aiMode,
+          'error_type': errorType,
+          'platform': platform,
+        },
+      ),
+    );
+  }
 }

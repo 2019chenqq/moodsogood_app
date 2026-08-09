@@ -5,6 +5,7 @@ import '../constants/healing_design_system.dart';
 import '../models/health_event.dart';
 import 'health_event_repository.dart';
 import 'quick_record_editor.dart';
+import 'quick_record_history_page.dart';
 
 /// 首頁的「快速記錄現在狀況」入口卡片。
 ///
@@ -39,15 +40,19 @@ class _QuickRecordHomeCardState extends State<QuickRecordHomeCard> {
     return (today, recent);
   }
 
-  void _refresh() {
-    setState(() => _future = _load());
+  Future<void> _refresh() async {
+    final newFuture = _load();
+    if (!mounted) return;
+    setState(() {
+      _future = newFuture;
+    });
   }
 
   Future<void> _openEditor({HealthEvent? event}) async {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => QuickRecordEditor(initial: event)),
     );
-    if (mounted) _refresh();
+    if (mounted) await _refresh();
   }
 
   @override
@@ -94,7 +99,7 @@ class _QuickRecordHomeCardState extends State<QuickRecordHomeCard> {
                 child: FilledButton.icon(
                   onPressed: () => _openEditor(),
                   icon: const Icon(Icons.add),
-                  label: const Text('＋ 快速記錄現在狀況'),
+                  label: const Text(' 快速記錄現在狀況'),
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
@@ -113,12 +118,29 @@ class _QuickRecordHomeCardState extends State<QuickRecordHomeCard> {
                   ),
                 )
               else ...[
-                Text(
-                  '今天已記錄 ${today.length} 筆',
-                  style: HealingDesignSystem.labelMedium.copyWith(
-                    color: HealingDesignSystem.primaryBlue,
-                    fontWeight: FontWeight.w700,
-                  ),
+                Row(
+                  children: [
+                    Text(
+                      '今天已記錄 ${today.length} 筆',
+                      style: HealingDesignSystem.labelMedium.copyWith(
+                        color: HealingDesignSystem.primaryBlue,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    TextButton.icon(
+                      onPressed: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const QuickRecordHistoryPage(),
+                          ),
+                        );
+                        await _refresh();
+                      },
+                      icon: const Icon(Icons.history_rounded, size: 18),
+                      label: const Text('查看歷史'),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: HealingDesignSystem.paddingM),
                 if (recent.isEmpty)
@@ -167,7 +189,8 @@ class _QuickRecordHomeCardState extends State<QuickRecordHomeCard> {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: HealingDesignSystem.primaryBlue.withOpacity(0.12),
+                    color:
+                        HealingDesignSystem.primaryBlue.withValues(alpha: 0.12),
                     borderRadius:
                         BorderRadius.circular(HealingDesignSystem.radiusS),
                   ),
@@ -239,7 +262,7 @@ class _QuickRecordHomeCardState extends State<QuickRecordHomeCard> {
     if (confirmed != true || !mounted) return;
     try {
       await HealthEventRepository().delete(userId: uid, eventId: event.id);
-      _refresh();
+      await _refresh();
     } catch (_) {
       // 忽略刪除失敗，讓使用者稍後再試
     }

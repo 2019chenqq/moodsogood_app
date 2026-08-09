@@ -85,10 +85,15 @@ class _QuickRecordEditorState extends State<QuickRecordEditor> {
 
   Future<void> _pickTimestamp() async {
     final now = DateTime.now();
+    final firstDate = DateTime(now.year - 2);
+    // 避免 initialDate 超出可選範圍造成 showDatePicker assert 崩潰。
+    final initialDate = _timestamp.isAfter(now)
+        ? now
+        : (_timestamp.isBefore(firstDate) ? firstDate : _timestamp);
     final date = await showDatePicker(
       context: context,
-      initialDate: _timestamp,
-      firstDate: DateTime(now.year - 2),
+      initialDate: initialDate,
+      firstDate: firstDate,
       lastDate: now,
       helpText: '選擇快速記錄日期',
     );

@@ -7,6 +7,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../analytics_service.dart';
 import '../constants/healing_design_system.dart';
 import '../daily/daily_state_dimensions.dart';
 import '../daily/body_measurement_input.dart';
@@ -72,6 +73,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
   Uint8List? _pendingImageBytes;
   String? _pendingImageName;
   AiSafetyLevel _activeSafetyLevel = AiSafetyLevel.normal;
+  bool _hasLoggedTaskStart = false;
   final _draftService = InneraAiRecordDraftService();
   final _conversationService = InneraAiConversationService();
   final _imageService = InneraAiChatImageService();
@@ -86,6 +88,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     super.initState();
     _mode = widget.initialMode;
     _service = widget._service ?? InneraAiService();
+    AnalyticsService.logAiFeatureOpen(aiMode: _mode.analyticsMode);
     _loadTodaySession();
   }
 
@@ -488,6 +491,12 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     await _persistConversation();
 
     try {
+      if (!_hasLoggedTaskStart) {
+        _hasLoggedTaskStart = true;
+        unawaited(
+          AnalyticsService.logAiTaskStart(aiMode: _mode.analyticsMode),
+        );
+      }
       final response = await _service
           .sendMessage(
             mode: _mode,
@@ -534,9 +543,24 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
         _recordDraft = nextDraftWithFallback;
         _isSending = false;
       });
+      unawaited(
+        AnalyticsService.logAiTaskComplete(aiMode: _mode.analyticsMode),
+      );
       await _persistConversation();
       _scrollToBottom();
     } on FirebaseFunctionsException catch (error) {
+      if (!_hasLoggedTaskStart) {
+        _hasLoggedTaskStart = true;
+        unawaited(
+          AnalyticsService.logAiTaskStart(aiMode: _mode.analyticsMode),
+        );
+      }
+      unawaited(
+        AnalyticsService.logAiTaskError(
+          aiMode: _mode.analyticsMode,
+          errorType: mapAiErrorType(error),
+        ),
+      );
       _showSendError(
         text,
         aiCallableErrorMessage(
@@ -546,6 +570,18 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
         image: image,
       );
     } catch (error, stackTrace) {
+      if (!_hasLoggedTaskStart) {
+        _hasLoggedTaskStart = true;
+        unawaited(
+          AnalyticsService.logAiTaskStart(aiMode: _mode.analyticsMode),
+        );
+      }
+      unawaited(
+        AnalyticsService.logAiTaskError(
+          aiMode: _mode.analyticsMode,
+          errorType: mapAiErrorType(error),
+        ),
+      );
       debugPrint('InneraAiChatPage send failed: $error');
       debugPrintStack(stackTrace: stackTrace);
       _showSendError(text, _messageForError(error), image: image);
@@ -1023,7 +1059,13 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     }
     setState(() => _isExtractingDiary = true);
     try {
+      unawaited(
+        AnalyticsService.logAiTaskStart(aiMode: _mode.analyticsMode),
+      );
       var draft = await _diaryDraftService.generate(messages: _messages);
+      unawaited(
+        AnalyticsService.logAiTaskComplete(aiMode: _mode.analyticsMode),
+      );
       DiaryDraftConfirmation? confirmation;
       while (mounted) {
         final existing =
@@ -1045,10 +1087,16 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
         }
         if (result is String && result.startsWith('regenerate:')) {
           final field = result.substring('regenerate:'.length);
+          unawaited(
+            AnalyticsService.logAiTaskStart(aiMode: _mode.analyticsMode),
+          );
           draft = await _diaryDraftService.generate(
             messages: _messages,
             requestedField: field == 'all' ? null : field,
             currentDraft: draft,
+          );
+          unawaited(
+            AnalyticsService.logAiTaskComplete(aiMode: _mode.analyticsMode),
           );
           continue;
         }
@@ -1091,6 +1139,12 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
         const SnackBar(content: Text('已儲存完整今日紀錄，並合併情緒、症狀與睡眠。')),
       );
     } on FirebaseFunctionsException catch (error, stackTrace) {
+      unawaited(
+        AnalyticsService.logAiTaskError(
+          aiMode: _mode.analyticsMode,
+          errorType: mapAiErrorType(error),
+        ),
+      );
       logAiCallableFailure(
         functionName: AiCallableEndpoints.diaryDraft,
         error: error,
@@ -1109,6 +1163,12 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
         );
       }
     } on TimeoutException catch (error, stackTrace) {
+      unawaited(
+        AnalyticsService.logAiTaskError(
+          aiMode: _mode.analyticsMode,
+          errorType: 'timeout',
+        ),
+      );
       debugPrint(
         'AI callable timed out: '
         'projectId=${Firebase.app().options.projectId}, '
@@ -1122,6 +1182,12 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
         );
       }
     } catch (error, stackTrace) {
+      unawaited(
+        AnalyticsService.logAiTaskError(
+          aiMode: _mode.analyticsMode,
+          errorType: mapAiErrorType(error),
+        ),
+      );
       debugPrint('Diary extraction failed: $error');
       debugPrintStack(stackTrace: stackTrace);
       if (mounted) {
@@ -1264,6 +1330,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
       _mode = selected;
       _loadingDraft = true;
       _activeSafetyLevel = AiSafetyLevel.normal;
+      _hasLoggedTaskStart = false;
     });
     try {
       final conversation = await _conversationService.loadToday(mode: selected);
