@@ -76,4 +76,17 @@ extension InneraAiModeX on InneraAiMode {
   }
 
   String get systemPromptKey => name;
+
+  String get analyticsMode {
+    switch (this) {
+      case InneraAiMode.dailyRecord:
+        return 'daily_record';
+      case InneraAiMode.emotionalSupport:
+        return 'recent_talk';
+      case InneraAiMode.physicalHealth:
+        return 'physical_discomfort';
+      case InneraAiMode.recentReview:
+        return 'status_review';
+    }
+  }
 }

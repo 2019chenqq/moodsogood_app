@@ -15,6 +15,7 @@
 // ✅  OpenAI 串接已實作：優先呼叫 Firebase Functions
 //     若雲端 AI 暫時失敗，會自動 fallback 到 generateMockAIReflection()。
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -125,6 +126,7 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
     super.initState();
     _init();
     AnalyticsService.logPage('ai_reflection_page');
+    AnalyticsService.logAiFeatureOpen(aiMode: 'diary_feedback');
   }
 
   Future<void> _init() async {
@@ -723,6 +725,9 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
           'overallMood': _diaryData!['overallMood'],
         'moodScale': 5,
       };
+      unawaited(
+        AnalyticsService.logAiTaskStart(aiMode: 'diary_feedback'),
+      );
       final result = await generateAIReflection(
         aiInput: aiInput,
         diaryContent: diaryContent,
@@ -750,7 +755,31 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
         _hasSavedResult = true;
         _crisisDetected = crisis;
       });
+      unawaited(
+        AnalyticsService.logAiTaskComplete(aiMode: 'diary_feedback'),
+      );
     } catch (e, stack) {
+      String errorType = 'unknown';
+      if (e is AiJournalReflectionHttpException) {
+        final code = e.statusCode;
+        if (code == 408) {
+          errorType = 'timeout';
+        } else if (code != null && code >= 500) {
+          errorType = 'api_error';
+        } else {
+          errorType = 'network';
+        }
+      } else if (e is TimeoutException) {
+        errorType = 'timeout';
+      } else if (e is FormatException) {
+        errorType = 'parse_error';
+      }
+      unawaited(
+        AnalyticsService.logAiTaskError(
+          aiMode: 'diary_feedback',
+          errorType: errorType,
+        ),
+      );
       m.debugPrint('catch 到的 exception: $e');
       m.debugPrint('stackTrace: $stack');
       m.debugPrint('generateAndSave exception: $e');

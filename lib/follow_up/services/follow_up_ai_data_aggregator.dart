@@ -3,22 +3,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../daily/daily_record_helpers.dart';
 import '../../meds/med_symptom_compare_models.dart';
 import '../../meds/medication_compare_repository.dart';
+import '../../meds/medication_local_db.dart';
+import '../../meds/medication_subjective_response.dart';
+import '../../meds/medication_subjective_summary_builder.dart';
 import '../../models/daily_record.dart';
 import '../models/follow_up_ai_summary.dart';
 import 'follow_up_service.dart';
-
-const _sleepConditionLabels = <String, String>{
-  'good': '優',
-  'ok': '良好',
-  'earlyWake': '早醒',
-  'dreams': '多夢',
-  'lightSleep': '淺眠',
-  'fragmented': '睡睡醒醒',
-  'insufficient': '睡眠不足',
-  'initInsomnia': '入睡困難',
-  'interrupted': '睡眠中斷',
-  'nocturia': '夜尿',
-};
 
 class FollowUpAiDataAggregator {
   FollowUpAiDataAggregator({MedicationCompareRepository? medicationRepository})
@@ -37,22 +27,16 @@ class FollowUpAiDataAggregator {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) throw StateError('請先登入後再使用 AI 回診整理。');
     final results = await Future.wait<dynamic>([
-      loadAllRecordDocuments(uid),
+      loadAllRecords(uid),
       _loadMedicationData(uid),
       FollowUpService.getAppointments(),
     ]);
     final medicationData = results[1] as _MedicationData;
-    final recordDocuments = results[0] as List<DecryptedDailyRecordDocument>;
     return buildFromData(
-      records: recordDocuments.map((item) => item.record).toList(),
-      rawRecords: recordDocuments
-          .map((item) => <String, dynamic>{
-                ...item.data,
-                '_documentId': item.id,
-              })
-          .toList(),
+      records: results[0] as List<DailyRecord>,
       medications: medicationData.medications,
       adjustments: medicationData.adjustments,
+      subjectiveResponses: medicationData.subjectiveResponses,
       appointments: results[2] as List<FollowUpAppointment>,
       discussionTopics: discussionTopics,
       discussionDetails: discussionDetails,
@@ -67,14 +51,16 @@ class FollowUpAiDataAggregator {
     return _MedicationData(
       medications: await _medicationRepository.getMedications(uid),
       adjustments: await _medicationRepository.getAdjustmentEvents(uid),
+      subjectiveResponses:
+          await MedicationLocalDB().getAllSubjectiveResponses(uid),
     );
   }
 
   FollowUpAiV1Input buildFromData({
     required List<DailyRecord> records,
-    List<Map<String, dynamic>>? rawRecords,
     required List<Map<String, dynamic>> medications,
     required List<MedicationAdjustmentEvent> adjustments,
+    List<MedicationSubjectiveResponse> subjectiveResponses = const [],
     required List<FollowUpDiscussionTopicInput> discussionTopics,
     required String discussionDetails,
     required String additionalNotes,
@@ -109,21 +95,11 @@ class FollowUpAiDataAggregator {
       return !date.isBefore(start) && !date.isAfter(today);
     }).toList()
       ..sort((a, b) => a.date.compareTo(b.date));
-    final periodRecordIds = periodRecords.map((record) => record.id).toSet();
-    final validDateIds = periodRecords
+    final validDays = periodRecords
         .where(_hasMeaningfulData)
         .map((record) => _date(record.date))
-        .toSet();
-    if (rawRecords != null) {
-      for (final record in rawRecords) {
-        final id = record['_documentId']?.toString() ?? '';
-        if (periodRecordIds.contains(id) &&
-            DailyRecordAggregator.symptomValues(record).isNotEmpty) {
-          validDateIds.add(id);
-        }
-      }
-    }
-    final validDays = validDateIds.length;
+        .toSet()
+        .length;
     final limitations = <String>[];
     if (previousAppointmentDate == null) {
       limitations.add(
@@ -133,49 +109,27 @@ class FollowUpAiDataAggregator {
       );
     }
 
-    final symptomSource = rawRecords == null
-        ? periodRecords
-            .map((record) => <String, dynamic>{
-                  '_documentId': record.id,
-                  'symptoms': record.symptoms,
-                  'symptomSectionCompleted': record.symptomSectionCompleted ||
-                      record.symptoms.isNotEmpty,
-                })
-            .toList()
-        : rawRecords
-            .where((record) =>
-                periodRecordIds.contains(record['_documentId']?.toString()))
-            .toList();
-    final symptomAggregate = DailyRecordAggregator.aggregate(symptomSource);
     final symptomDates = <String, Set<String>>{};
-    for (final record in symptomSource) {
-      final date = record['_documentId']?.toString() ?? '';
-      for (final symptom in DailyRecordAggregator.symptomValues(record).keys) {
+    for (final record in periodRecords) {
+      for (final symptom
+          in record.symptoms.map((item) => item.trim()).toSet()) {
         if (symptom.isEmpty) continue;
-        if (RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(date)) {
-          symptomDates.putIfAbsent(symptom, () => <String>{}).add(date);
-        }
+        symptomDates
+            .putIfAbsent(symptom, () => <String>{})
+            .add(_date(record.date));
       }
     }
-    final symptoms = symptomAggregate.symptoms.entries
+    final symptoms = symptomDates.entries
         .map((entry) => <String, dynamic>{
               'name': entry.key,
-              'occurrenceDays': entry.value.presentDays,
-              'dates': (symptomDates[entry.key] ?? const <String>{}).toList()
-                ..sort(),
-              if (entry.value.averageScore != null)
-                'averageSeverity': _round(entry.value.averageScore!),
+              'occurrenceDays': entry.value.length,
+              'dates': entry.value.toList()..sort(),
+              'averageSeverity': null,
             })
         .toList()
-      ..sort((a, b) {
-        final byDays =
-            (b['occurrenceDays'] as int).compareTo(a['occurrenceDays'] as int);
-        return byDays != 0
-            ? byDays
-            : a['name'].toString().compareTo(b['name'].toString());
-      });
-    if (symptoms.isNotEmpty &&
-        symptoms.every((item) => item['averageSeverity'] == null)) {
+      ..sort((a, b) =>
+          (b['occurrenceDays'] as int).compareTo(a['occurrenceDays'] as int));
+    if (symptoms.isNotEmpty) {
       limitations.add('目前每日症狀紀錄未包含程度分數，無法計算平均程度。');
     }
 
@@ -185,22 +139,25 @@ class FollowUpAiDataAggregator {
       periodRecords,
       (record) => record.sleep.quality?.toDouble(),
     );
-    final sleepConditionDates = <String, Set<String>>{};
+    final sleepFlags = <String, List<String>>{
+      'sleepOnsetDifficulty': [],
+      'earlyAwakening': [],
+      'nightInterruption': [],
+    };
     var napDays = 0;
     var napCount = 0;
     var napMinutes = 0;
     for (final record in periodRecords) {
-      final date = _date(record.date);
-      for (final rawFlag in record.sleep.flags) {
-        final code = _canonicalSleepFlag(rawFlag);
-        if (code != null) {
-          sleepConditionDates.putIfAbsent(code, () => <String>{}).add(date);
-        }
+      final joined = record.sleep.flags.join('、');
+      if (_containsAny(joined, const ['initInsomnia', '入睡困難', '難入睡'])) {
+        sleepFlags['sleepOnsetDifficulty']!.add(_date(record.date));
       }
-      if (record.sleep.nightAwakenings.isNotEmpty) {
-        sleepConditionDates
-            .putIfAbsent('interrupted', () => <String>{})
-            .add(date);
+      if (_containsAny(joined, const ['earlyWake', '早醒', '提早醒'])) {
+        sleepFlags['earlyAwakening']!.add(_date(record.date));
+      }
+      if (record.sleep.nightAwakenings.isNotEmpty ||
+          _containsAny(joined, const ['interrupted', '中斷', '夜醒', '半夜醒'])) {
+        sleepFlags['nightInterruption']!.add(_date(record.date));
       }
       if (record.sleep.naps.isNotEmpty) {
         napDays++;
@@ -268,6 +225,24 @@ class FollowUpAiDataAggregator {
     if (body.isEmpty) limitations.add('統計期間內沒有體重、體脂率或腰圍紀錄。');
     if (medicationTimeline.isEmpty) limitations.add('統計期間內沒有調藥紀錄。');
 
+    final relevantChangeIds = subjectiveResponses
+        .where((response) {
+          final changeDate = _day(response.changeDate);
+          final recordedAt = _day(response.recordedAt);
+          return (!changeDate.isBefore(start) && !changeDate.isAfter(today)) ||
+              (!recordedAt.isBefore(start) && !recordedAt.isAfter(today));
+        })
+        .map((response) => response.changeRecordId)
+        .toSet();
+    final medicationSubjectiveReports =
+        MedicationSubjectiveSummaryBuilder.toAiInput(
+      subjectiveResponses.where(
+        (response) =>
+            relevantChangeIds.contains(response.changeRecordId) &&
+            !_day(response.recordedAt).isAfter(today),
+      ),
+    );
+
     return FollowUpAiV1Input(
       statistics: FollowUpStatistics(
         periodStart: start,
@@ -304,34 +279,25 @@ class FollowUpAiDataAggregator {
       ),
       sleep: {
         'durationHours': _metricSummary(sleepDurations),
-        'quality': _metricSummary(sleepQuality),
-        'conditions': _sleepConditionLabels.entries
-            .where(
-                (entry) => sleepConditionDates[entry.key]?.isNotEmpty == true)
-            .map((entry) => {
-                  'code': entry.key,
-                  'label': entry.value,
-                  'occurrenceDays': sleepConditionDates[entry.key]!.length,
-                  'dates': sleepConditionDates[entry.key]!.toList()..sort(),
-                })
+        'dailyTrend': sleepDurations
+            .map((item) => {'date': _date(item.date), 'value': item.value})
             .toList(),
-        // Keep these aliases for existing summaries and renderers.
+        'quality': _metricSummary(sleepQuality),
         'sleepOnsetDifficulty':
-            _eventSummary(sleepConditionDates['initInsomnia'] ?? const {}),
-        'earlyAwakening':
-            _eventSummary(sleepConditionDates['earlyWake'] ?? const {}),
-        'nightInterruption':
-            _eventSummary(sleepConditionDates['interrupted'] ?? const {}),
+            _eventSummary(sleepFlags['sleepOnsetDifficulty']!),
+        'earlyAwakening': _eventSummary(sleepFlags['earlyAwakening']!),
+        'nightInterruption': _eventSummary(sleepFlags['nightInterruption']!),
         'naps': {
           'days': napDays,
           'count': napCount,
           'totalMinutes': napMinutes,
         },
       },
-      highFrequencySymptoms: symptoms.take(5).toList(),
+      highFrequencySymptoms: symptoms.take(8).toList(),
       bodyMeasurements: body,
       currentMedications: currentMedications,
       medicationTimeline: medicationTimeline,
+      medicationSubjectiveReports: medicationSubjectiveReports,
       dataLimitations: limitations,
     );
   }
@@ -403,58 +369,10 @@ class FollowUpAiDataAggregator {
                 .reduce((a, b) => a > b ? a : b),
         'dailyTrend': points.map((point) => point.toJson()).toList(),
         'direction': _trend(points).direction.name,
-        'comparison': _periodComparison(points),
       };
 
-  Map<String, dynamic>? _periodComparison(List<DatedMetricValue> points) {
-    if (points.length < 3) return null;
-    final half = points.length ~/ 2;
-    final earlierAverage =
-        _round(_average(points.take(half).map((point) => point.value)));
-    final recentAverage =
-        _round(_average(points.skip(half).map((point) => point.value)));
-    final change = _round(recentAverage - earlierAverage);
-    return {
-      'basis': 'firstHalfVsSecondHalf',
-      'earlierDays': half,
-      'recentDays': points.length - half,
-      'earlierAverage': earlierAverage,
-      'recentAverage': recentAverage,
-      'change': change,
-      'direction': change >= .4
-          ? TrendDirection.increasing.name
-          : change <= -.4
-              ? TrendDirection.decreasing.name
-              : TrendDirection.stable.name,
-    };
-  }
-
-  Map<String, dynamic> _eventSummary(Iterable<String> dates) {
-    final sorted = dates.toList()..sort();
-    return {'occurrenceDays': sorted.length, 'dates': sorted};
-  }
-
-  static String? _canonicalSleepFlag(String raw) {
-    final value = raw.trim();
-    if (_sleepConditionLabels.containsKey(value)) return value;
-    if (_containsAny(value, const ['入睡困難', '難入睡'])) {
-      return 'initInsomnia';
-    }
-    if (_containsAny(value, const ['早醒', '提早醒'])) return 'earlyWake';
-    if (_containsAny(value, const ['多夢', '惡夢', '噩夢'])) return 'dreams';
-    if (value.contains('淺眠')) return 'lightSleep';
-    if (value.contains('睡眠不足') || value.contains('睡不夠')) {
-      return 'insufficient';
-    }
-    if (value.contains('睡睡醒醒')) return 'fragmented';
-    if (_containsAny(value, const ['睡眠中斷', '中斷', '夜醒', '半夜醒'])) {
-      return 'interrupted';
-    }
-    if (value.contains('夜尿')) return 'nocturia';
-    if (value == '優') return 'good';
-    if (value == '良好') return 'ok';
-    return null;
-  }
+  Map<String, dynamic> _eventSummary(List<String> dates) =>
+      {'occurrenceDays': dates.length, 'dates': dates};
 
   double _average(Iterable<double> values) {
     final list = values.toList();
@@ -492,8 +410,13 @@ class FollowUpAiDataAggregator {
 }
 
 class _MedicationData {
-  const _MedicationData({required this.medications, required this.adjustments});
+  const _MedicationData({
+    required this.medications,
+    required this.adjustments,
+    required this.subjectiveResponses,
+  });
 
   final List<Map<String, dynamic>> medications;
   final List<MedicationAdjustmentEvent> adjustments;
+  final List<MedicationSubjectiveResponse> subjectiveResponses;
 }

@@ -58,8 +58,8 @@ class DailyRecordRepository {
         'emotionSectionCompleted': emotionSectionCompleted,
       if (stateSectionCompleted != null)
         'stateSectionCompleted': stateSectionCompleted,
-      'bodyMeasurement': bodyMeasurement,
-      'sleep': sleep,
+      if (bodyMeasurement != null) 'bodyMeasurement': bodyMeasurement,
+      if (sleep != null) 'sleep': sleep,
       'bodySymptoms': bodySymptoms,
       'dailyActivities': dailyActivities,
       'medicines': medicines,

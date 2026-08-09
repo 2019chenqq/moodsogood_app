@@ -3,17 +3,20 @@ import 'package:flutter/services.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../app_globals.dart';
-import '../pages/hub_pages.dart';
+import '../daily/daily_check_in_page.dart';
 import '../meds/medication_checkin_page.dart';
-import '../follow_up/pages/follow_up_summary_page.dart';
+import '../meds/medication_local_db.dart';
+import '../meds/medication_subjective_reminder_payload.dart';
+import '../meds/medication_subjective_response_page.dart';
+import '../meds/medication_subjective_tracking_cycle.dart';
 
 const _channelId = 'heartshine_general';
 const _channelName = '心域提醒';
 const _channelDescription = '心域的提醒與每日通知';
 const _dailyRecordPayload = 'open_daily_record';
 const _medicationCheckinPayload = 'open_medication_checkin';
-const _followUpSummaryPayload = 'open_follow_up_summary';
 
 class NotificationHelper {
   static final NotificationHelper _instance = NotificationHelper._internal();
@@ -22,7 +25,7 @@ class NotificationHelper {
 
   static const int kDailyAlarmId = 10001;
   static const String medicationCheckinPayload = _medicationCheckinPayload;
-  static const String followUpSummaryPayload = _followUpSummaryPayload;
+  static const String followUpSummaryPayload = 'open_follow_up_summary';
 
   final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
@@ -34,6 +37,17 @@ class NotificationHelper {
 
   bool _isInitialized = false;
   bool _exactAlarmAllowed = false;
+  bool _exactAlarmPermissionChecked = false;
+  bool _healthDataNavigationReady = false;
+
+  void setHealthDataNavigationReady(bool ready) {
+    _healthDataNavigationReady = ready;
+    if (ready) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        processPendingNavigation();
+      });
+    }
+  }
 
   /// 你可以固定用同一個 channel id
 
@@ -213,6 +227,7 @@ class NotificationHelper {
     final android = _notificationsPlugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     if (android != null) {
+      _exactAlarmPermissionChecked = true;
       _exactAlarmAllowed =
           await android.requestExactAlarmsPermission() ?? false;
       debugPrint('🔔 精準鬧鐘權限: $_exactAlarmAllowed');
@@ -328,8 +343,12 @@ class NotificationHelper {
     }
   }
 
-  /// 建立單次通知。回診提醒使用一般精準度，避免為數天後的提醒額外要求
-  /// Android 精準鬧鐘權限。
+  Future<void> cancelNotification(int id) async {
+    await init();
+    await _notificationsPlugin.cancel(id);
+  }
+
+  /// 排程一筆「單次」通知（例如回診前提醒），回傳是否排程成功。
   Future<bool> scheduleOneTimeNotification({
     required int id,
     required String title,
@@ -337,52 +356,56 @@ class NotificationHelper {
     required DateTime scheduledAt,
     String? payload,
   }) async {
-    await init();
-    if (!await _ensurePermissions()) return false;
-    final scheduledDate = tz.TZDateTime.from(scheduledAt, tz.local);
-    if (!scheduledDate.isAfter(tz.TZDateTime.now(tz.local))) return false;
     try {
+      await init();
+      final hasPermission = await _ensurePermissions();
+      if (!hasPermission) return false;
+      final android =
+          _notificationsPlugin.resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+      if (android != null && !_exactAlarmPermissionChecked) {
+        _exactAlarmPermissionChecked = true;
+        _exactAlarmAllowed =
+            await android.requestExactAlarmsPermission() ?? false;
+      }
       await _notificationsPlugin.zonedSchedule(
         id,
         title,
         body,
-        scheduledDate,
-        NotificationDetails(
+        tz.TZDateTime.from(scheduledAt, tz.local),
+        const NotificationDetails(
           android: AndroidNotificationDetails(
             _channelId,
             _channelName,
             channelDescription: _channelDescription,
-            importance: Importance.high,
+            importance: Importance.max,
             priority: Priority.high,
-            icon: '@mipmap/ic_launcher',
+            enableVibration: true,
+            enableLights: true,
+            playSound: true,
           ),
-          iOS: const DarwinNotificationDetails(
-            presentAlert: true,
-            presentBadge: true,
-            presentSound: true,
-            interruptionLevel: InterruptionLevel.timeSensitive,
-          ),
+          iOS: DarwinNotificationDetails(),
         ),
-        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        androidScheduleMode: _exactAlarmAllowed
+            ? AndroidScheduleMode.exactAllowWhileIdle
+            : AndroidScheduleMode.inexactAllowWhileIdle,
         payload: payload,
       );
+      debugPrint('✅ 單次通知已排程（id=$id）：$title');
       return true;
-    } catch (error, stackTrace) {
-      debugPrint('❌ 建立單次通知失敗：$error');
-      debugPrintStack(stackTrace: stackTrace);
+    } catch (e) {
+      debugPrint('❌ 單次通知排程失敗：$e');
       return false;
     }
-  }
-
-  Future<void> cancelNotification(int id) async {
-    await _notificationsPlugin.cancel(id);
   }
 
   Future<void> requestExactAlarmPermission() async {
     final androidImplementation =
         _notificationsPlugin.resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
-    await androidImplementation?.requestExactAlarmsPermission();
+    _exactAlarmPermissionChecked = true;
+    _exactAlarmAllowed =
+        await androidImplementation?.requestExactAlarmsPermission() ?? false;
   }
 
   void handleBackgroundNotificationResponse(
@@ -407,18 +430,95 @@ class NotificationHelper {
     if (payload == _medicationCheckinPayload) {
       return _navigateToMedicationCheckin();
     }
-    if (payload == _followUpSummaryPayload) {
-      return _navigateToFollowUpSummary();
+    final subjectivePayload =
+        MedicationSubjectiveReminderPayload.tryDecode(payload);
+    if (subjectivePayload != null) {
+      return _navigateToMedicationSubjectiveResponse(subjectivePayload);
     }
     return false;
   }
+
+  bool _navigateToMedicationSubjectiveResponse(
+    MedicationSubjectiveReminderPayload payload,
+  ) {
+    if (!_healthDataNavigationReady ||
+        FirebaseAuth.instance.currentUser == null) {
+      return false;
+    }
+    final navigator = rootNavigatorKey.currentState;
+    if (navigator == null) return false;
+    _openMedicationSubjectiveResponse(navigator, payload);
+    return true;
+  }
+
+  Future<void> _openMedicationSubjectiveResponse(
+    NavigatorState navigator,
+    MedicationSubjectiveReminderPayload payload,
+  ) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      _pendingPayload = payload.encode();
+      return;
+    }
+    try {
+      final cycle = await MedicationLocalDB().getSubjectiveTrackingCycle(
+        uid,
+        payload.cycleId,
+      );
+      if (cycle == null ||
+          cycle.medicationId != payload.medicationId ||
+          cycle.changeRecordId != payload.changeRecordId) {
+        throw StateError('Tracking cycle is unavailable.');
+      }
+      navigator.push(
+        MaterialPageRoute(
+          builder: (_) => MedicationSubjectiveResponsePage(
+            medicationId: cycle.medicationId,
+            medicationName: cycle.medicationName,
+            changeRecordId: cycle.changeRecordId,
+            changeDate: cycle.changeDate,
+            adjustmentSummary: _trackingChangeSummary(cycle),
+            followUpDay: payload.followUpDay,
+          ),
+        ),
+      );
+    } catch (error) {
+      debugPrint('Unable to open medication subjective response: $error');
+      rootMessengerKey.currentState?.showSnackBar(
+        const SnackBar(content: Text('目前無法開啟這筆用藥感受問卷')),
+      );
+    }
+  }
+
+  String _trackingChangeSummary(MedicationSubjectiveTrackingCycle cycle) {
+    switch (cycle.changeType) {
+      case MedicationTrackingChangeType.added:
+        return '新增藥物';
+      case MedicationTrackingChangeType.resumed:
+        return '重新開始使用';
+      case MedicationTrackingChangeType.doseIncreased:
+      case MedicationTrackingChangeType.doseDecreased:
+        final unit = cycle.doseUnit?.trim() ?? '';
+        final oldDose = cycle.oldDose;
+        final newDose = cycle.newDose;
+        if (oldDose != null && newDose != null) {
+          return '${_doseText(oldDose)}$unit → ${_doseText(newDose)}$unit';
+        }
+        return cycle.changeType == MedicationTrackingChangeType.doseIncreased
+            ? '增加劑量'
+            : '減少劑量';
+    }
+  }
+
+  String _doseText(double dose) =>
+      dose == dose.roundToDouble() ? dose.toInt().toString() : dose.toString();
 
   bool _navigateToDailyRecord() {
     final navigator = rootNavigatorKey.currentState;
     if (navigator == null) return false;
 
     navigator.pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const RecordHubPage()),
+      MaterialPageRoute(builder: (_) => const DailyCheckInPage()),
       (_) => false,
     );
     return true;
@@ -430,17 +530,6 @@ class NotificationHelper {
 
     navigator.pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const MedicationCheckinPage()),
-      (_) => false,
-    );
-    return true;
-  }
-
-  bool _navigateToFollowUpSummary() {
-    final navigator = rootNavigatorKey.currentState;
-    if (navigator == null) return false;
-
-    navigator.pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const FollowUpSummaryPage()),
       (_) => false,
     );
     return true;

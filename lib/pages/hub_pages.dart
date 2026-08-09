@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:tutorial_coach_mark/tutorial_coach_mark.dart';
 import '../widgets/main_drawer.dart';
 import '../ai/innera_ai_home_page.dart';
-import '../daily/daily_record_screen.dart';
+import '../daily/daily_check_in_page.dart';
 import '../daily/daily_record_history.dart';
+import '../daily/quick_record_home_card.dart';
+import '../daily/body_measurement_record_page.dart';
+import '../daily/sleep_record_page.dart';
 import '../daily/weekly_record_repository.dart';
 import '../daily/weekly_review_page.dart';
 import '../models/weekly_record.dart';
@@ -13,94 +15,21 @@ import '../meds/medication_home_page.dart';
 import '../meds/medication_checkin_page.dart';
 import '../community/community_home_page.dart';
 import '../analytics_service.dart';
-import '../tutorial/app_tutorial_service.dart';
+import '../constants/healing_design_system.dart';
 import '../settings_page.dart';
-import '../follow_up/services/follow_up_service.dart';
 import 'feedback_page.dart';
 import '../follow_up/pages/follow_up_hub_page.dart';
 import 'life_overview_page.dart';
 import 'profile_page.dart';
 import 'trend_review_hub_page.dart';
 
-class HomeHubPage extends StatefulWidget {
+class HomeHubPage extends StatelessWidget {
   const HomeHubPage({super.key});
-
-  @override
-  State<HomeHubPage> createState() => _HomeHubPageState();
-}
-
-class _HomeHubPageState extends State<HomeHubPage> {
-  static String? _promptedVisitKey;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _maybePromptForNextAppointment();
-    });
-  }
 
   void _push(BuildContext context, Widget page) {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => page),
-    );
-  }
-
-  Future<void> _maybePromptForNextAppointment() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-
-    final appointments = await FollowUpService.getAppointments();
-    if (!mounted) return;
-
-    final todayAppointments = appointments
-        .where((appointment) => appointment.daysUntil == 0)
-        .toList();
-    final alreadyHasNextAppointment =
-        appointments.any((appointment) => appointment.daysUntil > 0);
-    if (todayAppointments.isEmpty || alreadyHasNextAppointment) return;
-
-    final now = DateTime.now();
-    final promptKey =
-        '$uid-${now.year}-${now.month.toString().padLeft(2, '0')}-'
-        '${now.day.toString().padLeft(2, '0')}';
-    if (_promptedVisitKey == promptKey) return;
-    _promptedVisitKey = promptKey;
-
-    final appointment = todayAppointments.first;
-    final visitLabel = appointment.label.trim();
-    final visitDescription =
-        visitLabel.isEmpty ? '今天是回診日' : '今天是 $visitLabel 的回診日';
-    final shouldAdd = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        icon: const Icon(Icons.event_available_rounded),
-        title: const Text('今天回診，要記下下一次日期嗎？'),
-        content: Text(
-          '$visitDescription。如果已經知道下一次回診日期，'
-          '現在順手記下，之後就能提前整理想跟醫師討論的事情。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('稍後再說'),
-          ),
-          FilledButton.icon(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('新增下次回診'),
-          ),
-        ],
-      ),
-    );
-
-    if (shouldAdd != true || !mounted) return;
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const FollowUpHubPage(promptAddAppointment: true),
-      ),
     );
   }
 
@@ -132,6 +61,8 @@ class _HomeHubPageState extends State<HomeHubPage> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
+            const QuickRecordHomeCard(),
+            const SizedBox(height: 16),
             _RecordEntryCard(
               icon: Icons.edit_note_rounded,
               title: '紀錄系統',
@@ -139,7 +70,6 @@ class _HomeHubPageState extends State<HomeHubPage> {
               color: const Color.fromARGB(255, 129, 199, 132),
               onTap: () => _push(context, const RecordHubPage()),
               actionLabel: '開始記錄',
-              height: 125,
             ),
             const SizedBox(height: 12),
             _RecordEntryCard(
@@ -149,7 +79,6 @@ class _HomeHubPageState extends State<HomeHubPage> {
               color: const Color(0xFF7DB7D8),
               onTap: () => _push(context, const InneraAiHomePage()),
               actionLabel: '開始對話',
-              height: 125,
             ),
             const SizedBox(height: 12),
             _RecordEntryCard(
@@ -159,7 +88,6 @@ class _HomeHubPageState extends State<HomeHubPage> {
               color: const Color(0xFF5C9BD5),
               onTap: () => _push(context, const LifeOverviewPage()),
               actionLabel: '查看軌跡',
-              height: 125,
             ),
             const SizedBox(height: 12),
             _RecordEntryCard(
@@ -169,7 +97,6 @@ class _HomeHubPageState extends State<HomeHubPage> {
               color: const Color(0xFF26A69A),
               onTap: () => _push(context, const FollowUpHubPage()),
               actionLabel: '前往專區',
-              height: 125,
             ),
             const SizedBox(height: 12),
             _RecordEntryCard(
@@ -179,7 +106,6 @@ class _HomeHubPageState extends State<HomeHubPage> {
               color: const Color(0xFF9575CD),
               onTap: () => _push(context, const ProfilePage()),
               actionLabel: '查看資料',
-              height: 125,
             ),
             const SizedBox(height: 12),
             _RecordEntryCard(
@@ -189,7 +115,6 @@ class _HomeHubPageState extends State<HomeHubPage> {
               color: const Color(0xFF78909C),
               onTap: () => _push(context, const SettingsPage()),
               actionLabel: '開啟設定',
-              height: 125,
             ),
             const SizedBox(height: 12),
             _RecordEntryCard(
@@ -199,7 +124,6 @@ class _HomeHubPageState extends State<HomeHubPage> {
               color: const Color(0xFFFFA25B),
               onTap: () => _push(context, const FeedbackPage()),
               actionLabel: '取得協助',
-              height: 125,
             ),
           ],
         ),
@@ -216,21 +140,12 @@ class RecordHubPage extends StatefulWidget {
 }
 
 class _RecordHubPageState extends State<RecordHubPage> {
-  final GlobalKey _dailyRecordCardKey = GlobalKey();
   Future<WeeklyRecord?>? _weeklyRecordFuture;
-  TutorialCoachMark? _homeTutorial;
-  bool _didCheckTutorial = false;
-  bool _isShowingHomeTutorial = false;
-  bool _isContinuingTutorial = false;
-  bool _isDisposingTutorial = false;
 
   @override
   void initState() {
     super.initState();
     _refreshWeeklyRecord();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _maybeShowDailyRecordTutorial();
-    });
   }
 
   void _push(BuildContext context, Widget page) {
@@ -276,75 +191,6 @@ class _RecordHubPageState extends State<RecordHubPage> {
   }
 
   @override
-  void dispose() {
-    _isDisposingTutorial = true;
-    _homeTutorial?.finish();
-    _homeTutorial = null;
-    super.dispose();
-  }
-
-  Future<void> _maybeShowDailyRecordTutorial() async {
-    if (_didCheckTutorial || _isShowingHomeTutorial) return;
-    _didCheckTutorial = true;
-
-    final shouldShow = await AppTutorialService.shouldShowDailyRecordTutorial();
-    if (!mounted || !shouldShow) return;
-    if (_dailyRecordCardKey.currentContext == null) return;
-
-    _isShowingHomeTutorial = true;
-    _homeTutorial = TutorialCoachMark(
-      targets: [
-        TargetFocus(
-          identify: 'daily_record_entry',
-          keyTarget: _dailyRecordCardKey,
-          shape: ShapeLightFocus.RRect,
-          radius: 18,
-          contents: [
-            TargetContent(
-              align: ContentAlign.bottom,
-              builder: (context, controller) => _TutorialBubble(
-                text: '從這裡開始填寫今天的情緒、症狀與睡眠狀態。',
-                primaryText: '下一步',
-                onPrimary: _goToDailyRecordFromTutorial,
-                onSkip: controller.skip,
-              ),
-            ),
-          ],
-        ),
-      ],
-      colorShadow: Colors.black,
-      opacityShadow: 0.48,
-      paddingFocus: 8,
-      textSkip: '跳過',
-      onClickTarget: (_) => _goToDailyRecordFromTutorial(),
-      onFinish: _goToDailyRecordFromTutorial,
-      onSkip: () {
-        _isShowingHomeTutorial = false;
-        _homeTutorial = null;
-        return true;
-      },
-    );
-    _homeTutorial?.show(context: context);
-  }
-
-  Future<void> _goToDailyRecordFromTutorial() async {
-    if (!mounted || _isContinuingTutorial || _isDisposingTutorial) return;
-    _isContinuingTutorial = true;
-    _isShowingHomeTutorial = false;
-    _homeTutorial?.finish();
-    _homeTutorial = null;
-
-    await Future<void>.delayed(const Duration(milliseconds: 120));
-    if (!mounted) return;
-
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const DailyRecordScreen(startTutorial: true),
-      ),
-    );
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
       drawer: const MainDrawer(),
@@ -372,21 +218,38 @@ class _RecordHubPageState extends State<RecordHubPage> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
+            const QuickRecordHomeCard(),
+            const SizedBox(height: 12),
             _RecordEntryCard(
-              icon: Icons.book_outlined,
-              title: '日記',
-              subtitle: '獨立日記頁與歷史日記',
-              color: const Color.fromARGB(255, 255, 195, 113),
-              onTap: () => _push(context, const DiaryHomePage()),
+              icon: Icons.fact_check_outlined,
+              title: '每日 Check-in',
+              subtitle: '用兩個評分快速建立今天的基準',
+              color: HealingDesignSystem.primaryBlue,
+              onTap: () => _push(context, const DailyCheckInPage()),
             ),
             const SizedBox(height: 12),
             _RecordEntryCard(
-              key: _dailyRecordCardKey,
-              icon: Icons.edit_note,
-              title: '每日狀態紀錄',
-              subtitle: '開始填寫今日紀錄',
-              color: const Color.fromARGB(255, 129, 199, 132),
-              onTap: () => _push(context, const DailyRecordScreen()),
+              icon: Icons.bedtime_outlined,
+              title: '睡眠紀錄',
+              subtitle: '記錄睡眠時間、品質與睡眠狀況',
+              color: const Color(0xFF7986CB),
+              onTap: () => _push(context, const SleepRecordPage()),
+            ),
+            const SizedBox(height: 12),
+            _RecordEntryCard(
+              icon: Icons.monitor_weight_outlined,
+              title: '身體測量',
+              subtitle: '記錄體重、體脂與腰圍',
+              color: const Color(0xFF4DB6AC),
+              onTap: () => _push(context, const BodyMeasurementRecordPage()),
+            ),
+            const SizedBox(height: 12),
+            _RecordEntryCard(
+              icon: Icons.book_outlined,
+              title: '日記',
+              subtitle: '寫下今天的感受與生活片段',
+              color: const Color.fromARGB(255, 255, 195, 113),
+              onTap: () => _push(context, const DiaryHomePage()),
             ),
             const SizedBox(height: 12),
             FutureBuilder<WeeklyRecord?>(
@@ -550,14 +413,12 @@ class _PlaceholderPage extends StatelessWidget {
 
 class _RecordEntryCard extends StatefulWidget {
   const _RecordEntryCard({
-    super.key,
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.color,
     required this.onTap,
     this.actionLabel,
-    this.height = 120,
   });
 
   final IconData icon;
@@ -566,7 +427,6 @@ class _RecordEntryCard extends StatefulWidget {
   final Color color;
   final VoidCallback onTap;
   final String? actionLabel;
-  final double height;
 
   @override
   State<_RecordEntryCard> createState() => _RecordEntryCardState();
@@ -574,6 +434,8 @@ class _RecordEntryCard extends StatefulWidget {
 
 class _RecordEntryCardState extends State<_RecordEntryCard>
     with SingleTickerProviderStateMixin {
+  static const double _cardHeight = 120;
+
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
 
@@ -618,7 +480,7 @@ class _RecordEntryCardState extends State<_RecordEntryCard>
       child: ScaleTransition(
         scale: _scaleAnimation,
         child: SizedBox(
-          height: widget.height,
+          height: _cardHeight,
           child: Card(
             elevation: 4,
             shadowColor: widget.color.withValues(alpha: 0.4),
@@ -741,70 +603,6 @@ class _RecordEntryCardState extends State<_RecordEntryCard>
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _TutorialBubble extends StatelessWidget {
-  const _TutorialBubble({
-    required this.text,
-    required this.primaryText,
-    required this.onPrimary,
-    required this.onSkip,
-  });
-
-  final String text;
-  final String primaryText;
-  final VoidCallback onPrimary;
-  final VoidCallback onSkip;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.symmetric(horizontal: 18),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FCFF),
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.12),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            text,
-            style: const TextStyle(
-              color: Color(0xFF2F4858),
-              fontSize: 16,
-              height: 1.55,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton(
-                onPressed: onSkip,
-                child: const Text('跳過'),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: onPrimary,
-                child: Text(primaryText),
-              ),
-            ],
-          ),
-        ],
       ),
     );
   }

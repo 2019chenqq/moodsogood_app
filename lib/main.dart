@@ -26,7 +26,6 @@ import 'providers/theme_provider.dart';
 
 import 'daily/daily_record_repository.dart';
 import 'app_lock_screen.dart';
-import 'utils/app_lock_session_service.dart';
 import 'providers/pro_provider.dart';
 import 'pdf/pdf_export_provider.dart'; // 引入 PDFExportProvider
 import 'UI/fortune_cookie_screen.dart';
@@ -38,6 +37,7 @@ import 'community/compose_post_page.dart';
 import 'onboarding_page.dart';
 import 'utils/secure_storage_service.dart';
 import 'utils/health_data_encryption_service.dart';
+import 'meds/medication_subjective_reminder_service.dart';
 import 'pin_setup_screen.dart';
 import 'recovery_key_restore_screen.dart';
 import 'analytics_service.dart';
@@ -84,8 +84,9 @@ Future<void> main() async {
           androidProvider: kDebugMode
               ? AndroidProvider.debug
               : AndroidProvider.playIntegrity,
-          appleProvider:
-              kDebugMode ? AppleProvider.debug : AppleProvider.appAttest,
+          appleProvider: kDebugMode
+              ? AppleProvider.debug
+              : AppleProvider.appAttestWithDeviceCheckFallback,
         );
         debugPrint('Firebase App Check activated');
       } catch (error, stackTrace) {
@@ -550,7 +551,6 @@ class _LockWrapperState extends State<LockWrapper> with WidgetsBindingObserver {
         break;
       case AppLifecycleState.hidden:
       case AppLifecycleState.paused:
-        AppLockSessionService.markBackgrounded();
         _wasBackgrounded = true;
         if (_lockEnabled && mounted && !_needLock) {
           setState(() => _needLock = true);
@@ -558,7 +558,6 @@ class _LockWrapperState extends State<LockWrapper> with WidgetsBindingObserver {
         _checkLock(showLoading: false);
         break;
       case AppLifecycleState.resumed:
-        AppLockSessionService.markResumed();
         if (_wasBackgrounded) {
           _wasBackgrounded = false;
           _checkLock(showLoading: false);
@@ -588,7 +587,6 @@ class _LockWrapperState extends State<LockWrapper> with WidgetsBindingObserver {
   }
 
   void _onUnlocked() {
-    AppLockSessionService.markVerified();
     setState(() {
       _needLock = false;
     });
@@ -724,6 +722,7 @@ class _EncryptionGateState extends State<EncryptionGate> {
   }
 
   Future<void> _checkEncryptionKey() async {
+    NotificationHelper().setHealthDataNavigationReady(false);
     final prefs = await SharedPreferences.getInstance();
     final user = FirebaseAuth.instance.currentUser;
 
@@ -807,6 +806,14 @@ class _EncryptionGateState extends State<EncryptionGate> {
         debugPrint('Health data encryption migration deferred: $error');
         debugPrint('$stackTrace');
       }
+      try {
+        await MedicationSubjectiveReminderService()
+            .syncForCurrentUser(uid: user.uid);
+      } catch (error, stackTrace) {
+        debugPrint('Medication subjective reminders sync deferred: $error');
+        debugPrint('$stackTrace');
+      }
+      NotificationHelper().setHealthDataNavigationReady(true);
     }
 
     if (mounted) {

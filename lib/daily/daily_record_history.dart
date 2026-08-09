@@ -7,7 +7,6 @@ import '../diary/diary_repository.dart';
 import '../models/daily_record.dart'; // 確保引用正確
 import '../models/weekly_record.dart';
 import '../utils/date_helper.dart'; // 確保引用正確
-import '../utils/sleep_record_parser.dart';
 import 'record_detail_screen.dart'; // 確保引用正確
 import '../models/period_cycle.dart';
 import '../widgets/main_drawer.dart';
@@ -26,6 +25,7 @@ import '../analytics_service.dart';
 import '../sleep_insights/models/sleep_insight_models.dart';
 import '../sleep_insights/services/sleep_analysis_service.dart';
 import '../sleep_insights/widgets/sleep_insights_view.dart';
+import 'unified_sleep_repository.dart';
 
 const Map<String, String> ksleepFlagMap = {
   'good': '優',
@@ -647,7 +647,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
       nightAwakenings: _parseNightAwakeningsFromLocal(
         map['nightAwakenings'],
       ),
-      quality: SleepRecordParser.quality(map),
+      quality: (map['quality'] as num?)?.toInt(),
       tookHypnotic: map['tookHypnotic'] ?? false,
       hypnoticName: map['hypnoticName'],
       hypnoticDose: map['hypnoticDose'],
@@ -1120,6 +1120,40 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
   }
 
   Widget _buildSleepAnalysisPage(
+    List<DailyRecord> records,
+    List<PeriodCycle> cycles,
+    bool isPro,
+    String uid,
+  ) {
+    final end = _selectedDateRange?.end ?? DateTime.now();
+    final start = _selectedDateRange?.start ??
+        (_selectedRangeDays == null
+            ? DateTime(2000)
+            : end.subtract(Duration(days: _selectedRangeDays! - 1)));
+    return FutureBuilder<List<UnifiedSleepRecord>>(
+      future: UnifiedSleepRepository().getByDateRange(
+        userId: uid,
+        start: start,
+        end: end,
+      ),
+      builder: (context, snapshot) {
+        final insightRecords = snapshot.hasData
+            ? UnifiedSleepRepository.overlayForInsights(
+                dailyRecords: records,
+                sleepRecords: snapshot.data!,
+              )
+            : records;
+        return _buildSleepAnalysisContent(
+          insightRecords,
+          cycles,
+          isPro,
+          uid,
+        );
+      },
+    );
+  }
+
+  Widget _buildSleepAnalysisContent(
     List<DailyRecord> records,
     List<PeriodCycle> cycles,
     bool isPro,

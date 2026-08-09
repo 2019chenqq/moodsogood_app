@@ -12,6 +12,8 @@ import '../utils/health_data_encryption_service.dart';
 import 'daily_state_dimensions.dart';
 import 'symptom_definitions.dart';
 import 'body_measurement_input.dart';
+import 'unified_sleep_repository.dart';
+import 'unified_body_measurement_repository.dart';
 
 class RecordDetailScreen extends StatefulWidget {
   final String uid;
@@ -44,6 +46,8 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
       return null;
     }
 
+    DailyRecord? record;
+
     // 1. 先嘗試本地
     try {
       final repo = DailyRecordRepository();
@@ -51,32 +55,94 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
           await repo.getDailyRecord(userId: widget.uid, date: date);
       if (localData != null) {
         debugPrint('✅ Loaded record from local SQLite: ${widget.docId}');
-        return _convertLocalToRecord(localData, date);
+        record = _convertLocalToRecord(localData, date);
       }
     } catch (e) {
       debugPrint('⚠️  Local load failed: $e');
     }
 
     // 2. 再嘗試 Firebase
-    try {
-      final snap = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(widget.uid)
-          .collection('dailyRecords')
-          .doc(widget.docId)
-          .get();
+    if (record == null) {
+      try {
+        final snap = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(widget.uid)
+            .collection('dailyRecords')
+            .doc(widget.docId)
+            .get();
 
-      if (snap.exists && snap.data() != null) {
-        debugPrint('✅ Loaded record from Firebase: ${widget.docId}');
-        final data =
-            await HealthDataEncryptionService.decryptData(snap.data()!);
-        return DailyRecord.fromData(snap.id, data);
+        if (snap.exists && snap.data() != null) {
+          debugPrint('✅ Loaded record from Firebase: ${widget.docId}');
+          final data =
+              await HealthDataEncryptionService.decryptData(snap.data()!);
+          record = DailyRecord.fromData(snap.id, data);
+        }
+      } catch (e) {
+        debugPrint('⚠️  Firebase load failed: $e');
       }
-    } catch (e) {
-      debugPrint('⚠️  Firebase load failed: $e');
     }
 
-    return null;
+    try {
+      final sleep = await UnifiedSleepRepository().getForDate(
+        userId: widget.uid,
+        date: date,
+      );
+      if (sleep != null) {
+        record = UnifiedSleepRepository.overlayForInsights(
+          dailyRecords: [if (record != null) record],
+          sleepRecords: [sleep],
+        ).single;
+      }
+    } catch (error) {
+      debugPrint('⚠️ SleepRecord load failed: $error');
+    }
+
+    try {
+      final measurements =
+          await UnifiedBodyMeasurementRepository().getByDateRange(
+        userId: widget.uid,
+        start: date,
+        end: date,
+      );
+      final trend =
+          UnifiedBodyMeasurementRepository.selectDailyTrend(measurements);
+      if (trend.isNotEmpty) {
+        record = _withBodyMeasurement(
+          record,
+          date,
+          trend.single.measurement,
+        );
+      }
+    } catch (error) {
+      debugPrint('⚠️ BodyMeasurementRecord load failed: $error');
+    }
+
+    return record;
+  }
+
+  DailyRecord _withBodyMeasurement(
+    DailyRecord? record,
+    DateTime date,
+    BodyMeasurement measurement,
+  ) {
+    return DailyRecord(
+      id: record?.id ?? widget.docId,
+      date: record?.date ?? date,
+      emotions: record?.emotions ?? const [],
+      symptoms: record?.symptoms ?? const [],
+      stateChanges: record?.stateChanges ?? const {},
+      symptomSectionCompleted: record?.symptomSectionCompleted ?? false,
+      emotionSectionCompleted: record?.emotionSectionCompleted ?? false,
+      stateSectionCompleted: record?.stateSectionCompleted ?? false,
+      bodyMeasurement: measurement,
+      sleep: record?.sleep ?? const SleepData(),
+      overallMood: record?.overallMood,
+      moodScale: record?.moodScale ?? 5,
+      isPeriod: record?.isPeriod ?? false,
+      periodStartId: record?.periodStartId,
+      periodEndId: record?.periodEndId,
+      updatedAt: record?.updatedAt,
+    );
   }
 
   /// 從本地 Map 轉換為 DailyRecord

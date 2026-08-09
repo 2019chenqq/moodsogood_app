@@ -1,7 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../daily/daily_record_screen.dart';
+import '../daily/daily_check_in_page.dart';
 import '../daily/record_detail_screen.dart';
 import '../diary/diary_page_demo.dart';
 import '../models/calendar_day_summary.dart';
@@ -130,7 +130,8 @@ class _LifeOverviewPageState extends State<LifeOverviewPage> {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     final selectedKey = _dateKey(_selectedDate);
-    final summary = _summaries[selectedKey] ?? CalendarDaySummary.empty(_selectedDate);
+    final summary =
+        _summaries[selectedKey] ?? CalendarDaySummary.empty(_selectedDate);
     final canGenerateAiFeedback = _hasMeaningfulDiaryInput(summary);
 
     return Scaffold(
@@ -166,7 +167,8 @@ class _LifeOverviewPageState extends State<LifeOverviewPage> {
             else if (_errorMessage != null)
               _CalendarErrorCard(
                 message: _errorMessage!,
-                onRetry: () => _loadMonthSummary(_focusedMonth, showLoading: true),
+                onRetry: () =>
+                    _loadMonthSummary(_focusedMonth, showLoading: true),
               )
             else
               UnifiedCalendarWidget(
@@ -231,7 +233,7 @@ class _LifeOverviewPageState extends State<LifeOverviewPage> {
     }
 
     await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const DailyRecordScreen()),
+      MaterialPageRoute(builder: (_) => DailyCheckInPage(date: _selectedDate)),
     );
   }
 
@@ -243,7 +245,7 @@ class _LifeOverviewPageState extends State<LifeOverviewPage> {
 
   Future<void> _openPeriodPage() async {
     await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const DailyRecordScreen(initialTab: 1)),
+      MaterialPageRoute(builder: (_) => DailyCheckInPage(date: _selectedDate)),
     );
   }
 }
@@ -324,7 +326,8 @@ class _CalendarErrorCard extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.cloud_off_rounded, color: Color(0xFF82A8AF), size: 26),
+            const Icon(Icons.cloud_off_rounded,
+                color: Color(0xFF82A8AF), size: 26),
             const SizedBox(height: 10),
             Text(
               message,
@@ -374,8 +377,14 @@ class _LifeOverviewLegend extends StatelessWidget {
       spacing: 12,
       runSpacing: 8,
       children: [
-        item(const Text('●', style: TextStyle(color: Color(0xFFF2A8C3), fontSize: 12)), '生理期'),
-        item(const Text('○', style: TextStyle(color: Color(0xFFE6A6C0), fontSize: 12)), '預測生理期'),
+        item(
+            const Text('●',
+                style: TextStyle(color: Color(0xFFF2A8C3), fontSize: 12)),
+            '生理期'),
+        item(
+            const Text('○',
+                style: TextStyle(color: Color(0xFFE6A6C0), fontSize: 12)),
+            '預測生理期'),
         item(const _LegendDot(color: Color(0xFF4A90E2)), '每日紀錄'),
         item(const _LegendDot(color: Color(0xFFC9B6FF)), '日記'),
         item(const _LegendDot(color: Color(0xFF58B8C0)), '情緒'),
@@ -489,12 +498,30 @@ class _DailyMindBodySummaryCard extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              _StatusChip(label: '每日紀錄', active: summary.hasDailyRecord, activeColor: const Color(0xFF4A90E2)),
-              _StatusChip(label: '日記', active: summary.hasDiary, activeColor: const Color(0xFFC9B6FF)),
-              _StatusChip(label: '情緒', active: summary.hasEmotionData, activeColor: const Color(0xFF58B8C0)),
-              _StatusChip(label: '症狀', active: summary.hasSymptomData, activeColor: const Color(0xFFF4B183)),
-              _StatusChip(label: '睡眠', active: summary.hasSleepData, activeColor: const Color(0xFF9AB3F5)),
-              _StatusChip(label: '生理期', active: summary.isPeriodDay, activeColor: const Color(0xFFFFBFD4)),
+              _StatusChip(
+                  label: '每日紀錄',
+                  active: summary.hasDailyRecord,
+                  activeColor: const Color(0xFF4A90E2)),
+              _StatusChip(
+                  label: '日記',
+                  active: summary.hasDiary,
+                  activeColor: const Color(0xFFC9B6FF)),
+              _StatusChip(
+                  label: '情緒',
+                  active: summary.hasEmotionData,
+                  activeColor: const Color(0xFF58B8C0)),
+              _StatusChip(
+                  label: '症狀',
+                  active: summary.hasSymptomData,
+                  activeColor: const Color(0xFFF4B183)),
+              _StatusChip(
+                  label: '睡眠',
+                  active: summary.hasSleepData,
+                  activeColor: const Color(0xFF9AB3F5)),
+              _StatusChip(
+                  label: '生理期',
+                  active: summary.isPeriodDay,
+                  activeColor: const Color(0xFFFFBFD4)),
               _StatusChip(
                 label: '預測生理期',
                 active: summary.isPredictedPeriodDay,
@@ -733,7 +760,7 @@ class _DailyMindBodySummaryCard extends StatelessWidget {
     final h = totalMinutes ~/ 60;
     final m = totalMinutes % 60;
 
-    return '${h}小時${m}分';
+    return '$h小時$m分';
   }
 }
 
@@ -774,10 +801,14 @@ class _StatusChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: active ? activeColor.withValues(alpha: 0.22) : const Color(0xFFF4F8F9),
+        color: active
+            ? activeColor.withValues(alpha: 0.22)
+            : const Color(0xFFF4F8F9),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: active ? activeColor.withValues(alpha: 0.55) : const Color(0xFFDDE8EA),
+          color: active
+              ? activeColor.withValues(alpha: 0.55)
+              : const Color(0xFFDDE8EA),
         ),
       ),
       child: Text(

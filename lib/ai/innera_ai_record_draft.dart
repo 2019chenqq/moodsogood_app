@@ -357,7 +357,6 @@ class InneraAiRecordDraft {
   const InneraAiRecordDraft({
     required this.dateKey,
     this.overallMood,
-    this.overallHealth,
     this.emotions = const [],
     this.symptoms = const [],
     this.stateChanges = const {},
@@ -375,7 +374,6 @@ class InneraAiRecordDraft {
   final String dateKey;
   final int moodScale;
   final double? overallMood;
-  final double? overallHealth;
   final List<AiEmotionDraft> emotions;
   final List<String> symptoms;
   final Map<String, int> stateChanges;
@@ -440,7 +438,6 @@ class InneraAiRecordDraft {
     return InneraAiRecordDraft(
       dateKey: (map['dateKey'] ?? map['date'] ?? '').toString(),
       overallMood: _doubleInRange(map['overallMood']),
-      overallHealth: _doubleInRange(map['overallHealth']),
       emotions: emotionByName.values.toList(),
       symptoms: symptomSet.toList(),
       stateChanges: _stateChanges(map['stateChanges']),
@@ -464,7 +461,6 @@ class InneraAiRecordDraft {
         'dateKey': dateKey,
         'moodScale': 5,
         'overallMood': overallMood,
-        'overallHealth': overallHealth,
         'emotionMentions': emotions.map((item) => item.toMap()).toList(),
         'symptoms': symptoms,
         'stateChanges': stateChanges,
@@ -485,7 +481,6 @@ class InneraAiRecordDraft {
         'dateKey': dateKey,
         'moodScale': 5,
         'overallMood': overallMood,
-        'overallHealth': overallHealth,
         'emotionMentions': emotions.map((item) => item.toMap()).toList(),
         'symptoms': symptoms,
         'stateChanges': stateChanges,
@@ -525,11 +520,13 @@ class InneraAiRecordDraft {
               ? existing!
               : emotion;
     }
-    final entries = _dedupeEntries([...rawUserEntries, rawUserEntry]);
+    final entries = <String>[...rawUserEntries];
+    if (rawUserEntry != null && rawUserEntry.trim().isNotEmpty) {
+      entries.add(rawUserEntry.trim());
+    }
     return InneraAiRecordDraft(
       dateKey: dateKey,
       overallMood: parsed.overallMood ?? overallMood,
-      overallHealth: parsed.overallHealth ?? overallHealth,
       emotions: emotionByName.values.toList(),
       symptoms: _sanitizeSymptoms(symptomSet.toList()),
       stateChanges: {...stateChanges, ...parsed.stateChanges},
@@ -540,7 +537,7 @@ class InneraAiRecordDraft {
       sleep: sleep.merge(parsed.sleep),
       events: {...events, ...parsed.events}.toList(),
       rawUserEntries: entries,
-      diaryText: _mergeDiaryText(diaryText, parsed.diaryText),
+      diaryText: parsed.diaryText.isNotEmpty ? parsed.diaryText : diaryText,
       missingFields:
           parsed.missingFields.isEmpty ? missingFields : parsed.missingFields,
       updatedAt: DateTime.now(),
@@ -679,12 +676,9 @@ class InneraAiRecordDraft {
     final explicitStateChanges = _explicitStateChanges(text);
     final explicitBodyMeasurement = _explicitBodyMeasurement(text);
 
-    final parsedOverallHealth = _overallHealthFromText(text);
-
     return InneraAiRecordDraft(
       dateKey: dateKey,
       overallMood: parsedOverall ?? overallMood,
-      overallHealth: parsedOverallHealth ?? overallHealth,
       emotions: emotionByName.values.toList(),
       symptoms: _sanitizeSymptoms(symptomSet.toList()),
       stateChanges: {...stateChanges, ...explicitStateChanges},
@@ -730,7 +724,6 @@ class InneraAiRecordDraft {
     return InneraAiRecordDraft(
       dateKey: dateKey,
       overallMood: overallMood,
-      overallHealth: overallHealth,
       emotions: emotions
           .map((item) => item.dedupeKey == key
               ? item.copyWith(score: score.clamp(1, 5))
@@ -768,7 +761,6 @@ class InneraAiRecordDraft {
     return InneraAiRecordDraft(
       dateKey: dateKey,
       overallMood: overallMood,
-      overallHealth: overallHealth,
       emotions: byDimension.values.toList(),
       symptoms: symptoms,
       stateChanges: stateChanges,
@@ -787,7 +779,6 @@ class InneraAiRecordDraft {
   InneraAiRecordDraft withoutEmotion(String key) => InneraAiRecordDraft(
         dateKey: dateKey,
         overallMood: overallMood,
-        overallHealth: overallHealth,
         emotions: emotions.where((item) => item.dedupeKey != key).toList(),
         symptoms: symptoms,
         stateChanges: stateChanges,
@@ -828,7 +819,6 @@ class InneraAiRecordDraft {
       InneraAiRecordDraft(
         dateKey: dateKey,
         overallMood: overallMood,
-        overallHealth: overallHealth,
         emotions: emotions,
         symptoms: symptoms,
         stateChanges: stateChanges ?? this.stateChanges,
@@ -847,18 +837,16 @@ class InneraAiRecordDraft {
   InneraAiRecordDraft _withRawEntry(String? rawUserEntry) {
     final entry = rawUserEntry?.trim();
     if (entry == null || entry.isEmpty) return this;
-    final entries = _dedupeEntries([...rawUserEntries, entry]);
     return InneraAiRecordDraft(
       dateKey: dateKey,
       overallMood: overallMood,
-      overallHealth: overallHealth,
       emotions: emotions,
       symptoms: symptoms,
       stateChanges: stateChanges,
       bodyMeasurement: bodyMeasurement,
       sleep: sleep,
       events: events,
-      rawUserEntries: entries,
+      rawUserEntries: [...rawUserEntries, entry],
       diaryText: diaryText,
       missingFields: missingFields,
       updatedAt: DateTime.now(),
@@ -870,7 +858,6 @@ class InneraAiRecordDraft {
   InneraAiRecordDraft copyWith({bool? confirmed}) => InneraAiRecordDraft(
         dateKey: dateKey,
         overallMood: overallMood,
-        overallHealth: overallHealth,
         emotions: emotions,
         symptoms: symptoms,
         stateChanges: stateChanges,
@@ -894,67 +881,6 @@ class InneraAiRecordDraft {
           .toSet()
           .toList()
       : const [];
-  static List<String> _dedupeEntries(Iterable<String?> entries) {
-    final normalized = <String, String>{};
-    for (final raw in entries) {
-      final entry = raw?.trim() ?? '';
-      if (entry.isEmpty) continue;
-      final normalizedEntry = entry
-          .replaceAll(RegExp(r'\s+'), '')
-          .replaceAll(RegExp(r'[，。！？、；：]'), '');
-      if (!normalized.containsValue(normalizedEntry)) {
-        normalized[entry] = normalizedEntry;
-      }
-    }
-    return normalized.keys.toList();
-  }
-  static String _mergeDiaryText(String existing, String next) {
-    final existingTrimmed = existing.trim();
-    final nextTrimmed = next.trim();
-    if (nextTrimmed.isEmpty) return existingTrimmed;
-    if (existingTrimmed.isEmpty) return nextTrimmed;
-    // Skip a full-text exact duplicate.
-    if (existingTrimmed == nextTrimmed) return existingTrimmed;
-    // Skip when the new text is already contained within the existing text.
-    if (existingTrimmed.contains(nextTrimmed)) return existingTrimmed;
-    // Append only paragraphs/sentences that are not already present.
-    final existingParagraphs = existingTrimmed
-        .split(RegExp(r'\n\s*\n|\n'))
-        .map((item) => item.trim())
-        .where((item) => item.isNotEmpty)
-        .toList();
-    final newParagraphs = nextTrimmed
-        .split(RegExp(r'\n\s*\n|\n'))
-        .map((item) => item.trim())
-        .where((item) => item.isNotEmpty)
-        .toList();
-    final paragraphsToAdd = newParagraphs
-        .where((paragraph) => !existingParagraphs.any(
-              (existingParagraph) =>
-                  _paragraphSimilar(existingParagraph, paragraph),
-            ))
-        .toList();
-    if (paragraphsToAdd.isEmpty) return existingTrimmed;
-    return [...existingParagraphs, ...paragraphsToAdd].join('\n\n');
-  }
-  static bool _paragraphSimilar(String left, String right) {
-    final comparableLeft = left
-        .replaceAll(RegExp(r'\s+|[，。！？、；：]'), '');
-    final comparableRight = right
-        .replaceAll(RegExp(r'\s+|[，。！？、；：]'), '');
-    if (comparableLeft == comparableRight) return true;
-    if (comparableLeft.length >= 12 && comparableRight.length >= 12) {
-      final longer = comparableLeft.length >= comparableRight.length
-          ? comparableLeft
-          : comparableRight;
-      final shorter = comparableLeft.length >= comparableRight.length
-          ? comparableRight
-          : comparableLeft;
-      return longer.contains(shorter) ||
-          (longer.length - shorter.length) / longer.length < 0.2;
-    }
-    return false;
-  }
   static List<String> _sanitizeSymptoms(List<String> values) {
     final sleepPattern = RegExp(
       r'睡不著|入睡困難|難入睡|半夜.*醒|反覆醒|早醒|淺眠|多夢|惡夢|噩夢|睡眠不足|睡不夠|睡睡醒醒|睡眠中斷|夜尿',
@@ -1228,20 +1154,6 @@ class InneraAiRecordDraft {
         : int.tryParse(match.group(3) ?? match.group(5) ?? '') ?? 0;
     return '${hour.toString().padLeft(2, '0')}:'
         '${minute.toString().padLeft(2, '0')}';
-  }
-
-  static double? _overallHealthFromText(String text) {
-    for (final pattern in [
-      r'(?:整體(?:健康|身體狀況|狀況)?|健康(?:狀況)?|身體狀況)(?:大概|約|是|有|給)?\s*([1-5])\s*分',
-      r'健康(?:狀況)?[^。！？\n]{0,6}([1-5])\s*分',
-    ]) {
-      final match = RegExp(pattern).firstMatch(text);
-      if (match != null) {
-        final parsed = double.tryParse(match.group(1) ?? '');
-        if (parsed != null && parsed >= 1 && parsed <= 5) return parsed;
-      }
-    }
-    return null;
   }
 
   static Map<String, dynamic>? _map(dynamic value) =>

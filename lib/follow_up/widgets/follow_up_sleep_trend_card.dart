@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../constants/healing_design_system.dart';
 import '../models/follow_up_ai_summary.dart';
-import '../models/follow_up_sleep_summary_view_model.dart';
 import '../../sleep_insights/models/sleep_insight_models.dart';
 import '../../sleep_insights/widgets/sleep_insights_view.dart';
 
@@ -31,9 +30,10 @@ class FollowUpSleepTrendCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final viewModel = FollowUpSleepSummaryViewModel.fromData(sleep);
+    final duration = _map(sleep['durationHours']);
+    final quality = _map(sleep['quality']);
     final valuesByDate = <DateTime, double>{};
-    for (final item in viewModel.trend) {
+    for (final item in _list(duration['dailyTrend'])) {
       final date = DateTime.tryParse(item['date']?.toString() ?? '');
       final value = _number(item['value']);
       if (date != null && value != null) {
@@ -59,25 +59,24 @@ class FollowUpSleepTrendCard extends StatelessWidget {
         hasSleepRecord: hours != null,
       ));
     }
+    final recordedDays = _integer(duration['recordedDays']);
+    final average = _number(duration['average']);
+    final minimum = _number(duration['minimum']);
+    final maximum = _number(duration['maximum']);
+    final naps = _map(sleep['naps']);
     final summary = SleepPeriodSummary(
       periodDays: points.length,
-      recordDays: viewModel.recordedDays,
-      validNightDays: viewModel.recordedDays,
-      napDays: 0,
-      napCount: 0,
+      recordDays: recordedDays,
+      validNightDays: recordedDays,
+      napDays: _integer(naps['days']),
+      napCount: _integer(naps['count']),
       hypnoticDays: 0,
-      qualityDays: viewModel.qualityDays,
-      averageNightMinutes:
-          viewModel.averageHours == null ? null : viewModel.averageHours! * 60,
-      averageTotalMinutes:
-          viewModel.averageHours == null ? null : viewModel.averageHours! * 60,
-      averageQuality: viewModel.averageQuality,
-      shortestNightMinutes: viewModel.minimumHours == null
-          ? null
-          : (viewModel.minimumHours! * 60).round(),
-      longestNightMinutes: viewModel.maximumHours == null
-          ? null
-          : (viewModel.maximumHours! * 60).round(),
+      qualityDays: _integer(quality['recordedDays']),
+      averageNightMinutes: average == null ? null : average * 60,
+      averageTotalMinutes: average == null ? null : average * 60,
+      averageQuality: _number(quality['average']),
+      shortestNightMinutes: minimum == null ? null : (minimum * 60).round(),
+      longestNightMinutes: maximum == null ? null : (maximum * 60).round(),
       averageNapMinutes: null,
       averageBedtimeMinutes: null,
       averageWakeMinutes: null,
@@ -99,7 +98,7 @@ class FollowUpSleepTrendCard extends StatelessWidget {
               Text('睡眠趨勢', style: HealingDesignSystem.titleSmall),
             ]),
             const SizedBox(height: 12),
-            if (viewModel.recordedDays == 0)
+            if (recordedDays == 0)
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 28),
@@ -116,17 +115,24 @@ class FollowUpSleepTrendCard extends StatelessWidget {
                 points: points,
                 summary: summary,
                 showTotalSeries: false,
-                showPointDetails: false,
               ),
             const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: viewModel.metrics
-                  .map((metric) =>
-                      _Metric(label: metric.label, value: metric.value))
-                  .toList(),
-            ),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              _Metric(label: '有效紀錄', value: '$recordedDays 天'),
+              _Metric(label: '平均', value: _hours(average)),
+              _Metric(label: '最短', value: _hours(minimum)),
+              _Metric(label: '最長', value: _hours(maximum)),
+              _Metric(
+                  label: '入睡困難',
+                  value: '${_occurrences(sleep['sleepOnsetDifficulty'])} 天'),
+              _Metric(
+                  label: '早醒',
+                  value: '${_occurrences(sleep['earlyAwakening'])} 天'),
+              _Metric(
+                  label: '夜間中斷',
+                  value: '${_occurrences(sleep['nightInterruption'])} 天'),
+              _Metric(label: '小睡', value: '${_integer(naps['days'])} 天'),
+            ]),
           ],
         ),
       ),
@@ -136,9 +142,21 @@ class FollowUpSleepTrendCard extends StatelessWidget {
   static Map<String, dynamic> _map(dynamic value) => value is Map
       ? Map<String, dynamic>.from(value)
       : const <String, dynamic>{};
+  static List<Map<String, dynamic>> _list(dynamic value) => value is List
+      ? value
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList()
+      : const [];
   static double? _number(dynamic value) => value is num
       ? value.toDouble()
       : double.tryParse(value?.toString() ?? '');
+  static int _integer(dynamic value) =>
+      value is num ? value.toInt() : int.tryParse(value?.toString() ?? '') ?? 0;
+  static int _occurrences(dynamic value) =>
+      _integer(_map(value)['occurrenceDays']);
+  static String _hours(double? value) =>
+      value == null ? '無資料' : '${value.toStringAsFixed(1)} 小時';
 }
 
 class _Metric extends StatelessWidget {
