@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:moodsogood_app/models/follow_up_ai_summary.dart';
+import 'package:moodsogood_app/follow_up/models/follow_up_ai_summary.dart';
 
 void main() {
   FollowUpSummaryRecord record({

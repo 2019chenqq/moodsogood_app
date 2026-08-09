@@ -1,10 +1,10 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../app_lock_screen.dart';
-import '../utils/app_lock_pin_service.dart';
-import '../utils/app_lock_second_factor_service.dart';
-import '../utils/app_lock_session_service.dart';
+import '../../app_lock_screen.dart';
+import '../../utils/app_lock_pin_service.dart';
+import '../../utils/app_lock_second_factor_service.dart';
+import '../../utils/app_lock_session_service.dart';
 
 class FollowUpSummaryAccessGuard {
   const FollowUpSummaryAccessGuard._();

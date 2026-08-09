@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../analytics_service.dart';
-import '../constants/healing_design_system.dart';
+import '../../analytics_service.dart';
+import '../../constants/healing_design_system.dart';
 import '../models/follow_up_ai_summary.dart';
 import '../services/follow_up_ai_data_aggregator.dart';
 import '../services/follow_up_ai_service.dart';

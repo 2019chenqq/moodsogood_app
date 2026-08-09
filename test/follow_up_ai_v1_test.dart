@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:moodsogood_app/meds/med_symptom_compare_models.dart';
 import 'package:moodsogood_app/models/daily_record.dart';
-import 'package:moodsogood_app/models/follow_up_ai_summary.dart';
-import 'package:moodsogood_app/pages/follow_up_ai_preview_page.dart';
-import 'package:moodsogood_app/services/follow_up_ai_data_aggregator.dart';
-import 'package:moodsogood_app/services/follow_up_ai_service.dart';
-import 'package:moodsogood_app/services/follow_up_service.dart';
+import 'package:moodsogood_app/follow_up/models/follow_up_ai_summary.dart';
+import 'package:moodsogood_app/follow_up/pages/follow_up_ai_preview_page.dart';
+import 'package:moodsogood_app/follow_up/services/follow_up_ai_data_aggregator.dart';
+import 'package:moodsogood_app/follow_up/services/follow_up_ai_service.dart';
+import 'package:moodsogood_app/follow_up/services/follow_up_service.dart';
 
 void main() {
   test('saved AI preparation restores independent topic notes', () {

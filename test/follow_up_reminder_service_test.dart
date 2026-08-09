@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:moodsogood_app/services/follow_up_reminder_service.dart';
+import 'package:moodsogood_app/follow_up/services/follow_up_reminder_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../constants/healing_design_system.dart';
+import '../../constants/healing_design_system.dart';
 import '../models/follow_up_ai_summary.dart';
-import '../sleep_insights/models/sleep_insight_models.dart';
-import '../sleep_insights/widgets/sleep_insights_view.dart';
+import '../../sleep_insights/models/sleep_insight_models.dart';
+import '../../sleep_insights/widgets/sleep_insights_view.dart';
 
 class FollowUpSleepTrendCard extends StatelessWidget {
   FollowUpSleepTrendCard({super.key, required FollowUpAiV1Input input})

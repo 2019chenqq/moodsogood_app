@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:moodsogood_app/services/follow_up_question_parser.dart';
+import 'package:moodsogood_app/follow_up/services/follow_up_question_parser.dart';
 
 void main() {
   test('AI follow-up questions are split into separate fields', () {

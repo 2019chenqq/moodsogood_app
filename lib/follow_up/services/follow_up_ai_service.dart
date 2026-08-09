@@ -2,10 +2,10 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
-import '../ai/innera_ai_message.dart';
-import '../ai/innera_ai_mode.dart';
-import '../ai/innera_ai_service.dart';
-import '../meds/medication_subjective_summary_builder.dart';
+import '../../ai/innera_ai_message.dart';
+import '../../ai/innera_ai_mode.dart';
+import '../../ai/innera_ai_service.dart';
+import '../../meds/medication_subjective_summary_builder.dart';
 import '../models/follow_up_ai_summary.dart';
 import 'follow_up_question_parser.dart';
 

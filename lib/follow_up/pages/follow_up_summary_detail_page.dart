@@ -2,15 +2,15 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:qr/qr.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../constants/healing_design_system.dart';
+import '../../constants/healing_design_system.dart';
 import '../models/follow_up_ai_summary.dart';
+import '../pdf/follow_up_summary_pdf_service.dart';
+import '../qr/follow_up_qr_painter.dart';
+import '../qr/follow_up_summary_share_service.dart';
 import '../services/follow_up_service.dart';
-import '../services/follow_up_summary_pdf_service.dart';
-import '../services/follow_up_summary_share_service.dart';
-import '../utils/app_lock_session_service.dart';
+import '../../utils/app_lock_session_service.dart';
 import '../widgets/follow_up_sleep_trend_card.dart';
 import 'follow_up_share_preview_page.dart';
 import 'follow_up_summary_access_guard.dart';
@@ -587,7 +587,8 @@ class _TimedShareDialogState extends State<_TimedShareDialog> {
                     padding: const EdgeInsets.all(10),
                     child: SizedBox.square(
                         dimension: 220,
-                        child: CustomPaint(painter: _QrPainter(session.url))))
+                        child:
+                            CustomPaint(painter: FollowUpQrPainter(session.url))))
               else
                 const Padding(
                   padding: EdgeInsets.all(12),
@@ -656,30 +657,4 @@ Future<bool?> _confirmStopShare(BuildContext context) {
       ],
     ),
   );
-}
-
-class _QrPainter extends CustomPainter {
-  _QrPainter(String data)
-      : _image = QrImage(QrCode.fromData(
-            data: data, errorCorrectLevel: QrErrorCorrectLevel.M));
-  final QrImage _image;
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.drawColor(Colors.white, BlendMode.src);
-    final scale = size.shortestSide / _image.moduleCount;
-    final paint = Paint()..color = Colors.black;
-    for (var y = 0; y < _image.moduleCount; y++) {
-      for (var x = 0; x < _image.moduleCount; x++) {
-        if (_image.isDark(y, x)) {
-          canvas.drawRect(
-              Rect.fromLTWH(x * scale, y * scale, scale.ceilToDouble(),
-                  scale.ceilToDouble()),
-              paint);
-        }
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _QrPainter oldDelegate) => false;
 }

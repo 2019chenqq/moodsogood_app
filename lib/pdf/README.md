@@ -3,7 +3,7 @@
 ## 📁 文件結構
 
 ```
-lib/PDF/
+lib/pdf/
 ├── export_config.dart                 # STEP 1: 導出配置
 ├── export_metrics.dart                # STEP 3: 指標模型
 ├── export_metrics_calculator.dart     # STEP 2-3: 計算指標

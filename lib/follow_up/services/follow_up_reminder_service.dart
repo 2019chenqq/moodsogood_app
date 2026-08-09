@@ -1,6 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../utils/notification_helper.dart';
+import '../../utils/notification_helper.dart';
 import 'follow_up_service.dart';
 
 class FollowUpReminderSettings {

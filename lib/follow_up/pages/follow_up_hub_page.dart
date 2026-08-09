@@ -2,16 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:qr/qr.dart';
 
-import '../analytics_service.dart';
-import '../constants/healing_design_system.dart';
-import '../daily/daily_record_helpers.dart';
-import 'trend_review_hub_page.dart';
-import '../meds/med_symptom_compare_page.dart';
-import '../meds/medication_local_db.dart';
-import '../meds/record_adjustment_page.dart';
+import '../../analytics_service.dart';
+import '../../constants/healing_design_system.dart';
+import '../../daily/daily_record_helpers.dart';
+import '../../pages/trend_review_hub_page.dart';
+import '../../meds/med_symptom_compare_page.dart';
+import '../../meds/medication_local_db.dart';
+import '../../meds/record_adjustment_page.dart';
 import '../services/follow_up_service.dart';
-import '../widgets/main_drawer.dart';
-import 'export_report_page.dart';
+import '../../widgets/main_drawer.dart';
+import '../../pages/export_report_page.dart';
 import 'follow_up_summary_history_page.dart';
 import 'follow_up_summary_page.dart';
 

@@ -19,7 +19,7 @@ import '../constants/healing_design_system.dart';
 import '../tutorial/app_tutorial_service.dart';
 import '../settings_page.dart';
 import 'feedback_page.dart';
-import 'follow_up_hub_page.dart';
+import '../follow_up/pages/follow_up_hub_page.dart';
 import 'life_overview_page.dart';
 import 'profile_page.dart';
 import 'trend_review_hub_page.dart';

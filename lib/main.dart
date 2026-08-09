@@ -16,7 +16,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'firebase_options.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
-import 'package:firebase_app_check/firebase_app_check.dart';
 
 import 'Sign_in_page.dart';
 import 'Home_shell.dart';
@@ -28,7 +27,7 @@ import 'providers/theme_provider.dart';
 import 'daily/daily_record_repository.dart';
 import 'app_lock_screen.dart';
 import 'providers/pro_provider.dart';
-import 'PDF/pdf_export_provider.dart'; // 引入 PDFExportProvider
+import 'pdf/pdf_export_provider.dart'; // 引入 PDFExportProvider
 import 'UI/fortune_cookie_screen.dart';
 import 'community/providers/rooms_provider.dart';
 import 'community/community_home_page.dart';

@@ -3,10 +3,10 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:moodsogood_app/meds/medication_subjective_response.dart';
 import 'package:moodsogood_app/meds/medication_subjective_summary_builder.dart';
-import 'package:moodsogood_app/models/follow_up_ai_summary.dart';
-import 'package:moodsogood_app/services/follow_up_ai_data_aggregator.dart';
-import 'package:moodsogood_app/services/follow_up_ai_service.dart';
-import 'package:moodsogood_app/services/follow_up_service.dart';
+import 'package:moodsogood_app/follow_up/models/follow_up_ai_summary.dart';
+import 'package:moodsogood_app/follow_up/services/follow_up_ai_data_aggregator.dart';
+import 'package:moodsogood_app/follow_up/services/follow_up_ai_service.dart';
+import 'package:moodsogood_app/follow_up/services/follow_up_service.dart';
 
 void main() {
   MedicationSubjectiveResponse response({

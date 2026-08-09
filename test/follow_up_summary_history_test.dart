@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:moodsogood_app/models/follow_up_ai_summary.dart';
-import 'package:moodsogood_app/services/follow_up_summary_pdf_service.dart';
+import 'package:moodsogood_app/follow_up/models/follow_up_ai_summary.dart';
+import 'package:moodsogood_app/follow_up/pdf/follow_up_summary_pdf_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

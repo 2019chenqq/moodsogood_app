@@ -3,7 +3,21 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/follow_up_ai_summary.dart';
-import '../utils/health_data_encryption_service.dart';
+import '../../utils/health_data_encryption_service.dart';
+
+const _legacyDiscussionTopicAppointmentLabels = <String>{
+  '情緒狀況',
+  '睡眠品質',
+  '藥物副作用',
+  '身體不適',
+  '食慾變化',
+  '生活近況',
+  '生活壓力',
+  '人際關係',
+  '工作／學業',
+  '運動習慣',
+  '其他',
+};
 
 /// 一筆回診資料
 class FollowUpAppointment {
@@ -32,10 +46,13 @@ class FollowUpAppointment {
     if (ts is Timestamp) date = ts.toDate();
     if (ts is String) date = DateTime.tryParse(ts);
 
+    final storedLabel = (map['label'] as String?)?.trim() ?? '';
     return FollowUpAppointment(
       id: (map['id'] as String?) ?? '',
       date: date ?? DateTime.now(),
-      label: (map['label'] as String?) ?? '',
+      label: _legacyDiscussionTopicAppointmentLabels.contains(storedLabel)
+          ? '回診'
+          : storedLabel,
       note: map['note'] as String?,
     );
   }
@@ -112,9 +129,8 @@ class FollowUpWorkspace {
               .toList() ??
           const [],
       discussionDetails: (map['discussionDetails'] ?? '').toString(),
-      aiDiscussionTopics: (map['aiDiscussionTopics'] as List?)
-              ?.whereType<Map>()
-              .map((item) {
+      aiDiscussionTopics:
+          (map['aiDiscussionTopics'] as List?)?.whereType<Map>().map((item) {
                 final m = Map<String, dynamic>.from(item);
                 return FollowUpDiscussionTopicInput(
                   type: (m['type'] ?? '').toString(),
@@ -122,9 +138,8 @@ class FollowUpWorkspace {
                   selected: m['selected'] == true,
                   note: (m['note'] ?? '').toString(),
                 );
-              })
-              .toList() ??
-          const [],
+              }).toList() ??
+              const [],
       aiAdditionalNotes: (map['aiAdditionalNotes'] ?? '').toString(),
       medicalInstructionsUpdatedAt: rawInstructionsUpdatedAt is Timestamp
           ? rawInstructionsUpdatedAt.toDate()
@@ -301,8 +316,7 @@ class FollowUpService {
       );
       return documents
           .map(
-            (doc) =>
-                FollowUpInstructionHistoryItem.fromData(doc.id, doc.data),
+            (doc) => FollowUpInstructionHistoryItem.fromData(doc.id, doc.data),
           )
           .where((item) => item.medicalInstructions.trim().isNotEmpty)
           .toList();
@@ -326,8 +340,7 @@ class FollowUpService {
           ? const <String, dynamic>{}
           : await HealthDataEncryptionService.decryptData(healthDoc.data()!);
 
-      final raw =
-          healthData['followUpAppointments'] ??
+      final raw = healthData['followUpAppointments'] ??
           doc.data()?['followUpAppointments'];
       if (raw is List) {
         final list = raw

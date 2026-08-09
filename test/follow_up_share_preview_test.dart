@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:moodsogood_app/models/follow_up_ai_summary.dart';
-import 'package:moodsogood_app/pages/follow_up_share_preview_page.dart';
+import 'package:moodsogood_app/follow_up/models/follow_up_ai_summary.dart';
+import 'package:moodsogood_app/follow_up/pages/follow_up_share_preview_page.dart';
 
 void main() {
   testWidgets('share preview starts empty and only reveals checked sections',

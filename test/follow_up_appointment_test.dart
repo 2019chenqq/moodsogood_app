@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:moodsogood_app/services/follow_up_service.dart';
+import 'package:moodsogood_app/follow_up/services/follow_up_service.dart';
 
 void main() {
   test('legacy discussion topic is not shown as appointment label', () {
