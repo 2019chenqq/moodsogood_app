@@ -1,17 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import '../../constants/healing_design_system.dart';
 import '../../models/daily_record.dart';
+import '../../models/body_measurement_record.dart';
 import '../body_measurement_input.dart';
+import '../body_measurement_record_service.dart';
+import '../unified_body_measurement_repository.dart';
 
 class BodyMeasurementPage extends StatefulWidget {
   const BodyMeasurementPage({
     super.key,
     required this.value,
     required this.onChanged,
+    required this.date,
   });
 
   final BodyMeasurement? value;
   final ValueChanged<BodyMeasurement?> onChanged;
+  final DateTime date;
 
   @override
   State<BodyMeasurementPage> createState() => _BodyMeasurementPageState();
@@ -22,8 +29,13 @@ class _BodyMeasurementPageState extends State<BodyMeasurementPage> {
   late final TextEditingController _bodyFatController;
   late final TextEditingController _waistController;
   late final TextEditingController _customTimeController;
+  late final TextEditingController _noteController;
   MeasurementTiming? _timing;
   bool _expanded = false;
+  bool _saving = false;
+  BodyMeasurementRecord? _editing;
+  List<BodyMeasurementRecord> _records = const [];
+  BodyMeasurement? _legacyMeasurement;
 
   @override
   void initState() {
@@ -32,7 +44,9 @@ class _BodyMeasurementPageState extends State<BodyMeasurementPage> {
     _bodyFatController = TextEditingController();
     _waistController = TextEditingController();
     _customTimeController = TextEditingController();
-    _updateFromValue(widget.value);
+    _noteController = TextEditingController();
+    _updateFromValue(null);
+    _loadRecords();
   }
 
   @override
@@ -40,7 +54,11 @@ class _BodyMeasurementPageState extends State<BodyMeasurementPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.value != widget.value &&
         !_currentInputRepresents(widget.value)) {
-      _updateFromValue(widget.value);
+      if (_editing != null) _updateFromValue(widget.value);
+    }
+    if (!_sameDay(oldWidget.date, widget.date)) {
+      _clearForm();
+      _loadRecords();
     }
   }
 
@@ -87,6 +105,7 @@ class _BodyMeasurementPageState extends State<BodyMeasurementPage> {
     _bodyFatController.dispose();
     _waistController.dispose();
     _customTimeController.dispose();
+    _noteController.dispose();
     super.dispose();
   }
 
@@ -104,6 +123,130 @@ class _BodyMeasurementPageState extends State<BodyMeasurementPage> {
     widget.onChanged(measurement.hasData ? measurement : null);
   }
 
+  Future<void> _loadRecords() async {
+    if (Firebase.apps.isEmpty) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final records = await BodyMeasurementRecordService().getByDate(
+        userId: uid,
+        date: widget.date,
+      );
+      final unified = await UnifiedBodyMeasurementRepository().getByDateRange(
+        userId: uid,
+        start: widget.date,
+        end: widget.date,
+      );
+      final legacy = unified
+          .where(
+              (item) => item.source == BodyMeasurementSource.legacyDailyRecord)
+          .firstOrNull;
+      if (mounted) {
+        setState(() {
+          _records = records.reversed.toList();
+          _legacyMeasurement = legacy?.measurement;
+        });
+      }
+    } catch (error) {
+      debugPrint('Body measurements load failed: $error');
+    }
+  }
+
+  Future<void> _saveMeasurement() async {
+    if (Firebase.apps.isEmpty) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final value = BodyMeasurement(
+      weightKg: parseBodyMeasurementNumber(_weightController.text),
+      bodyFatPercent: parseBodyMeasurementNumber(_bodyFatController.text),
+      waistCm: parseBodyMeasurementNumber(_waistController.text),
+      measurementTiming: _timing,
+      customMeasurementTime: _customTimeController.text.trim(),
+    );
+    if (uid == null || !value.hasData || !value.isValid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('請先完成有效的測量資料')),
+      );
+      return;
+    }
+    final now = DateTime.now();
+    final timestamp = _editing?.timestamp ??
+        DateTime(
+          widget.date.year,
+          widget.date.month,
+          widget.date.day,
+          now.hour,
+          now.minute,
+          now.second,
+          now.millisecond,
+        );
+    setState(() => _saving = true);
+    try {
+      await BodyMeasurementRecordService().save(
+        userId: uid,
+        record: BodyMeasurementRecord(
+          id: _editing?.id ?? '',
+          timestamp: timestamp,
+          weightKg: value.weightKg,
+          bodyFatPercent: value.bodyFatPercent,
+          waistCm: value.waistCm,
+          measurementTiming: value.measurementTiming,
+          otherTimingText: value.effectiveCustomMeasurementTime,
+          note: _noteController.text,
+        ),
+      );
+      _clearForm();
+      await _loadRecords();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('儲存失敗：$error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  void _editRecord(BodyMeasurementRecord record) {
+    setState(() {
+      _editing = record;
+      _expanded = true;
+      _setText(_weightController, formatBodyMeasurementNumber(record.weightKg));
+      _setText(
+        _bodyFatController,
+        formatBodyMeasurementNumber(record.bodyFatPercent),
+      );
+      _setText(_waistController, formatBodyMeasurementNumber(record.waistCm));
+      _setText(_customTimeController, record.otherTimingText ?? '');
+      _setText(_noteController, record.note ?? '');
+      _timing = record.measurementTiming;
+    });
+  }
+
+  Future<void> _deleteRecord(BodyMeasurementRecord record) async {
+    if (Firebase.apps.isEmpty) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    await BodyMeasurementRecordService().delete(
+      userId: uid,
+      recordId: record.id,
+    );
+    if (_editing?.id == record.id) _clearForm();
+    await _loadRecords();
+  }
+
+  void _clearForm() {
+    _weightController.clear();
+    _bodyFatController.clear();
+    _waistController.clear();
+    _customTimeController.clear();
+    _noteController.clear();
+    _editing = null;
+    _timing = null;
+    widget.onChanged(null);
+    if (mounted) setState(() {});
+  }
+
   String? _validate(String? raw, double min, double max, String unit) {
     return validateBodyMeasurementNumber(
       raw,
@@ -118,6 +261,36 @@ class _BodyMeasurementPageState extends State<BodyMeasurementPage> {
     return ListView(
       padding: const EdgeInsets.all(HealingDesignSystem.paddingL),
       children: [
+        if (_legacyMeasurement?.hasData == true) ...[
+          Text('舊版每日測量', style: HealingDesignSystem.titleMedium),
+          const SizedBox(height: 8),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.history),
+              title: Text(_legacySummary(_legacyMeasurement!)),
+              subtitle: const Text('舊 DailyRecord 日資料（僅供讀取）'),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (_records.isNotEmpty) ...[
+          Text('當日測量', style: HealingDesignSystem.titleMedium),
+          const SizedBox(height: 8),
+          for (final record in _records)
+            Card(
+              child: ListTile(
+                title: Text(_measurementSummary(record)),
+                subtitle: Text(_measurementSubtitle(record)),
+                onTap: () => _editRecord(record),
+                trailing: IconButton(
+                  tooltip: '刪除',
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: () => _deleteRecord(record),
+                ),
+              ),
+            ),
+          const SizedBox(height: 12),
+        ],
         Container(
           decoration: HealingDesignSystem.adaptiveCardDecoration(context),
           child: Material(
@@ -174,18 +347,28 @@ class _BodyMeasurementPageState extends State<BodyMeasurementPage> {
                     onChanged: (_) => _emit(),
                   ),
                 ],
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _noteController,
+                  decoration: const InputDecoration(labelText: '備註（選填）'),
+                  maxLines: 2,
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _saving ? null : _saveMeasurement,
+                    icon: const Icon(Icons.save_outlined),
+                    label: Text(_editing == null ? '新增測量' : '儲存修改'),
+                  ),
+                ),
                 if (widget.value?.hasData == true) ...[
                   const SizedBox(height: 8),
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton.icon(
                       onPressed: () {
-                        _weightController.clear();
-                        _bodyFatController.clear();
-                        _waistController.clear();
-                        _customTimeController.clear();
-                        setState(() => _timing = null);
-                        widget.onChanged(null);
+                        _clearForm();
                       },
                       icon: const Icon(Icons.clear),
                       label: const Text('清除身體數據'),
@@ -199,6 +382,41 @@ class _BodyMeasurementPageState extends State<BodyMeasurementPage> {
       ],
     );
   }
+
+  String _measurementSummary(BodyMeasurementRecord record) => [
+        if (record.weightKg != null)
+          '${formatBodyMeasurementNumber(record.weightKg)} kg',
+        if (record.bodyFatPercent != null)
+          '${formatBodyMeasurementNumber(record.bodyFatPercent)}%',
+        if (record.waistCm != null)
+          '${formatBodyMeasurementNumber(record.waistCm)} cm',
+      ].join(' · ');
+
+  String _legacySummary(BodyMeasurement measurement) => [
+        if (measurement.weightKg != null)
+          '${formatBodyMeasurementNumber(measurement.weightKg)} kg',
+        if (measurement.bodyFatPercent != null)
+          '${formatBodyMeasurementNumber(measurement.bodyFatPercent)}%',
+        if (measurement.waistCm != null)
+          '${formatBodyMeasurementNumber(measurement.waistCm)} cm',
+      ].join(' · ');
+
+  String _measurementSubtitle(BodyMeasurementRecord record) {
+    final time = record.timestamp;
+    final clock =
+        '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+    final timing = record.measurementTiming == MeasurementTiming.other
+        ? record.otherTimingText
+        : record.measurementTiming?.displayName;
+    return [
+      clock,
+      if (timing?.isNotEmpty == true) timing!,
+      if (record.note?.trim().isNotEmpty == true) record.note!.trim()
+    ].join(' · ');
+  }
+
+  bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
 
   Widget _numberField(TextEditingController controller, String label,
       String unit, double min, double max) {

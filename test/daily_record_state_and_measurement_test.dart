@@ -184,6 +184,7 @@ void main() {
         home: StatefulBuilder(
           builder: (context, setState) => Scaffold(
             body: BodyMeasurementPage(
+              date: DateTime(2026, 8, 9),
               value: value,
               onChanged: (next) => setState(() => value = next),
             ),

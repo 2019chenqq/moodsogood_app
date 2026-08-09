@@ -4,6 +4,7 @@ import 'package:tutorial_coach_mark/tutorial_coach_mark.dart';
 import '../widgets/main_drawer.dart';
 import '../ai/innera_ai_home_page.dart';
 import '../daily/daily_record_screen.dart';
+import '../daily/daily_check_in_page.dart';
 import '../daily/daily_record_history.dart';
 import '../daily/quick_record_home_card.dart';
 import '../daily/weekly_record_repository.dart';
@@ -14,6 +15,7 @@ import '../meds/medication_home_page.dart';
 import '../meds/medication_checkin_page.dart';
 import '../community/community_home_page.dart';
 import '../analytics_service.dart';
+import '../constants/healing_design_system.dart';
 import '../tutorial/app_tutorial_service.dart';
 import '../settings_page.dart';
 import 'feedback_page.dart';
@@ -296,6 +298,14 @@ class _RecordHubPageState extends State<RecordHubPage> {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
             const QuickRecordHomeCard(),
+            const SizedBox(height: 12),
+            _RecordEntryCard(
+              icon: Icons.fact_check_outlined,
+              title: '每日 Check-in',
+              subtitle: '用兩個評分快速建立今天的基準',
+              color: HealingDesignSystem.primaryBlue,
+              onTap: () => _push(context, const DailyCheckInPage()),
+            ),
             const SizedBox(height: 12),
             _RecordEntryCard(
               icon: Icons.book_outlined,

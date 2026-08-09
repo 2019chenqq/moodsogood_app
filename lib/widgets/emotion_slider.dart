@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 class EmotionSlider extends StatelessWidget {
   final String label;
-  final int value;
+  final int? value;
   final ValueChanged<int>? onChanged;
   final String leftIcon;
   final String rightIcon;
@@ -27,7 +27,7 @@ class EmotionSlider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final safeMax = maxScore.clamp(1, 10);
-    final safeValue = value.clamp(1, safeMax);
+    final safeValue = (value ?? 3).clamp(1, safeMax);
     final handleChanged = onChanged;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -60,7 +60,9 @@ class EmotionSlider extends StatelessWidget {
                       inactiveTrackColor: Colors.transparent,
                       thumbColor: const Color.fromARGB(255, 108, 234, 234),
                       overlayColor: Colors.transparent,
-                      thumbShape: NumberThumbShape(safeValue),
+                      thumbShape: value == null
+                          ? SliderComponentShape.noThumb
+                          : NumberThumbShape(safeValue),
                     ),
                     child: Slider(
                       value: safeValue.toDouble(),

@@ -12,6 +12,9 @@ import '../utils/health_data_encryption_service.dart';
 import '../models/daily_record.dart';
 import '../widgets/main_drawer.dart';
 import 'daily_record_repository.dart';
+import 'sleep_record_service.dart';
+import 'unified_sleep_repository.dart';
+import '../models/sleep_record.dart';
 
 // Import refactored modules
 import 'daily_record_helpers.dart';
@@ -963,6 +966,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         if (!_isCurrentRecordLoad(loadGeneration, docId)) return;
         debugPrint('✅ Loaded record from local SQLite: $docId');
         _applyLocalRecordData(localData, date);
+        await _loadUnifiedSleep(uid, date, loadGeneration, docId);
         return;
       }
 
@@ -993,6 +997,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         // C. 清空其他欄位，但保留剛推算的 _isPeriod
         _resetForm(keepPeriodStatus: true);
       }
+      await _loadUnifiedSleep(uid, date, loadGeneration, docId);
     } catch (e, st) {
       debugPrint('❌ 讀取資料錯誤: $e\nStacktrace: $st');
     }
@@ -1002,6 +1007,50 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       mounted &&
       generation == _recordLoadGeneration &&
       DateHelper.toId(_recordDate) == docId;
+
+  Future<void> _loadUnifiedSleep(
+    String uid,
+    DateTime date,
+    int generation,
+    String docId,
+  ) async {
+    final unified = await UnifiedSleepRepository().getForDate(
+      userId: uid,
+      date: date,
+    );
+    if (!_isCurrentRecordLoad(generation, docId) || unified == null) return;
+    _applySleepData(unified.record.toSleepData());
+  }
+
+  void _applySleepData(SleepData sleep) {
+    setState(() {
+      tookHypnotic = sleep.tookHypnotic;
+      hypnoticName = sleep.hypnoticName ?? '';
+      _hypnoticNameCtrl.text = hypnoticName;
+      hypnoticDose = sleep.hypnoticDose ?? '';
+      _hypnoticDoseCtrl.text = hypnoticDose;
+      sleepTime = sleep.sleepTime;
+      estimatedSleepTime = sleep.estimatedSleepTime;
+      wakeTime = sleep.wakeTime;
+      finalWakeTime = sleep.finalWakeTime;
+      midWakeList = sleep.midWakeList ?? '';
+      _midWakeCtrl.text = midWakeList;
+      _nightAwakenings
+        ..clear()
+        ..addAll(sleep.nightAwakenings);
+      _sleepFlags.clear();
+      for (final value in sleep.flags) {
+        for (final flag in SleepFlag.values) {
+          if (flag.name == value) _sleepFlags.add(flag);
+        }
+      }
+      sleepNote = sleep.note ?? '';
+      sleepQuality = sleep.quality;
+      _naps
+        ..clear()
+        ..addAll(sleep.naps);
+    });
+  }
 
   /// 從本地 SQLite 記錄應用數據
   void _applyLocalRecordData(Map<String, dynamic> data, DateTime date) {
@@ -1292,13 +1341,6 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   Future<void> _saveAll() async {
     if (_isSaving) return;
 
-    if (_bodyMeasurement?.isValid == false) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('請先修正身體數據的輸入範圍')),
-      );
-      return;
-    }
-
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
 
@@ -1359,29 +1401,6 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         'symptomSectionCompleted': symptomSectionCompleted,
         'emotionSectionCompleted': emotionSectionCompleted,
         'stateSectionCompleted': stateSectionCompleted,
-        'bodyMeasurement': _bodyMeasurement?.toJson(),
-        'sleep': {
-          'tookHypnotic': tookHypnotic,
-          'hypnoticName': hypnoticName,
-          'hypnoticDose': hypnoticDose,
-          'sleepTime': DateHelper.formatTime(sleepTime),
-          'estimatedSleepTime': DateHelper.formatTime(estimatedSleepTime),
-          'wakeTime': DateHelper.formatTime(wakeTime),
-          'flags': _sleepFlags.map((f) => f.name).toList(),
-          'note': sleepNote,
-          'quality': sleepQuality,
-          'finalWakeTime': DateHelper.formatTime(finalWakeTime),
-          'midWakeList': midWakeList,
-          'nightAwakenings':
-              _nightAwakenings.map((item) => item.toMap()).toList(),
-          'naps': _naps
-              .map((n) => {
-                    'start': DateHelper.formatTime(n.start),
-                    'end': DateHelper.formatTime(n.end),
-                    'minutes': DateHelper.calcDurationMinutes(n.start, n.end),
-                  })
-              .toList(),
-        },
         'savedAt': FieldValue.serverTimestamp(),
         'periodCycleLength': _periodCycleLength,
       };
@@ -1408,6 +1427,26 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       payload['periodNextExpectedStart'] =
           _predictedNextPeriodStart()?.toIso8601String();
       payload['periodArrivalDeltaDays'] = _arrivalDeltaDays();
+
+      final sleepData = SleepData(
+        sleepTime: sleepTime,
+        estimatedSleepTime: estimatedSleepTime,
+        wakeTime: wakeTime,
+        finalWakeTime: finalWakeTime,
+        midWakeList: midWakeList,
+        nightAwakenings: List.unmodifiable(_nightAwakenings),
+        quality: sleepQuality,
+        tookHypnotic: tookHypnotic,
+        hypnoticName: hypnoticName,
+        hypnoticDose: hypnoticDose,
+        flags: _sleepFlags.map((flag) => flag.name).toList(),
+        note: sleepNote,
+        naps: List.unmodifiable(_naps),
+      );
+      final sleepRecord = SleepRecord.fromSleepData(_recordDate, sleepData);
+      if (sleepRecord.hasData) {
+        await SleepRecordService().save(userId: uid, record: sleepRecord);
+      }
 
       // Only sync to Firebase if enabled
       if (FirebaseSyncConfig.shouldSync()) {
@@ -1451,37 +1490,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
           symptomSectionCompleted: symptomSectionCompleted,
           emotionSectionCompleted: emotionSectionCompleted,
           stateSectionCompleted: stateSectionCompleted,
-          bodyMeasurement: _bodyMeasurement?.toJson(),
           bodySymptoms: symptomsToSave,
           moodScale: 5,
-          sleep: {
-            'sleepTime':
-                sleepTime != null ? DateHelper.formatTime(sleepTime!) : null,
-            'estimatedSleepTime': estimatedSleepTime != null
-                ? DateHelper.formatTime(estimatedSleepTime!)
-                : null,
-            'wakeTime':
-                wakeTime != null ? DateHelper.formatTime(wakeTime!) : null,
-            'finalWakeTime': finalWakeTime != null
-                ? DateHelper.formatTime(finalWakeTime!)
-                : null,
-            'midWakeList': midWakeList,
-            'nightAwakenings':
-                _nightAwakenings.map((item) => item.toMap()).toList(),
-            'quality': sleepQuality,
-            'tookHypnotic': tookHypnotic,
-            'hypnoticName': hypnoticName,
-            'hypnoticDose': hypnoticDose,
-            'flags': _sleepFlags.map((f) => f.name).toList(),
-            'note': sleepNote,
-            'naps': _naps
-                .map((n) => {
-                      'start': DateHelper.formatTime(n.start),
-                      'end': DateHelper.formatTime(n.end),
-                      'minutes': DateHelper.calcDurationMinutes(n.start, n.end),
-                    })
-                .toList(),
-          },
           periodData: {
             'isPeriod': effectiveIsPeriod,
             'periodStartId':
@@ -1913,6 +1923,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       _pageWrapper(BodyMeasurementPage(
         value: _bodyMeasurement,
         onChanged: (value) => setState(() => _bodyMeasurement = value),
+        date: _recordDate,
       )),
     ];
     return Scaffold(

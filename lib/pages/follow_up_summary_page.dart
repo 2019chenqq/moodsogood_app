@@ -1,20 +1,24 @@
 import 'package:flutter/material.dart';
-import '../constants/healing_design_system.dart';
-import '../services/follow_up_service.dart';
-import '../analytics_service.dart';
 
-/// 可選的主題標籤
-const List<String> kTopicOptions = [
-  '情緒狀況',
-  '睡眠品質',
-  '藥物副作用',
-  '身體不適',
-  '食慾變化',
-  '生活壓力',
-  '人際關係',
-  '工作/學業',
-  '運動習慣',
-  '其他',
+import '../analytics_service.dart';
+import '../constants/healing_design_system.dart';
+import '../models/follow_up_ai_summary.dart';
+import '../services/follow_up_ai_data_aggregator.dart';
+import '../services/follow_up_ai_service.dart';
+import '../services/follow_up_service.dart';
+import 'follow_up_ai_preview_page.dart';
+import 'follow_up_summary_detail_page.dart';
+import 'follow_up_summary_history_page.dart';
+
+const _topicOptions = <({String type, String label})>[
+  (type: 'mood', label: '情緒變化'),
+  (type: 'sleep', label: '睡眠狀況'),
+  (type: 'medicationEffect', label: '藥效與劑量'),
+  (type: 'medicationSideEffects', label: '藥物副作用'),
+  (type: 'physicalDiscomfort', label: '身體不適'),
+  (type: 'appetite', label: '食慾變化'),
+  (type: 'lifeUpdates', label: '生活近況'),
+  (type: 'other', label: '其他'),
 ];
 
 class FollowUpSummaryPage extends StatefulWidget {
@@ -25,111 +29,204 @@ class FollowUpSummaryPage extends StatefulWidget {
 }
 
 class _FollowUpSummaryPageState extends State<FollowUpSummaryPage> {
-  DateTime? _selectedDate;
-  final Set<String> _selectedTopics = {};
-  final _noteCtrl = TextEditingController();
-  bool _isGenerating = false;
+  final _additionalNotes = TextEditingController();
+  final Map<String, TextEditingController> _topicNotes = {};
+  final Set<String> _selectedTypes = {};
+  final _aggregator = FollowUpAiDataAggregator();
+  final _ai = FollowUpAiService();
+  bool _loading = true;
+  bool _generating = false;
+  DateTime? _appointmentDate;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
     AnalyticsService.logPage('follow_up_summary_page');
+    for (final option in _topicOptions) {
+      _topicNotes[option.type] = TextEditingController();
+    }
+    _restorePreparation();
+  }
+
+  Future<void> _restorePreparation() async {
+    final results = await Future.wait<dynamic>([
+      FollowUpService.getWorkspace(),
+      FollowUpService.getAppointments(),
+    ]);
+    if (!mounted) return;
+    final workspace = results[0] as FollowUpWorkspace;
+    final appointments = results[1] as List<FollowUpAppointment>;
+    final today = DateTime.now();
+    final upcoming = appointments.where((item) => !item.date.isBefore(
+          DateTime(today.year, today.month, today.day),
+        )).toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+    for (final topic in workspace.aiDiscussionTopics) {
+      if (topic.selected) _selectedTypes.add(topic.type);
+      _topicNotes[topic.type]?.text = topic.note;
+    }
+    _additionalNotes.text = workspace.aiAdditionalNotes;
+    setState(() {
+      _appointmentDate = upcoming.isEmpty ? null : upcoming.first.date;
+      _loading = false;
+    });
   }
 
   @override
   void dispose() {
-    _noteCtrl.dispose();
+    _additionalNotes.dispose();
+    for (final controller in _topicNotes.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
-  Future<void> _pickDate() async {
-    final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate ?? now.add(const Duration(days: 30)),
-      firstDate: now.subtract(const Duration(days: 7)),
-      lastDate: DateTime(now.year + 5),
-      helpText: '選擇回診日期（可選）',
-    );
-    if (picked != null) {
-      setState(() => _selectedDate = picked);
-    }
-  }
+  List<FollowUpDiscussionTopicInput> get _topics => _topicOptions
+      .map((option) => FollowUpDiscussionTopicInput(
+            type: option.type,
+            label: option.label,
+            selected: _selectedTypes.contains(option.type),
+            note: _topicNotes[option.type]!.text.trim(),
+          ))
+      .toList();
 
-  Future<void> _generateSummary() async {
-    if (_selectedTopics.isEmpty && _noteCtrl.text.trim().isEmpty) {
+  Future<void> _generate() async {
+    if (_selectedTypes.isEmpty && _additionalNotes.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('請至少選擇一個主題或輸入想討論的內容')),
+        const SnackBar(content: Text('請至少選擇一個主題，或填寫補充內容。')),
       );
       return;
     }
-
-    setState(() => _isGenerating = true);
-
-    // 如果有選日期，自動新增一筆回診
-    if (_selectedDate != null) {
-      final label = _selectedTopics.isNotEmpty
-          ? _selectedTopics.first
-          : '回診';
-      await FollowUpService.addAppointment(
-        FollowUpAppointment(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          date: _selectedDate!,
-          label: label,
-          note: _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
+    setState(() {
+      _generating = true;
+      _error = null;
+    });
+    try {
+      final topics = _topics;
+      await FollowUpService.saveAiPreparation(
+        topics: topics,
+        additionalNotes: _additionalNotes.text,
+      );
+      var input = await _aggregator.build(
+        discussionTopics: topics,
+        discussionDetails: topics
+            .where((topic) => topic.selected && topic.note.isNotEmpty)
+            .map((topic) => '${topic.label}：${topic.note}')
+            .join('\n'),
+        additionalNotes: _additionalNotes.text,
+        currentAppointmentDate: _appointmentDate,
+      );
+      final questions = await _ai.generateFollowUpQuestions(input);
+      if (!mounted) return;
+      final answers = questions.isEmpty
+          ? const <String, String>{}
+          : await _collectAnswers(questions);
+      if (!mounted || answers == null) return;
+      var output = await _ai.generateSummary(input, followUpAnswers: answers);
+      if (!mounted) return;
+      final preview = await Navigator.push<FollowUpAiPreviewResult>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => FollowUpAiPreviewPage(
+            initialSummary: output,
+            initialAdditionalNotes: input.additionalNotes,
+            aiInput: input,
+            onRegenerate: (notes) async {
+              input = input.copyWith(additionalNotes: notes);
+              output = await _ai.generateSummary(input, followUpAnswers: answers);
+              return output;
+            },
+          ),
         ),
       );
-    }
-
-    // 模擬產生中（後續可接真實 AI）
-    await Future.delayed(const Duration(milliseconds: 800));
-
-    if (!mounted) return;
-    setState(() => _isGenerating = false);
-
-    // 顯示成功訊息
-    if (!mounted) return;
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.check_circle, color: const Color(0xFF43A047)),
-            const SizedBox(width: 8),
-            const Text('摘要已產生'),
-          ],
+      if (!mounted || preview == null) return;
+      input = input.copyWith(additionalNotes: preview.additionalNotes);
+      final now = DateTime.now();
+      final record = FollowUpSummaryRecord(
+        id: now.microsecondsSinceEpoch.toString(),
+        createdAt: now,
+        updatedAt: now,
+        confirmedAt: now,
+        appointmentDate: _appointmentDate,
+        periodStart: input.statistics.periodStart,
+        periodEnd: input.statistics.periodEnd,
+        validRecordDays: input.statistics.validRecordDays,
+        selectedTopics: input.discussionTopics
+            .where((topic) => topic.selected)
+            .map((topic) => topic.toJson())
+            .toList(),
+        discussionDetails: input.discussionDetails,
+        additionalNotes: preview.additionalNotes,
+        aiOutput: preview.summary,
+        sleepSummary: input.sleep,
+        sleepTrend: (input.sleep['dailyTrend'] as List?)
+                ?.whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList() ??
+            const [],
+        medicationTimeline: input.medicationTimeline,
+      );
+      await FollowUpService.updateFormalSummary(record);
+      if (!mounted) return;
+      await Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => FollowUpSummaryDetailPage(summary: record),
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('回診摘要已準備完成！'),
-            const SizedBox(height: 8),
-            if (_selectedDate != null)
-              Text('回診日期：${_selectedDate!.year}/${_selectedDate!.month.toString().padLeft(2, '0')}/${_selectedDate!.day.toString().padLeft(2, '0')}'),
-            if (_selectedTopics.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text('討論主題：${_selectedTopics.join('、')}'),
-              ),
-            if (_noteCtrl.text.trim().isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text('備註：${_noteCtrl.text.trim()}'),
-              ),
-          ],
+      );
+    } catch (error) {
+      if (mounted) setState(() => _error = '產生摘要失敗：$error');
+    } finally {
+      if (mounted) setState(() => _generating = false);
+    }
+  }
+
+  Future<Map<String, String>?> _collectAnswers(List<String> questions) async {
+    final controllers = questions.map((_) => TextEditingController()).toList();
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('生成前再確認幾件事'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('不確定或不想回答的題目可以留白。'),
+              const SizedBox(height: 12),
+              for (var i = 0; i < questions.length; i++) ...[
+                TextField(
+                  controller: controllers[i],
+                  minLines: 1,
+                  maxLines: 3,
+                  decoration: InputDecoration(labelText: questions[i]),
+                ),
+                const SizedBox(height: 10),
+              ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              Navigator.pop(context);
-            },
-            child: const Text('完成'),
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, {
+              for (var i = 0; i < questions.length; i++)
+                if (controllers[i].text.trim().isNotEmpty)
+                  questions[i]: controllers[i].text.trim(),
+            }),
+            child: const Text('繼續生成'),
           ),
         ],
       ),
     );
+    for (final controller in controllers) {
+      controller.dispose();
+    }
+    return result;
   }
 
   @override
@@ -137,291 +234,96 @@ class _FollowUpSummaryPageState extends State<FollowUpSummaryPage> {
     return Scaffold(
       backgroundColor: HealingDesignSystem.adaptiveBackground(context),
       appBar: AppBar(
+        title: const Text('準備 AI 回診摘要'),
         backgroundColor: HealingDesignSystem.primaryBlue,
-        surfaceTintColor: Colors.transparent,
-        iconTheme: IconThemeData(
-            color: HealingDesignSystem.adaptivePrimaryText(context)),
-        title: Text(
-          '準備回診摘要',
-          style: TextStyle(
-            color: HealingDesignSystem.adaptivePrimaryText(context),
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-        children: [
-          // 說明卡片
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: HealingDesignSystem.adaptiveCardDecoration(
+        actions: [
+          IconButton(
+            tooltip: '歷次摘要',
+            onPressed: () => Navigator.push(
               context,
-              radius: HealingDesignSystem.radiusL,
-              shadows: [
-                HealingDesignSystem.shadowMedium(
-                    color: HealingDesignSystem.primaryBlue)
-              ],
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    gradient: HealingDesignSystem.primaryGradient(),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Icon(Icons.summarize_rounded, color: Colors.white),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '讓 AI 幫你整理',
-                        style: HealingDesignSystem.titleMedium.copyWith(
-                          color: HealingDesignSystem.adaptivePrimaryText(context),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '選取你想跟醫師討論的主題，AI 會根據你的近期紀錄產生回診摘要。',
-                        style: TextStyle(
-                          color: HealingDesignSystem.adaptiveSecondaryText(context),
-                          fontSize: 12,
-                          height: 1.4,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // 回診日期（可選）
-          _SectionCard(
-            title: '回診日期（可選）',
-            icon: Icons.calendar_today_outlined,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: _pickDate,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                decoration: BoxDecoration(
-                  color: HealingDesignSystem.adaptiveFill(context),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: HealingDesignSystem.adaptiveCardBorder(context)),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _selectedDate == null
-                            ? '點擊選擇日期（不填也沒關係）'
-                            : '${_selectedDate!.year}/${_selectedDate!.month.toString().padLeft(2, '0')}/${_selectedDate!.day.toString().padLeft(2, '0')}',
-                        style: TextStyle(
-                          color: _selectedDate == null
-                              ? HealingDesignSystem.adaptiveSecondaryText(context)
-                              : HealingDesignSystem.adaptivePrimaryText(context),
-                        ),
-                      ),
-                    ),
-                    if (_selectedDate != null)
-                      IconButton(
-                        icon: const Icon(Icons.close, size: 18),
-                        onPressed: () => setState(() => _selectedDate = null),
-                      ),
-                    Icon(Icons.chevron_right,
-                        color: HealingDesignSystem.adaptiveSecondaryText(context)),
-                  ],
-                ),
+              MaterialPageRoute(
+                builder: (_) => const FollowUpSummaryHistoryPage(),
               ),
             ),
-          ),
-          const SizedBox(height: 12),
-
-          // 想討論的主題
-          _SectionCard(
-            title: '想跟醫師討論的主題',
-            icon: Icons.topic_outlined,
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: kTopicOptions.map((topic) {
-                final selected = _selectedTopics.contains(topic);
-                return InkWell(
-                  borderRadius: BorderRadius.circular(999),
-                  onTap: () {
-                    setState(() {
-                      if (selected) {
-                        _selectedTopics.remove(topic);
-                      } else {
-                        _selectedTopics.add(topic);
-                      }
-                    });
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: selected
-                          ? HealingDesignSystem.primaryBlue
-                              .withValues(alpha: 0.16)
-                          : HealingDesignSystem.adaptiveFill(context),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: selected
-                            ? HealingDesignSystem.primaryBlue
-                                .withValues(alpha: 0.35)
-                            : HealingDesignSystem.adaptiveCardBorder(context),
-                      ),
-                    ),
-                    child: Text(
-                      topic,
-                      style: TextStyle(
-                        color: selected
-                            ? HealingDesignSystem.primaryBlue
-                            : HealingDesignSystem.adaptivePrimaryText(context),
-                        fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // 自由填寫
-          _SectionCard(
-            title: '其他想說的話（可選）',
-            icon: Icons.notes_outlined,
-            child: TextField(
-              controller: _noteCtrl,
-              minLines: 3,
-              maxLines: 6,
-              style: TextStyle(
-                color: HealingDesignSystem.adaptivePrimaryText(context),
-              ),
-              decoration: InputDecoration(
-                hintText: '例如：最近藥物的效果、睡眠變化的細節、想問醫師的問題⋯⋯',
-                hintStyle: TextStyle(
-                  color: HealingDesignSystem.adaptiveSecondaryText(context),
-                  fontSize: 14,
-                ),
-                filled: true,
-                fillColor: HealingDesignSystem.adaptiveFill(context),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(
-                      color: HealingDesignSystem.adaptiveCardBorder(context)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(
-                      color: HealingDesignSystem.adaptiveCardBorder(context)),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(
-                      color: HealingDesignSystem.primaryBlue, width: 1.4),
-                ),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // 產生按鈕
-          FilledButton.icon(
-            onPressed: _isGenerating ? null : _generateSummary,
-            style: FilledButton.styleFrom(
-              backgroundColor: HealingDesignSystem.primaryBlue,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
-            ),
-            icon: _isGenerating
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                    ),
-                  )
-                : const Icon(Icons.auto_awesome),
-            label: Text(
-              _isGenerating ? '正在產生摘要⋯' : '產生回診摘要',
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
+            icon: const Icon(Icons.history_rounded),
           ),
         ],
       ),
-    );
-  }
-}
-
-class _SectionCard extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  final Widget child;
-
-  const _SectionCard({
-    required this.title,
-    required this.icon,
-    required this.child,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 0,
-      color: HealingDesignSystem.adaptiveSurface(context),
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusL),
-        side: BorderSide(
-            color: HealingDesignSystem.adaptiveCardBorder(context)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: HealingDesignSystem.adaptiveFill(context),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(icon,
-                      size: 16, color: HealingDesignSystem.primaryBlue),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: HealingDesignSystem.titleSmall.copyWith(
-                    color: HealingDesignSystem.adaptivePrimaryText(context),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            child,
-          ],
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.all(16),
+        child: FilledButton.icon(
+          onPressed: _loading || _generating ? null : _generate,
+          icon: _generating
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.auto_awesome_rounded),
+          label: Text(_generating ? '正在整理紀錄…' : '產生回診摘要'),
         ),
       ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+              children: [
+                Text(
+                  '選擇想討論的主題。AI 只會根據 App 中已有的近期紀錄與你填寫的內容整理，不會提供診斷或調藥建議。',
+                  style: HealingDesignSystem.bodyMedium,
+                ),
+                if (_appointmentDate != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    '預計回診：${_appointmentDate!.year}/${_appointmentDate!.month}/${_appointmentDate!.day}',
+                  ),
+                ],
+                const SizedBox(height: 16),
+                for (final option in _topicOptions)
+                  Card(
+                    child: Column(
+                      children: [
+                        CheckboxListTile(
+                          title: Text(option.label),
+                          value: _selectedTypes.contains(option.type),
+                          onChanged: (selected) => setState(() {
+                            if (selected == true) {
+                              _selectedTypes.add(option.type);
+                            } else {
+                              _selectedTypes.remove(option.type);
+                            }
+                          }),
+                        ),
+                        if (_selectedTypes.contains(option.type))
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                            child: TextField(
+                              controller: _topicNotes[option.type],
+                              decoration: const InputDecoration(
+                                hintText: '有什麼特別想討論的？（選填）',
+                              ),
+                              minLines: 1,
+                              maxLines: 3,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _additionalNotes,
+                  minLines: 3,
+                  maxLines: 6,
+                  decoration: const InputDecoration(
+                    labelText: '其他想跟醫師說的內容（選填）',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                ],
+              ],
+            ),
     );
   }
 }

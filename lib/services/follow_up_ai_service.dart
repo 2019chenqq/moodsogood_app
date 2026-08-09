@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../ai/innera_ai_message.dart';
 import '../ai/innera_ai_mode.dart';
 import '../ai/innera_ai_service.dart';
+import '../meds/medication_subjective_summary_builder.dart';
 import '../models/follow_up_ai_summary.dart';
 import 'follow_up_question_parser.dart';
 
@@ -14,10 +15,17 @@ class FollowUpAiService {
 
   final InneraAiService _inneraAiService;
 
+  static const _subjectiveMarker = '__med_subjective__:';
+  static const _medicationSubjectiveInstruction = '''
+
+若 followUpAiV1.medicationSubjectiveReports 不為空，請依每個 changeRecordId 分組，按 followUpDay 3、7、14、28 整理為一段簡短純文字，放入 medicationSubjectiveSummaries 陣列，順序與輸入群組一致。只能整理 overallResponse、changedAreas、perceivedRelation、otherFactors、note；合併重複資訊，不逐筆照抄。只有一次回報時不得描述趨勢；資料矛盾時直接描述前後變化，不解釋原因。perceivedRelation 為 unsure 或有 otherFactors 時必須保留不確定性。固定使用「使用者主觀回報」、「使用者認為」、「同期紀錄顯示」等中性措辭。不得判定藥物有效或無效、判定副作用、推論因果、診斷，或建議增減藥、停藥、換藥。沒有資料時 medicationSubjectiveSummaries 必須是空陣列。
+JSON 另包含："medicationSubjectiveSummaries":[]。
+''';
+
   Future<List<String>> generateFollowUpQuestions(
       FollowUpAiV1Input input) async {
     final response = await _send(
-      input,
+      input.copyWith(medicationSubjectiveReports: const []),
       '''你正在執行「回診摘要補問」。請先檢查 app 已計算好的資料與使用者主題，只針對會明顯影響回診討論的重要缺漏提出 2～4 個簡短問題；不得重問已有明確資料。若沒有重要缺漏可回傳空陣列。questions 陣列只能放實際問題，不得放問候、開場白、前言或「請問：」等引導文字；每個問題必須以「？」結尾。reply 必須只包含以下 JSON，不要 Markdown 或說明：
 {"questions":["問題一"]}''',
     );
@@ -43,26 +51,32 @@ class FollowUpAiService {
     FollowUpAiV1Input input, {
     Map<String, String> followUpAnswers = const {},
   }) async {
-    final response = await _send(
-      input,
+    try {
+      final response = await _sendSummary(
+        input,
       '''你正在產生可供回診使用的資料摘要。補問與回答如下：${jsonEncode(followUpAnswers)}
 只能描述資料支持的觀察與時間關聯；不得診斷躁期或鬱期、不得斷言藥物因果、不得建議自行停藥或調藥。睡眠、藥物時間軸、症狀及其他基本紀錄只能放在 keyChanges 或 timelineRelations，不得放入 userSharedNotes。discussionPriorities 整理已選主題、使用者的 discussionDetails 與適合優先詢問醫師的事項。userSharedNotes 只可忠實保留 additionalNotes，以及補問中明確屬於自由補充的使用者原文，不得擴寫、推測或放入症狀、睡眠、情緒、藥物、身體數據。主要變化使用簡短的「欄位：數值」格式；睡眠時數分成「睡眠平均時間：X小時」、「最低：X小時」、「最高：X小時」，不要把期間、趨勢、最低與最高塞在同一句。keyChanges 必須 3～5 項。請將下列格式的摘要 JSON 序列化後放在 reply 字串中，不要在 reply 加入 Markdown 或其他說明：
 {"keyChanges":["主要變化一（附資料）","主要變化二（附資料）","主要變化三（附資料）"],"discussionPriorities":[],"timelineRelations":[],"userSharedNotes":[],"dataLimitations":[]}''',
     );
-    final json = _tryReplyJson(response.reply);
-    if (json != null) {
-      final parsed = _summaryFromJson(json);
-      if (parsed != null) {
-        return _withStructuredMedicationTimeline(
-          parsed,
-          input,
-          followUpAnswers: followUpAnswers,
-        );
+      final json = _tryReplyJson(response.reply);
+      if (json != null) {
+        final parsed = _summaryFromJson(json);
+        if (parsed != null) {
+          return _withStructuredMedicationTimeline(
+            parsed,
+            input,
+            followUpAnswers: followUpAnswers,
+          );
+        }
+        _debugParseFailure('summary_shape', response.reply,
+            'required fields are not valid string arrays');
+      } else {
+        _debugParseFailure(
+            'json_decode', response.reply, 'no valid JSON object');
       }
-      _debugParseFailure('summary_shape', response.reply,
-          'required fields are not valid string arrays');
-    } else {
-      _debugParseFailure('json_decode', response.reply, 'no valid JSON object');
+    } catch (error, stackTrace) {
+      debugPrint('FollowUpAiService summary generation failed: $error');
+      if (kDebugMode) debugPrint('$stackTrace');
     }
     return _fallbackSummary(input, followUpAnswers: followUpAnswers);
   }
@@ -91,6 +105,12 @@ class FollowUpAiService {
       ],
     );
   }
+
+  Future<InneraAiResponse> _sendSummary(
+    FollowUpAiV1Input input,
+    String instruction,
+  ) =>
+      _send(input, '$instruction$_medicationSubjectiveInstruction');
 
   static Map<String, dynamic>? _tryReplyJson(String reply) {
     final text = reply.trim();
@@ -163,6 +183,8 @@ class FollowUpAiService {
     final keyChanges = list('keyChanges');
     final priorities = list('discussionPriorities');
     final timeline = list('timelineRelations');
+    final subjectiveSummaries =
+        list('medicationSubjectiveSummaries', optional: true);
     final sharedNotes = json.containsKey('userSharedNotes')
         ? list('userSharedNotes', optional: true)
         : list('userReportedConcerns', optional: true);
@@ -172,6 +194,7 @@ class FollowUpAiService {
         keyChanges.length > 5 ||
         priorities == null ||
         timeline == null ||
+        subjectiveSummaries == null ||
         sharedNotes == null ||
         limitations == null) {
       return null;
@@ -179,7 +202,10 @@ class FollowUpAiService {
     return FollowUpAiOutput(
       keyChanges: keyChanges,
       discussionPriorities: priorities,
-      timelineRelations: timeline,
+      timelineRelations: [
+        ...timeline,
+        ...subjectiveSummaries.map((item) => '$_subjectiveMarker$item'),
+      ],
       userSharedNotes: sharedNotes,
       dataLimitations: limitations,
       generatedAt: DateTime.now().toUtc(),
@@ -259,7 +285,12 @@ class FollowUpAiService {
         .take(5)
         .map(formatMedicationTimelineEvent)
         .where((item) => item.isNotEmpty)
-        .toList();
+        .toList()
+      ..addAll(
+        MedicationSubjectiveSummaryBuilder.fallbackSummaries(
+          input.medicationSubjectiveReports,
+        ),
+      );
     final limitations = input.dataLimitations.toSet().toList();
     return FollowUpAiOutput(
       keyChanges: keyChanges.take(5).toList(),
@@ -296,6 +327,7 @@ class FollowUpAiService {
         .where((name) => name.isNotEmpty)
         .toSet();
     final nonMedicationRelations = output.timelineRelations.where((relation) {
+      if (relation.startsWith(_subjectiveMarker)) return false;
       if (medicationNames.any(relation.contains)) return false;
       return !const [
         'scheduleChanged',
@@ -309,6 +341,22 @@ class FollowUpAiService {
     final medicationRelations = input.medicationTimeline
         .map(formatMedicationTimelineEvent)
         .where((item) => item.isNotEmpty);
+    final aiSubjectiveSummaries = output.timelineRelations
+        .where((item) => item.startsWith(_subjectiveMarker))
+        .map((item) => item.substring(_subjectiveMarker.length).trim())
+        .toList();
+    final aiSubjectiveIsUsable = input.medicationSubjectiveReports.isNotEmpty &&
+        aiSubjectiveSummaries.length ==
+            input.medicationSubjectiveReports.length &&
+        aiSubjectiveSummaries
+            .every(MedicationSubjectiveSummaryBuilder.isSafeAiSummary);
+    final subjectiveSummaries = input.medicationSubjectiveReports.isEmpty
+        ? const <String>[]
+        : aiSubjectiveIsUsable
+            ? aiSubjectiveSummaries
+            : MedicationSubjectiveSummaryBuilder.fallbackSummaries(
+                input.medicationSubjectiveReports,
+              );
     return FollowUpAiOutput(
       keyChanges: output.keyChanges,
       // Topic selection controls priorities only. Health evidence remains in
@@ -317,13 +365,16 @@ class FollowUpAiService {
       timelineRelations: [
         ...nonMedicationRelations,
         ...medicationRelations,
+        ...subjectiveSummaries,
       ],
       // This section is reserved for the user's own preparation text; recorded
       // symptoms must not be relabeled as an actively shared concern.
       userSharedNotes: userSharedNotes.toList(),
       dataLimitations: output.dataLimitations,
       generatedAt: output.generatedAt,
-      usedFallback: output.usedFallback,
+      usedFallback: output.usedFallback ||
+          (input.medicationSubjectiveReports.isNotEmpty &&
+              !aiSubjectiveIsUsable),
     );
   }
 

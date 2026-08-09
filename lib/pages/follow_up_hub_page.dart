@@ -12,6 +12,8 @@ import '../meds/record_adjustment_page.dart';
 import '../services/follow_up_service.dart';
 import '../widgets/main_drawer.dart';
 import 'export_report_page.dart';
+import 'follow_up_summary_history_page.dart';
+import 'follow_up_summary_page.dart';
 
 const _discussionTopicOptions = [
   '情緒變化',
@@ -830,12 +832,12 @@ class _FollowUpHubPageState extends State<FollowUpHubPage> {
     return _FollowUpSection(
       icon: Icons.auto_awesome_outlined,
       title: '回診摘要',
-      subtitle: '開發中・即將推出',
+      subtitle: '整理近期紀錄，準備與醫師討論',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '未來會協助整理近期情緒、睡眠、症狀、用藥變化與想和醫師討論的重點。Beta 期間不會把尚未完成的摘要列為付費權益。',
+              'AI 會整理近期情緒、睡眠、症狀、用藥變化與想和醫師討論的重點；確認後才會儲存為正式摘要。',
             style: HealingDesignSystem.bodyMedium.copyWith(
               color: HealingDesignSystem.adaptiveSecondaryText(context),
               height: 1.5,
@@ -845,12 +847,31 @@ class _FollowUpHubPageState extends State<FollowUpHubPage> {
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: null,
-              icon: const Icon(Icons.schedule_rounded),
-              label: const Text('開發中・即將推出'),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const FollowUpSummaryPage(),
+                  ),
+                ),
+                icon: const Icon(Icons.auto_awesome_rounded),
+                label: const Text('產生 AI 回診摘要'),
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const FollowUpSummaryHistoryPage(),
+                  ),
+                ),
+                icon: const Icon(Icons.history_rounded),
+                label: const Text('查看歷次摘要'),
+              ),
+            ),
+            const SizedBox(height: 8),
           Text(
             '回診專區目前免費開放測試；內容僅供整理與溝通參考，不取代醫師診斷。',
             style: HealingDesignSystem.bodySmall.copyWith(

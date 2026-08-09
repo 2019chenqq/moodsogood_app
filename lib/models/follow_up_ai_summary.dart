@@ -294,6 +294,7 @@ class FollowUpAiV1Input {
     required this.bodyMeasurements,
     required this.currentMedications,
     required this.medicationTimeline,
+    this.medicationSubjectiveReports = const [],
     required this.dataLimitations,
     this.schemaVersion = 1,
   });
@@ -309,11 +310,13 @@ class FollowUpAiV1Input {
   final List<Map<String, dynamic>> bodyMeasurements;
   final List<Map<String, dynamic>> currentMedications;
   final List<Map<String, dynamic>> medicationTimeline;
+  final List<Map<String, dynamic>> medicationSubjectiveReports;
   final List<String> dataLimitations;
 
   FollowUpAiV1Input copyWith({
     String? discussionDetails,
     String? additionalNotes,
+    List<Map<String, dynamic>>? medicationSubjectiveReports,
   }) =>
       FollowUpAiV1Input(
         schemaVersion: schemaVersion,
@@ -327,6 +330,8 @@ class FollowUpAiV1Input {
         bodyMeasurements: bodyMeasurements,
         currentMedications: currentMedications,
         medicationTimeline: medicationTimeline,
+        medicationSubjectiveReports:
+            medicationSubjectiveReports ?? this.medicationSubjectiveReports,
         dataLimitations: dataLimitations,
       );
 
@@ -343,6 +348,7 @@ class FollowUpAiV1Input {
         'bodyMeasurements': bodyMeasurements,
         'currentMedications': currentMedications,
         'medicationTimeline': medicationTimeline,
+        'medicationSubjectiveReports': medicationSubjectiveReports,
         'dataLimitations': dataLimitations,
       };
 }

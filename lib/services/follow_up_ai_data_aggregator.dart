@@ -3,6 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../daily/daily_record_helpers.dart';
 import '../meds/med_symptom_compare_models.dart';
 import '../meds/medication_compare_repository.dart';
+import '../meds/medication_local_db.dart';
+import '../meds/medication_subjective_response.dart';
+import '../meds/medication_subjective_summary_builder.dart';
 import '../models/daily_record.dart';
 import '../models/follow_up_ai_summary.dart';
 import 'follow_up_service.dart';
@@ -33,6 +36,7 @@ class FollowUpAiDataAggregator {
       records: results[0] as List<DailyRecord>,
       medications: medicationData.medications,
       adjustments: medicationData.adjustments,
+      subjectiveResponses: medicationData.subjectiveResponses,
       appointments: results[2] as List<FollowUpAppointment>,
       discussionTopics: discussionTopics,
       discussionDetails: discussionDetails,
@@ -47,6 +51,8 @@ class FollowUpAiDataAggregator {
     return _MedicationData(
       medications: await _medicationRepository.getMedications(uid),
       adjustments: await _medicationRepository.getAdjustmentEvents(uid),
+      subjectiveResponses:
+          await MedicationLocalDB().getAllSubjectiveResponses(uid),
     );
   }
 
@@ -54,6 +60,7 @@ class FollowUpAiDataAggregator {
     required List<DailyRecord> records,
     required List<Map<String, dynamic>> medications,
     required List<MedicationAdjustmentEvent> adjustments,
+    List<MedicationSubjectiveResponse> subjectiveResponses = const [],
     required List<FollowUpDiscussionTopicInput> discussionTopics,
     required String discussionDetails,
     required String additionalNotes,
@@ -218,6 +225,24 @@ class FollowUpAiDataAggregator {
     if (body.isEmpty) limitations.add('統計期間內沒有體重、體脂率或腰圍紀錄。');
     if (medicationTimeline.isEmpty) limitations.add('統計期間內沒有調藥紀錄。');
 
+    final relevantChangeIds = subjectiveResponses
+        .where((response) {
+          final changeDate = _day(response.changeDate);
+          final recordedAt = _day(response.recordedAt);
+          return (!changeDate.isBefore(start) && !changeDate.isAfter(today)) ||
+              (!recordedAt.isBefore(start) && !recordedAt.isAfter(today));
+        })
+        .map((response) => response.changeRecordId)
+        .toSet();
+    final medicationSubjectiveReports =
+        MedicationSubjectiveSummaryBuilder.toAiInput(
+      subjectiveResponses.where(
+        (response) =>
+            relevantChangeIds.contains(response.changeRecordId) &&
+            !_day(response.recordedAt).isAfter(today),
+      ),
+    );
+
     return FollowUpAiV1Input(
       statistics: FollowUpStatistics(
         periodStart: start,
@@ -254,6 +279,9 @@ class FollowUpAiDataAggregator {
       ),
       sleep: {
         'durationHours': _metricSummary(sleepDurations),
+        'dailyTrend': sleepDurations
+            .map((item) => {'date': _date(item.date), 'value': item.value})
+            .toList(),
         'quality': _metricSummary(sleepQuality),
         'sleepOnsetDifficulty':
             _eventSummary(sleepFlags['sleepOnsetDifficulty']!),
@@ -269,6 +297,7 @@ class FollowUpAiDataAggregator {
       bodyMeasurements: body,
       currentMedications: currentMedications,
       medicationTimeline: medicationTimeline,
+      medicationSubjectiveReports: medicationSubjectiveReports,
       dataLimitations: limitations,
     );
   }
@@ -381,8 +410,13 @@ class FollowUpAiDataAggregator {
 }
 
 class _MedicationData {
-  const _MedicationData({required this.medications, required this.adjustments});
+  const _MedicationData({
+    required this.medications,
+    required this.adjustments,
+    required this.subjectiveResponses,
+  });
 
   final List<Map<String, dynamic>> medications;
   final List<MedicationAdjustmentEvent> adjustments;
+  final List<MedicationSubjectiveResponse> subjectiveResponses;
 }

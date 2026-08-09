@@ -272,6 +272,24 @@ class FollowUpService {
     );
   }
 
+  static Future<void> saveAiPreparation({
+    required List<FollowUpDiscussionTopicInput> topics,
+    required String additionalNotes,
+  }) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      throw StateError('儲存 AI 回診摘要準備內容前需要先登入');
+    }
+    await HealthDataEncryptionService.setEncrypted(
+      _workspaceRef(uid),
+      {
+        'aiDiscussionTopics': topics.map((topic) => topic.toJson()).toList(),
+        'aiAdditionalNotes': additionalNotes.trim(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+    );
+  }
+
   static Future<List<FollowUpInstructionHistoryItem>>
       getInstructionHistory() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;

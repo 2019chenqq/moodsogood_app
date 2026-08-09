@@ -23,11 +23,16 @@ class HealthDataEncryptionService {
   static const String encryptedFlagField = 'healthDataEncrypted';
 
   static const _collections = <String>[
+    'dailyCheckIns',
+    'sleepRecords',
+    'bodyMeasurements',
     'dailyRecords',
     'healthEvents',
     'medications',
     'medicationCheckins',
     'medAdjustments',
+    'medicationSubjectiveResponses',
+    'medicationSubjectiveTrackingCycles',
     'periodCycles',
     'healthProfile',
     'followUpWorkspace',
@@ -39,11 +44,16 @@ class HealthDataEncryptionService {
   ];
 
   static const _queryFieldsByCollection = <String, Set<String>>{
+    'dailyCheckIns': {'date'},
+    'sleepRecords': {'date'},
+    'bodyMeasurements': {'timestamp'},
     'dailyRecords': {'date', 'isTestData', 'isDevSeedOwned'},
     'healthEvents': {'timestamp'},
     'medications': <String>{},
     'medicationCheckins': {'date'},
     'medAdjustments': {'date'},
+    'medicationSubjectiveResponses': <String>{},
+    'medicationSubjectiveTrackingCycles': <String>{},
     'periodCycles': {'startDate'},
     'healthProfile': <String>{},
     'followUpWorkspace': <String>{},

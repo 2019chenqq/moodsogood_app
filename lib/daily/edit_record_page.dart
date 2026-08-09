@@ -14,6 +14,12 @@ import 'widgets/night_awakening_editor.dart';
 import 'daily_state_dimensions.dart';
 import 'symptom_definitions.dart';
 import 'body_measurement_input.dart';
+import 'sleep_record_service.dart';
+import 'unified_sleep_repository.dart';
+import '../models/sleep_record.dart';
+import '../models/body_measurement_record.dart';
+import 'body_measurement_record_service.dart';
+import 'unified_body_measurement_repository.dart';
 
 class EditRecordPage extends StatefulWidget {
   final String uid;
@@ -123,10 +129,39 @@ class _EditRecordPageState extends State<EditRecordPage> {
         'symptomSectionCompleted': true,
         'emotionSectionCompleted': true,
         'stateSectionCompleted': true,
-        'bodyMeasurement': bodyMeasurement?.toJson(),
-        'sleep': newSleep, // ⬅️ 改成用 newSleep
         'savedAt': FieldValue.serverTimestamp(),
       };
+
+      final recordDate = DateHelper.parseIdToDate(docId) ?? DateTime.now();
+      final sleepRecord =
+          SleepRecord.fromMap({...newSleep, 'date': recordDate});
+      if (sleepRecord.hasData) {
+        await SleepRecordService().save(userId: uid, record: sleepRecord);
+      }
+      if (bodyMeasurement?.hasData == true) {
+        final now = DateTime.now();
+        final timestamp = _editingBodyMeasurement?.timestamp ??
+            DateTime(
+              recordDate.year,
+              recordDate.month,
+              recordDate.day,
+              now.hour,
+              now.minute,
+              now.second,
+            );
+        await BodyMeasurementRecordService().save(
+          userId: uid,
+          record: BodyMeasurementRecord(
+            id: _editingBodyMeasurement?.id ?? '',
+            timestamp: timestamp,
+            weightKg: bodyMeasurement!.weightKg,
+            bodyFatPercent: bodyMeasurement.bodyFatPercent,
+            waistCm: bodyMeasurement.waistCm,
+            measurementTiming: bodyMeasurement.measurementTiming,
+            otherTimingText: bodyMeasurement.effectiveCustomMeasurementTime,
+          ),
+        );
+      }
 
       // Only sync to Firebase if enabled
       if (FirebaseSyncConfig.shouldSync()) {
@@ -151,14 +186,12 @@ class _EditRecordPageState extends State<EditRecordPage> {
           symptomSectionCompleted: true,
           emotionSectionCompleted: true,
           stateSectionCompleted: true,
-          bodyMeasurement: bodyMeasurement?.toJson(),
           // symptoms 已經是 List<String>，僅過濾空白
           bodySymptoms: symptoms
               .map(normalizeSymptomName)
               .where((name) => name.isNotEmpty)
               .toSet()
               .toList(),
-          sleep: newSleep,
         );
         debugPrint('✅ 本地數據已保存');
       } catch (e) {
@@ -195,6 +228,7 @@ class _EditRecordPageState extends State<EditRecordPage> {
   late List<String> symptoms; // ['心悸', '頭痛', ...]
   late Map<String, int> stateChanges;
   BodyMeasurement? _initialBodyMeasurement;
+  BodyMeasurementRecord? _editingBodyMeasurement;
   late Map<String, dynamic> sleep; // 見下方 keys
 
   // 睡眠控制器（避免 TextField 反向輸入）
@@ -287,6 +321,75 @@ class _EditRecordPageState extends State<EditRecordPage> {
         : null;
 
     debugPrint('🛏️ 編輯頁已載入睡眠欄位');
+    _loadUnifiedSleep();
+    _loadUnifiedBodyMeasurement();
+  }
+
+  Future<void> _loadUnifiedBodyMeasurement() async {
+    final date = DateHelper.parseIdToDate(widget.docId);
+    if (date == null) return;
+    try {
+      final records = await UnifiedBodyMeasurementRepository().getByDateRange(
+        userId: widget.uid,
+        start: date,
+        end: date,
+      );
+      final trend = UnifiedBodyMeasurementRepository.selectDailyTrend(records);
+      if (!mounted || trend.isEmpty) return;
+      final latest = trend.single;
+      setState(() {
+        if (latest.source == BodyMeasurementSource.bodyMeasurementRecord) {
+          _editingBodyMeasurement = BodyMeasurementRecord(
+            id: latest.id ?? '',
+            timestamp: latest.timestamp!,
+            weightKg: latest.measurement.weightKg,
+            bodyFatPercent: latest.measurement.bodyFatPercent,
+            waistCm: latest.measurement.waistCm,
+            measurementTiming: latest.measurement.measurementTiming,
+            otherTimingText: latest.measurement.effectiveCustomMeasurementTime,
+          );
+        }
+        _weightCtrl.text =
+            formatBodyMeasurementNumber(latest.measurement.weightKg);
+        _bodyFatCtrl.text =
+            formatBodyMeasurementNumber(latest.measurement.bodyFatPercent);
+        _waistCtrl.text =
+            formatBodyMeasurementNumber(latest.measurement.waistCm);
+        _measurementTiming = latest.measurement.measurementTiming;
+        _customMeasurementTimeCtrl.text =
+            latest.measurement.effectiveCustomMeasurementTime ?? '';
+      });
+    } catch (error) {
+      debugPrint('BodyMeasurementRecord load failed: $error');
+    }
+  }
+
+  Future<void> _loadUnifiedSleep() async {
+    final date = DateHelper.parseIdToDate(widget.docId);
+    if (date == null) return;
+    try {
+      final unified = await UnifiedSleepRepository().getForDate(
+        userId: widget.uid,
+        date: date,
+      );
+      if (!mounted || unified == null) return;
+      final data = unified.record.toSleepData().toMap();
+      setState(() {
+        sleep = Map<String, dynamic>.from(data);
+        _tookHypnotic = sleep['tookHypnotic'] == true;
+        _hypNameCtrl.text = (sleep['hypnoticName'] ?? '').toString();
+        _hypDoseCtrl.text = (sleep['hypnoticDose'] ?? '').toString();
+        _sleepTime = DateHelper.parseTime(sleep['sleepTime']);
+        _estimatedSleepTime = DateHelper.parseTime(sleep['estimatedSleepTime']);
+        _wakeTime = DateHelper.parseTime(sleep['wakeTime']);
+        _sleepQuality = (sleep['quality'] as num?)?.toInt();
+        _nightAwakenings
+          ..clear()
+          ..addAll(unified.record.nightAwakenings);
+      });
+    } catch (error) {
+      debugPrint('SleepRecord load failed: $error');
+    }
   }
 
   @override

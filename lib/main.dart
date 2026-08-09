@@ -38,6 +38,7 @@ import 'community/compose_post_page.dart';
 import 'onboarding_page.dart';
 import 'utils/secure_storage_service.dart';
 import 'utils/health_data_encryption_service.dart';
+import 'meds/medication_subjective_reminder_service.dart';
 import 'pin_setup_screen.dart';
 import 'recovery_key_restore_screen.dart';
 import 'analytics_service.dart';
@@ -722,6 +723,7 @@ class _EncryptionGateState extends State<EncryptionGate> {
   }
 
   Future<void> _checkEncryptionKey() async {
+    NotificationHelper().setHealthDataNavigationReady(false);
     final prefs = await SharedPreferences.getInstance();
     final user = FirebaseAuth.instance.currentUser;
 
@@ -805,6 +807,14 @@ class _EncryptionGateState extends State<EncryptionGate> {
         debugPrint('Health data encryption migration deferred: $error');
         debugPrint('$stackTrace');
       }
+      try {
+        await MedicationSubjectiveReminderService()
+            .syncForCurrentUser(uid: user.uid);
+      } catch (error, stackTrace) {
+        debugPrint('Medication subjective reminders sync deferred: $error');
+        debugPrint('$stackTrace');
+      }
+      NotificationHelper().setHealthDataNavigationReady(true);
     }
 
     if (mounted) {

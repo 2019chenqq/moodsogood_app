@@ -1,6 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 import 'medication_local_db.dart';
+import 'medication_subjective_reminder_service.dart';
+import 'medication_subjective_tracking_cycle.dart';
 
 /// The single definition of a clinically meaningful medication change.
 class MedicationChangeDetector {
@@ -245,7 +248,65 @@ class MedicationAdjustmentService {
       'items': newItems,
       'createdAt': DateTime.now().toIso8601String(),
     });
+    await _updateSubjectiveTrackingCycles(
+      uid: uid,
+      changeRecordId: docId,
+      changeDate: date,
+      items: newItems,
+    );
+    try {
+      await MedicationSubjectiveReminderService().syncForCurrentUser(uid: uid);
+    } catch (error) {
+      debugPrint('Medication subjective reminder sync deferred: $error');
+    }
     return true;
+  }
+
+  Future<void> _updateSubjectiveTrackingCycles({
+    required String uid,
+    required String changeRecordId,
+    required DateTime changeDate,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    final byMedication = <String, List<Map<String, dynamic>>>{};
+    for (final item in items) {
+      final medicationId = item['medDocId']?.toString().trim() ?? '';
+      byMedication.putIfAbsent(medicationId, () => []).add(item);
+    }
+
+    for (final entry in byMedication.entries) {
+      final medicationId = entry.key;
+      final medicationItems = entry.value;
+      final stopped = medicationItems.any(
+        (item) => item['type']?.toString() == 'stopped',
+      );
+      if (stopped) {
+        await _localDb.endActiveSubjectiveTrackingCycles(
+          uid: uid,
+          medicationId: medicationId,
+          endedAt: changeDate,
+          reason: 'medicationStopped',
+        );
+        continue;
+      }
+
+      final cycle = MedicationTrackingCycleFactory.fromAdjustmentItems(
+        changeRecordId: changeRecordId,
+        changeDate: changeDate,
+        medicationId: medicationId,
+        items: medicationItems,
+      );
+      if (cycle == null) continue;
+
+      await _localDb.endActiveSubjectiveTrackingCycles(
+        uid: uid,
+        medicationId: medicationId,
+        endedAt: changeDate,
+        reason: 'supersededByMedicationChange',
+        supersededByChangeRecordId: changeRecordId,
+      );
+      await _localDb.saveSubjectiveTrackingCycle(uid, cycle);
+    }
   }
 
   bool _alreadyRecorded(
@@ -305,5 +366,83 @@ class MedicationAdjustmentService {
       hash = (hash * 0x01000193) & 0xffffffff;
     }
     return hash;
+  }
+}
+
+class MedicationTrackingCycleFactory {
+  const MedicationTrackingCycleFactory._();
+
+  static MedicationSubjectiveTrackingCycle? fromAdjustmentItems({
+    required String changeRecordId,
+    required DateTime changeDate,
+    required String medicationId,
+    required List<Map<String, dynamic>> items,
+  }) {
+    if (medicationId.trim().isEmpty || items.isEmpty) return null;
+
+    Map<String, dynamic>? selected;
+    MedicationTrackingChangeType? changeType;
+
+    selected = _firstOfType(items, 'resumed');
+    if (selected != null) {
+      changeType = MedicationTrackingChangeType.resumed;
+    } else {
+      selected = _firstOfType(items, 'doseChanged');
+      if (selected != null) {
+        final oldDose = _number(selected['oldDose']);
+        final newDose = _number(selected['newDose']);
+        if (oldDose == null || newDose == null || oldDose == newDose) {
+          return null;
+        }
+        changeType = newDose > oldDose
+            ? MedicationTrackingChangeType.doseIncreased
+            : MedicationTrackingChangeType.doseDecreased;
+      } else {
+        selected = _firstOfType(items, 'added');
+        if (selected != null) {
+          changeType = MedicationTrackingChangeType.added;
+        }
+      }
+    }
+
+    if (selected == null || changeType == null) return null;
+    final medicationName = selected['name']?.toString().trim() ?? '';
+    if (medicationName.isEmpty) return null;
+
+    return MedicationSubjectiveTrackingCycle(
+      id: MedicationSubjectiveTrackingCycle.cycleId(
+        changeRecordId,
+        medicationId,
+      ),
+      medicationId: medicationId,
+      changeRecordId: changeRecordId,
+      changeDate: changeDate,
+      medicationName: medicationName,
+      changeType: changeType,
+      oldDose: _number(selected['oldDose']),
+      newDose: _number(selected['newDose']),
+      doseUnit: _text(selected['newUnit'] ?? selected['unit']),
+      active: true,
+    );
+  }
+
+  static Map<String, dynamic>? _firstOfType(
+    List<Map<String, dynamic>> items,
+    String type,
+  ) {
+    for (final item in items) {
+      if (item['type']?.toString() == type) return item;
+    }
+    return null;
+  }
+
+  static double? _number(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '');
+  }
+
+  static String? _text(dynamic value) {
+    final text = value?.toString().trim() ?? '';
+    return text.isEmpty ? null : text;
   }
 }

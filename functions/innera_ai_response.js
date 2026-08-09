@@ -117,6 +117,9 @@ function normalizeFollowUpSummaryReply(reply) {
   const keyChanges = normalizeStringArray(value.keyChanges);
   const discussionPriorities = normalizeStringArray(value.discussionPriorities);
   const timelineRelations = normalizeStringArray(value.timelineRelations);
+  const medicationSubjectiveSummaries = value.medicationSubjectiveSummaries == null
+    ? []
+    : normalizeStringArray(value.medicationSubjectiveSummaries);
   const dataLimitations = normalizeStringArray(value.dataLimitations);
   const userSharedNotes = value.userSharedNotes == null
     ? (value.userReportedConcerns == null
@@ -128,6 +131,7 @@ function normalizeFollowUpSummaryReply(reply) {
     return { reply: "", failure: "invalid_follow_up_key_changes" };
   }
   if (!discussionPriorities || !timelineRelations ||
+      !medicationSubjectiveSummaries ||
       !userSharedNotes || !dataLimitations) {
     return { reply: "", failure: "invalid_follow_up_summary_arrays" };
   }
@@ -137,6 +141,7 @@ function normalizeFollowUpSummaryReply(reply) {
       keyChanges,
       discussionPriorities,
       timelineRelations,
+      medicationSubjectiveSummaries,
       userSharedNotes,
       userReportedConcerns: userSharedNotes,
       dataLimitations,
@@ -271,6 +276,7 @@ function createFollowUpSummaryFallbackResponse() {
     keyChanges: [],
     discussionPriorities: [],
     timelineRelations: [],
+    medicationSubjectiveSummaries: [],
     userSharedNotes: [],
     userReportedConcerns: [],
     dataLimitations: [],

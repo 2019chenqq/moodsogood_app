@@ -49,9 +49,6 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
   String _loadedThemeSong = '';
   List<String> _imageUrls = [];
   bool _uploadingImage = false;
-  int _overallMoodScore = 5;
-  int _overallHealthScore = 5;
-  int _diaryMoodScale = kCurrentDiaryMoodScale;
 
   // ---------------- 自動儲存 ----------------
   Timer? _debouncer;
@@ -135,27 +132,12 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
     _proudOfCtrl.text = (data['proudOf'] ?? '') as String;
     _selfCareCtrl.text = (data['selfCare'] ?? '') as String;
     _gratitudeCtrl.text = (data['gratitude'] ?? '') as String;
-    _diaryMoodScale = _resolveDiaryMoodScale(data);
-    _overallMoodScore =
-        _normalizeScaleScore(data['overallMood'], _diaryMoodScale);
-    _overallHealthScore =
-        _normalizeScaleScore(data['overallHealth'], _diaryMoodScale);
     _imageUrls = (data['imageUrls'] as List<dynamic>?)
             ?.map((e) => e.toString())
             .toList() ??
         [];
     _isHydrating = false;
     setState(() {}); // 更新字數
-  }
-
-  int _normalizeScaleScore(dynamic raw, int moodScale) {
-    final maxScore = 5;
-    final value = raw is num ? raw.round() : 3;
-    return value.clamp(1, maxScore);
-  }
-
-  int _resolveDiaryMoodScale(Map<String, dynamic> data) {
-    return 5;
   }
 
   // 從本地 SQLite + Firebase 加載日記
@@ -641,9 +623,6 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
             'imageRefsEncrypted': true,
             'imageEncryptionVersion':
                 DiaryImageEncryptionService.migrationVersion,
-            'overallMood': _overallMoodScore,
-            'overallHealth': _overallHealthScore,
-            'diaryMoodScale': _diaryMoodScale,
             'updatedAt': FieldValue.serverTimestamp(),
             'isEncrypted': true,
           }, SetOptions(merge: true));
@@ -953,21 +932,6 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
               const m.SizedBox(height: 12),
             ],
 
-            _OverallSlidersCard(
-              overallMoodScore: _overallMoodScore,
-              overallHealthScore: _overallHealthScore,
-              maxScore: _diaryMoodScale,
-              onMoodChanged: (v) {
-                setState(() => _overallMoodScore = v);
-                _onAnyFieldChanged();
-              },
-              onHealthChanged: (v) {
-                setState(() => _overallHealthScore = v);
-                _onAnyFieldChanged();
-              },
-            ),
-            const m.SizedBox(height: 12),
-
 // 只有當有上一筆或下一筆時才顯示按鈕區
             if (_prevDate != null || _nextDate != null) ...[
               m.Row(
@@ -1192,6 +1156,8 @@ class _DateHeaderCard extends m.StatelessWidget {
   }
 }
 
+// Kept temporarily for source compatibility; no longer rendered by diary UI.
+// ignore: unused_element
 class _OverallSlidersCard extends m.StatelessWidget {
   final int overallMoodScore;
   final int overallHealthScore;

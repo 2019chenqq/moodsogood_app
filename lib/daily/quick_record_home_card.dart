@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../constants/healing_design_system.dart';
 import '../models/health_event.dart';
 import 'health_event_repository.dart';
+import 'health_event_co_occurrence_page.dart';
 import 'quick_record_editor.dart';
 import 'quick_record_history_page.dart';
 
@@ -92,6 +93,19 @@ class _QuickRecordHomeCardState extends State<QuickRecordHomeCard> {
               Text(
                 '一天可多次，隨時記下當下的情緒、症狀與狀態',
                 style: HealingDesignSystem.bodySmall,
+              ),
+              const SizedBox(height: HealingDesignSystem.paddingM),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const HealthEventCoOccurrencePage(),
+                    ),
+                  ),
+                  icon: const Icon(Icons.hub_outlined),
+                  label: const Text('共現模式'),
+                ),
               ),
               const SizedBox(height: HealingDesignSystem.paddingL),
               SizedBox(
