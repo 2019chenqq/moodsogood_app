@@ -74,6 +74,11 @@ class _FollowUpSharePreviewPageState extends State<FollowUpSharePreviewPage> {
                   _check('情緒症狀', _options.emotionsAndSymptoms,
                       (value) => _options.copyWith(emotionsAndSymptoms: value)),
                   _check(
+                      '身體測量（體重、體脂率、腰圍）',
+                      _options.bodyMeasurements,
+                      (value) =>
+                          _options.copyWith(bodyMeasurements: value)),
+                  _check(
                       '藥物調整',
                       _options.medicationAdjustments,
                       (value) =>
@@ -88,20 +93,26 @@ class _FollowUpSharePreviewPageState extends State<FollowUpSharePreviewPage> {
           ),
           const SizedBox(height: 8),
           Text('去識別化分享預覽', style: HealingDesignSystem.titleMedium),
-          _card('回診資料', display.visitInfo, bullets: false),
+          _card('基本資訊', display.visitInfo, bullets: false),
           if (_options.discussionTopics)
             _discussionCard(display.topicLabels, display.discussionItems),
           if (_options.emotionsAndSymptoms) ...[
             _card('主要變化', display.keyChanges),
-            _card('重要時間關聯', display.timelineRelations),
           ],
           if (_options.sleep)
             FollowUpSleepTrendCard.fromRecord(record: widget.summary),
+          if (_options.emotionsAndSymptoms)
+            _card('身體症狀', display.symptoms,
+                emptyText: '此摘要沒有可顯示的症狀資料'),
+          if (_options.bodyMeasurements)
+            _card('身體測量', display.bodyMeasurements,
+                emptyText: '此摘要沒有可顯示的體重、體脂率或腰圍資料'),
           if (_options.medicationAdjustments)
             _card('藥物調整時間軸', display.medicationTimeline,
                 emptyText: '此摘要沒有藥物調整紀錄'),
           if (_options.lifeUpdates)
-            _card('其他想跟醫師說的內容', display.userSharedNotes),
+            _card('其他想跟醫師說的內容', display.userSharedNotes,
+                emptyText: '沒有其他想跟醫師說的內容'),
           if (_options.dataLimitations) _card('資料限制', display.dataLimitations),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),

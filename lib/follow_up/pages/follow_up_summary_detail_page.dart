@@ -257,15 +257,18 @@ class _FollowUpSummaryDetailPageState extends State<FollowUpSummaryDetailPage>
         ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            _card('回診資料', display.visitInfo, bullets: false),
+            _card('基本資訊', display.visitInfo, bullets: false),
             _discussionCard(display),
             _card('主要變化', display.keyChanges),
-            _card('重要時間關聯', display.timelineRelations),
             FollowUpSleepTrendCard.fromRecord(record: _summary),
+            _card('身體症狀', display.symptoms,
+                emptyText: '此摘要沒有可顯示的症狀資料'),
+            _card('身體測量', display.bodyMeasurements,
+                emptyText: '此摘要沒有可顯示的體重、體脂率或腰圍資料'),
             _card('藥物調整時間軸', display.medicationTimeline,
                 emptyText: '此摘要沒有藥物調整紀錄'),
-            if (display.userSharedNotes.isNotEmpty)
-              _card('其他想跟醫師說的內容', display.userSharedNotes),
+            _card('其他想跟醫師說的內容', display.userSharedNotes,
+                emptyText: '沒有其他想跟醫師說的內容'),
             _card('資料限制', display.dataLimitations),
             _card('AI 整理時間', [display.generatedAt], bullets: false),
             const Padding(
@@ -389,8 +392,14 @@ class _SummaryEditorState extends State<_SummaryEditor> {
       'details': TextEditingController(text: widget.summary.discussionDetails),
       'notes': TextEditingController(text: widget.summary.additionalNotes),
       'changes': TextEditingController(text: output.keyChanges.join('\n')),
-      'priorities':
-          TextEditingController(text: output.discussionPriorities.join('\n')),
+      'discussionItems': TextEditingController(
+        text: FollowUpSummaryTextFormatter.safeDiscussionItems([
+          if (widget.summary.discussionDetails.trim().isNotEmpty)
+            widget.summary.discussionDetails,
+          ...output.discussionItems,
+          ...output.discussionPriorities,
+        ]).join('\n'),
+      ),
       'sharedNotes':
           TextEditingController(text: output.userSharedNotes.join('\n')),
       'limitations':
@@ -422,7 +431,7 @@ class _SummaryEditorState extends State<_SummaryEditor> {
               _field('想討論的內容', 'details'),
               _field('其他想討論的事', 'notes'),
               _field('主要變化（每行一項）', 'changes'),
-              _field('優先討論事項（每行一項）', 'priorities'),
+              _field('想跟醫師討論的事（每行一項）', 'discussionItems'),
               _field('其他想跟醫師說的內容（每行一項）', 'sharedNotes'),
               _field('資料限制（每行一項）', 'limitations'),
             ]))),
@@ -440,9 +449,12 @@ class _SummaryEditorState extends State<_SummaryEditor> {
                         aiOutput: FollowUpAiOutput(
                             keyChanges: _lines('changes'),
                             timelineRelations: old.timelineRelations,
-                            discussionPriorities: _lines('priorities'),
+                            discussionPriorities: const [],
+                            discussionItems: _lines('discussionItems'),
+                            followUpResponses: old.followUpResponses,
                             userSharedNotes: _lines('sharedNotes'),
                             userReportedConcerns: old.userReportedConcerns,
+                            diaryHighlights: old.diaryHighlights,
                             dataLimitations: _lines('limitations'),
                             generatedAt: old.generatedAt,
                             usedFallback: old.usedFallback)));

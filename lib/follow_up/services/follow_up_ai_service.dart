@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import '../../ai/innera_ai_message.dart';
 import '../../ai/innera_ai_mode.dart';
 import '../../ai/innera_ai_service.dart';
-import '../../meds/medication_subjective_summary_builder.dart';
 import '../models/follow_up_ai_summary.dart';
 import 'follow_up_question_parser.dart';
 
@@ -15,17 +14,18 @@ class FollowUpAiService {
 
   final InneraAiService _inneraAiService;
 
-  static const _subjectiveMarker = '__med_subjective__:';
-  static const _medicationSubjectiveInstruction = '''
-
-若 followUpAiV1.medicationSubjectiveReports 不為空，請依每個 changeRecordId 分組，按 followUpDay 3、7、14、28 整理為一段簡短純文字，放入 medicationSubjectiveSummaries 陣列，順序與輸入群組一致。只能整理 overallResponse、changedAreas、perceivedRelation、otherFactors、note；合併重複資訊，不逐筆照抄。只有一次回報時不得描述趨勢；資料矛盾時直接描述前後變化，不解釋原因。perceivedRelation 為 unsure 或有 otherFactors 時必須保留不確定性。固定使用「使用者主觀回報」、「使用者認為」、「同期紀錄顯示」等中性措辭。不得判定藥物有效或無效、判定副作用、推論因果、診斷，或建議增減藥、停藥、換藥。沒有資料時 medicationSubjectiveSummaries 必須是空陣列。
-JSON 另包含："medicationSubjectiveSummaries":[]。
-''';
-
   Future<List<String>> generateFollowUpQuestions(
       FollowUpAiV1Input input) async {
     final response = await _send(
-      input.copyWith(medicationSubjectiveReports: const []),
+      input,
+      '''用藥判讀規則：
+1. 只有 currentMedications 或 medicationTimeline 明確存在的藥物，才能詢問藥效、副作用、服藥情況或服用後變化。
+2. 研究主題、關鍵字、醫師提及、曾詢問或討論過的藥物，都不代表使用者已取得或正在服用。
+3. 自由文字與結構化用藥資料不一致時，一律以 currentMedications 與 medicationTimeline 為準。
+4. 不得詢問輸入資料中不存在的具體藥物。
+5. 不得把「拿到關鍵字／資訊」理解成「拿到或服用藥物」。
+
+'''
       '''你正在執行「回診摘要補問」。請先檢查 app 已計算好的資料與使用者主題，只針對會明顯影響回診討論的重要缺漏提出 2～4 個簡短問題；不得重問已有明確資料。若沒有重要缺漏可回傳空陣列。questions 陣列只能放實際問題，不得放問候、開場白、前言或「請問：」等引導文字；每個問題必須以「？」結尾。reply 必須只包含以下 JSON，不要 Markdown 或說明：
 {"questions":["問題一"]}''',
     );
@@ -34,7 +34,11 @@ JSON 另包含："medicationSubjectiveSummaries":[]。
       final questions = normalizeFollowUpQuestions(
         _questionValues(json['questions']),
       );
-      if (questions.isNotEmpty) return questions.take(4).toList();
+      if (questions.isNotEmpty) {
+        return _filterUnsupportedMedicationQuestions(questions, input)
+            .take(4)
+            .toList();
+      }
     }
     final fallback = normalizeFollowUpQuestions([
       if (response.followUpQuestion?.trim().isNotEmpty == true)
@@ -44,39 +48,110 @@ JSON 另包含："medicationSubjectiveSummaries":[]。
           .map(_cleanListItem)
           .where((line) => line.endsWith('？') || line.endsWith('?')),
     ]);
-    return fallback.take(4).toList();
+    return _filterUnsupportedMedicationQuestions(fallback, input)
+        .take(4)
+        .toList();
   }
+
+  static List<String> _filterUnsupportedMedicationQuestions(
+    Iterable<String> questions,
+    FollowUpAiV1Input input,
+  ) {
+    final currentNames = input.currentMedications
+        .map((item) => item['name']?.toString().trim() ?? '')
+        .where((name) => name.isNotEmpty)
+        .toSet();
+    final timelineNames = input.medicationTimeline
+        .map((item) => item['medicationName']?.toString().trim() ?? '')
+        .where((name) => name.isNotEmpty)
+        .toSet();
+    final supportedNames = {...currentNames, ...timelineNames};
+
+    bool mentions(Iterable<String> names, String question) {
+      final normalizedQuestion = _normalizeMedicationText(question);
+      return names.any((name) {
+        final normalizedName = _normalizeMedicationText(name);
+        return normalizedName.isNotEmpty &&
+            normalizedQuestion.contains(normalizedName);
+      });
+    }
+
+    final result = <String>[];
+    for (final question in questions) {
+      final asksAboutMedication = RegExp(
+        r'藥|服用|服藥|用藥|劑量|漏服|停藥|停用',
+      ).hasMatch(question);
+      if (!asksAboutMedication) {
+        result.add(question);
+        continue;
+      }
+
+      final claimsCurrentUse =
+          RegExp(r'目前(?:正在)?服用|現在(?:正在)?服用').hasMatch(question);
+      final supported = mentions(
+        claimsCurrentUse ? currentNames : supportedNames,
+        question,
+      );
+      final compactQuestion = question.replaceAll(
+        RegExp(r'[，。！？；、\s]'),
+        '',
+      );
+      final genericOnly = RegExp(
+        r'^(?:最近)?(?:目前|現在)?(?:的)?(?:服藥|用藥|藥物)(?:情況|狀況|後)?',
+      ).hasMatch(compactQuestion);
+      final hasStructuredMedication = claimsCurrentUse
+          ? currentNames.isNotEmpty
+          : supportedNames.isNotEmpty;
+
+      if (supported || (genericOnly && hasStructuredMedication)) {
+        result.add(question);
+        continue;
+      }
+      if (kDebugMode) {
+        debugPrint(
+          'FollowUpAiService filtered follow-up question: '
+          'reason=medication_not_in_structured_data, question=$question',
+        );
+      }
+    }
+    return result;
+  }
+
+  static String _normalizeMedicationText(String value) => value
+      .toLowerCase()
+      .replaceAll(RegExp(r'[\s，。！？；、,.!?;：:（）()「」『』\-_/]'), '');
+
+  @visibleForTesting
+  static List<String> filterMedicationQuestionsForTesting(
+    Iterable<String> questions,
+    FollowUpAiV1Input input,
+  ) =>
+      _filterUnsupportedMedicationQuestions(questions, input);
 
   Future<FollowUpAiOutput> generateSummary(
     FollowUpAiV1Input input, {
     Map<String, String> followUpAnswers = const {},
   }) async {
-    try {
-      final response = await _sendSummary(
-        input,
-        '''你正在產生可供回診使用的資料摘要。補問與回答如下：${jsonEncode(followUpAnswers)}
-只能描述資料支持的觀察與時間關聯；不得診斷躁期或鬱期、不得斷言藥物因果、不得建議自行停藥或調藥。睡眠、藥物時間軸、症狀及其他基本紀錄只能放在 keyChanges 或 timelineRelations，不得放入 userSharedNotes。discussionPriorities 整理已選主題、使用者的 discussionDetails 與適合優先詢問醫師的事項。userSharedNotes 只可忠實保留 additionalNotes，以及補問中明確屬於自由補充的使用者原文，不得擴寫、推測或放入症狀、睡眠、情緒、藥物、身體數據。主要變化使用簡短的「欄位：數值」格式；睡眠時數分成「睡眠平均時間：X小時」、「最低：X小時」、「最高：X小時」，不要把期間、趨勢、最低與最高塞在同一句。keyChanges 必須 3～5 項。請將下列格式的摘要 JSON 序列化後放在 reply 字串中，不要在 reply 加入 Markdown 或其他說明：
-{"keyChanges":["主要變化一（附資料）","主要變化二（附資料）","主要變化三（附資料）"],"discussionPriorities":[],"timelineRelations":[],"userSharedNotes":[],"dataLimitations":[]}''',
-      );
-      final json = _tryReplyJson(response.reply);
-      if (json != null) {
-        final parsed = _summaryFromJson(json);
-        if (parsed != null) {
-          return _withStructuredMedicationTimeline(
-            parsed,
-            input,
-            followUpAnswers: followUpAnswers,
-          );
-        }
-        _debugParseFailure('summary_shape', response.reply,
-            'required fields are not valid string arrays');
-      } else {
-        _debugParseFailure(
-            'json_decode', response.reply, 'no valid JSON object');
+    final response = await _send(
+      input,
+      '''你正在產生可供回診使用的資料摘要。補問題目與原始回答只供這次整理使用，不得逐字放入任何輸出欄位：${jsonEncode(followUpAnswers)}
+只能描述資料支持的觀察與日期先後；不得診斷躁期或鬱期、不得斷言或暗示藥物因果、不得建議自行停藥或調藥。有價值的日期先後資訊可放入 keyChanges，但不得與 App 的藥物調整時間軸逐字重複。睡眠、症狀及其他基本紀錄只能放在 keyChanges，不得放入 userSharedNotes。請把已選主題、discussionDetails，以及有內容的補問題目與答案整合成 discussionItems：共 1～5 項，每項為可直接提供醫師閱讀的完整中性句子；合併相近內容，移除口語贅詞、聊天語氣、表情符號與重複內容；保留使用者明確提到的時間、頻率、程度及生活影響；不得加入未說過的資訊。discussionItems 不得保留 Q／A 格式，也不得出現「使用者回答」、「AI 提問」、「AI 補問」、「問題一」、「問：」或「答：」。userSharedNotes 只可忠實保留 additionalNotes，不得放入任何補問原始回答，不得擴寫、推測或放入症狀、睡眠、情緒、藥物、身體數據。若 diaryContext 不為空，必須逐篇檢視每一則日記，只要內容包含重要生活事件、主觀感受、睡眠或症狀補充、想告訴醫師的事情、正向事件或成就，就必須為該篇產生至少一筆對應的 diaryHighlights 候選（同一篇最多 2 筆）；只有在該篇完全沒有可用內容時才可略過，不得因保守或不確定而整體省略 diaryHighlights。日記提到藥名不得視為目前用藥；不得依日記判定躁期、鬱期或診斷；與結構化資料衝突時以結構化資料為準。diaryHighlights 只摘要原意，不得加入醫療推論。主要變化不得重複睡眠卡已有的平均、最低、最高與事件天數；睡眠只在 App 提供的 comparison 顯示明顯增減時，簡短描述與前期相差多少。keyChanges 必須 3～5 項。請將下列格式的摘要 JSON 序列化後放在 reply 字串中，不要在 reply 加入 Markdown 或其他說明：
+{"keyChanges":["主要變化一（附資料）","主要變化二（附資料）","主要變化三（附資料）"],"discussionItems":["可直接提供醫師閱讀的完整句子。"],"userSharedNotes":[],"dataLimitations":[],"diaryHighlights":[{"date":"YYYY-MM-DD","category":"life_event|subjective_feeling|sleep_note|symptom_note|share_with_doctor","summary":"忠於原意的簡短摘要","source":"diary"}]}''',
+    );
+    final json = _tryReplyJson(response.reply);
+    if (json != null) {
+      final parsed = _summaryFromJson(json);
+      if (parsed != null) {
+        return _withStructuredMedicationTimeline(
+          parsed,
+          input,
+          followUpAnswers: followUpAnswers,
+        );
       }
-    } catch (error, stackTrace) {
-      debugPrint('FollowUpAiService summary generation failed: $error');
-      if (kDebugMode) debugPrint('$stackTrace');
+      _debugParseFailure('summary_shape', response.reply,
+          'required fields are not valid string arrays');
+    } else {
+      _debugParseFailure('json_decode', response.reply, 'no valid JSON object');
     }
     return _fallbackSummary(input, followUpAnswers: followUpAnswers);
   }
@@ -105,12 +180,6 @@ JSON 另包含："medicationSubjectiveSummaries":[]。
       ],
     );
   }
-
-  Future<InneraAiResponse> _sendSummary(
-    FollowUpAiV1Input input,
-    String instruction,
-  ) =>
-      _send(input, '$instruction$_medicationSubjectiveInstruction');
 
   static Map<String, dynamic>? _tryReplyJson(String reply) {
     final text = reply.trim();
@@ -171,12 +240,8 @@ JSON 另包含："medicationSubjectiveSummaries":[]。
   static FollowUpAiOutput? _summaryFromJson(Map<String, dynamic> json) {
     List<String>? list(String key, {bool optional = false}) {
       final value = json[key];
-      if (value == null) return optional ? const [] : null;
-      // An optional field the model emits with the wrong type (e.g. an object
-      // instead of a list) must not discard an otherwise-valid summary. Treat
-      // it as empty so the remaining structured fields still render instead of
-      // forcing the whole reply into the "AI 整理暫時未完成" fallback.
-      if (value is! List) return optional ? const [] : null;
+      if (value == null && optional) return const [];
+      if (value is! List) return null;
       return value
           .whereType<String>()
           .map((item) => item.trim())
@@ -185,35 +250,55 @@ JSON 另包含："medicationSubjectiveSummaries":[]。
     }
 
     final keyChanges = list('keyChanges');
-    final priorities = list('discussionPriorities');
-    final timeline = list('timelineRelations');
-    final subjectiveSummaries =
-        list('medicationSubjectiveSummaries', optional: true);
+    final discussionItems = json.containsKey('discussionItems')
+        ? list('discussionItems')
+        : list('discussionPriorities');
     final sharedNotes = json.containsKey('userSharedNotes')
         ? list('userSharedNotes', optional: true)
         : list('userReportedConcerns', optional: true);
     final limitations = list('dataLimitations');
+    final diaryHighlights = _diaryHighlightValues(json['diaryHighlights']);
     if (keyChanges == null ||
         keyChanges.length < 3 ||
         keyChanges.length > 5 ||
-        priorities == null ||
-        timeline == null ||
-        subjectiveSummaries == null ||
+        discussionItems == null ||
+        discussionItems.length > 5 ||
         sharedNotes == null ||
         limitations == null) {
       return null;
     }
     return FollowUpAiOutput(
       keyChanges: keyChanges,
-      discussionPriorities: priorities,
-      timelineRelations: [
-        ...timeline,
-        ...subjectiveSummaries.map((item) => '$_subjectiveMarker$item'),
-      ],
+      discussionPriorities: const [],
+      discussionItems: discussionItems,
+      timelineRelations: const [],
       userSharedNotes: sharedNotes,
+      diaryHighlights: diaryHighlights,
       dataLimitations: limitations,
       generatedAt: DateTime.now().toUtc(),
     );
+  }
+
+  static List<FollowUpDiaryHighlight> _diaryHighlightValues(dynamic value) {
+    const categories = {
+      'life_event',
+      'subjective_feeling',
+      'sleep_note',
+      'symptom_note',
+      'share_with_doctor',
+    };
+    if (value is! List) return const [];
+    return value
+        .whereType<Map>()
+        .map((item) => FollowUpDiaryHighlight.fromJson(
+              Map<String, dynamic>.from(item),
+            ))
+        .where((item) =>
+            item.date.isNotEmpty &&
+            categories.contains(item.category) &&
+            item.summary.isNotEmpty &&
+            item.source == 'diary')
+        .toList(growable: false);
   }
 
   static void _debugParseFailure(
@@ -240,8 +325,6 @@ JSON 另包含："medicationSubjectiveSummaries":[]。
     Map<String, String> followUpAnswers = const {},
   }) {
     final statistics = input.statistics;
-    final selectedTopics =
-        input.discussionTopics.where((topic) => topic.selected).toList();
     final keyChanges = <String>[];
     // Never copy malformed model output into a clinical-facing fallback.
     const malformedReply = '';
@@ -259,16 +342,8 @@ JSON 另包含："medicationSubjectiveSummaries":[]。
       '${_date(statistics.periodStart)}～${_date(statistics.periodEnd)}共有 '
       '${statistics.validRecordDays} 天有效紀錄。',
     );
-    final sleepDuration = input.sleep['durationHours'];
-    if (sleepDuration is Map && sleepDuration['average'] != null) {
-      keyChanges.add('睡眠平均時間：${_compactNumber(sleepDuration['average'])}小時');
-      if (sleepDuration['minimum'] is num) {
-        keyChanges.add('最低：${_compactNumber(sleepDuration['minimum'])}小時');
-      }
-      if (sleepDuration['maximum'] is num) {
-        keyChanges.add('最高：${_compactNumber(sleepDuration['maximum'])}小時');
-      }
-    }
+    final sleepChange = _sleepComparisonText(input.sleep);
+    if (sleepChange != null) keyChanges.add(sleepChange);
     if (input.highFrequencySymptoms.isNotEmpty) {
       final symptom = input.highFrequencySymptoms.first;
       keyChanges.add(
@@ -279,27 +354,26 @@ JSON 另包含："medicationSubjectiveSummaries":[]。
       keyChanges.add('目前可用紀錄較少，這次摘要以使用者提供的內容為主要依據。');
     }
 
-    final priorities =
-        selectedTopics.map((topic) => topic.label).toSet().toList();
+    // Even in fallback mode, an answered follow-up question must still show
+    // up somewhere in the visible summary, not only in the private
+    // followUpResponses field.
+    final answeredFollowUps = followUpAnswers.values
+        .map((answer) => answer.trim())
+        .where((answer) => answer.isNotEmpty);
+    final discussionItems = FollowUpSummaryTextFormatter.safeDiscussionItems([
+      if (input.discussionDetails.trim().isNotEmpty) input.discussionDetails,
+      ...answeredFollowUps,
+    ]);
     final sharedNotes = <String>[
       if (input.additionalNotes.trim().isNotEmpty) input.additionalNotes.trim(),
-      ..._freeSupplementAnswers(followUpAnswers),
     ];
-    final timeline = input.medicationTimeline
-        .take(5)
-        .map(formatMedicationTimelineEvent)
-        .where((item) => item.isNotEmpty)
-        .toList()
-      ..addAll(
-        MedicationSubjectiveSummaryBuilder.fallbackSummaries(
-          input.medicationSubjectiveReports,
-        ),
-      );
     final limitations = input.dataLimitations.toSet().toList();
     return FollowUpAiOutput(
       keyChanges: keyChanges.take(5).toList(),
-      discussionPriorities: priorities,
-      timelineRelations: timeline,
+      discussionPriorities: const [],
+      discussionItems: discussionItems,
+      timelineRelations: const [],
+      followUpResponses: _followUpResponses(followUpAnswers),
       userSharedNotes: sharedNotes,
       dataLimitations: limitations,
       generatedAt: DateTime.now().toUtc(),
@@ -317,6 +391,28 @@ JSON 另包含："medicationSubjectiveSummaries":[]。
         .replaceFirst(RegExp(r'\.$'), '');
   }
 
+  static List<String> _withoutDuplicateSleepDetails(
+    Map<String, dynamic> sleep,
+    Iterable<String> source,
+  ) {
+    final values =
+        source.where((item) => !item.contains('睡眠')).toList(growable: true);
+    final comparison = _sleepComparisonText(sleep);
+    if (comparison != null) values.add(comparison);
+    return values;
+  }
+
+  static String? _sleepComparisonText(Map<String, dynamic> sleep) {
+    final duration = sleep['durationHours'];
+    if (duration is! Map) return null;
+    final comparison = duration['comparison'];
+    if (comparison is! Map || comparison['change'] is! num) return null;
+    final change = (comparison['change'] as num).toDouble();
+    if (change.abs() < .4) return null;
+    final direction = change > 0 ? '增加' : '減少';
+    return '睡眠時間較前期$direction：${_compactNumber(change.abs())}小時';
+  }
+
   static FollowUpAiOutput _withStructuredMedicationTimeline(
     FollowUpAiOutput output,
     FollowUpAiV1Input input, {
@@ -324,63 +420,79 @@ JSON 另包含："medicationSubjectiveSummaries":[]。
   }) {
     final userSharedNotes = <String>{
       if (input.additionalNotes.trim().isNotEmpty) input.additionalNotes.trim(),
-      ..._freeSupplementAnswers(followUpAnswers),
     }.toList();
-    final medicationNames = input.medicationTimeline
-        .map((event) => event['medicationName']?.toString().trim() ?? '')
-        .where((name) => name.isNotEmpty)
-        .toSet();
-    final nonMedicationRelations = output.timelineRelations.where((relation) {
-      if (relation.startsWith(_subjectiveMarker)) return false;
-      if (medicationNames.any(relation.contains)) return false;
-      return !const [
-        'scheduleChanged',
-        'doseChanged',
-        'increased',
-        'decreased',
-        'added',
-        'stopped',
-      ].any(relation.contains);
-    });
-    final medicationRelations = input.medicationTimeline
-        .map(formatMedicationTimelineEvent)
-        .where((item) => item.isNotEmpty);
-    final aiSubjectiveSummaries = output.timelineRelations
-        .where((item) => item.startsWith(_subjectiveMarker))
-        .map((item) => item.substring(_subjectiveMarker.length).trim())
-        .toList();
-    final aiSubjectiveIsUsable = input.medicationSubjectiveReports.isNotEmpty &&
-        aiSubjectiveSummaries.length ==
-            input.medicationSubjectiveReports.length &&
-        aiSubjectiveSummaries
-            .every(MedicationSubjectiveSummaryBuilder.isSafeAiSummary);
-    final subjectiveSummaries = input.medicationSubjectiveReports.isEmpty
-        ? const <String>[]
-        : aiSubjectiveIsUsable
-            ? aiSubjectiveSummaries
-            : MedicationSubjectiveSummaryBuilder.fallbackSummaries(
-                input.medicationSubjectiveReports,
-              );
+    // Only block items that merely echo the raw question text (i.e. the AI
+    // repeated the prompt instead of summarizing an answer). Items that
+    // reflect the user's actual answer must be kept, or the follow-up
+    // question's information disappears from the summary entirely.
+    final blockedQuestionKeys = _followUpQuestionKeys(followUpAnswers);
+    final keyChanges = _withoutMedicationTimelineDuplicates(
+      input,
+      _withoutDuplicateSleepDetails(
+        input.sleep,
+        output.keyChanges.where(
+          (item) =>
+              !FollowUpSummaryTextFormatter.isQuestionAnswerTranscript(item) &&
+              !blockedQuestionKeys.contains(_summaryComparisonKey(item)),
+        ),
+      ),
+    );
+    if (keyChanges.length < 3) {
+      final seen = keyChanges.map(_summaryComparisonKey).toSet();
+      for (final candidate in _fallbackSummary(
+        input,
+        followUpAnswers: followUpAnswers,
+      ).keyChanges) {
+        if (seen.add(_summaryComparisonKey(candidate))) {
+          keyChanges.add(candidate);
+        }
+        if (keyChanges.length == 3) break;
+      }
+    }
+    final discussionItems = _safeGeneratedDiscussionItems(
+      output.discussionItems.isNotEmpty
+          ? output.discussionItems
+          : output.discussionPriorities,
+      followUpAnswers,
+    );
     return FollowUpAiOutput(
-      keyChanges: output.keyChanges,
-      // Topic selection controls priorities only. Health evidence remains in
-      // key changes and timeline relations regardless of checkbox state.
-      discussionPriorities: output.discussionPriorities,
-      timelineRelations: [
-        ...nonMedicationRelations,
-        ...medicationRelations,
-        ...subjectiveSummaries,
-      ],
+      keyChanges: keyChanges.take(5).toList(growable: false),
+      discussionPriorities: const [],
+      discussionItems: discussionItems.isNotEmpty
+          ? discussionItems
+          : FollowUpSummaryTextFormatter.safeDiscussionItems([
+              if (input.discussionDetails.trim().isNotEmpty)
+                input.discussionDetails,
+              ...followUpAnswers.values.map((answer) => answer.trim()),
+            ]),
+      followUpResponses: _followUpResponses(followUpAnswers),
+      timelineRelations: const [],
       // This section is reserved for the user's own preparation text; recorded
       // symptoms must not be relabeled as an actively shared concern.
       userSharedNotes: userSharedNotes.toList(),
+      diaryHighlights: output.diaryHighlights,
       dataLimitations: output.dataLimitations,
       generatedAt: output.generatedAt,
-      usedFallback: output.usedFallback ||
-          (input.medicationSubjectiveReports.isNotEmpty &&
-              !aiSubjectiveIsUsable),
+      usedFallback: output.usedFallback,
     );
   }
+
+  static List<String> _withoutMedicationTimelineDuplicates(
+    FollowUpAiV1Input input,
+    Iterable<String> keyChanges,
+  ) {
+    final medicationKeys = input.medicationTimeline
+        .map(formatMedicationTimelineEvent)
+        .map(_summaryComparisonKey)
+        .where((value) => value.isNotEmpty)
+        .toSet();
+    return keyChanges
+        .where((item) => !medicationKeys.contains(_summaryComparisonKey(item)))
+        .toList(growable: true);
+  }
+
+  static String _summaryComparisonKey(String value) =>
+      value.trim().toLowerCase().replaceAll(RegExp(r'[\s，。！？；、,.!?;：:]'), '');
 
   @visibleForTesting
   static FollowUpAiOutput? parseSummaryReplyForTesting(String reply) {
@@ -401,17 +513,44 @@ JSON 另包含："medicationSubjectiveSummaries":[]。
       );
 
   @visibleForTesting
-  static FollowUpAiOutput fallbackSummaryForTesting(FollowUpAiV1Input input) =>
-      _fallbackSummary(input);
+  static FollowUpAiOutput fallbackSummaryForTesting(
+    FollowUpAiV1Input input, {
+    Map<String, String> followUpAnswers = const {},
+  }) =>
+      _fallbackSummary(input, followUpAnswers: followUpAnswers);
 
-  static List<String> _freeSupplementAnswers(Map<String, String> answers) {
-    final freeQuestion = RegExp(r'其他|補充|還有什麼|想讓醫師知道|想跟醫師說');
-    return answers.entries
-        .where((entry) => freeQuestion.hasMatch(entry.key))
-        .map((entry) => entry.value.trim())
-        .where((value) => value.isNotEmpty)
-        .toList();
+  static List<String> _safeGeneratedDiscussionItems(
+    Iterable<String> values,
+    Map<String, String> followUpAnswers,
+  ) {
+    final blockedQuestionKeys = _followUpQuestionKeys(followUpAnswers);
+    return FollowUpSummaryTextFormatter.safeDiscussionItems(values)
+        .where((item) =>
+            !blockedQuestionKeys.contains(_summaryComparisonKey(item)))
+        .take(5)
+        .toList(growable: false);
   }
+
+  /// Only the literal question text is blocked here: an item that merely
+  /// repeats the prompt back conveys no information. An item that reflects
+  /// the user's actual answer must be kept, otherwise the follow-up
+  /// question's content disappears from the summary entirely.
+  static Set<String> _followUpQuestionKeys(Map<String, String> answers) => {
+        for (final entry in answers.entries)
+          if (entry.key.trim().isNotEmpty) _summaryComparisonKey(entry.key),
+      };
+
+  static List<Map<String, String>> _followUpResponses(
+    Map<String, String> answers,
+  ) =>
+      answers.entries
+          .where((entry) =>
+              entry.key.trim().isNotEmpty && entry.value.trim().isNotEmpty)
+          .map((entry) => {
+                'question': entry.key.trim(),
+                'answer': entry.value.trim(),
+              })
+          .toList(growable: false);
 
   static String formatMedicationTimelineEvent(Map<String, dynamic> event) {
     final date = event['date']?.toString().trim() ?? '';

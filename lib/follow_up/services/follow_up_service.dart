@@ -2,8 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-import '../models/follow_up_ai_summary.dart';
 import '../../utils/health_data_encryption_service.dart';
+import '../models/follow_up_ai_summary.dart';
 
 const _legacyDiscussionTopicAppointmentLabels = <String>{
   '情緒狀況',
@@ -50,6 +50,9 @@ class FollowUpAppointment {
     return FollowUpAppointment(
       id: (map['id'] as String?) ?? '',
       date: date ?? DateTime.now(),
+      // Older AI summaries accidentally saved the first discussion topic as
+      // the appointment label. Normalize only those exact legacy topic values;
+      // user-entered clinic or department labels remain untouched.
       label: _legacyDiscussionTopicAppointmentLabels.contains(storedLabel)
           ? '回診'
           : storedLabel,
@@ -71,17 +74,21 @@ class FollowUpWorkspace {
   final String medicalInstructions;
   final List<String> discussionTopics;
   final String discussionDetails;
+  final List<FollowUpDiscussionTopicInput> aiDiscussionTopics;
+  final String aiDiscussionDetails;
+  final String aiAdditionalNotes;
+  final bool aiAllowDiaryReference;
   final DateTime? medicalInstructionsUpdatedAt;
   final DateTime? updatedAt;
-  final List<FollowUpDiscussionTopicInput> aiDiscussionTopics;
-  final String aiAdditionalNotes;
 
   const FollowUpWorkspace({
     this.medicalInstructions = '',
     this.discussionTopics = const [],
     this.discussionDetails = '',
     this.aiDiscussionTopics = const [],
+    this.aiDiscussionDetails = '',
     this.aiAdditionalNotes = '',
+    this.aiAllowDiaryReference = false,
     this.medicalInstructionsUpdatedAt,
     this.updatedAt,
   });
@@ -91,7 +98,9 @@ class FollowUpWorkspace {
     List<String>? discussionTopics,
     String? discussionDetails,
     List<FollowUpDiscussionTopicInput>? aiDiscussionTopics,
+    String? aiDiscussionDetails,
     String? aiAdditionalNotes,
+    bool? aiAllowDiaryReference,
     DateTime? medicalInstructionsUpdatedAt,
     DateTime? updatedAt,
   }) {
@@ -100,7 +109,10 @@ class FollowUpWorkspace {
       discussionTopics: discussionTopics ?? this.discussionTopics,
       discussionDetails: discussionDetails ?? this.discussionDetails,
       aiDiscussionTopics: aiDiscussionTopics ?? this.aiDiscussionTopics,
+      aiDiscussionDetails: aiDiscussionDetails ?? this.aiDiscussionDetails,
       aiAdditionalNotes: aiAdditionalNotes ?? this.aiAdditionalNotes,
+      aiAllowDiaryReference:
+          aiAllowDiaryReference ?? this.aiAllowDiaryReference,
       medicalInstructionsUpdatedAt:
           medicalInstructionsUpdatedAt ?? this.medicalInstructionsUpdatedAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -113,7 +125,9 @@ class FollowUpWorkspace {
         'discussionDetails': discussionDetails,
         'aiDiscussionTopics':
             aiDiscussionTopics.map((topic) => topic.toJson()).toList(),
+        'aiDiscussionDetails': aiDiscussionDetails,
         'aiAdditionalNotes': aiAdditionalNotes,
+        'aiAllowDiaryReference': aiAllowDiaryReference,
         'medicalInstructionsUpdatedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
@@ -129,18 +143,23 @@ class FollowUpWorkspace {
               .toList() ??
           const [],
       discussionDetails: (map['discussionDetails'] ?? '').toString(),
-      aiDiscussionTopics:
-          (map['aiDiscussionTopics'] as List?)?.whereType<Map>().map((item) {
-                final m = Map<String, dynamic>.from(item);
-                return FollowUpDiscussionTopicInput(
-                  type: (m['type'] ?? '').toString(),
-                  label: (m['label'] ?? '').toString(),
-                  selected: m['selected'] == true,
-                  note: (m['note'] ?? '').toString(),
-                );
-              }).toList() ??
-              const [],
+      aiDiscussionTopics: (map['aiDiscussionTopics'] as List?)
+              ?.whereType<Map>()
+              .map((raw) => raw.cast<String, dynamic>())
+              .map(
+                (item) => FollowUpDiscussionTopicInput(
+                  type: (item['type'] ?? '').toString(),
+                  label: (item['label'] ?? '').toString(),
+                  selected: item['selected'] == true,
+                  note: (item['note'] ?? '').toString(),
+                ),
+              )
+              .where((topic) => topic.type.trim().isNotEmpty)
+              .toList() ??
+          const [],
       aiAdditionalNotes: (map['aiAdditionalNotes'] ?? '').toString(),
+      aiAllowDiaryReference: map['aiAllowDiaryReference'] == true,
+      aiDiscussionDetails: (map['aiDiscussionDetails'] ?? '').toString(),
       medicalInstructionsUpdatedAt: rawInstructionsUpdatedAt is Timestamp
           ? rawInstructionsUpdatedAt.toDate()
           : null,
@@ -208,6 +227,11 @@ class FollowUpService {
         .doc(uid)
         .collection('followUpInstructionHistory');
   }
+
+  static CollectionReference<Map<String, dynamic>> _summaryHistoryRef(
+    String uid,
+  ) =>
+      _firestore.collection('users').doc(uid).collection('followUpSummaries');
 
   static Future<FollowUpWorkspace> getWorkspace() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -288,21 +312,145 @@ class FollowUpService {
   }
 
   static Future<void> saveAiPreparation({
-    required List<FollowUpDiscussionTopicInput> topics,
+    required List<FollowUpDiscussionTopicInput> discussionTopics,
+    required String discussionDetails,
     required String additionalNotes,
+    bool? allowDiaryReference,
   }) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
-      throw StateError('儲存 AI 回診摘要準備內容前需要先登入');
-    }
+    if (uid == null) throw StateError('請先登入後再儲存回診準備。');
+    final values = <String, dynamic>{
+      'aiDiscussionTopics':
+          discussionTopics.map((topic) => topic.toJson()).toList(),
+      'aiDiscussionDetails': discussionDetails.trim(),
+      'aiAdditionalNotes': additionalNotes.trim(),
+      if (allowDiaryReference != null)
+        'aiAllowDiaryReference': allowDiaryReference,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    await HealthDataEncryptionService.setEncrypted(
+      _workspaceRef(uid),
+      values,
+    );
+  }
+
+  static Future<void> saveAiSummary(
+    FollowUpAiOutput output, {
+    String additionalNotes = '',
+  }) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) throw StateError('請先登入後再儲存 AI 回診摘要。');
     await HealthDataEncryptionService.setEncrypted(
       _workspaceRef(uid),
       {
-        'aiDiscussionTopics': topics.map((topic) => topic.toJson()).toList(),
-        'aiAdditionalNotes': additionalNotes.trim(),
+        'latestAiSummary': output.toJson(),
+        'latestAiSummaryAdditionalNotes': additionalNotes.trim(),
+        'latestAiSummaryConfirmedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       },
     );
+  }
+
+  static Future<FollowUpSummaryRecord> createFormalSummary({
+    required FollowUpAiV1Input input,
+    required FollowUpAiOutput output,
+    DateTime? appointmentDate,
+  }) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) throw StateError('請先登入後再儲存回診摘要。');
+    final reference = _summaryHistoryRef(uid).doc();
+    final now = DateTime.now();
+    final duration = input.sleep['durationHours'];
+    final durationMap = duration is Map
+        ? Map<String, dynamic>.from(duration)
+        : const <String, dynamic>{};
+    final trend = durationMap['dailyTrend'] is List
+        ? (durationMap['dailyTrend'] as List)
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList()
+        : <Map<String, dynamic>>[];
+    final sleepSummary = Map<String, dynamic>.from(input.sleep)
+      ..remove('durationHours');
+    sleepSummary['durationHours'] = Map<String, dynamic>.from(durationMap)
+      ..remove('dailyTrend');
+    final record = FollowUpSummaryRecord(
+      id: reference.id,
+      createdAt: now,
+      updatedAt: now,
+      confirmedAt: now,
+      // A formal summary may reference an appointment only when the user
+      // explicitly selected one in the preparation form. The aggregator's
+      // currentAppointmentDate is used solely to calculate the period.
+      appointmentDate: appointmentDate,
+      periodStart: input.statistics.periodStart,
+      periodEnd: input.statistics.periodEnd,
+      validRecordDays: input.statistics.validRecordDays,
+      selectedTopics: input.discussionTopics
+          .where((topic) => topic.selected)
+          .map((topic) => {'type': topic.type, 'label': topic.label})
+          .toList(),
+      discussionDetails: input.discussionDetails,
+      additionalNotes: input.additionalNotes,
+      aiOutput: output,
+      sleepSummary: sleepSummary,
+      sleepTrend: trend,
+      medicationTimeline: input.medicationTimeline,
+      highFrequencySymptoms: input.highFrequencySymptoms,
+      bodyMeasurements: input.bodyMeasurements,
+    );
+    final values = record.toMap()
+      ..['createdAt'] = FieldValue.serverTimestamp()
+      ..['updatedAt'] = FieldValue.serverTimestamp();
+    await HealthDataEncryptionService.setEncrypted(
+      reference,
+      values,
+      merge: false,
+    );
+    return record;
+  }
+
+  static Future<List<FollowUpSummaryRecord>> listFormalSummaries() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return const [];
+    final documents = await HealthDataEncryptionService.getEncrypted(
+      _summaryHistoryRef(uid).orderBy('createdAt', descending: true),
+    );
+    return documents
+        .map((doc) => FollowUpSummaryRecord.fromMap(doc.id, doc.data))
+        .toList();
+  }
+
+  static Future<FollowUpSummaryRecord?> getFormalSummary(String id) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return null;
+    final snapshot = await _summaryHistoryRef(uid).doc(id).get();
+    if (!snapshot.exists || snapshot.data() == null) return null;
+    final data =
+        await HealthDataEncryptionService.decryptData(snapshot.data()!);
+    return FollowUpSummaryRecord.fromMap(snapshot.id, data);
+  }
+
+  static Future<FollowUpSummaryRecord> updateFormalSummary(
+    FollowUpSummaryRecord record,
+  ) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) throw StateError('請先登入後再更新回診摘要。');
+    final updated = record.copyWith(updatedAt: DateTime.now());
+    final values = updated.toMap()
+      ..remove('createdAt')
+      ..['updatedAt'] = FieldValue.serverTimestamp();
+    await HealthDataEncryptionService.setEncrypted(
+      _summaryHistoryRef(uid).doc(record.id),
+      values,
+    );
+    return updated;
+  }
+
+  static Future<void> deleteFormalSummary(String id) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) throw StateError('請先登入後再刪除回診摘要。');
+    await _summaryHistoryRef(uid).doc(id).delete();
   }
 
   static Future<List<FollowUpInstructionHistoryItem>>
@@ -377,6 +525,11 @@ class FollowUpService {
     if (uid == null) return;
 
     final appointments = await getAppointments();
+    final alreadyExists = appointments.any((existing) =>
+        _sameDay(existing.date, appointment.date) &&
+        existing.label.trim() == appointment.label.trim() &&
+        (existing.note ?? '').trim() == (appointment.note ?? '').trim());
+    if (alreadyExists) return;
     appointments.add(appointment);
     await _saveAppointments(uid, appointments);
   }
@@ -425,57 +578,6 @@ class FollowUpService {
     }
   }
 
-  static CollectionReference<Map<String, dynamic>> _summariesRef(String uid) {
-    return _firestore
-        .collection('users')
-        .doc(uid)
-        .collection('followUpSummaries');
-  }
-
-  /// 取得所有已確認的回診摘要（依確認時間由新到舊排序）。
-  static Future<List<FollowUpSummaryRecord>> listFormalSummaries() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return const [];
-
-    try {
-      final documents =
-          await HealthDataEncryptionService.getEncrypted(_summariesRef(uid));
-      final summaries = documents
-          .map(
-            (doc) => FollowUpSummaryRecord.fromMap(doc.id, doc.data),
-          )
-          .toList();
-      summaries.sort((a, b) => b.confirmedAt.compareTo(a.confirmedAt));
-      return summaries;
-    } catch (e) {
-      debugPrint('❌ 讀取歷次回診摘要失敗：$e');
-      return const [];
-    }
-  }
-
-  /// 建立或更新一筆已確認的回診摘要，並回傳更新後的摘要。
-  static Future<FollowUpSummaryRecord> updateFormalSummary(
-    FollowUpSummaryRecord record,
-  ) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid != null) {
-      await HealthDataEncryptionService.setEncrypted(
-        _summariesRef(uid).doc(record.id),
-        record.toMap(),
-      );
-    }
-    return record;
-  }
-
-  /// 刪除一筆已確認的回診摘要。
-  static Future<void> deleteFormalSummary(String id) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-
-    try {
-      await _summariesRef(uid).doc(id).delete();
-    } catch (e) {
-      debugPrint('❌ 刪除回診摘要失敗：$e');
-    }
-  }
+  static bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
 }
