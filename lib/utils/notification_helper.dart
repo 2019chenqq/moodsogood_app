@@ -6,7 +6,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../app_globals.dart';
 import '../pages/hub_pages.dart';
 import '../meds/medication_checkin_page.dart';
-import '../pages/follow_up_summary_page.dart';
+import '../follow_up/pages/follow_up_summary_page.dart';
 
 const _channelId = 'heartshine_general';
 const _channelName = '心域提醒';

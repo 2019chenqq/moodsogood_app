@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../constants/healing_design_system.dart';
+import '../../constants/healing_design_system.dart';
 import '../models/follow_up_ai_summary.dart';
 import '../services/follow_up_ai_service.dart';
 import '../widgets/follow_up_sleep_trend_card.dart';

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../constants/healing_design_system.dart';
+import '../../constants/healing_design_system.dart';
 import '../models/follow_up_ai_summary.dart';
 import '../services/follow_up_service.dart';
-import '../services/follow_up_summary_share_service.dart';
+import '../qr/follow_up_summary_share_service.dart';
 import 'follow_up_summary_access_guard.dart';
 import 'follow_up_summary_detail_page.dart';
 

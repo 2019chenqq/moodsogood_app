@@ -28,7 +28,7 @@ import 'daily/daily_record_repository.dart';
 import 'app_lock_screen.dart';
 import 'utils/app_lock_session_service.dart';
 import 'providers/pro_provider.dart';
-import 'PDF/pdf_export_provider.dart'; // 引入 PDFExportProvider
+import 'pdf/pdf_export_provider.dart'; // 引入 PDFExportProvider
 import 'UI/fortune_cookie_screen.dart';
 import 'community/providers/rooms_provider.dart';
 import 'community/community_home_page.dart';

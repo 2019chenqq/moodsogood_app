@@ -3,14 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../ai/ai_callable_diagnostics.dart';
-import '../constants/healing_design_system.dart';
-import '../diary/diary_repository.dart';
+import '../../ai/ai_callable_diagnostics.dart';
+import '../../constants/healing_design_system.dart';
+import '../../diary/diary_repository.dart';
 import '../models/follow_up_ai_summary.dart';
 import '../services/follow_up_ai_data_aggregator.dart';
 import '../services/follow_up_ai_service.dart';
 import '../services/follow_up_service.dart';
-import '../analytics_service.dart';
+import '../../analytics_service.dart';
 import 'follow_up_ai_preview_page.dart';
 import 'follow_up_summary_detail_page.dart';
 

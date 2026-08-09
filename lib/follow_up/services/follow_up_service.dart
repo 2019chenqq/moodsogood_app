@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-import '../utils/health_data_encryption_service.dart';
+import '../../utils/health_data_encryption_service.dart';
 import '../models/follow_up_ai_summary.dart';
 
 const _legacyDiscussionTopicAppointmentLabels = <String>{

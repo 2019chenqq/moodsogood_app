@@ -186,8 +186,9 @@ class FollowUpSummaryPdfService {
     final metrics = items
         .map((item) {
           final parsed = item.split('：');
-          if (parsed.length < 2)
+          if (parsed.length < 2) {
             return FollowUpSleepMetric(label: '', value: item);
+          }
           final label = parsed.first.trim();
           final value = parsed.sublist(1).join('：').trim();
           return FollowUpSleepMetric(label: label, value: value);

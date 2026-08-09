@@ -4,11 +4,11 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import '../models/daily_record.dart';
-import '../PDF/pdf_export_provider.dart';
-import '../PDF/export_config.dart';
-import '../PDF/export_metrics_calculator.dart';
-import '../PDF/summary_rule_engine.dart';
-import '../PDF/export_metrics.dart';
+import '../pdf/pdf_export_provider.dart';
+import '../pdf/export_config.dart';
+import '../pdf/export_metrics_calculator.dart';
+import '../pdf/summary_rule_engine.dart';
+import '../pdf/export_metrics.dart';
 import '../analytics_service.dart';
 
 /// ============================================================

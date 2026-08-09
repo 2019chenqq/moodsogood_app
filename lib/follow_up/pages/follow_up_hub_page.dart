@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 
-import '../analytics_service.dart';
-import '../constants/healing_design_system.dart';
+import '../../analytics_service.dart';
+import '../../constants/healing_design_system.dart';
 import '../models/follow_up_ai_summary.dart';
-import 'trend_review_hub_page.dart';
-import '../meds/record_adjustment_page.dart';
+import '../../pages/trend_review_hub_page.dart';
+import '../../meds/record_adjustment_page.dart';
 import '../services/follow_up_service.dart';
 import '../services/follow_up_reminder_service.dart';
-import '../widgets/main_drawer.dart';
+import '../../widgets/main_drawer.dart';
 import 'follow_up_summary_page.dart';
 import 'follow_up_summary_history_page.dart';
 
