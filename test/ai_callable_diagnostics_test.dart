@@ -11,6 +11,7 @@ void main() {
       aiCallableErrorMessage(
         error('not-found'),
         functionName: AiCallableEndpoints.diaryDraft,
+        isSignedIn: true,
       ),
       contains('後端不存在'),
     );
@@ -18,6 +19,7 @@ void main() {
       aiCallableErrorMessage(
         error('unavailable'),
         functionName: AiCallableEndpoints.diaryDraft,
+        isSignedIn: true,
       ),
       contains('網路'),
     );
@@ -25,13 +27,15 @@ void main() {
       aiCallableErrorMessage(
         error('permission-denied'),
         functionName: AiCallableEndpoints.diaryDraft,
+        isSignedIn: true,
       ),
-      contains('App Check'),
+      contains('帳號權限'),
     );
     expect(
       aiCallableErrorMessage(
         error('deadline-exceeded'),
         functionName: AiCallableEndpoints.diaryDraft,
+        isSignedIn: true,
       ),
       contains('逾時'),
     );
@@ -42,6 +46,7 @@ void main() {
       aiCallableErrorMessage(
         error('data-loss'),
         functionName: AiCallableEndpoints.chat,
+        isSignedIn: true,
       ),
       contains('data-loss'),
     );
