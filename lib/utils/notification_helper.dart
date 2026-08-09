@@ -5,7 +5,7 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../app_globals.dart';
-import '../pages/hub_pages.dart';
+import '../daily/daily_check_in_page.dart';
 import '../meds/medication_checkin_page.dart';
 import '../meds/medication_local_db.dart';
 import '../meds/medication_subjective_reminder_payload.dart';
@@ -360,8 +360,9 @@ class NotificationHelper {
       await init();
       final hasPermission = await _ensurePermissions();
       if (!hasPermission) return false;
-      final android = _notificationsPlugin.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
+      final android =
+          _notificationsPlugin.resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
       if (android != null && !_exactAlarmPermissionChecked) {
         _exactAlarmPermissionChecked = true;
         _exactAlarmAllowed =
@@ -517,7 +518,7 @@ class NotificationHelper {
     if (navigator == null) return false;
 
     navigator.pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const RecordHubPage()),
+      MaterialPageRoute(builder: (_) => const DailyCheckInPage()),
       (_) => false,
     );
     return true;

@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:tutorial_coach_mark/tutorial_coach_mark.dart';
 import '../widgets/main_drawer.dart';
 import '../ai/innera_ai_home_page.dart';
-import '../daily/daily_record_screen.dart';
 import '../daily/daily_check_in_page.dart';
 import '../daily/daily_record_history.dart';
 import '../daily/quick_record_home_card.dart';
+import '../daily/body_measurement_record_page.dart';
+import '../daily/sleep_record_page.dart';
 import '../daily/weekly_record_repository.dart';
 import '../daily/weekly_review_page.dart';
 import '../models/weekly_record.dart';
@@ -16,7 +16,6 @@ import '../meds/medication_checkin_page.dart';
 import '../community/community_home_page.dart';
 import '../analytics_service.dart';
 import '../constants/healing_design_system.dart';
-import '../tutorial/app_tutorial_service.dart';
 import '../settings_page.dart';
 import 'feedback_page.dart';
 import '../follow_up/pages/follow_up_hub_page.dart';
@@ -141,21 +140,12 @@ class RecordHubPage extends StatefulWidget {
 }
 
 class _RecordHubPageState extends State<RecordHubPage> {
-  final GlobalKey _dailyRecordCardKey = GlobalKey();
   Future<WeeklyRecord?>? _weeklyRecordFuture;
-  TutorialCoachMark? _homeTutorial;
-  bool _didCheckTutorial = false;
-  bool _isShowingHomeTutorial = false;
-  bool _isContinuingTutorial = false;
-  bool _isDisposingTutorial = false;
 
   @override
   void initState() {
     super.initState();
     _refreshWeeklyRecord();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _maybeShowDailyRecordTutorial();
-    });
   }
 
   void _push(BuildContext context, Widget page) {
@@ -201,75 +191,6 @@ class _RecordHubPageState extends State<RecordHubPage> {
   }
 
   @override
-  void dispose() {
-    _isDisposingTutorial = true;
-    _homeTutorial?.finish();
-    _homeTutorial = null;
-    super.dispose();
-  }
-
-  Future<void> _maybeShowDailyRecordTutorial() async {
-    if (_didCheckTutorial || _isShowingHomeTutorial) return;
-    _didCheckTutorial = true;
-
-    final shouldShow = await AppTutorialService.shouldShowDailyRecordTutorial();
-    if (!mounted || !shouldShow) return;
-    if (_dailyRecordCardKey.currentContext == null) return;
-
-    _isShowingHomeTutorial = true;
-    _homeTutorial = TutorialCoachMark(
-      targets: [
-        TargetFocus(
-          identify: 'daily_record_entry',
-          keyTarget: _dailyRecordCardKey,
-          shape: ShapeLightFocus.RRect,
-          radius: 18,
-          contents: [
-            TargetContent(
-              align: ContentAlign.bottom,
-              builder: (context, controller) => _TutorialBubble(
-                text: '從這裡開始填寫今天的情緒、症狀與睡眠狀態。',
-                primaryText: '下一步',
-                onPrimary: _goToDailyRecordFromTutorial,
-                onSkip: controller.skip,
-              ),
-            ),
-          ],
-        ),
-      ],
-      colorShadow: Colors.black,
-      opacityShadow: 0.48,
-      paddingFocus: 8,
-      textSkip: '跳過',
-      onClickTarget: (_) => _goToDailyRecordFromTutorial(),
-      onFinish: _goToDailyRecordFromTutorial,
-      onSkip: () {
-        _isShowingHomeTutorial = false;
-        _homeTutorial = null;
-        return true;
-      },
-    );
-    _homeTutorial?.show(context: context);
-  }
-
-  Future<void> _goToDailyRecordFromTutorial() async {
-    if (!mounted || _isContinuingTutorial || _isDisposingTutorial) return;
-    _isContinuingTutorial = true;
-    _isShowingHomeTutorial = false;
-    _homeTutorial?.finish();
-    _homeTutorial = null;
-
-    await Future<void>.delayed(const Duration(milliseconds: 120));
-    if (!mounted) return;
-
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const DailyRecordScreen(startTutorial: true),
-      ),
-    );
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
       drawer: const MainDrawer(),
@@ -308,20 +229,27 @@ class _RecordHubPageState extends State<RecordHubPage> {
             ),
             const SizedBox(height: 12),
             _RecordEntryCard(
-              icon: Icons.book_outlined,
-              title: '日記',
-              subtitle: '獨立日記頁與歷史日記',
-              color: const Color.fromARGB(255, 255, 195, 113),
-              onTap: () => _push(context, const DiaryHomePage()),
+              icon: Icons.bedtime_outlined,
+              title: '睡眠紀錄',
+              subtitle: '記錄睡眠時間、品質與睡眠狀況',
+              color: const Color(0xFF7986CB),
+              onTap: () => _push(context, const SleepRecordPage()),
             ),
             const SizedBox(height: 12),
             _RecordEntryCard(
-              key: _dailyRecordCardKey,
-              icon: Icons.edit_note,
-              title: '每日狀態紀錄',
-              subtitle: '開始填寫今日紀錄',
-              color: const Color.fromARGB(255, 129, 199, 132),
-              onTap: () => _push(context, const DailyRecordScreen()),
+              icon: Icons.monitor_weight_outlined,
+              title: '身體測量',
+              subtitle: '記錄體重、體脂與腰圍',
+              color: const Color(0xFF4DB6AC),
+              onTap: () => _push(context, const BodyMeasurementRecordPage()),
+            ),
+            const SizedBox(height: 12),
+            _RecordEntryCard(
+              icon: Icons.book_outlined,
+              title: '日記',
+              subtitle: '寫下今天的感受與生活片段',
+              color: const Color.fromARGB(255, 255, 195, 113),
+              onTap: () => _push(context, const DiaryHomePage()),
             ),
             const SizedBox(height: 12),
             FutureBuilder<WeeklyRecord?>(
@@ -485,7 +413,6 @@ class _PlaceholderPage extends StatelessWidget {
 
 class _RecordEntryCard extends StatefulWidget {
   const _RecordEntryCard({
-    super.key,
     required this.icon,
     required this.title,
     required this.subtitle,
@@ -676,70 +603,6 @@ class _RecordEntryCardState extends State<_RecordEntryCard>
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _TutorialBubble extends StatelessWidget {
-  const _TutorialBubble({
-    required this.text,
-    required this.primaryText,
-    required this.onPrimary,
-    required this.onSkip,
-  });
-
-  final String text;
-  final String primaryText;
-  final VoidCallback onPrimary;
-  final VoidCallback onSkip;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.symmetric(horizontal: 18),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FCFF),
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.12),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            text,
-            style: const TextStyle(
-              color: Color(0xFF2F4858),
-              fontSize: 16,
-              height: 1.55,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton(
-                onPressed: onSkip,
-                child: const Text('跳過'),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: onPrimary,
-                child: Text(primaryText),
-              ),
-            ],
-          ),
-        ],
       ),
     );
   }

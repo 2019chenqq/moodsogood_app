@@ -39,6 +39,34 @@ void main() {
     expect(output.usedFallback, isFalse);
   });
 
+  test(
+    'summary parser tolerates non-array medicationSubjectiveSummaries '
+    'instead of forcing a fallback',
+    () {
+      const reply = '''```json\n{
+  "keyChanges":["變化一","變化二","變化三"],
+  "discussionPriorities":["睡眠"],
+  "timelineRelations":[],
+  "userSharedNotes":[],
+  "dataLimitations":[],
+  "medicationSubjectiveSummaries":{"date":"2026-08-01","note":"wrong type"}
+}\n```''';
+
+      final output = FollowUpAiService.parseSummaryReplyForTesting(reply);
+      expect(output, isNotNull);
+      expect(output!.keyChanges, hasLength(3));
+      expect(output.usedFallback, isFalse);
+      // The malformed optional field should degrade to an empty list, not
+      // collapse the whole summary into null.
+      expect(
+        output.timelineRelations.where(
+          (item) => item.startsWith('__med_subjective__:'),
+        ),
+        isEmpty,
+      );
+    },
+  );
+
   test('fallback never copies malformed model text into key changes', () {
     final output = FollowUpAiService.fallbackSummaryForTesting(_input());
 

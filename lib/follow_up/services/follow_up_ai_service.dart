@@ -54,10 +54,10 @@ JSON 另包含："medicationSubjectiveSummaries":[]。
     try {
       final response = await _sendSummary(
         input,
-      '''你正在產生可供回診使用的資料摘要。補問與回答如下：${jsonEncode(followUpAnswers)}
+        '''你正在產生可供回診使用的資料摘要。補問與回答如下：${jsonEncode(followUpAnswers)}
 只能描述資料支持的觀察與時間關聯；不得診斷躁期或鬱期、不得斷言藥物因果、不得建議自行停藥或調藥。睡眠、藥物時間軸、症狀及其他基本紀錄只能放在 keyChanges 或 timelineRelations，不得放入 userSharedNotes。discussionPriorities 整理已選主題、使用者的 discussionDetails 與適合優先詢問醫師的事項。userSharedNotes 只可忠實保留 additionalNotes，以及補問中明確屬於自由補充的使用者原文，不得擴寫、推測或放入症狀、睡眠、情緒、藥物、身體數據。主要變化使用簡短的「欄位：數值」格式；睡眠時數分成「睡眠平均時間：X小時」、「最低：X小時」、「最高：X小時」，不要把期間、趨勢、最低與最高塞在同一句。keyChanges 必須 3～5 項。請將下列格式的摘要 JSON 序列化後放在 reply 字串中，不要在 reply 加入 Markdown 或其他說明：
 {"keyChanges":["主要變化一（附資料）","主要變化二（附資料）","主要變化三（附資料）"],"discussionPriorities":[],"timelineRelations":[],"userSharedNotes":[],"dataLimitations":[]}''',
-    );
+      );
       final json = _tryReplyJson(response.reply);
       if (json != null) {
         final parsed = _summaryFromJson(json);
@@ -171,8 +171,12 @@ JSON 另包含："medicationSubjectiveSummaries":[]。
   static FollowUpAiOutput? _summaryFromJson(Map<String, dynamic> json) {
     List<String>? list(String key, {bool optional = false}) {
       final value = json[key];
-      if (value == null && optional) return const [];
-      if (value is! List) return null;
+      if (value == null) return optional ? const [] : null;
+      // An optional field the model emits with the wrong type (e.g. an object
+      // instead of a list) must not discard an otherwise-valid summary. Treat
+      // it as empty so the remaining structured fields still render instead of
+      // forcing the whole reply into the "AI 整理暫時未完成" fallback.
+      if (value is! List) return optional ? const [] : null;
       return value
           .whereType<String>()
           .map((item) => item.trim())
