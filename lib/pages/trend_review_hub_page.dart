@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../constants/healing_design_system.dart';
+import '../daily/body_measurement_trend_page.dart';
 import '../daily/daily_record_history.dart';
 import '../meds/med_symptom_compare_page.dart';
 
@@ -56,6 +57,14 @@ class TrendReviewHubPage extends StatelessWidget {
               context,
               const DailyRecordHistory(initialTab: 2),
             ),
+          ),
+          const SizedBox(height: 12),
+          _TrendEntryCard(
+            icon: Icons.monitor_weight_outlined,
+            title: '身體測量趨勢',
+            subtitle: '查看體重、體脂率與腰圍的區間變化',
+            color: const Color(0xFF4DB6AC),
+            onTap: () => _push(context, const BodyMeasurementTrendPage()),
           ),
           const SizedBox(height: 12),
           _TrendEntryCard(

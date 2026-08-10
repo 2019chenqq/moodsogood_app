@@ -296,6 +296,7 @@ class FollowUpAiV1Input {
     required this.bodyMeasurements,
     required this.currentMedications,
     required this.medicationTimeline,
+    this.medicationSubjectiveReports = const [],
     required this.dataLimitations,
     this.diaryContext = const [],
     this.schemaVersion = 1,
@@ -312,6 +313,7 @@ class FollowUpAiV1Input {
   final List<Map<String, dynamic>> bodyMeasurements;
   final List<Map<String, dynamic>> currentMedications;
   final List<Map<String, dynamic>> medicationTimeline;
+  final List<Map<String, dynamic>> medicationSubjectiveReports;
   final List<String> dataLimitations;
   final List<Map<String, dynamic>> diaryContext;
 
@@ -332,6 +334,7 @@ class FollowUpAiV1Input {
         bodyMeasurements: bodyMeasurements,
         currentMedications: currentMedications,
         medicationTimeline: medicationTimeline,
+        medicationSubjectiveReports: medicationSubjectiveReports,
         dataLimitations: dataLimitations,
         diaryContext: diaryContext ?? this.diaryContext,
       );
@@ -349,6 +352,7 @@ class FollowUpAiV1Input {
         'bodyMeasurements': bodyMeasurements,
         'currentMedications': currentMedications,
         'medicationTimeline': medicationTimeline,
+        'medicationSubjectiveReports': medicationSubjectiveReports,
         'dataLimitations': dataLimitations,
         if (diaryContext.isNotEmpty) 'diaryContext': diaryContext,
       };
@@ -390,6 +394,7 @@ class FollowUpAiOutput {
     required this.timelineRelations,
     required this.discussionPriorities,
     this.discussionItems = const [],
+    this.medicationSubjectiveSummaries = const [],
     this.followUpResponses = const [],
     this.userSharedNotes = const [],
     this.userReportedConcerns = const [],
@@ -403,6 +408,7 @@ class FollowUpAiOutput {
   final List<String> timelineRelations;
   final List<String> discussionPriorities;
   final List<String> discussionItems;
+  final List<String> medicationSubjectiveSummaries;
 
   /// App-owned question/answer pairs from the pre-summary clarification step.
   /// These are preserved verbatim instead of relying on the model to repeat
@@ -424,6 +430,7 @@ class FollowUpAiOutput {
         'timelineRelations': timelineRelations,
         'discussionPriorities': discussionPriorities,
         'discussionItems': discussionItems,
+        'medicationSubjectiveSummaries': medicationSubjectiveSummaries,
         'followUpResponses': followUpResponses,
         'userSharedNotes': userSharedNotes,
         'userReportedConcerns': userReportedConcerns,
@@ -444,6 +451,8 @@ class FollowUpAiOutput {
       timelineRelations: _strings(json['timelineRelations']),
       discussionPriorities: _strings(json['discussionPriorities']),
       discussionItems: _strings(json['discussionItems']),
+      medicationSubjectiveSummaries:
+          _strings(json['medicationSubjectiveSummaries']),
       followUpResponses: _questionAnswers(json['followUpResponses']),
       userSharedNotes: _strings(json['userSharedNotes']),
       userReportedConcerns: _strings(json['userReportedConcerns']),
@@ -645,6 +654,8 @@ FollowUpAiOutput _safeAiOutput(dynamic value, DateTime fallbackDate) {
     userSharedNotes: _strings(map['userSharedNotes']),
     userReportedConcerns: _strings(map['userReportedConcerns']),
     dataLimitations: _strings(map['dataLimitations']),
+    medicationSubjectiveSummaries:
+        _strings(map['medicationSubjectiveSummaries']),
     generatedAt: _dateTime(map['generatedAt']) ?? fallbackDate,
     usedFallback: map['usedFallback'] == true,
   );

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../ai/innera_ai_message.dart';
 import '../../ai/innera_ai_mode.dart';
 import '../../ai/innera_ai_service.dart';
+import '../../meds/medication_subjective_summary_builder.dart';
 import '../models/follow_up_ai_summary.dart';
 import 'follow_up_question_parser.dart';
 
@@ -272,6 +273,8 @@ class FollowUpAiService {
       discussionPriorities: const [],
       discussionItems: discussionItems,
       timelineRelations: const [],
+      medicationSubjectiveSummaries:
+          _strings(json['medicationSubjectiveSummaries']),
       userSharedNotes: sharedNotes,
       diaryHighlights: diaryHighlights,
       dataLimitations: limitations,
@@ -372,7 +375,14 @@ class FollowUpAiService {
       keyChanges: keyChanges.take(5).toList(),
       discussionPriorities: const [],
       discussionItems: discussionItems,
-      timelineRelations: const [],
+      timelineRelations:
+          MedicationSubjectiveSummaryBuilder.fallbackSummaries(
+        input.medicationSubjectiveReports,
+      ),
+      medicationSubjectiveSummaries:
+          MedicationSubjectiveSummaryBuilder.fallbackSummaries(
+        input.medicationSubjectiveReports,
+      ),
       followUpResponses: _followUpResponses(followUpAnswers),
       userSharedNotes: sharedNotes,
       dataLimitations: limitations,
@@ -418,6 +428,10 @@ class FollowUpAiService {
     FollowUpAiV1Input input, {
     Map<String, String> followUpAnswers = const {},
   }) {
+    final medicationSubjectiveSummaries = _resolvedMedicationSubjectiveSummaries(
+      output.medicationSubjectiveSummaries,
+      input.medicationSubjectiveReports,
+    );
     final userSharedNotes = <String>{
       if (input.additionalNotes.trim().isNotEmpty) input.additionalNotes.trim(),
     }.toList();
@@ -465,15 +479,40 @@ class FollowUpAiService {
                 input.discussionDetails,
               ...followUpAnswers.values.map((answer) => answer.trim()),
             ]),
+      medicationSubjectiveSummaries: medicationSubjectiveSummaries,
       followUpResponses: _followUpResponses(followUpAnswers),
-      timelineRelations: const [],
+      timelineRelations: medicationSubjectiveSummaries,
       // This section is reserved for the user's own preparation text; recorded
       // symptoms must not be relabeled as an actively shared concern.
       userSharedNotes: userSharedNotes.toList(),
       diaryHighlights: output.diaryHighlights,
       dataLimitations: output.dataLimitations,
       generatedAt: output.generatedAt,
-      usedFallback: output.usedFallback,
+      usedFallback: output.usedFallback ||
+          (output.medicationSubjectiveSummaries.isNotEmpty &&
+              medicationSubjectiveSummaries.length !=
+                  output.medicationSubjectiveSummaries.length),
+    );
+  }
+
+  static List<String> _resolvedMedicationSubjectiveSummaries(
+    Iterable<String> aiSummaries,
+    Iterable<Map<String, dynamic>> structuredReports,
+  ) {
+    final safeSummaries = aiSummaries
+        .map((item) => item.trim())
+        .where((item) =>
+            item.isNotEmpty &&
+            MedicationSubjectiveSummaryBuilder.isSafeAiSummary(item))
+        .toList(growable: false);
+    final aiCount = aiSummaries
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .length;
+    if (aiCount == 0) return const [];
+    if (safeSummaries.length == aiCount) return safeSummaries;
+    return MedicationSubjectiveSummaryBuilder.fallbackSummaries(
+      structuredReports,
     );
   }
 

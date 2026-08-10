@@ -262,34 +262,53 @@ class _BodyMeasurementPageState extends State<BodyMeasurementPage> {
       padding: const EdgeInsets.all(HealingDesignSystem.paddingL),
       children: [
         if (_legacyMeasurement?.hasData == true) ...[
-          Text('舊版每日測量', style: HealingDesignSystem.titleMedium),
-          const SizedBox(height: 8),
-          Card(
+          Text(
+            '舊版每日測量',
+            style: HealingDesignSystem.titleMedium.copyWith(
+              color: HealingDesignSystem.adaptivePrimaryText(context),
+            ),
+          ),
+          const SizedBox(height: HealingDesignSystem.paddingS),
+          Container(
+            decoration: HealingDesignSystem.adaptiveCardDecoration(context),
             child: ListTile(
               leading: const Icon(Icons.history),
               title: Text(_legacySummary(_legacyMeasurement!)),
               subtitle: const Text('舊 DailyRecord 日資料（僅供讀取）'),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: HealingDesignSystem.paddingM),
         ],
         if (_records.isNotEmpty) ...[
-          Text('當日測量', style: HealingDesignSystem.titleMedium),
-          const SizedBox(height: 8),
+          Text(
+            '當日測量',
+            style: HealingDesignSystem.titleMedium.copyWith(
+              color: HealingDesignSystem.adaptivePrimaryText(context),
+            ),
+          ),
+          const SizedBox(height: HealingDesignSystem.paddingS),
           for (final record in _records)
-            Card(
-              child: ListTile(
-                title: Text(_measurementSummary(record)),
-                subtitle: Text(_measurementSubtitle(record)),
-                onTap: () => _editRecord(record),
-                trailing: IconButton(
-                  tooltip: '刪除',
-                  icon: const Icon(Icons.delete_outline),
-                  onPressed: () => _deleteRecord(record),
+            Padding(
+              padding:
+                  const EdgeInsets.only(bottom: HealingDesignSystem.paddingS),
+              child: Container(
+                decoration: HealingDesignSystem.adaptiveCardDecoration(
+                  context,
+                  radius: HealingDesignSystem.radiusM,
+                ),
+                child: ListTile(
+                  title: Text(_measurementSummary(record)),
+                  subtitle: Text(_measurementSubtitle(record)),
+                  onTap: () => _editRecord(record),
+                  trailing: IconButton(
+                    tooltip: '刪除',
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () => _deleteRecord(record),
+                  ),
                 ),
               ),
             ),
-          const SizedBox(height: 12),
+          const SizedBox(height: HealingDesignSystem.paddingM),
         ],
         Container(
           decoration: HealingDesignSystem.adaptiveCardDecoration(context),
@@ -308,21 +327,13 @@ class _BodyMeasurementPageState extends State<BodyMeasurementPage> {
                   const EdgeInsets.all(HealingDesignSystem.paddingL),
               children: [
                 _numberField(_weightController, '體重', 'kg', 20, 300),
-                const SizedBox(height: 12),
+                const SizedBox(height: HealingDesignSystem.paddingM),
                 _numberField(_bodyFatController, '體脂率', '%', 1, 70),
-                const SizedBox(height: 12),
+                const SizedBox(height: HealingDesignSystem.paddingM),
                 _numberField(_waistController, '腰圍（選填）', 'cm', 30, 250),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<MeasurementTiming?>(
+                const SizedBox(height: HealingDesignSystem.paddingM),
+                _TimingPicker(
                   value: _timing,
-                  decoration: const InputDecoration(labelText: '測量時間（選填）'),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('尚未填寫')),
-                    ...MeasurementTiming.values.map((value) => DropdownMenuItem(
-                          value: value,
-                          child: Text(value.displayName),
-                        )),
-                  ],
                   onChanged: (value) {
                     setState(() {
                       _timing = value;
@@ -334,10 +345,11 @@ class _BodyMeasurementPageState extends State<BodyMeasurementPage> {
                   },
                 ),
                 if (_timing == MeasurementTiming.other) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: HealingDesignSystem.paddingM),
                   TextFormField(
                     controller: _customTimeController,
-                    decoration: const InputDecoration(
+                    decoration: _fieldDecoration(
+                      context,
                       labelText: '自訂測量時間',
                       hintText: '例如：運動後、下午三點',
                     ),
@@ -347,13 +359,13 @@ class _BodyMeasurementPageState extends State<BodyMeasurementPage> {
                     onChanged: (_) => _emit(),
                   ),
                 ],
-                const SizedBox(height: 12),
+                const SizedBox(height: HealingDesignSystem.paddingM),
                 TextField(
                   controller: _noteController,
-                  decoration: const InputDecoration(labelText: '備註（選填）'),
+                  decoration: _fieldDecoration(context, labelText: '備註（選填）'),
                   maxLines: 2,
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: HealingDesignSystem.paddingM),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
@@ -426,10 +438,111 @@ class _BodyMeasurementPageState extends State<BodyMeasurementPage> {
       inputFormatters: [
         const OneDecimalTextInputFormatter(),
       ],
-      decoration: InputDecoration(labelText: label, suffixText: unit),
+      decoration: _fieldDecoration(context, labelText: label, suffixText: unit),
       autovalidateMode: AutovalidateMode.onUserInteraction,
       validator: (value) => _validate(value, min, max, unit),
       onChanged: (_) => _emit(),
+    );
+  }
+
+  InputDecoration _fieldDecoration(
+    BuildContext context, {
+    required String labelText,
+    String? hintText,
+    String? suffixText,
+  }) {
+    return InputDecoration(
+      labelText: labelText,
+      hintText: hintText,
+      suffixText: suffixText,
+      filled: true,
+      fillColor: HealingDesignSystem.adaptiveFill(context),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+        borderSide: BorderSide(
+          color: HealingDesignSystem.adaptiveCardBorder(context),
+        ),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+        borderSide: BorderSide(
+          color: HealingDesignSystem.adaptiveCardBorder(context),
+        ),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+        borderSide: const BorderSide(color: HealingDesignSystem.primaryBlue),
+      ),
+    );
+  }
+}
+
+class _TimingPicker extends StatelessWidget {
+  const _TimingPicker({
+    required this.value,
+    required this.onChanged,
+  });
+
+  final MeasurementTiming? value;
+  final ValueChanged<MeasurementTiming?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final options = <MeasurementTiming?>[null, ...MeasurementTiming.values];
+    return InputDecorator(
+      decoration: InputDecoration(
+        labelText: '測量時間（選填）',
+        filled: true,
+        fillColor: HealingDesignSystem.adaptiveFill(context),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+          borderSide: BorderSide(
+            color: HealingDesignSystem.adaptiveCardBorder(context),
+          ),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(HealingDesignSystem.radiusM),
+          borderSide: BorderSide(
+            color: HealingDesignSystem.adaptiveCardBorder(context),
+          ),
+        ),
+      ),
+      child: Column(
+        children: [
+          for (final option in options)
+            InkWell(
+              borderRadius: BorderRadius.circular(HealingDesignSystem.radiusS),
+              onTap: () => onChanged(option),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  vertical: HealingDesignSystem.paddingS,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      option == value
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                      color: option == value
+                          ? HealingDesignSystem.primaryBlue
+                          : HealingDesignSystem.adaptiveSecondaryText(context),
+                    ),
+                    const SizedBox(width: HealingDesignSystem.paddingM),
+                    Expanded(
+                      child: Text(
+                        option?.displayName ?? '尚未填寫',
+                        style: HealingDesignSystem.bodyMedium.copyWith(
+                          color:
+                              HealingDesignSystem.adaptivePrimaryText(context),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

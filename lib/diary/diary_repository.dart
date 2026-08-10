@@ -174,6 +174,21 @@ class DiaryRepository {
     return _decodeDocuments(docs);
   }
 
+  Future<List<DiaryEntry>> listInRange(DateTime start, DateTime end) async {
+    final normalizedStart = DateTime(start.year, start.month, start.day);
+    final normalizedEndExclusive =
+        DateTime(end.year, end.month, end.day).add(const Duration(days: 1));
+    final snapshot = await _entries
+        .orderBy('date')
+        .where(
+          'date',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(normalizedStart),
+        )
+        .where('date', isLessThan: Timestamp.fromDate(normalizedEndExclusive))
+        .get();
+    return _decodeDocuments(snapshot.docs);
+  }
+
   Future<DiaryEntry?> getById(int id) async {
     final date = _dateFromInt(id);
     return getByDate(date);

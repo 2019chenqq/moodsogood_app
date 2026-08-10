@@ -55,6 +55,7 @@ void logAiCallableFailure({
 String aiCallableErrorMessage(
   FirebaseFunctionsException error, {
   required String functionName,
+  bool? isSignedIn,
 }) {
   switch (error.code) {
     case 'not-found':

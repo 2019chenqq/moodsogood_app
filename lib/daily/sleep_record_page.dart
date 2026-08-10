@@ -1,8 +1,13 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../constants/healing_design_system.dart';
+import '../models/daily_record.dart';
 import '../models/sleep_record.dart';
+import 'daily_record_helpers.dart';
 import 'sleep_record_service.dart';
+import 'widgets/night_awakening_editor.dart';
+import 'widgets/sleep_page.dart';
 
 /// Standalone sleep entry backed only by SleepRecord.
 class SleepRecordPage extends StatefulWidget {
@@ -13,12 +18,19 @@ class SleepRecordPage extends StatefulWidget {
 }
 
 class _SleepRecordPageState extends State<SleepRecordPage> {
-  final _noteController = TextEditingController();
+  final _medicationNameController = TextEditingController();
+  final _medicationDoseController = TextEditingController();
+
   TimeOfDay? _bedTime;
   TimeOfDay? _sleepStart;
   TimeOfDay? _wakeTime;
   TimeOfDay? _activityWakeTime;
   int? _quality;
+  String _note = '';
+  final Set<SleepFlag> _flags = {};
+  final List<NightAwakeningItem> _nightAwakenings = [];
+  final List<NapItem> _naps = [];
+  bool _tookSleepMedication = false;
   bool _loading = true;
   bool _saving = false;
 
@@ -30,7 +42,8 @@ class _SleepRecordPageState extends State<SleepRecordPage> {
 
   @override
   void dispose() {
-    _noteController.dispose();
+    _medicationNameController.dispose();
+    _medicationDoseController.dispose();
     super.dispose();
   }
 
@@ -45,33 +58,64 @@ class _SleepRecordPageState extends State<SleepRecordPage> {
         userId: uid,
         date: DateTime.now(),
       );
-      if (!mounted || record == null) return;
+      if (!mounted) return;
+      if (record == null) {
+        setState(() => _loading = false);
+        return;
+      }
       setState(() {
         _bedTime = record.bedTime;
         _sleepStart = record.sleepStart;
         _wakeTime = record.wakeTime;
         _activityWakeTime = record.activityWakeTime;
         _quality = record.quality;
-        _noteController.text = record.note ?? '';
+        _flags
+          ..clear()
+          ..addAll(_parseFlags(record.sleepConditions));
+        _nightAwakenings
+          ..clear()
+          ..addAll(record.nightAwakenings);
+        _naps
+          ..clear()
+          ..addAll(record.naps);
+        _tookSleepMedication = record.sleepMedication.taken;
+        _medicationNameController.text = record.sleepMedication.name ?? '';
+        _medicationDoseController.text = record.sleepMedication.dose ?? '';
+        _note = record.note ?? '';
+        _loading = false;
       });
     } catch (error) {
       if (mounted) {
+        setState(() => _loading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('無法載入睡眠紀錄：$error')),
         );
       }
-    } finally {
-      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Iterable<SleepFlag> _parseFlags(List<String> names) sync* {
+    for (final name in names) {
+      for (final flag in SleepFlag.values) {
+        if (flag.name == name) {
+          yield flag;
+          break;
+        }
+      }
     }
   }
 
   Future<void> _pick(
     TimeOfDay? current,
-    ValueChanged<TimeOfDay> onPicked,
-  ) async {
+    ValueChanged<TimeOfDay> onPicked, {
+    String? helpText,
+  }) async {
     final value = await showTimePicker(
       context: context,
       initialTime: current ?? TimeOfDay.now(),
+      helpText: helpText,
+      confirmText: '確定',
+      cancelText: '取消',
     );
     if (value != null && mounted) setState(() => onPicked(value));
   }
@@ -91,7 +135,15 @@ class _SleepRecordPageState extends State<SleepRecordPage> {
       wakeTime: _wakeTime,
       activityWakeTime: _activityWakeTime,
       quality: _quality,
-      note: _noteController.text,
+      sleepConditions: _flags.map((flag) => flag.name).toList(),
+      nightAwakenings: List.unmodifiable(_nightAwakenings),
+      naps: List.unmodifiable(_naps),
+      sleepMedication: SleepMedication(
+        taken: _tookSleepMedication,
+        name: _tookSleepMedication ? _medicationNameController.text : null,
+        dose: _tookSleepMedication ? _medicationDoseController.text : null,
+      ),
+      note: _note,
     );
     if (!record.hasData) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -118,94 +170,169 @@ class _SleepRecordPageState extends State<SleepRecordPage> {
     }
   }
 
+  Future<void> _addNightAwakening() async {
+    final item = await showNightAwakeningEditor(context);
+    if (item != null && mounted) {
+      setState(() => _nightAwakenings.add(item));
+    }
+  }
+
+  Future<void> _editNightAwakening(int index) async {
+    final item = await showNightAwakeningEditor(
+      context,
+      initial: _nightAwakenings[index],
+    );
+    if (item != null && mounted) {
+      setState(() => _nightAwakenings[index] = item);
+    }
+  }
+
+  Future<void> _addNap() async {
+    final item = await _pickNap();
+    if (item != null && mounted) {
+      setState(() => _naps.add(item));
+    }
+  }
+
+  Future<void> _editNap(int index) async {
+    final item = await _pickNap(initial: _naps[index]);
+    if (item != null && mounted) {
+      setState(() => _naps[index] = item);
+    }
+  }
+
+  Future<NapItem?> _pickNap({NapItem? initial}) async {
+    final start = await showTimePicker(
+      context: context,
+      initialTime: initial?.start ?? TimeOfDay.now(),
+      helpText: '小睡開始時間',
+      confirmText: '確定',
+      cancelText: '取消',
+    );
+    if (start == null || !mounted) return null;
+
+    final end = await showTimePicker(
+      context: context,
+      initialTime: initial?.end ?? start,
+      helpText: '小睡結束時間',
+      confirmText: '確定',
+      cancelText: '取消',
+    );
+    if (end == null) return null;
+
+    if (start.hour == end.hour && start.minute == end.minute) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('開始與結束時間不可相同')),
+        );
+      }
+      return null;
+    }
+    return NapItem(start: start, end: end);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('睡眠紀錄')),
+      backgroundColor: HealingDesignSystem.adaptiveBackground(context),
+      appBar: AppBar(
+        title: const Text('睡眠紀錄'),
+        backgroundColor: HealingDesignSystem.adaptiveAppBarBackground(context),
+        foregroundColor: HealingDesignSystem.adaptiveAppBarForeground(context),
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(16),
+          : Column(
               children: [
-                _TimeTile(
-                  label: '上床時間',
-                  value: _bedTime,
-                  onTap: () => _pick(_bedTime, (v) => _bedTime = v),
-                ),
-                _TimeTile(
-                  label: '入睡時間',
-                  value: _sleepStart,
-                  onTap: () => _pick(_sleepStart, (v) => _sleepStart = v),
-                ),
-                _TimeTile(
-                  label: '醒來時間',
-                  value: _wakeTime,
-                  onTap: () => _pick(_wakeTime, (v) => _wakeTime = v),
-                ),
-                _TimeTile(
-                  label: '起床時間',
-                  value: _activityWakeTime,
-                  onTap: () => _pick(
-                    _activityWakeTime,
-                    (v) => _activityWakeTime = v,
+                Expanded(
+                  child: SleepPage(
+                    sleepTime: _bedTime,
+                    estimatedSleepTime: _sleepStart,
+                    wakeTime: _activityWakeTime,
+                    onPickSleepTime: () => _pick(
+                      _bedTime,
+                      (value) => _bedTime = value,
+                      helpText: '準備睡覺時間',
+                    ),
+                    onPickEstimatedSleepTime: () => _pick(
+                      _sleepStart,
+                      (value) => _sleepStart = value,
+                      helpText: '自覺入睡時間',
+                    ),
+                    onPickWakeTime: () => _pick(
+                      _activityWakeTime,
+                      (value) => _activityWakeTime = value,
+                      helpText: '離床活動時間',
+                    ),
+                    finalWakeTime: _wakeTime,
+                    onPickFinalWakeTime: () => _pick(
+                      _wakeTime,
+                      (value) => _wakeTime = value,
+                      helpText: '甦醒時間',
+                    ),
+                    nightAwakenings: _nightAwakenings,
+                    onAddNightAwakening: _addNightAwakening,
+                    onEditNightAwakening: _editNightAwakening,
+                    onDeleteNightAwakening: (index) =>
+                        setState(() => _nightAwakenings.removeAt(index)),
+                    legacyMidWakeText: '',
+                    flags: _flags,
+                    onToggleFlag: (flag) {
+                      setState(() {
+                        if (_flags.contains(flag)) {
+                          _flags.remove(flag);
+                        } else {
+                          _flags.add(flag);
+                        }
+                      });
+                    },
+                    sleepNote: _note,
+                    onChangeNote: (value) => setState(() => _note = value),
+                    sleepQuality: _quality,
+                    onPickValue: () async {},
+                    naps: _naps,
+                    onAddNap: _addNap,
+                    onEditNap: _editNap,
+                    onDeleteNap: (index) =>
+                        setState(() => _naps.removeAt(index)),
+                    tookHypnotic: _tookSleepMedication,
+                    onToggleHypnotic: (value) {
+                      setState(() {
+                        _tookSleepMedication = value;
+                        if (!value) {
+                          _medicationNameController.clear();
+                          _medicationDoseController.clear();
+                        }
+                      });
+                    },
+                    hypnoticName: _medicationNameController.text,
+                    onChangeHypnoticName: (_) => setState(() {}),
+                    hypnoticDose: _medicationDoseController.text,
+                    onChangeHypnoticDose: (_) => setState(() {}),
+                    hypnoticNameCtrl: _medicationNameController,
+                    hypnoticDoseCtrl: _medicationDoseController,
+                    onChangeSleepQuality: (value) =>
+                        setState(() => _quality = value),
                   ),
                 ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<int>(
-                  initialValue: _quality,
-                  decoration: const InputDecoration(
-                    labelText: '睡眠品質',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: [
-                    for (var value = 1; value <= 5; value++)
-                      DropdownMenuItem(
-                        value: value,
-                        child: Text('$value / 5'),
+                SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _saving ? null : _save,
+                        icon: const Icon(Icons.save_outlined),
+                        label: Text(_saving ? '儲存中…' : '儲存睡眠紀錄'),
                       ),
-                  ],
-                  onChanged: (value) => setState(() => _quality = value),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _noteController,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: '備註',
-                    border: OutlineInputBorder(),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 20),
-                FilledButton.icon(
-                  onPressed: _saving ? null : _save,
-                  icon: const Icon(Icons.save_outlined),
-                  label: Text(_saving ? '儲存中…' : '儲存睡眠紀錄'),
                 ),
               ],
             ),
-    );
-  }
-}
-
-class _TimeTile extends StatelessWidget {
-  const _TimeTile({
-    required this.label,
-    required this.value,
-    required this.onTap,
-  });
-
-  final String label;
-  final TimeOfDay? value;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(label),
-      subtitle: Text(value?.format(context) ?? '尚未填寫'),
-      trailing: const Icon(Icons.schedule),
-      onTap: onTap,
     );
   }
 }

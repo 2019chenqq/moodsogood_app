@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../constants/healing_design_system.dart';
 import '../../utils/date_helper.dart';
 import '../../models/daily_record.dart';
+import '../../widgets/emotion_slider.dart';
 import '../daily_record_helpers.dart';
 
 /// 睡眠分頁
@@ -27,6 +28,7 @@ class SleepPage extends StatelessWidget {
     required this.onChangeNote,
     required this.sleepQuality,
     required this.onPickValue,
+    this.onChangeSleepQuality,
     required this.naps,
     required this.onAddNap,
     required this.onEditNap,
@@ -63,6 +65,7 @@ class SleepPage extends StatelessWidget {
 
   final int? sleepQuality;
   final Future<void> Function() onPickValue;
+  final ValueChanged<int>? onChangeSleepQuality;
 
   final List<NapItem> naps;
   final Future<void> Function() onAddNap;
@@ -169,7 +172,7 @@ class SleepPage extends StatelessWidget {
             ),
             title: const Text('前一晚是否有吃安眠藥？'),
             value: tookHypnotic,
-            activeColor: HealingDesignSystem.primaryBlue,
+            activeThumbColor: HealingDesignSystem.primaryBlue,
             onChanged: onToggleHypnotic,
           ),
         ),
@@ -314,7 +317,7 @@ class SleepPage extends StatelessWidget {
                             selected: selected,
                             onSelected: (_) => onToggleFlag(f),
                             selectedColor: HealingDesignSystem.primaryBlue
-                                .withOpacity(0.16),
+                                .withValues(alpha: 0.16),
                             side: BorderSide(
                               color: selected
                                   ? HealingDesignSystem.primaryBlue
@@ -343,14 +346,58 @@ class SleepPage extends StatelessWidget {
           ),
         ),
         _sleepCard(
-          child: ListTile(
-            leading: const Icon(
-              Icons.star_border_rounded,
-              color: HealingDesignSystem.primaryBlue,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.star_border_rounded,
+                      color: HealingDesignSystem.primaryBlue,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '自覺睡眠品質',
+                      style: HealingDesignSystem.titleSmall.copyWith(
+                        color: HealingDesignSystem.adaptivePrimaryText(context),
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      sleepQuality == null ? '尚未評分' : '$sleepQuality / 5',
+                      style: HealingDesignSystem.bodySmall.copyWith(
+                        color:
+                            HealingDesignSystem.adaptiveSecondaryText(context),
+                      ),
+                    ),
+                  ],
+                ),
+                if (onChangeSleepQuality == null) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      onPressed: onPickValue,
+                      icon: const Icon(Icons.tune_rounded),
+                      label: const Text('選擇睡眠品質'),
+                    ),
+                  ),
+                ] else
+                  EmotionSlider(
+                    label: '睡眠品質',
+                    value: sleepQuality,
+                    onChanged: onChangeSleepQuality,
+                    leftIcon: 'assets/emotion/default.png',
+                    rightIcon: 'assets/emotion/default.png',
+                    gradientColors: const [
+                      Color(0xFF9AD0EC),
+                      Color(0xFFFFE08A),
+                    ],
+                  ),
+              ],
             ),
-            title: const Text('自覺睡眠品質'),
-            subtitle: Text(sleepQuality == null ? '—' : '$sleepQuality'),
-            onTap: onPickValue,
           ),
         ),
         _sleepCard(
@@ -366,7 +413,8 @@ class SleepPage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                TextField(
+                TextFormField(
+                  initialValue: sleepNote,
                   minLines: 1,
                   maxLines: 3,
                   style: TextStyle(

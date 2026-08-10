@@ -116,7 +116,6 @@ class FollowUpSleepTrendCard extends StatelessWidget {
                 points: points,
                 summary: summary,
                 showTotalSeries: false,
-                showPointDetails: false,
               ),
             const SizedBox(height: 12),
             Wrap(
