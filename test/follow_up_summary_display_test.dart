@@ -90,6 +90,7 @@ void main() {
         medicationAdjustments: false,
         lifeUpdates: false,
         dataLimitations: false,
+        bodyMeasurements: false,
       ),
     );
     final display = Map<String, dynamic>.from(snapshot['display'] as Map);

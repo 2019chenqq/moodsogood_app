@@ -106,13 +106,14 @@ void main() {
           ),
         ),
       ],
-      medications: const [
+      medications: [
         {
           'name': '測試藥物',
           'dose': 20,
           'unit': 'mg',
           'times': ['睡前'],
           'isActive': true,
+          'startDate': DateTime(2026, 7, 1),
         },
       ],
       adjustments: [
@@ -154,6 +155,7 @@ void main() {
     expect(input.highFrequencySymptoms.single['averageSeverity'], isNull);
     expect(input.bodyMeasurements.first['change'], 1.5);
     expect(input.currentMedications.single['dose'], 20.0);
+    expect(input.currentMedications.single['startDate'], '2026-07-01');
     expect(input.medicationTimeline.single['beforeDose'], 10);
     expect(input.discussionTopics.single.note, '最近常提早醒來');
     expect(input.discussionDetails, '想討論睡眠與生活近況');

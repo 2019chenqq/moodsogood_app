@@ -51,4 +51,23 @@ void main() {
       contains('data-loss'),
     );
   });
+
+  test('unauthenticated distinguishes sign-in from App Check failure', () {
+    expect(
+      aiCallableErrorMessage(
+        error('unauthenticated'),
+        functionName: AiCallableEndpoints.chat,
+        isSignedIn: true,
+      ),
+      contains('App Check'),
+    );
+    expect(
+      aiCallableErrorMessage(
+        error('unauthenticated'),
+        functionName: AiCallableEndpoints.chat,
+        isSignedIn: false,
+      ),
+      contains('重新登入'),
+    );
+  });
 }

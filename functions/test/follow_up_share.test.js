@@ -22,7 +22,13 @@ test("normal share is valid for 36 hours and contains no identifiers", () => {
       uid: "must-be-removed",
       email: "must-be-removed@example.com",
       additionalNotes: "unchecked raw text",
-      display: { keyChanges: ["變化"], uid: "must-be-removed" },
+      display: {
+        keyChanges: ["變化"],
+        recordEvidenceHighlights: ["心悸出現 2 天，快速記錄共 4 次。"],
+        medicationSubjectiveSummaries: ["藥物甲（使用者主觀回報）：第7天感受混合。"],
+        representativeHealthEvents: [{ timestamp: "must-not-leak" }],
+        uid: "must-be-removed",
+      },
     },
   });
   const result = validateShareDocument({
@@ -38,6 +44,9 @@ test("normal share is valid for 36 hours and contains no identifiers", () => {
   assert.equal(result.summarySnapshot.email, undefined);
   assert.equal(result.summarySnapshot.display.uid, undefined);
   assert.deepEqual(result.summarySnapshot.display.keyChanges, ["變化"]);
+  assert.equal(result.summarySnapshot.display.recordEvidenceHighlights.length, 1);
+  assert.equal(result.summarySnapshot.display.medicationSubjectiveSummaries.length, 1);
+  assert.equal(result.summarySnapshot.display.representativeHealthEvents, undefined);
   assert.equal(result.summarySnapshot.additionalNotes, undefined);
 });
 
@@ -108,8 +117,9 @@ test("public page renders the canonical display model in App order", () => {
   );
   const renderCalls = [
     "card('回診資料'", "discussion(d)", "card('主要變化'",
-    "card('重要時間關聯'", "<h2>睡眠趨勢</h2>",
-    "card('藥物調整時間軸'", "card('其他想跟醫師說的內容'",
+    "card('身體症狀'", "card('紀錄重點'", "card('重要時間關聯'",
+    "<h2>睡眠趨勢</h2>", "card('藥物調整時間軸'",
+    "card('主觀用藥感受'", "card('其他想跟醫師說的內容'",
     "card('資料限制'", "card('AI 整理時間'",
   ];
   let previous = -1;

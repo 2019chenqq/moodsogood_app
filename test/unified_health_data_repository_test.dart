@@ -71,9 +71,9 @@ void main() {
         (item) => item.source == UnifiedHealthDataSource.legacyDailyRecord,
       );
 
-      expect(legacy.emotions, isEmpty);
+      expect(legacy.emotions, hasLength(1));
       expect(legacy.symptoms.single.name, '頭痛');
-      expect(legacy.stateChanges, {'energy': 2});
+      expect(legacy.stateChanges, {'energy_change': 2});
       expect(legacy.timestamp, isNull);
     });
 

@@ -75,6 +75,7 @@ void main() {
         medicationAdjustments: false,
         lifeUpdates: false,
         dataLimitations: false,
+        bodyMeasurements: false,
       ),
     );
     expect(bytes.length, greaterThan(1000));
