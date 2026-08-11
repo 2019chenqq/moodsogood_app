@@ -6,6 +6,9 @@ import 'dart:convert';
 import '../diary/diary_repository.dart';
 import '../models/daily_record.dart'; // 確保引用正確
 import '../models/weekly_record.dart';
+import '../models/daily_health_aggregate.dart';
+import '../models/daily_check_in.dart';
+import '../models/health_event.dart';
 import '../utils/date_helper.dart'; // 確保引用正確
 import 'record_detail_screen.dart'; // 確保引用正確
 import '../models/period_cycle.dart';
@@ -26,6 +29,10 @@ import '../sleep_insights/models/sleep_insight_models.dart';
 import '../sleep_insights/services/sleep_analysis_service.dart';
 import '../sleep_insights/widgets/sleep_insights_view.dart';
 import 'unified_sleep_repository.dart';
+import 'health_event_repository.dart';
+import '../services/daily_health_aggregation_service.dart';
+import 'daily_check_in_service.dart';
+import 'emotion_trend_calculator.dart';
 
 const Map<String, String> ksleepFlagMap = {
   'good': '優',
@@ -49,6 +56,16 @@ class _DiaryMoodScore {
 
   final double score;
   final int scale;
+}
+
+class _HistoryData {
+  const _HistoryData({
+    required this.dailyRecords,
+    required this.aggregates,
+  });
+
+  final List<DailyRecord> dailyRecords;
+  final List<DailyHealthAggregate> aggregates;
 }
 
 class DailyRecordHistory extends StatefulWidget {
@@ -280,6 +297,15 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
     return dates.last.difference(dates.first).inDays > 365;
   }
 
+  bool _shouldUseMonthlyChartForAggregates(
+    List<DailyHealthAggregate> aggregates,
+  ) {
+    if (aggregates.length < 2) return false;
+    final dates = aggregates.map((item) => _dateOnly(item.date)).toList()
+      ..sort();
+    return dates.last.difference(dates.first).inDays > 365;
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool isPro = kDemoUnlockPro;
@@ -323,8 +349,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
           ),
         ),
       ),
-      body: FutureBuilder<List<DailyRecord>>(
-        future: _loadAllRecords(uid),
+      body: FutureBuilder<_HistoryData>(
+        future: _loadHistoryData(uid),
         key: ValueKey(_refreshCounter), // 使用 ValueKey 強制重新構建
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -334,16 +360,19 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
             return Center(child: Text('發生錯誤：${snapshot.error}'));
           }
 
-          final dailyRecords = snapshot.data ?? [];
+          final historyData = snapshot.data ??
+              const _HistoryData(dailyRecords: [], aggregates: []);
+          final dailyRecords = historyData.dailyRecords;
           dailyRecords.sort((a, b) => a.date.compareTo(b.date));
 
           // 取得所有出現過的情緒名稱
           final availableEmotions = _extractEmotionNames(dailyRecords);
 
           // 列表用的資料 (需過濾日期 + 反序)
-          var listRecords = List<DailyRecord>.from(dailyRecords);
-          listRecords = _applyDateFilter(listRecords);
-          listRecords.sort((a, b) => b.date.compareTo(a.date));
+          var listAggregates =
+              List<DailyHealthAggregate>.from(historyData.aggregates);
+          listAggregates = _applyAggregateDateFilter(listAggregates);
+          listAggregates.sort((a, b) => b.date.compareTo(a.date));
 
           return FutureBuilder<List<PeriodCycle>>(
             future: _loadPeriodCalendarCycles(uid),
@@ -360,11 +389,12 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
                 2 => _buildProChartContent(
                     context,
                     dailyRecords,
+                    historyData.aggregates,
                     availableEmotions,
                     cycles,
                     isPro,
                   ),
-                _ => _buildListPage(listRecords, isPro, uid),
+                _ => _buildListPage(listAggregates, isPro, uid),
               };
             },
           );
@@ -376,6 +406,36 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
   /// 從本地 SQLite 和/或 Firebase 加載所有記錄
   /// - 免費用戶：僅從本地 SQLite 加載（最近 90 天）
   /// - Pro 用戶：從 Firebase 加載所有數據
+  Future<_HistoryData> _loadHistoryData(String uid) async {
+    final records = await _loadAllRecords(uid);
+    List<HealthEvent> events = const [];
+    List<DailyCheckIn> checkIns = const [];
+    final today = _dateOnly(DateTime.now());
+    try {
+      events = await HealthEventRepository().getByDateRange(
+        userId: uid,
+        start: DateTime(2020, 1, 1),
+        end: today.add(const Duration(days: 1)),
+      );
+    } catch (error) {
+      debugPrint('QuickRecord history load failed: $error');
+    }
+    try {
+      checkIns = await DailyCheckInService().getByDateRange(
+        start: DateTime(2020, 1, 1),
+        endExclusive: today.add(const Duration(days: 1)),
+      );
+    } catch (error) {
+      debugPrint('DailyCheckIn history load failed: $error');
+    }
+    final aggregates = const DailyHealthAggregationService().aggregateRange(
+      dailyRecords: records,
+      healthEvents: events,
+      dailyCheckIns: checkIns,
+    );
+    return _HistoryData(dailyRecords: records, aggregates: aggregates);
+  }
+
   Future<List<DailyRecord>> _loadAllRecords(String uid) async {
     final bool isPro = kDemoUnlockPro;
 
@@ -815,11 +875,14 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
   }
 
   Widget _buildListPage(
-    List<DailyRecord> records,
+    List<DailyHealthAggregate> aggregates,
     bool isPro,
     String uid,
   ) {
     final bool isLocked = _isHistoryLocked(isPro);
+    final records = aggregates
+        .expand((aggregate) => aggregate.dailyRecords)
+        .toList(growable: false);
 
     return Container(
       color: HealingDesignSystem.adaptiveBackground(context),
@@ -875,7 +938,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
                     title: '進階紀錄回顧',
                     description: '查看近 90 天、全部紀錄與自訂日期區間，需要升級 Pro。',
                   )
-                : records.isEmpty
+                : aggregates.isEmpty
                     ? Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -899,11 +962,15 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
                       )
                     : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                        itemCount: records.length,
+                        itemCount: aggregates.length,
                         itemBuilder: (context, index) {
-                          final r = records[index];
-                          final periodText = _periodLabel(r);
-                          final nightMinutes = _nightSleepMinutes(r.sleep);
+                          final aggregate = aggregates[index];
+                          final r = aggregate.dailyRecords.isEmpty
+                              ? null
+                              : aggregate.dailyRecords.first;
+                          final periodText = r == null ? null : _periodLabel(r);
+                          final nightMinutes =
+                              r == null ? null : _nightSleepMinutes(r.sleep);
                           final sleepText = nightMinutes != null
                               ? DateHelper.formatDurationText(nightMinutes)
                               : null;
@@ -924,7 +991,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
                                       MaterialPageRoute(
                                         builder: (_) => RecordDetailScreen(
                                           uid: uid,
-                                          docId: r.id,
+                                          docId: r?.id ?? aggregate.dateKey,
                                         ),
                                       ),
                                     ).then((_) {
@@ -968,7 +1035,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
                                                 CrossAxisAlignment.start,
                                             children: [
                                               Text(
-                                                DateHelper.toDisplay(r.date),
+                                                DateHelper.toDisplay(
+                                                    aggregate.date),
                                                 style: TextStyle(
                                                   color: HealingDesignSystem
                                                       .adaptivePrimaryText(
@@ -977,6 +1045,35 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
                                                   fontWeight: FontWeight.w700,
                                                 ),
                                               ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                r == null ? '僅有快速記錄' : '有每日紀錄',
+                                                key: Key(
+                                                  'daily-record-status-${aggregate.dateKey}',
+                                                ),
+                                                style: TextStyle(
+                                                  color: HealingDesignSystem
+                                                      .adaptiveSecondaryText(
+                                                          context),
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                              if (aggregate.eventCount > 0) ...[
+                                                const SizedBox(height: 3),
+                                                Text(
+                                                  '快速記錄 ${aggregate.eventCount} 筆',
+                                                  key: Key(
+                                                    'quick-record-count-${aggregate.dateKey}',
+                                                  ),
+                                                  style: TextStyle(
+                                                    color: HealingDesignSystem
+                                                        .adaptiveSecondaryText(
+                                                            context),
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ],
                                               if (periodText != null) ...[
                                                 const SizedBox(height: 3),
                                                 Text(
@@ -1498,11 +1595,13 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
   Widget _buildProChartContent(
     BuildContext context,
     List<DailyRecord> allRecords,
+    List<DailyHealthAggregate> allAggregates,
     List<String> emotionNames,
     List<PeriodCycle> cycles,
     bool isPro,
   ) {
     final filteredRecords = _applyDateFilter(allRecords);
+    final filteredAggregates = _applyAggregateDateFilter(allAggregates);
     final bool useMA = _selectedRangeDays == null || _selectedRangeDays! > 7;
     final bool isLocked = _isHistoryLocked(isPro);
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -1510,7 +1609,20 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
     // 按 moodScale 分組
     final records5 = _recordsWithScale(filteredRecords, 5);
     final records10 = _recordsWithScale(filteredRecords, 10);
-    final has5 = records5.isNotEmpty;
+    final hasAggregate5 = filteredAggregates.any(
+      (aggregate) => aggregate.emotionDailyValues.values.any(
+        (summary) => summary.observations.any((value) => value.scale == 5),
+      ),
+    );
+    final has5 = records5.isNotEmpty || hasAggregate5;
+    final balancePoints5 = EmotionTrendCalculator.calculateAggregates(
+      filteredAggregates,
+      scale: 5,
+    );
+    final fullBalancePoints5 = EmotionTrendCalculator.calculateAggregates(
+      allAggregates,
+      scale: 5,
+    );
 
     return FutureBuilder<Map<DateTime, _DiaryMoodScore>>(
       future: uid == null
@@ -1525,9 +1637,23 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
         final mergedChartEmotionNames = <String>{
           ..._extractEmotionNames(records5),
           ..._extractEmotionNames(records10),
+          for (final aggregate in filteredAggregates)
+            for (final entry in aggregate.emotionDailyValues.entries)
+              if (entry.key != DailyHealthAggregationService.overallMoodKey &&
+                  entry.value.observations.any((value) => value.scale == 5))
+                entry.key,
         };
         final chartEmotionNames = mergedChartEmotionNames.toList()..sort();
-        if (allDiaryScores.isNotEmpty &&
+        final hasAggregateOverallMood = filteredAggregates.any(
+          (aggregate) =>
+              aggregate
+                  .emotionDailyValues[
+                      DailyHealthAggregationService.overallMoodKey]
+                  ?.observations
+                  .any((value) => value.scale == 5) ==
+              true,
+        );
+        if ((allDiaryScores.isNotEmpty || hasAggregateOverallMood) &&
             !chartEmotionNames.contains(_overallMoodLabel)) {
           chartEmotionNames.insert(0, _overallMoodLabel);
         }
@@ -1549,6 +1675,22 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
         final diary5 = _filterDiaryScoresByScale(allDiaryScores, 5);
         final diary10 = _filterDiaryScoresByScale(allDiaryScores, 10);
 
+        final aggregateEmotionKey = activeEmotion == _overallMoodLabel
+            ? DailyHealthAggregationService.overallMoodKey
+            : activeEmotion;
+        final aggregateEmotionPoints5 =
+            DailyEmotionAggregateCalculator.calculate(
+          filteredAggregates,
+          aggregateEmotionKey,
+          scale: 5,
+        );
+        final fullAggregateEmotionPoints5 =
+            DailyEmotionAggregateCalculator.calculate(
+          allAggregates,
+          aggregateEmotionKey,
+          scale: 5,
+        );
+
         // 檢查各量表是否有該情緒的資料
         bool hasChartData(
             List<DailyRecord> recs, Map<DateTime, double> diScores) {
@@ -1557,7 +1699,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
               .any((r) => r.emotions.any((e) => e.name == activeEmotion));
         }
 
-        final has5Data = hasChartData(records5, diary5);
+        final has5Data = aggregateEmotionPoints5.isNotEmpty ||
+            hasChartData(records5, diary5);
         final has10Data = hasChartData(records10, diary10);
 
         return Padding(
@@ -1664,8 +1807,11 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
                             fullRecords: records5,
                             useMovingAverage: useMA,
                             forceMonthlyAverage:
-                                _shouldUseMonthlyChartForRecords(records5),
+                                _shouldUseMonthlyChartForAggregates(
+                                    filteredAggregates),
                             periodCycles: cycles,
+                            aggregatePoints: balancePoints5,
+                            fullAggregatePoints: fullBalancePoints5,
                           ),
                         ),
                         const SizedBox(height: 14),
@@ -1721,8 +1867,11 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
                             fullRecords: records5,
                             useMovingAverage: useMA,
                             forceMonthlyAverage:
-                                _shouldUseMonthlyChartForRecords(records5),
+                                _shouldUseMonthlyChartForAggregates(
+                                    filteredAggregates),
                             periodCycles: cycles,
+                            aggregatePoints: balancePoints5,
+                            fullAggregatePoints: fullBalancePoints5,
                           ),
                         ),
                         const SizedBox(height: 14),
@@ -1796,10 +1945,13 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
                             targetEmotion: activeEmotion,
                             useMovingAverage: useMA,
                             forceMonthlyAverage:
-                                _shouldUseMonthlyChartForRecords(records5),
+                                _shouldUseMonthlyChartForAggregates(
+                                    filteredAggregates),
                             diaryMoodScores: diary5,
                             overallMoodLabel: _overallMoodLabel,
                             periodCycles: cycles,
+                            dailyEmotionPoints: aggregateEmotionPoints5,
+                            fullDailyEmotionPoints: fullAggregateEmotionPoints5,
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -2003,6 +2155,28 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
     final start = today.subtract(Duration(days: days - 1));
     return input.where((r) {
       final date = _dateOnly(r.date);
+      return !date.isBefore(start) && !date.isAfter(today);
+    }).toList();
+  }
+
+  List<DailyHealthAggregate> _applyAggregateDateFilter(
+    List<DailyHealthAggregate> input,
+  ) {
+    if (_selectedDateRange != null) {
+      final start = _dateOnly(_selectedDateRange!.start);
+      final end = _dateOnly(_selectedDateRange!.end);
+      return input.where((aggregate) {
+        final date = _dateOnly(aggregate.date);
+        return !date.isBefore(start) && !date.isAfter(end);
+      }).toList();
+    }
+
+    final days = _selectedRangeDays;
+    if (days == null) return input;
+    final today = _dateOnly(DateTime.now());
+    final start = today.subtract(Duration(days: days - 1));
+    return input.where((aggregate) {
+      final date = _dateOnly(aggregate.date);
       return !date.isBefore(start) && !date.isAfter(today);
     }).toList();
   }

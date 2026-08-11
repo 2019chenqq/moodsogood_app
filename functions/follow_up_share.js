@@ -19,6 +19,7 @@ const ALLOWED_KEYS = new Set([
 const DISPLAY_KEYS = new Set([
   "schemaVersion", "visitInfo", "topicLabels", "discussionItems",
   "keyChanges", "timelineRelations", "userSharedNotes",
+  "recordEvidenceHighlights", "medicationSubjectiveSummaries",
   "symptoms", "bodyMeasurements", "sleepSummaryItems", "sleepTrend", "medicationTimeline",
   "dataLimitations", "generatedAt", "disclaimer",
   "includedSections",
@@ -26,6 +27,7 @@ const DISPLAY_KEYS = new Set([
 const PUBLIC_TEXT_ARRAY_KEYS = [
   "discussionItems", "keyChanges", "userSharedNotes", "dataLimitations",
   "symptoms", "bodyMeasurements",
+  "recordEvidenceHighlights", "medicationSubjectiveSummaries",
 ];
 
 function isQuestionAnswerTranscript(value) {

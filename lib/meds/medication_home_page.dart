@@ -868,6 +868,8 @@ class _MedicationCard extends StatelessWidget {
     final type = (data['type'] as String?) ?? 'tablet';
     final compoundIngredientHasDose = isCompoundIngredient(explicitNameEn) &&
         ingredientContainsDose(explicitNameEn);
+    final isCompound = (data['compoundType'] ?? '').toString().contains('複') ||
+        isCompoundIngredient(explicitNameEn);
 
     final times = (data['times'] as List?)?.whereType<String>().toList() ??
         const <String>[];
@@ -890,9 +892,17 @@ class _MedicationCard extends StatelessWidget {
             return '每次 ${fmt1(pillCount)} 顆';
           }
           if (dosePerUnit != null && pillCount != null) {
+            final perUnit = double.tryParse(dosePerUnit.toString());
+            if (isCompound && (perUnit == null || perUnit <= 0)) {
+              return '每次 ${fmt1(pillCount)} 顆';
+            }
             return '${fmt1(dosePerUnit)} $unit x ${fmt1(pillCount)} 顆';
           }
           if (dose == null) return '劑量未填';
+          final total = double.tryParse(dose.toString());
+          if (isCompound && (total == null || total <= 0)) {
+            return '劑量依複方成分';
+          }
           return '$dose $unit';
         })();
 

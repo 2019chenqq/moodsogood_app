@@ -8,6 +8,7 @@ import 'medication_local_db.dart';
 import 'medication_reminder_service.dart';
 import 'medication_dose_units.dart';
 import 'medication_adjustment_service.dart';
+import 'medication_dose_editor_dialog.dart';
 import '../analytics_service.dart';
 
 // 你已經有的新增藥物頁（路徑依你的專案調整）
@@ -16,7 +17,12 @@ import 'record_adjustment_history_page.dart';
 
 /// 劑量編輯對話框由 [medication_dose_editor_dialog] 提供，
 /// 透過 export 直接對外輸出，供測試與外部頁面使用。
-export 'medication_dose_editor_dialog.dart' show MedicationDoseEditResult, MedicationDoseEditorDialog, MedicationOralDoseEditResult, MedicationOralDoseEditorDialog;
+export 'medication_dose_editor_dialog.dart'
+    show
+        MedicationDoseEditResult,
+        MedicationDoseEditorDialog,
+        MedicationOralDoseEditResult,
+        MedicationOralDoseEditorDialog;
 
 enum MedChangeType {
   unchanged,
@@ -715,6 +721,29 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
     required String unit,
   }) async {
     final draft = _draftByDocId[docId]!;
+    final result = await showDialog<MedicationDoseEditResult>(
+      context: context,
+      builder: (_) => MedicationDoseEditorDialog(
+        initialDose: draft.newDose,
+        initialUnit: unit,
+      ),
+    );
+    if (!mounted || result == null) return;
+
+    setState(() {
+      draft.newDose = result.dose;
+      draft.unit = result.unit;
+    });
+  }
+
+  // Kept temporarily for source-history comparison while the dedicated dialog
+  // implementation is exercised in production.
+  // ignore: unused_element
+  Future<void> _editDoseLegacy({
+    required String docId,
+    required String unit,
+  }) async {
+    final draft = _draftByDocId[docId]!;
 
     final initText = draft.newDose == null
         ? ''
@@ -798,6 +827,30 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
   }
 
   Future<void> _editOralDose({
+    required String docId,
+    required String unit,
+  }) async {
+    final draft = _draftByDocId[docId]!;
+    final result = await showDialog<MedicationOralDoseEditResult>(
+      context: context,
+      builder: (_) => MedicationOralDoseEditorDialog(
+        initialDosePerUnit: draft.newDosePerUnit ?? draft.oldDosePerUnit,
+        initialPillCount: draft.newPillCount ?? draft.oldPillCount,
+        initialUnit: unit,
+      ),
+    );
+    if (!mounted || result == null) return;
+
+    setState(() {
+      draft.newDosePerUnit = result.dosePerUnit;
+      draft.newPillCount = result.pillCount;
+      draft.newDose = _round1(result.dosePerUnit * result.pillCount);
+      draft.unit = result.unit;
+    });
+  }
+
+  // ignore: unused_element
+  Future<void> _editOralDoseLegacy({
     required String docId,
     required String unit,
   }) async {
@@ -1063,9 +1116,20 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
       firstDate: DateTime(now.year - 5),
       lastDate: DateTime(now.year + 5),
     );
-    if (picked != null) {
-      setState(() => _date = DateTime(picked.year, picked.month, picked.day));
-    }
+    if (picked == null || !mounted) return;
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_date),
+      helpText: '選擇調藥生效時間',
+    );
+    if (pickedTime == null || !mounted) return;
+    setState(() => _date = DateTime(
+          picked.year,
+          picked.month,
+          picked.day,
+          pickedTime.hour,
+          pickedTime.minute,
+        ));
   }
 
   Future<void> _save(String uid) async {
@@ -1191,8 +1255,7 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
         if (localMed != null) {
           final updated = Map<String, dynamic>.from(localMed);
           updated['updatedAt'] = DateTime.now().toString();
-          updated['lastChangeAt'] =
-              DateTime(_date.year, _date.month, _date.day).toString();
+          updated['lastChangeAt'] = _date.toIso8601String();
 
           if (d.type == MedChangeType.doseChanged) {
             updated.addAll(
@@ -1220,8 +1283,7 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
             updated['isActive'] = false;
           } else if (d.type == MedChangeType.resumed) {
             updated['isActive'] = true;
-            updated['resumedAt'] =
-                DateTime(_date.year, _date.month, _date.day).toString();
+            updated['resumedAt'] = _date.toIso8601String();
           }
 
           try {

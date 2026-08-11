@@ -1,6 +1,7 @@
 class CalendarDaySummary {
   final DateTime date;
   final bool hasDailyRecord;
+  final int quickRecordCount;
   final bool hasDiary;
   final bool hasEmotionData;
   final bool hasSymptomData;
@@ -34,6 +35,7 @@ class CalendarDaySummary {
   const CalendarDaySummary({
     required this.date,
     this.hasDailyRecord = false,
+    this.quickRecordCount = 0,
     this.hasDiary = false,
     this.hasEmotionData = false,
     this.hasSymptomData = false,
@@ -65,6 +67,7 @@ class CalendarDaySummary {
   CalendarDaySummary copyWith({
     DateTime? date,
     bool? hasDailyRecord,
+    int? quickRecordCount,
     bool? hasDiary,
     bool? hasEmotionData,
     bool? hasSymptomData,
@@ -100,6 +103,7 @@ class CalendarDaySummary {
     return CalendarDaySummary(
       date: date ?? this.date,
       hasDailyRecord: hasDailyRecord ?? this.hasDailyRecord,
+      quickRecordCount: quickRecordCount ?? this.quickRecordCount,
       hasDiary: hasDiary ?? this.hasDiary,
       hasEmotionData: hasEmotionData ?? this.hasEmotionData,
       hasSymptomData: hasSymptomData ?? this.hasSymptomData,
@@ -112,13 +116,17 @@ class CalendarDaySummary {
       symptomNames: symptomNames ?? this.symptomNames,
       medicationNames: medicationNames ?? this.medicationNames,
       sleepHours: clearSleepHours ? null : (sleepHours ?? this.sleepHours),
-      sleepQuality: clearSleepQuality ? null : (sleepQuality ?? this.sleepQuality),
-      dailyRecordDocId:
-          clearDailyRecordDocId ? null : (dailyRecordDocId ?? this.dailyRecordDocId),
+      sleepQuality:
+          clearSleepQuality ? null : (sleepQuality ?? this.sleepQuality),
+      dailyRecordDocId: clearDailyRecordDocId
+          ? null
+          : (dailyRecordDocId ?? this.dailyRecordDocId),
       diaryDocId: clearDiaryDocId ? null : (diaryDocId ?? this.diaryDocId),
       diaryTitle: clearDiaryTitle ? null : (diaryTitle ?? this.diaryTitle),
-      diaryContent: clearDiaryContent ? null : (diaryContent ?? this.diaryContent),
-      diarySummary: clearDiarySummary ? null : (diarySummary ?? this.diarySummary),
+      diaryContent:
+          clearDiaryContent ? null : (diaryContent ?? this.diaryContent),
+      diarySummary:
+          clearDiarySummary ? null : (diarySummary ?? this.diarySummary),
       periodNote: clearPeriodNote ? null : (periodNote ?? this.periodNote),
       ruleInsights: ruleInsights ?? this.ruleInsights,
       aiFeedback: clearAiFeedback ? null : (aiFeedback ?? this.aiFeedback),
@@ -131,4 +139,6 @@ class CalendarDaySummary {
     final d = date.day.toString().padLeft(2, '0');
     return '$y-$m-$d';
   }
+
+  bool get hasQuickRecord => quickRecordCount > 0;
 }

@@ -7,9 +7,14 @@ import 'package:flutter/foundation.dart';
 
 import '../diary/diary_repository.dart';
 import '../meds/medication_local_db.dart';
+import '../models/daily_check_in.dart';
+import '../models/daily_record.dart';
+import '../models/health_event.dart';
+import '../services/daily_health_aggregation_service.dart';
 import '../utils/health_data_encryption_service.dart';
 import 'innera_ai_message.dart';
 import 'innera_ai_mode.dart';
+import 'innera_ai_quick_record_context_builder.dart';
 
 class InneraAiContextBundle {
   const InneraAiContextBundle({
@@ -76,8 +81,19 @@ class InneraAiContextService {
       case InneraAiMode.dailyRecord:
         await guard('dailyRecords', () async {
           final todayRecord = await _dailyRecordDoc(uid, today);
-          data['todayDailyRecord'] = _compactDailyRecord(todayRecord);
+          final events = await _healthEvents(
+            uid,
+            today,
+            today.add(const Duration(days: 1)),
+          );
+          data['todayDailyRecord'] =
+              _compactDailyRecord(todayRecord, sameDayEvents: events);
           data['todaySleep'] = _compactSleep(todayRecord?['sleep']);
+          data['todayQuickRecords'] =
+              InneraAiQuickRecordContextBuilder.rawEvents(
+            events,
+            maxEvents: 12,
+          );
           if (todayRecord != null) {
             sources.add(
               AiContextSource(
@@ -86,6 +102,13 @@ class InneraAiContextService {
                 count: 1,
               ),
             );
+          }
+          if (events.isNotEmpty) {
+            sources.add(AiContextSource(
+              label: '今日快速記錄',
+              dateRange: _formatDate(today),
+              count: events.length,
+            ));
           }
         });
         await guard('diary', () async {
@@ -105,12 +128,23 @@ class InneraAiContextService {
 
       case InneraAiMode.emotionalSupport:
         await guard('dailyRecords', () async {
+          final recentStart = today.subtract(const Duration(days: 2));
           final records = await _dailyRecords(
             uid,
-            today.subtract(const Duration(days: 2)),
+            recentStart,
             today,
           );
+          final events = await _healthEvents(
+            uid,
+            recentStart,
+            today.add(const Duration(days: 1)),
+          );
           data['recentMoodSummary'] = records.map(_compactMoodOnly).toList();
+          data['recentQuickRecords'] =
+              InneraAiQuickRecordContextBuilder.rawEvents(
+            events,
+            maxEvents: 12,
+          );
           if (records.isNotEmpty) {
             sources.add(
               AiContextSource(
@@ -123,14 +157,36 @@ class InneraAiContextService {
               ),
             );
           }
+          if (events.isNotEmpty) {
+            sources.add(AiContextSource(
+              label: '最近 3 天快速記錄',
+              dateRange: _rangeLabel(recentStart, today),
+              count: events.length,
+            ));
+          }
         });
         break;
 
       case InneraAiMode.physicalHealth:
         await guard('dailyRecords', () async {
           final records = await _dailyRecords(uid, start, today);
-          data['recentSymptomsAndSleep'] =
-              records.map(_compactSymptomsAndSleep).toList();
+          final events = await _healthEvents(
+            uid,
+            start,
+            today.add(const Duration(days: 1)),
+          );
+          data['recentSymptomsAndSleep'] = records
+              .map((record) => _compactSymptomsAndSleep(
+                    record,
+                    sameDayEvents: _eventsForRecord(record, events),
+                  ))
+              .toList();
+          data['recentSymptomQuickRecords'] =
+              InneraAiQuickRecordContextBuilder.rawEvents(
+            events,
+            maxEvents: 16,
+            symptomOnly: true,
+          );
           final abnormalSleepCount = records
               .where((record) => _hasSleepConcern(record['sleep']))
               .length;
@@ -142,6 +198,15 @@ class InneraAiContextService {
                 count: records.length,
               ),
             );
+          }
+          final symptomEventCount =
+              events.where((event) => event.symptoms.isNotEmpty).length;
+          if (symptomEventCount > 0) {
+            sources.add(AiContextSource(
+              label: '最近 14 天症狀快速記錄',
+              dateRange: _rangeLabel(start, today),
+              count: symptomEventCount,
+            ));
           }
           if (abnormalSleepCount > 0) {
             sources.add(
@@ -168,13 +233,48 @@ class InneraAiContextService {
       case InneraAiMode.recentReview:
         await guard('dailyRecords', () async {
           final records = await _dailyRecords(uid, start, today);
+          final events = await _healthEvents(
+            uid,
+            start,
+            today.add(const Duration(days: 1)),
+          );
+          final checkIns = await _dailyCheckIns(
+            uid,
+            start,
+            today.add(const Duration(days: 1)),
+          );
+          final dailyRecords = records
+              .map((record) => DailyRecord.fromData(
+                    (record['id'] ?? '').toString(),
+                    record,
+                  ))
+              .toList();
+          final aggregates =
+              const DailyHealthAggregationService().aggregateRange(
+            dailyRecords: dailyRecords,
+            healthEvents: events,
+            dailyCheckIns: checkIns,
+            start: start,
+            endExclusive: today.add(const Duration(days: 1)),
+          );
           data['dailyRecordStats'] = _buildDailyRecordStats(
             records,
             start,
             today,
           );
-          data['recentDailyRecords'] =
-              records.map(_compactDailyRecord).toList();
+          data['recentDailyRecords'] = records
+              .map((record) => _compactDailyRecord(
+                    record,
+                    sameDayEvents: _eventsForRecord(record, events),
+                  ))
+              .toList();
+          data['dailyHealthAggregateSummary'] =
+              InneraAiQuickRecordContextBuilder.aggregateReview(aggregates);
+          data['recentQuickRecordExamples'] =
+              InneraAiQuickRecordContextBuilder.rawEvents(
+            events,
+            maxEvents: 6,
+          );
           if (records.isNotEmpty) {
             sources.add(
               AiContextSource(
@@ -183,6 +283,13 @@ class InneraAiContextService {
                 count: records.length,
               ),
             );
+          }
+          if (events.isNotEmpty) {
+            sources.add(AiContextSource(
+              label: '最近 30 天快速記錄摘要',
+              dateRange: _rangeLabel(start, today),
+              count: events.length,
+            ));
           }
         });
         await _loadMedicationContext(
@@ -407,7 +514,7 @@ class InneraAiContextService {
         .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
         .where(
           'date',
-          isLessThanOrEqualTo: Timestamp.fromDate(
+          isLessThan: Timestamp.fromDate(
             end.add(const Duration(days: 1)),
           ),
         )
@@ -421,7 +528,46 @@ class InneraAiContextService {
     );
   }
 
-  Map<String, dynamic> _compactDailyRecord(Map<String, dynamic>? record) {
+  Future<List<HealthEvent>> _healthEvents(
+    String uid,
+    DateTime start,
+    DateTime endExclusive,
+  ) async {
+    final documents = await HealthDataEncryptionService.getEncrypted(
+      _firestore
+          .collection('users')
+          .doc(uid)
+          .collection('healthEvents')
+          .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+          .where('timestamp', isLessThan: Timestamp.fromDate(endExclusive)),
+    );
+    final events = documents
+        .map((doc) => HealthEvent.fromMap(doc.id, doc.data))
+        .toList()
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    return events;
+  }
+
+  Future<List<DailyCheckIn>> _dailyCheckIns(
+    String uid,
+    DateTime start,
+    DateTime endExclusive,
+  ) async {
+    final documents = await HealthDataEncryptionService.getEncrypted(
+      _firestore
+          .collection('users')
+          .doc(uid)
+          .collection('dailyCheckIns')
+          .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+          .where('date', isLessThan: Timestamp.fromDate(endExclusive)),
+    );
+    return documents.map((doc) => DailyCheckIn.fromData(doc.data)).toList();
+  }
+
+  Map<String, dynamic> _compactDailyRecord(
+    Map<String, dynamic>? record, {
+    Iterable<HealthEvent> sameDayEvents = const [],
+  }) {
     if (record == null) return const <String, dynamic>{'exists': false};
     final sleep = _compactSleep(record['sleep']);
     return {
@@ -429,8 +575,10 @@ class InneraAiContextService {
       'date': _recordDate(record),
       'overallMood': record['overallMood'],
       'emotions': _compactEmotions(record['emotions']),
-      'symptoms': _stringList(
-        record['bodySymptoms'] ?? record['symptoms'],
+      'symptoms': InneraAiQuickRecordContextBuilder
+          .legacySymptomsWithoutEventDuplicates(
+        _stringList(record['bodySymptoms'] ?? record['symptoms']),
+        sameDayEvents,
       ).take(12).toList(),
       'sleep': sleep,
       'isPeriod': record['isPeriod'] == true ||
@@ -447,17 +595,37 @@ class InneraAiContextService {
     };
   }
 
-  Map<String, dynamic> _compactSymptomsAndSleep(Map<String, dynamic> record) {
+  Map<String, dynamic> _compactSymptomsAndSleep(
+    Map<String, dynamic> record, {
+    Iterable<HealthEvent> sameDayEvents = const [],
+  }) {
     return {
       'date': _recordDate(record),
-      'symptoms': _stringList(
-        record['bodySymptoms'] ?? record['symptoms'],
+      'symptoms': InneraAiQuickRecordContextBuilder
+          .legacySymptomsWithoutEventDuplicates(
+        _stringList(record['bodySymptoms'] ?? record['symptoms']),
+        sameDayEvents,
       ).take(12).toList(),
       'sleep': _compactSleep(record['sleep']),
       'isPeriod': record['isPeriod'] == true ||
           (record['periodData'] is Map &&
               record['periodData']['isPeriod'] == true),
     };
+  }
+
+  Iterable<HealthEvent> _eventsForRecord(
+    Map<String, dynamic> record,
+    Iterable<HealthEvent> events,
+  ) {
+    final recordDate = _asDate(record['date']) ??
+        DateTime.tryParse((record['id'] ?? '').toString());
+    if (recordDate == null) return const <HealthEvent>[];
+    final day = _dateOnly(recordDate);
+    return events.where((event) =>
+        _dateOnly(
+          event.timestamp.isUtc ? event.timestamp.toLocal() : event.timestamp,
+        ) ==
+        day);
   }
 
   Map<String, dynamic> _compactSleep(dynamic raw) {
@@ -539,8 +707,10 @@ class InneraAiContextService {
     final symptomCounts = <String, int>{};
     var sleepConcernDays = 0;
     final medChangeDates = <String>{};
+    final recordedDateKeys = <String>{};
 
     for (final record in records) {
+      recordedDateKeys.add(_recordDate(record));
       final mood = _asDouble(record['overallMood']);
       if (mood != null) moodValues.add(mood);
       for (final emotion in _compactEmotions(record['emotions'])) {
@@ -566,9 +736,9 @@ class InneraAiContextService {
 
     final expectedDays = today.difference(start).inDays + 1;
     return {
-      'recordedDays': records.length,
+      'recordedDays': recordedDateKeys.length,
       'expectedDays': expectedDays,
-      'missingDays': max(0, expectedDays - records.length),
+      'missingDays': max(0, expectedDays - recordedDateKeys.length),
       'averageOverallMood': _average(moodValues),
       'averageSleepHours': _average(sleepHours),
       'commonEmotions': _topCounts(emotionCounts),
@@ -657,6 +827,14 @@ class InneraAiContextService {
       'recentDiaries': (input['recentDiaries'] as List?)?.take(8).toList(),
       'bodyRelatedDiaries':
           (input['bodyRelatedDiaries'] as List?)?.take(4).toList(),
+      'todayQuickRecords':
+          (input['todayQuickRecords'] as List?)?.take(12).toList(),
+      'recentQuickRecords':
+          (input['recentQuickRecords'] as List?)?.take(12).toList(),
+      'recentSymptomQuickRecords':
+          (input['recentSymptomQuickRecords'] as List?)?.take(16).toList(),
+      'recentQuickRecordExamples':
+          (input['recentQuickRecordExamples'] as List?)?.take(6).toList(),
     };
   }
 

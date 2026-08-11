@@ -315,7 +315,9 @@ class _BodyMeasurementPageState extends State<BodyMeasurementPage> {
           child: Material(
             type: MaterialType.transparency,
             child: ExpansionTile(
-              initiallyExpanded: _expanded,
+              initiallyExpanded: true,
+              enabled: false,
+              showTrailingIcon: false,
               onExpansionChanged: (value) => _expanded = value,
               leading: const Icon(Icons.monitor_weight_outlined,
                   color: HealingDesignSystem.primaryBlue),

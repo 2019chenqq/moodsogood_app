@@ -231,8 +231,9 @@ class MedicationAdjustmentService {
       }
     }
 
-    final date =
-        DateTime(effectiveDate.year, effectiveDate.month, effectiveDate.day);
+    // Keep the available time precision. Medication check-in can then apply a
+    // change only to dose slots at or after the actual adjustment time.
+    final date = effectiveDate;
     final existing = await _localDb.getAdjustmentRecords(uid);
     final newItems =
         items.where((item) => !_alreadyRecorded(existing, date, item)).toList();
@@ -248,18 +249,26 @@ class MedicationAdjustmentService {
       'items': newItems,
       'createdAt': DateTime.now().toIso8601String(),
     });
-    await _updateSubjectiveTrackingCycles(
-      uid: uid,
-      changeRecordId: docId,
-      changeDate: date,
-      items: newItems,
-    );
+    if (shouldCreateSubjectiveTrackingCycle(source)) {
+      await _updateSubjectiveTrackingCycles(
+        uid: uid,
+        changeRecordId: docId,
+        changeDate: date,
+        items: newItems,
+      );
+    }
     try {
       await MedicationSubjectiveReminderService().syncForCurrentUser(uid: uid);
     } catch (error) {
       debugPrint('Medication subjective reminder sync deferred: $error');
     }
     return true;
+  }
+
+  static bool shouldCreateSubjectiveTrackingCycle(String source) {
+    final normalized = source.trim().toLowerCase();
+    return normalized != 'medicationstartdatefallback' &&
+        !normalized.startsWith('synthetic');
   }
 
   Future<void> _updateSubjectiveTrackingCycles({

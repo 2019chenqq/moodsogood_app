@@ -2437,7 +2437,12 @@ exports.generateInneraAiChat = onCall(
     const data = request.data || {};
     const mode = String(data.mode || "emotionalSupport").trim();
     const supportsDailyRecordDraft = mode !== "recentReview";
-    const message = String(data.message || "").trim().slice(0, 2000);
+    // Follow-up summaries include a structured output contract and can be
+    // substantially longer than ordinary chat messages. Truncating them at
+    // the generic chat limit can remove the required JSON instructions and
+    // cause the model to return an empty reply.
+    const messageLimit = mode === "recentReview" ? 16000 : 2000;
+    const message = String(data.message || "").trim().slice(0, messageLimit);
     const requestedImage =
       data.image && typeof data.image === "object" ? data.image : null;
     let image = null;
@@ -2712,7 +2717,29 @@ exports.generateInneraAiChat = onCall(
         throw new Error("Empty OpenAI response");
       }
       const parsed = JSON.parse(stripMarkdownFence(rawText));
-      const reply = String(parsed.reply || "").trim().slice(0, 6000);
+      const rawFollowUpQuestion = String(parsed.followUpQuestion || "")
+        .trim()
+        .slice(0, 600);
+      // The structured chat schema exposes a dedicated followUpQuestion field.
+      // During the follow-up-summary clarification step the model can correctly
+      // place its only question there and leave reply empty. Treat that valid
+      // question as the textual reply so the app's existing question parser can
+      // continue instead of turning it into an internal server error.
+      let reply = String(parsed.reply || rawFollowUpQuestion)
+        .trim()
+        .slice(0, 6000);
+      if (!reply && mode === "recentReview") {
+        // The follow-up client already has a deterministic local summary
+        // fallback when the model does not provide the requested JSON shape.
+        // Return an empty JSON object to activate it instead of surfacing an
+        // opaque internal error and discarding the whole workflow.
+        console.warn("generateInneraAiChat received empty recentReview reply", {
+          requestId: usageTracker.requestId,
+          finishReason: completion.choices?.[0]?.finish_reason,
+          hasRefusal: Boolean(completion.choices?.[0]?.message?.refusal),
+        });
+        reply = "{}";
+      }
       if (!reply) {
         throw new Error("Missing AI reply");
       }
@@ -2725,9 +2752,6 @@ exports.generateInneraAiChat = onCall(
             message,
           )
         : null;
-      const rawFollowUpQuestion = String(parsed.followUpQuestion || "")
-        .trim()
-        .slice(0, 600);
       const asksExcludedEmotionScore =
         normalizedRecordDraft &&
         /(幾分|分數|強度|程度)/.test(rawFollowUpQuestion) &&

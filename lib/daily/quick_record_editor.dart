@@ -3,11 +3,14 @@ import 'package:flutter/material.dart';
 
 import '../constants/healing_design_system.dart';
 import '../models/health_event.dart';
+import '../models/period_cycle.dart';
+import '../utils/state_change_normalizer.dart';
 import '../widgets/emotion_slider.dart';
 import '../analytics_service.dart';
 import 'emotion_dimensions.dart';
 import 'symptom_definitions.dart';
 import 'health_event_repository.dart';
+import 'period_cycle_service.dart';
 
 /// 「快速記錄現在狀況」編輯頁（新增／編輯共用）。
 ///
@@ -16,6 +19,12 @@ import 'health_event_repository.dart';
 /// 分數（1~5）重用 [EmotionSlider]。
 class QuickRecordEditor extends StatefulWidget {
   const QuickRecordEditor({super.key, this.initial});
+
+  static const stateKeys = <String>[
+    'energy_change',
+    'appetite_change',
+    'activity_change',
+  ];
 
   /// 若提供則進入編輯模式，否則為新增。
   final HealthEvent? initial;
@@ -41,13 +50,17 @@ class _QuickRecordEditorState extends State<QuickRecordEditor> {
   final Set<String> _symptoms = <String>{};
   final Map<String, int> _symptomSeverities = <String, int>{};
 
-  // 狀態（選填）：energy / appetite / activity
+  // 狀態（選填）：正式 key 僅使用 *_change。
   final Set<String> _activeStates = <String>{};
   final Map<String, int> _stateValues = <String, int>{};
 
   String? _context;
   final TextEditingController _note = TextEditingController();
   bool _saving = false;
+  bool _loadingPeriod = true;
+  bool _updatingPeriod = false;
+  PeriodCycle? _periodCycle;
+  final PeriodCycleService _periodService = PeriodCycleService();
 
   @override
   void initState() {
@@ -56,6 +69,7 @@ class _QuickRecordEditorState extends State<QuickRecordEditor> {
     final initial = widget.initial;
     if (initial == null) {
       _timestamp = DateTime.now();
+      _loadPeriodStatus();
       return;
     }
     _timestamp = initial.timestamp;
@@ -67,12 +81,13 @@ class _QuickRecordEditorState extends State<QuickRecordEditor> {
       _symptoms.add(s.name);
       _symptomSeverities[s.name] = s.severity;
     }
-    for (final entry in initial.stateChanges.entries) {
+    for (final entry in normalizeStateChanges(initial.stateChanges).entries) {
       _activeStates.add(entry.key);
       _stateValues[entry.key] = entry.value;
     }
     _context = initial.context;
     _note.text = initial.note ?? '';
+    _loadPeriodStatus();
   }
 
   @override
@@ -113,6 +128,62 @@ class _QuickRecordEditorState extends State<QuickRecordEditor> {
         time.minute,
       );
     });
+    await _loadPeriodStatus();
+  }
+
+  Future<void> _loadPeriodStatus() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      if (mounted) setState(() => _loadingPeriod = false);
+      return;
+    }
+    if (mounted) setState(() => _loadingPeriod = true);
+    try {
+      final cycle = await _periodService.cycleForDate(uid, _timestamp);
+      if (!mounted) return;
+      setState(() {
+        _periodCycle = cycle;
+        _loadingPeriod = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _loadingPeriod = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('無法讀取生理期資料：$error')),
+      );
+    }
+  }
+
+  Future<void> _applyPeriodAction(PeriodQuickAction action) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || _updatingPeriod) return;
+    setState(() => _updatingPeriod = true);
+    try {
+      final result = await _periodService.apply(
+        userId: uid,
+        date: _timestamp,
+        action: action,
+      );
+      await _loadPeriodStatus();
+      if (!mounted) return;
+      final message = switch (result) {
+        PeriodQuickActionResult.started => '已將這一天設為月經開始日',
+        PeriodQuickActionResult.alreadyOngoing => '這一天已在進行中的生理期內',
+        PeriodQuickActionResult.ended => '已將這一天設為月經結束日',
+        PeriodQuickActionResult.noActiveCycle =>
+          '找不到進行中的週期，請先選擇「月經開始」或從生理期月曆新增',
+      };
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('更新生理期資料失敗：$error')),
+      );
+    } finally {
+      if (mounted) setState(() => _updatingPeriod = false);
+    }
   }
 
   void _toggleEmotion(String name) {
@@ -123,6 +194,47 @@ class _QuickRecordEditorState extends State<QuickRecordEditor> {
       } else {
         _emotions.add(name);
         _emotionIntensities[name] = 3;
+      }
+    });
+  }
+
+  Future<void> _addCustomItem({required bool emotion}) async {
+    final controller = TextEditingController();
+    final value = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(emotion ? '新增自訂情緒' : '新增自訂症狀'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 30,
+          decoration: InputDecoration(
+            hintText: emotion ? '例如：期待、安心' : '例如：耳鳴、肩頸緊繃',
+          ),
+          onSubmitted: (text) => Navigator.pop(dialogContext, text),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            child: const Text('新增'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    final name = value?.trim() ?? '';
+    if (name.isEmpty || !mounted) return;
+    setState(() {
+      if (emotion) {
+        _emotions.add(name);
+        _emotionIntensities.putIfAbsent(name, () => 3);
+      } else {
+        _symptoms.add(name);
+        _symptomSeverities.putIfAbsent(name, () => 3);
       }
     });
   }
@@ -297,6 +409,12 @@ class _QuickRecordEditorState extends State<QuickRecordEditor> {
             const SizedBox(height: 16),
             _selectionCard(
               context: context,
+              title: '生理期',
+              child: _periodSection(context),
+            ),
+            const SizedBox(height: 16),
+            _selectionCard(
+              context: context,
               title: '情境（選填）',
               child: _contextSection(context),
             ),
@@ -381,6 +499,11 @@ class _QuickRecordEditorState extends State<QuickRecordEditor> {
           ),
           const SizedBox(height: HealingDesignSystem.paddingM),
         ],
+        OutlinedButton.icon(
+          onPressed: () => _addCustomItem(emotion: true),
+          icon: const Icon(Icons.add),
+          label: const Text('新增自訂情緒'),
+        ),
         const SizedBox(height: HealingDesignSystem.paddingS),
         if (selectedNames.isEmpty)
           Text(
@@ -394,6 +517,7 @@ class _QuickRecordEditorState extends State<QuickRecordEditor> {
               name: name,
               value: _emotionIntensities[name] ?? 3,
               onChanged: (v) => setState(() => _emotionIntensities[name] = v),
+              description: '1 是程度最弱，5 是程度最強',
             ),
           ),
       ],
@@ -420,6 +544,12 @@ class _QuickRecordEditorState extends State<QuickRecordEditor> {
           ),
           const SizedBox(height: HealingDesignSystem.paddingM),
         ],
+        OutlinedButton.icon(
+          onPressed: () => _addCustomItem(emotion: false),
+          icon: const Icon(Icons.add),
+          label: const Text('新增自訂症狀'),
+        ),
+        const SizedBox(height: HealingDesignSystem.paddingS),
         if (selectedNames.isEmpty)
           Text(
             '尚未選擇症狀',
@@ -432,6 +562,7 @@ class _QuickRecordEditorState extends State<QuickRecordEditor> {
               name: name,
               value: _symptomSeverities[name] ?? 3,
               label: '嚴重程度',
+              description: '1 是程度最弱，5 是程度最強',
               onChanged: (v) => setState(() => _symptomSeverities[name] = v),
             ),
           ),
@@ -440,11 +571,18 @@ class _QuickRecordEditorState extends State<QuickRecordEditor> {
   }
 
   Widget _stateSection(BuildContext context) {
-    const keys = ['energy', 'appetite', 'activity'];
+    const keys = QuickRecordEditor.stateKeys;
     const labels = ['能量', '食慾', '活動量'];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Text(
+          '1 分：明顯低於平常｜3 分：跟平常差不多｜5 分：明顯高於平常',
+          style: HealingDesignSystem.bodySmall.copyWith(
+            color: HealingDesignSystem.adaptiveSecondaryText(context),
+          ),
+        ),
+        const SizedBox(height: HealingDesignSystem.paddingM),
         for (var i = 0; i < keys.length; i++) ...[
           Row(
             children: [
@@ -480,6 +618,66 @@ class _QuickRecordEditorState extends State<QuickRecordEditor> {
     );
   }
 
+  Widget _periodSection(BuildContext context) {
+    final cycle = _periodCycle;
+    final status = _loadingPeriod
+        ? '正在讀取現有生理期狀態…'
+        : cycle == null
+            ? '這一天目前沒有生理期紀錄'
+            : cycle.endDate == null
+                ? '這一天位於進行中的生理期'
+                : '這一天位於 ${_dateLabel(cycle.startDate)}～${_dateLabel(cycle.endDate!)} 的生理期';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.water_drop_outlined, color: Color(0xFFE78EAA)),
+            const SizedBox(width: HealingDesignSystem.paddingS),
+            Expanded(
+              child: Text(status, style: HealingDesignSystem.bodyMedium),
+            ),
+          ],
+        ),
+        const SizedBox(height: HealingDesignSystem.paddingM),
+        Wrap(
+          spacing: HealingDesignSystem.paddingS,
+          runSpacing: HealingDesignSystem.paddingS,
+          children: [
+            OutlinedButton(
+              onPressed: _loadingPeriod || _updatingPeriod
+                  ? null
+                  : () => _applyPeriodAction(PeriodQuickAction.start),
+              child: const Text('月經開始'),
+            ),
+            OutlinedButton(
+              onPressed: _loadingPeriod || _updatingPeriod
+                  ? null
+                  : () => _applyPeriodAction(PeriodQuickAction.ongoing),
+              child: const Text('月經進行中'),
+            ),
+            OutlinedButton(
+              onPressed: _loadingPeriod || _updatingPeriod
+                  ? null
+                  : () => _applyPeriodAction(PeriodQuickAction.end),
+              child: const Text('月經結束'),
+            ),
+          ],
+        ),
+        const SizedBox(height: HealingDesignSystem.paddingS),
+        Text(
+          '此操作直接更新既有生理期月曆，不會寫入或綁定這筆快速記錄。',
+          style: HealingDesignSystem.bodySmall.copyWith(
+            color: HealingDesignSystem.adaptiveSecondaryText(context),
+          ),
+        ),
+      ],
+    );
+  }
+
+  static String _dateLabel(DateTime value) =>
+      '${value.month}/${value.day.toString().padLeft(2, '0')}';
+
   Widget _contextSection(BuildContext context) {
     return _chipWrap(
       items: _contextOptions,
@@ -512,7 +710,7 @@ class _QuickRecordEditorState extends State<QuickRecordEditor> {
               color: isSelected
                   ? (singleSelect
                       ? HealingDesignSystem.primaryBlue
-                      : HealingDesignSystem.primaryBlue.withOpacity(0.15))
+                      : HealingDesignSystem.primaryBlue.withValues(alpha: 0.15))
                   : HealingDesignSystem.adaptiveSurface(context),
               border: Border.all(
                 color: isSelected
@@ -563,6 +761,7 @@ class _QuickRecordEditorState extends State<QuickRecordEditor> {
     required int value,
     required ValueChanged<int> onChanged,
     String label = '強度',
+    String? description,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: HealingDesignSystem.paddingL),
@@ -578,6 +777,15 @@ class _QuickRecordEditorState extends State<QuickRecordEditor> {
                 color: HealingDesignSystem.adaptivePrimaryText(context),
               ),
             ),
+            if (description != null) ...[
+              const SizedBox(height: HealingDesignSystem.paddingS),
+              Text(
+                description,
+                style: HealingDesignSystem.bodySmall.copyWith(
+                  color: HealingDesignSystem.adaptiveSecondaryText(context),
+                ),
+              ),
+            ],
             const SizedBox(height: HealingDesignSystem.paddingM),
             EmotionSlider(
               label: name,

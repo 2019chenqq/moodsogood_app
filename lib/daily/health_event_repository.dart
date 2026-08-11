@@ -77,12 +77,16 @@ class HealthEventRepository {
   Future<List<HealthEvent>> getByDateRange({
     required String userId,
     required DateTime start,
+    /// Exclusive upper bound.
     required DateTime end,
   }) async {
+    if (!start.isBefore(end)) {
+      throw ArgumentError('start must be before the exclusive end');
+    }
     final docs = await HealthDataEncryptionService.getEncrypted(
       _events(userId)
           .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
-          .where('timestamp', isLessThanOrEqualTo: Timestamp.fromDate(end))
+          .where('timestamp', isLessThan: Timestamp.fromDate(end))
           .orderBy('timestamp', descending: true),
     );
     return docs
@@ -95,11 +99,25 @@ class HealthEventRepository {
     final now = DateTime.now();
     final day = DateTime(now.year, now.month, now.day);
     final start = day;
-    final end = day
-        .add(const Duration(days: 1))
-        .subtract(const Duration(milliseconds: 1));
+    final end = day.add(const Duration(days: 1));
     return getByDateRange(userId: userId, start: start, end: end);
   }
+
+  Future<List<HealthEvent>> getAll({required String userId}) async {
+    final docs = await HealthDataEncryptionService.getEncrypted(
+      _events(userId).orderBy('timestamp'),
+    );
+    return docs
+        .map((d) => HealthEvent.fromMap(d.id, d.data))
+        .toList(growable: false);
+  }
+
+  static bool isInHalfOpenRange(
+    DateTime timestamp, {
+    required DateTime start,
+    required DateTime endExclusive,
+  }) =>
+      !timestamp.isBefore(start) && timestamp.isBefore(endExclusive);
 
   /// 取得最近 n 筆快速事件（依 timestamp 由新到舊）。
   Future<List<HealthEvent>> getRecent({

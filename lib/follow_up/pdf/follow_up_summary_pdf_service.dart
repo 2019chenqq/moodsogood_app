@@ -68,17 +68,27 @@ class FollowUpSummaryPdfService {
               display.symptoms,
               emptyText: '此摘要沒有可顯示的症狀資料。',
             ),
+          if (options.emotionsAndSymptoms &&
+              display.recordEvidenceHighlights.isNotEmpty)
+            ..._section('紀錄重點', display.recordEvidenceHighlights),
           if (options.bodyMeasurements)
             ..._section(
               '身體測量（體重、體脂率、腰圍）',
               display.bodyMeasurements,
               emptyText: '此摘要沒有可顯示的體重、體脂率或腰圍資料。',
             ),
-          ..._section(
-            '藥物調整時間軸',
-            display.medicationTimeline,
-            emptyText: '此摘要沒有藥物調整紀錄。',
-          ),
+          if (options.medicationAdjustments)
+            ..._section(
+              '藥物調整時間軸',
+              display.medicationTimeline,
+              emptyText: '此摘要沒有藥物調整紀錄。',
+            ),
+          if (options.medicationAdjustments &&
+              display.medicationSubjectiveSummaries.isNotEmpty)
+            ..._section(
+              '主觀用藥感受',
+              display.medicationSubjectiveSummaries,
+            ),
           if (options.lifeUpdates)
             ..._section(
               '其他想跟醫師說的內容',

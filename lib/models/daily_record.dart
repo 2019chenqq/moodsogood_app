@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../utils/date_helper.dart';
+import '../utils/state_change_normalizer.dart';
 
 /// ------------------------------------------------------
 /// 1. 小睡模型
@@ -433,7 +434,7 @@ class DailyRecord {
       'date': Timestamp.fromDate(DateTime(date.year, date.month, date.day)),
       'emotions': emotions.map((e) => e.toMap()).toList(),
       'symptoms': symptoms,
-      'stateChanges': stateChanges,
+      'stateChanges': normalizeStateChanges(stateChanges),
       'symptomSectionCompleted': symptomSectionCompleted,
       'emotionSectionCompleted': emotionSectionCompleted,
       'stateSectionCompleted': stateSectionCompleted,
@@ -463,7 +464,7 @@ class DailyRecord {
     final symptoms = rawSymptoms is List
         ? rawSymptoms.map((e) => e.toString()).toList()
         : const <String>[];
-    final stateChanges = _parseStateChanges(data['stateChanges']);
+    final stateChanges = normalizeStateChanges(data['stateChanges']);
     final sleep = SleepData.fromMap(
       rawSleep is Map ? rawSleep.cast<String, dynamic>() : null,
     );
@@ -529,18 +530,6 @@ class DailyRecord {
     }
 
     return const [];
-  }
-
-  static Map<String, int> _parseStateChanges(dynamic raw) {
-    if (raw is! Map) return const {};
-    final result = <String, int>{};
-    for (final entry in raw.entries) {
-      final value = entry.value is num ? (entry.value as num).toInt() : null;
-      if (value != null && value >= 1 && value <= 5) {
-        result[entry.key.toString()] = value;
-      }
-    }
-    return result;
   }
 
   static bool _resolveSectionCompletion(dynamic explicit, bool legacyContent) {

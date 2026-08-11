@@ -101,6 +101,8 @@ class _FollowUpAiPreviewPageState extends State<FollowUpAiPreviewPage> {
         discussionItems: _texts('discussionItems'),
         followUpResponses: _summary.followUpResponses,
         timelineRelations: _texts('timelineRelations'),
+        medicationSubjectiveSummaries: _summary.medicationSubjectiveSummaries,
+        recordEvidenceHighlights: _summary.recordEvidenceHighlights,
         userSharedNotes: _texts('userSharedNotes'),
         userReportedConcerns: _summary.userReportedConcerns,
         diaryHighlights: _summary.diaryHighlights
@@ -214,14 +216,18 @@ class _FollowUpAiPreviewPageState extends State<FollowUpAiPreviewPage> {
             _readOnlySection('身體測量', _bodyMeasurementItems(),
                 emptyText: '此摘要沒有可顯示的體重、體脂率或腰圍資料'),
           ] else ...[
-            _readOnlySection('身體症狀', const [],
-                emptyText: '此摘要沒有可顯示的症狀資料'),
+            _readOnlySection('身體症狀', const [], emptyText: '此摘要沒有可顯示的症狀資料'),
             _readOnlySection('身體測量', const [],
                 emptyText: '此摘要沒有可顯示的體重、體脂率或腰圍資料'),
           ],
           _diaryHighlightsSection(),
           _medicationTimelineSection(),
           _additionalNotesSection(),
+          _readOnlySection(
+            '主觀用藥感受',
+            _summary.medicationSubjectiveSummaries,
+            emptyText: '此摘要期間沒有主觀用藥感受回報',
+          ),
           _section('資料限制', 'dataLimitations', showWhenEmpty: true),
           const SizedBox(height: 8),
         ],
@@ -258,11 +264,15 @@ class _FollowUpAiPreviewPageState extends State<FollowUpAiPreviewPage> {
     final symptoms = input.highFrequencySymptoms.take(5).map((symptom) {
       final name = symptom['name']?.toString().trim() ?? '';
       final days = (symptom['occurrenceDays'] as num?)?.toInt();
+      final events = (symptom['eventCount'] as num?)?.toInt();
       final severity = symptom['averageSeverity'];
+      final maxSeverity = symptom['maxSeverity'];
       return [
         name,
         if (days != null) '出現 $days 天',
+        if (events != null && events > 0) '快速記錄 $events 次',
         if (severity is num) '平均程度 ${compact(severity)}',
+        if (maxSeverity is num) '最高程度 ${compact(maxSeverity)}/5',
       ].where((part) => part.isNotEmpty).join('，');
     }).where((item) => item.trim().isNotEmpty);
     return FollowUpSummaryTextFormatter.sentences(symptoms);

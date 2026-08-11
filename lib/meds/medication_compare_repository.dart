@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import '../utils/health_data_encryption_service.dart';
 import 'med_symptom_compare_models.dart';
 import 'medication_local_db.dart';
+import 'medication_subjective_response.dart';
 
 class MedicationCompareRepository {
   MedicationCompareRepository({MedicationLocalDB? localDb})
@@ -88,6 +89,17 @@ class MedicationCompareRepository {
     final medications = await getMedications(uid);
     return mergeMedicationCompareOptions(medications, events);
   }
+
+  Future<List<MedicationSubjectiveResponse>> getSubjectiveResponses({
+    required String uid,
+    required String changeRecordId,
+    String? medicationId,
+  }) =>
+      _localDb.getSubjectiveResponses(
+        uid: uid,
+        changeRecordId: changeRecordId,
+        medicationId: medicationId,
+      );
 
   static String? toIsoDate(dynamic value) {
     if (value is Timestamp) return value.toDate().toIso8601String();

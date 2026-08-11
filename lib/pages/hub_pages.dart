@@ -19,6 +19,7 @@ import '../constants/healing_design_system.dart';
 import '../settings_page.dart';
 import 'feedback_page.dart';
 import '../follow_up/pages/follow_up_hub_page.dart';
+import '../follow_up/services/follow_up_service.dart';
 import 'life_overview_page.dart';
 import 'profile_page.dart';
 import 'trend_review_hub_page.dart';
@@ -61,6 +62,28 @@ class HomeHubPage extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
+            FutureBuilder<List<FollowUpAppointment>>(
+              future: FollowUpService.getAppointments(),
+              builder: (context, snapshot) {
+                final hasAppointmentToday = (snapshot.data ?? const [])
+                    .any((appointment) => appointment.daysUntil == 0);
+                if (!hasAppointmentToday) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: _RecordEntryCard(
+                    icon: Icons.event_available_outlined,
+                    title: '今天是回診日',
+                    subtitle: '回診後記得填寫下一次回診日期',
+                    color: const Color(0xFF7DB7D8),
+                    onTap: () => _push(
+                      context,
+                      const FollowUpHubPage(promptAddAppointment: true),
+                    ),
+                    actionLabel: '填寫下次日期',
+                  ),
+                );
+              },
+            ),
             const QuickRecordHomeCard(),
             const SizedBox(height: 16),
             _RecordEntryCard(

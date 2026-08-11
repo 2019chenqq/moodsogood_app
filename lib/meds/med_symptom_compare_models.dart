@@ -1,7 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../models/daily_health_aggregate.dart';
+import '../services/daily_health_aggregation_service.dart';
 import '../daily/daily_state_dimensions.dart';
 import '../daily/emotion_trend_calculator.dart';
+
+const String medicationCompareNonCausalNotice =
+    '同期紀錄與使用者主觀回報僅供整理，不代表藥物造成症狀改善或惡化。';
 
 const meaningfulAdjustmentTypes = <String>{
   'added',
@@ -454,6 +459,7 @@ class MetricAggregate {
     required this.maximumScore,
     this.confirmedRecordedDays = 0,
     this.inferredRecordedDays = 0,
+    this.eventCount = 0,
   });
 
   final int recordedDays;
@@ -464,6 +470,7 @@ class MetricAggregate {
   final double? maximumScore;
   final int confirmedRecordedDays;
   final int inferredRecordedDays;
+  final int eventCount;
 }
 
 class DailyRecordAggregate {
@@ -681,6 +688,65 @@ class DailyRecordAggregator {
     );
   }
 
+  static DailyRecordAggregate withAggregatedSymptoms(
+    DailyRecordAggregate base,
+    Iterable<DailyHealthAggregate> aggregates,
+  ) {
+    final days = aggregates.where((aggregate) => aggregate.recorded).toList();
+    final statistics =
+        const DailyHealthAggregationService().allSymptomStatistics(days);
+    final eventDays =
+        days.where((aggregate) => aggregate.eventCount > 0).length;
+    final legacySymptomDays = days.where((aggregate) {
+      return aggregate.eventCount == 0 &&
+          aggregate.hasDailyRecord &&
+          aggregate.dailyRecords.any(
+            (record) => record.symptoms.any((name) => name.trim().isNotEmpty),
+          );
+    }).length;
+    final symptoms = <String, MetricAggregate>{
+      for (final item in statistics)
+        item.name: MetricAggregate(
+          recordedDays: item.recordedDays,
+          scoredDays: item.eventCount,
+          presentDays: item.occurrenceDays,
+          occurrenceRate:
+              item.recordedDays == 0 ? null : item.occurrenceRate * 100,
+          averageScore: item.averageSeverity,
+          maximumScore: item.maxSeverity?.toDouble(),
+          confirmedRecordedDays: eventDays,
+          inferredRecordedDays: legacySymptomDays,
+          eventCount: item.eventCount,
+        ),
+    };
+    final uniqueRecordedDays = days.map((item) => item.dateKey).toSet().length;
+    return DailyRecordAggregate(
+      totalRecordDays: uniqueRecordedDays,
+      effectiveRecordDays: uniqueRecordedDays,
+      symptomRecordedDays: uniqueRecordedDays,
+      emotionRecordedDays: base.emotionRecordedDays,
+      stateRecordedDays: base.stateRecordedDays,
+      legacyInferredSectionDays: base.legacyInferredSectionDays,
+      symptomRecordSummary: SectionRecordSummary(
+        confirmedRecordedDays: eventDays,
+        inferredRecordedDays: legacySymptomDays,
+        notRecordedDays: (uniqueRecordedDays -
+                {
+                  ...days
+                      .where((item) => item.symptomDailyValues.isNotEmpty)
+                      .map((item) => item.dateKey)
+                }.length)
+            .clamp(0, uniqueRecordedDays)
+            .toInt(),
+      ),
+      emotionRecordSummary: base.emotionRecordSummary,
+      stateRecordSummary: base.stateRecordSummary,
+      symptoms: symptoms,
+      emotions: base.emotions,
+      states: base.states,
+    );
+  }
+
   static SectionRecordStatus sectionStatus(
     Map<String, dynamic> data, {
     required List<String> completedKeys,
@@ -877,6 +943,8 @@ class CompareMetricResult {
     required this.afterRecordedDays,
     required this.confidence,
     required this.dataAdequacy,
+    this.beforeEventCount = 0,
+    this.afterEventCount = 0,
   });
 
   final String name;
@@ -903,6 +971,8 @@ class CompareMetricResult {
   final int afterRecordedDays;
   final CompareConfidence confidence;
   final DataAdequacy dataAdequacy;
+  final int beforeEventCount;
+  final int afterEventCount;
 
   bool get canCalculate => dataAdequacy != DataAdequacy.unavailable;
   bool get canInterpret =>
@@ -1022,6 +1092,8 @@ class CompareEngine {
         afterPresentDays: a.presentDays,
         beforeRecordedDays: before.symptomRecordedDays,
         afterRecordedDays: after.symptomRecordedDays,
+        beforeEventCount: b.eventCount,
+        afterEventCount: a.eventCount,
         confidence: calculateCompareConfidence(
           beforeEffectiveDays: before.symptomRecordedDays,
           afterEffectiveDays: after.symptomRecordedDays,
@@ -1432,6 +1504,41 @@ class ObservationWindowStatus {
       remainingDays: requestedDays - observed,
       completed: observed >= requestedDays,
       expectedCompletionDate: anchor.add(Duration(days: requestedDays)),
+    );
+  }
+}
+
+class MedicationComparisonWindow {
+  const MedicationComparisonWindow({
+    required this.beforeStart,
+    required this.beforeEndExclusive,
+    required this.adjustmentDay,
+    required this.afterStart,
+    required this.afterEndExclusive,
+  });
+
+  final DateTime beforeStart;
+  final DateTime beforeEndExclusive;
+  final DateTime adjustmentDay;
+  final DateTime afterStart;
+  final DateTime afterEndExclusive;
+
+  factory MedicationComparisonWindow.dateLevel({
+    required DateTime adjustmentDate,
+    required int days,
+  }) {
+    final adjustmentDay = DateTime(
+      adjustmentDate.year,
+      adjustmentDate.month,
+      adjustmentDate.day,
+    );
+    final afterStart = adjustmentDay.add(const Duration(days: 1));
+    return MedicationComparisonWindow(
+      beforeStart: adjustmentDay.subtract(Duration(days: days)),
+      beforeEndExclusive: adjustmentDay,
+      adjustmentDay: adjustmentDay,
+      afterStart: afterStart,
+      afterEndExclusive: afterStart.add(Duration(days: days)),
     );
   }
 }

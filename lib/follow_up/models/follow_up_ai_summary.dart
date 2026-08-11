@@ -297,6 +297,9 @@ class FollowUpAiV1Input {
     required this.currentMedications,
     required this.medicationTimeline,
     this.medicationSubjectiveReports = const [],
+    this.dailyHealthSummary = const {},
+    this.coOccurrenceSummary = const {},
+    this.representativeHealthEvents = const [],
     required this.dataLimitations,
     this.diaryContext = const [],
     this.schemaVersion = 1,
@@ -314,6 +317,9 @@ class FollowUpAiV1Input {
   final List<Map<String, dynamic>> currentMedications;
   final List<Map<String, dynamic>> medicationTimeline;
   final List<Map<String, dynamic>> medicationSubjectiveReports;
+  final Map<String, dynamic> dailyHealthSummary;
+  final Map<String, dynamic> coOccurrenceSummary;
+  final List<Map<String, dynamic>> representativeHealthEvents;
   final List<String> dataLimitations;
   final List<Map<String, dynamic>> diaryContext;
 
@@ -335,6 +341,9 @@ class FollowUpAiV1Input {
         currentMedications: currentMedications,
         medicationTimeline: medicationTimeline,
         medicationSubjectiveReports: medicationSubjectiveReports,
+        dailyHealthSummary: dailyHealthSummary,
+        coOccurrenceSummary: coOccurrenceSummary,
+        representativeHealthEvents: representativeHealthEvents,
         dataLimitations: dataLimitations,
         diaryContext: diaryContext ?? this.diaryContext,
       );
@@ -353,6 +362,12 @@ class FollowUpAiV1Input {
         'currentMedications': currentMedications,
         'medicationTimeline': medicationTimeline,
         'medicationSubjectiveReports': medicationSubjectiveReports,
+        if (dailyHealthSummary.isNotEmpty)
+          'dailyHealthSummary': dailyHealthSummary,
+        if (coOccurrenceSummary.isNotEmpty)
+          'coOccurrenceSummary': coOccurrenceSummary,
+        if (representativeHealthEvents.isNotEmpty)
+          'representativeHealthEvents': representativeHealthEvents,
         'dataLimitations': dataLimitations,
         if (diaryContext.isNotEmpty) 'diaryContext': diaryContext,
       };
@@ -395,6 +410,7 @@ class FollowUpAiOutput {
     required this.discussionPriorities,
     this.discussionItems = const [],
     this.medicationSubjectiveSummaries = const [],
+    this.recordEvidenceHighlights = const [],
     this.followUpResponses = const [],
     this.userSharedNotes = const [],
     this.userReportedConcerns = const [],
@@ -409,6 +425,7 @@ class FollowUpAiOutput {
   final List<String> discussionPriorities;
   final List<String> discussionItems;
   final List<String> medicationSubjectiveSummaries;
+  final List<String> recordEvidenceHighlights;
 
   /// App-owned question/answer pairs from the pre-summary clarification step.
   /// These are preserved verbatim instead of relying on the model to repeat
@@ -431,6 +448,7 @@ class FollowUpAiOutput {
         'discussionPriorities': discussionPriorities,
         'discussionItems': discussionItems,
         'medicationSubjectiveSummaries': medicationSubjectiveSummaries,
+        'recordEvidenceHighlights': recordEvidenceHighlights,
         'followUpResponses': followUpResponses,
         'userSharedNotes': userSharedNotes,
         'userReportedConcerns': userReportedConcerns,
@@ -453,6 +471,7 @@ class FollowUpAiOutput {
       discussionItems: _strings(json['discussionItems']),
       medicationSubjectiveSummaries:
           _strings(json['medicationSubjectiveSummaries']),
+      recordEvidenceHighlights: _strings(json['recordEvidenceHighlights']),
       followUpResponses: _questionAnswers(json['followUpResponses']),
       userSharedNotes: _strings(json['userSharedNotes']),
       userReportedConcerns: _strings(json['userReportedConcerns']),
@@ -546,6 +565,7 @@ class FollowUpSummaryRecord {
       'additionalNotes': options.lifeUpdates ? additionalNotes : '',
       'aiOutput': {
         'keyChanges': display.keyChanges,
+        'recordEvidenceHighlights': display.recordEvidenceHighlights,
         'discussionItems': options.discussionTopics
             ? display.discussionItems
             : const <String>[],
@@ -555,6 +575,7 @@ class FollowUpSummaryRecord {
         'userSharedNotes': display.userSharedNotes,
         'userReportedConcerns': display.userSharedNotes,
         'dataLimitations': display.dataLimitations,
+        'medicationSubjectiveSummaries': display.medicationSubjectiveSummaries,
         'generatedAt': aiOutput.generatedAt.toUtc().toIso8601String(),
       },
       'sleepSummary': options.sleep ? sleepSummary : const {},
@@ -563,8 +584,9 @@ class FollowUpSummaryRecord {
           options.medicationAdjustments ? medicationTimeline : const [],
       'highFrequencySymptoms':
           options.emotionsAndSymptoms ? highFrequencySymptoms : const [],
-      'bodyMeasurements': options.bodyMeasurements ? bodyMeasurements : const [],
-      'schemaVersion': schemaVersion,
+      'bodyMeasurements':
+          options.bodyMeasurements ? bodyMeasurements : const [],
+      'schemaVersion': schemaVersion < 2 ? 2 : schemaVersion,
       'display': display.toJson(),
     };
   }
@@ -656,6 +678,7 @@ FollowUpAiOutput _safeAiOutput(dynamic value, DateTime fallbackDate) {
     dataLimitations: _strings(map['dataLimitations']),
     medicationSubjectiveSummaries:
         _strings(map['medicationSubjectiveSummaries']),
+    recordEvidenceHighlights: _strings(map['recordEvidenceHighlights']),
     generatedAt: _dateTime(map['generatedAt']) ?? fallbackDate,
     usedFallback: map['usedFallback'] == true,
   );
@@ -858,6 +881,7 @@ class FollowUpSummaryDisplayModel {
     required this.topicLabels,
     required this.discussionItems,
     required this.keyChanges,
+    required this.recordEvidenceHighlights,
     required this.timelineRelations,
     required this.symptoms,
     required this.bodyMeasurements,
@@ -865,6 +889,7 @@ class FollowUpSummaryDisplayModel {
     required this.sleepSummaryItems,
     required this.sleepTrend,
     required this.medicationTimeline,
+    required this.medicationSubjectiveSummaries,
     required this.dataLimitations,
     required this.generatedAt,
     required this.includedSections,
@@ -874,6 +899,7 @@ class FollowUpSummaryDisplayModel {
   final List<String> topicLabels;
   final List<String> discussionItems;
   final List<String> keyChanges;
+  final List<String> recordEvidenceHighlights;
   final List<String> timelineRelations;
   final List<String> symptoms;
   final List<String> bodyMeasurements;
@@ -881,6 +907,7 @@ class FollowUpSummaryDisplayModel {
   final List<String> sleepSummaryItems;
   final List<Map<String, dynamic>> sleepTrend;
   final List<String> medicationTimeline;
+  final List<String> medicationSubjectiveSummaries;
   final List<String> dataLimitations;
   final String generatedAt;
   final List<String> includedSections;
@@ -943,12 +970,15 @@ class FollowUpSummaryDisplayModel {
               ),
             ).take(5).toList(growable: false)
           : const [],
+      recordEvidenceHighlights: options.emotionsAndSymptoms
+          ? FollowUpSummaryTextFormatter.sentences(
+              output.recordEvidenceHighlights,
+            )
+          : const [],
       // Kept in the view model only for wire compatibility. Renderers must
       // ignore legacy timeline relations.
       timelineRelations: const [],
-      symptoms: options.emotionsAndSymptoms
-          ? _symptomItems(record)
-          : const [],
+      symptoms: options.emotionsAndSymptoms ? _symptomItems(record) : const [],
       bodyMeasurements:
           options.bodyMeasurements ? _bodyMeasurementItems(record) : const [],
       userSharedNotes: options.lifeUpdates ? notes : const [],
@@ -962,6 +992,11 @@ class FollowUpSummaryDisplayModel {
       medicationTimeline: options.medicationAdjustments
           ? FollowUpSummaryTextFormatter.sentences(
               record.medicationTimeline.map(_formatMedicationEvent),
+            )
+          : const [],
+      medicationSubjectiveSummaries: options.medicationAdjustments
+          ? FollowUpSummaryTextFormatter.sentences(
+              output.medicationSubjectiveSummaries,
             )
           : const [],
       dataLimitations: options.dataLimitations
@@ -983,11 +1018,12 @@ class FollowUpSummaryDisplayModel {
   }
 
   Map<String, dynamic> toJson() => {
-        'schemaVersion': 1,
+        'schemaVersion': 2,
         'visitInfo': visitInfo,
         'topicLabels': topicLabels,
         'discussionItems': discussionItems,
         'keyChanges': keyChanges,
+        'recordEvidenceHighlights': recordEvidenceHighlights,
         'timelineRelations': timelineRelations,
         'symptoms': symptoms,
         'bodyMeasurements': bodyMeasurements,
@@ -995,6 +1031,7 @@ class FollowUpSummaryDisplayModel {
         'sleepSummaryItems': sleepSummaryItems,
         'sleepTrend': sleepTrend,
         'medicationTimeline': medicationTimeline,
+        'medicationSubjectiveSummaries': medicationSubjectiveSummaries,
         'dataLimitations': dataLimitations,
         'generatedAt': generatedAt,
         'includedSections': includedSections,
@@ -1008,14 +1045,14 @@ class FollowUpSummaryDisplayModel {
   }) {
     final duration = _map(record.sleepSummary['durationHours']);
     var values = source.where((item) => !item.contains('睡眠')).toList();
-    
+
     // Always filter out body measurement values from key changes
     // Actual values should never appear in keyChanges, only in bodyMeasurements
     values = values.where((item) {
       // Remove items that contain body measurement data with actual values
       return !_isBodyMeasurementWithValues(item);
     }).toList();
-    
+
     final comparison = _map(duration['comparison']);
     final change = comparison['change'] is num
         ? comparison['change'] as num
@@ -1029,7 +1066,7 @@ class FollowUpSummaryDisplayModel {
       values,
     );
   }
-  
+
   static bool _isBodyMeasurementWithValues(String text) {
     // Check if the text contains body measurement patterns with actual values
     // Patterns like: "體重：75kg → 74.5kg" or "體重從 75kg 變化到 74.5kg"
@@ -1037,13 +1074,14 @@ class FollowUpSummaryDisplayModel {
       r'(體重|體脂率|腰圍|body\s*weight|body\s*fat|waist)',
       caseSensitive: false,
     );
-    
+
     if (!bodyMeasurementPattern.hasMatch(text)) {
       return false;
     }
-    
+
     // If it mentions body measurement, check if it has actual numeric values
-    final hasNumbers = RegExp(r'\d+\.?\d*\s*(kg|%|cm|公斤|公分|百分比)').hasMatch(text);
+    final hasNumbers =
+        RegExp(r'\d+\.?\d*\s*(kg|%|cm|公斤|公分|百分比)').hasMatch(text);
     return hasNumbers;
   }
 
@@ -1113,11 +1151,15 @@ class FollowUpSummaryDisplayModel {
     final symptoms = record.highFrequencySymptoms.take(5).map((symptom) {
       final name = symptom['name']?.toString().trim() ?? '';
       final days = (symptom['occurrenceDays'] as num?)?.toInt();
+      final events = (symptom['eventCount'] as num?)?.toInt();
       final severity = symptom['averageSeverity'];
+      final maxSeverity = symptom['maxSeverity'];
       return [
         name,
         if (days != null) '出現 $days 天',
+        if (events != null && events > 0) '快速記錄共 $events 次',
         if (severity is num) '平均程度 ${compact(severity)}',
+        if (maxSeverity is num) '最高強度 ${compact(maxSeverity)}/5',
       ].where((part) => part.isNotEmpty).join('，');
     });
 

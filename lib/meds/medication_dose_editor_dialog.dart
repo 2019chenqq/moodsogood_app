@@ -120,7 +120,7 @@ class MedicationOralDoseEditResult {
   });
 
   final double dosePerUnit;
-  final int pillCount;
+  final double pillCount;
   final String unit;
 }
 
@@ -183,7 +183,7 @@ class _MedicationOralDoseEditorDialogState
     Navigator.of(context).pop(
       MedicationOralDoseEditResult(
         dosePerUnit: dosePerUnit,
-        pillCount: pillCount.toInt(),
+        pillCount: pillCount,
         unit: _unit,
       ),
     );

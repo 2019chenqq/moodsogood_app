@@ -385,15 +385,24 @@ class SleepPage extends StatelessWidget {
                     ),
                   ),
                 ] else
-                  EmotionSlider(
-                    label: '睡眠品質',
-                    value: sleepQuality,
-                    onChanged: onChangeSleepQuality,
-                    leftIcon: 'assets/emotion/default.png',
-                    rightIcon: 'assets/emotion/default.png',
-                    gradientColors: const [
-                      Color(0xFF9AD0EC),
-                      Color(0xFFFFE08A),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '1 分：最差｜3 分：普通｜5 分：最好',
+                        style: HealingDesignSystem.bodySmall,
+                      ),
+                      EmotionSlider(
+                        label: '睡眠品質',
+                        value: sleepQuality ?? 3,
+                        onChanged: onChangeSleepQuality,
+                        leftIcon: 'assets/emotion/default.png',
+                        rightIcon: 'assets/emotion/default.png',
+                        gradientColors: const [
+                          Color(0xFF9AD0EC),
+                          Color(0xFFFFE08A),
+                        ],
+                      ),
                     ],
                   ),
               ],

@@ -275,6 +275,7 @@ class FollowUpAiService {
       timelineRelations: const [],
       medicationSubjectiveSummaries:
           _strings(json['medicationSubjectiveSummaries']),
+      recordEvidenceHighlights: _strings(json['recordEvidenceHighlights']),
       userSharedNotes: sharedNotes,
       diaryHighlights: diaryHighlights,
       dataLimitations: limitations,
@@ -371,18 +372,19 @@ class FollowUpAiService {
       if (input.additionalNotes.trim().isNotEmpty) input.additionalNotes.trim(),
     ];
     final limitations = input.dataLimitations.toSet().toList();
+    final evidenceHighlights = _recordEvidenceHighlights(input);
     return FollowUpAiOutput(
       keyChanges: keyChanges.take(5).toList(),
       discussionPriorities: const [],
       discussionItems: discussionItems,
-      timelineRelations:
-          MedicationSubjectiveSummaryBuilder.fallbackSummaries(
+      timelineRelations: MedicationSubjectiveSummaryBuilder.fallbackSummaries(
         input.medicationSubjectiveReports,
       ),
       medicationSubjectiveSummaries:
           MedicationSubjectiveSummaryBuilder.fallbackSummaries(
         input.medicationSubjectiveReports,
       ),
+      recordEvidenceHighlights: evidenceHighlights,
       followUpResponses: _followUpResponses(followUpAnswers),
       userSharedNotes: sharedNotes,
       dataLimitations: limitations,
@@ -428,7 +430,8 @@ class FollowUpAiService {
     FollowUpAiV1Input input, {
     Map<String, String> followUpAnswers = const {},
   }) {
-    final medicationSubjectiveSummaries = _resolvedMedicationSubjectiveSummaries(
+    final medicationSubjectiveSummaries =
+        _resolvedMedicationSubjectiveSummaries(
       output.medicationSubjectiveSummaries,
       input.medicationSubjectiveReports,
     );
@@ -480,6 +483,9 @@ class FollowUpAiService {
               ...followUpAnswers.values.map((answer) => answer.trim()),
             ]),
       medicationSubjectiveSummaries: medicationSubjectiveSummaries,
+      recordEvidenceHighlights: output.recordEvidenceHighlights.isNotEmpty
+          ? output.recordEvidenceHighlights
+          : _recordEvidenceHighlights(input),
       followUpResponses: _followUpResponses(followUpAnswers),
       timelineRelations: medicationSubjectiveSummaries,
       // This section is reserved for the user's own preparation text; recorded
@@ -489,10 +495,51 @@ class FollowUpAiService {
       dataLimitations: output.dataLimitations,
       generatedAt: output.generatedAt,
       usedFallback: output.usedFallback ||
-          (output.medicationSubjectiveSummaries.isNotEmpty &&
-              medicationSubjectiveSummaries.length !=
-                  output.medicationSubjectiveSummaries.length),
+          output.medicationSubjectiveSummaries.any(
+            (item) => !MedicationSubjectiveSummaryBuilder.isSafeAiSummary(item),
+          ),
     );
+  }
+
+  static List<String> _recordEvidenceHighlights(FollowUpAiV1Input input) {
+    final result = <String>[];
+    for (final symptom in input.highFrequencySymptoms.take(3)) {
+      final name = symptom['name']?.toString().trim() ?? '';
+      if (name.isEmpty) continue;
+      final days = symptom['occurrenceDays'] ?? 0;
+      final events = symptom['eventCount'] ?? 0;
+      final maxSeverity = symptom['maxSeverity'];
+      result.add(
+        '$name 出現 $days 個記錄日；快速記錄共 $events 次'
+        '${maxSeverity == null ? '' : '，最高強度 $maxSeverity/5'}。',
+      );
+    }
+
+    final eventPairs = input.coOccurrenceSummary['eventLevel'];
+    if (eventPairs is List) {
+      for (final raw in eventPairs.whereType<Map>().take(2)) {
+        final symptoms = _strings(raw['symptoms']);
+        final count = raw['coOccurrenceEventCount'];
+        if (symptoms.length == 2 && count is num) {
+          result.add(
+            '${symptoms[0]}與${symptoms[1]}曾於 ${count.toInt()} 次快速記錄事件中共同出現。',
+          );
+        }
+      }
+    }
+    final legacyPairs = input.coOccurrenceSummary['legacySameDay'];
+    if (legacyPairs is List) {
+      for (final raw in legacyPairs.whereType<Map>().take(2)) {
+        final symptoms = _strings(raw['symptoms']);
+        final count = raw['coOccurrenceDays'];
+        if (symptoms.length == 2 && count is num) {
+          result.add(
+            '${symptoms[0]}與${symptoms[1]}曾於 ${count.toInt()} 個記錄日同日出現。',
+          );
+        }
+      }
+    }
+    return result.take(5).toList(growable: false);
   }
 
   static List<String> _resolvedMedicationSubjectiveSummaries(

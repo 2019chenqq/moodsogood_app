@@ -65,7 +65,9 @@ class MedicationAdjustmentTimeline extends StatelessWidget {
           );
         }
 
-        final docs = snap.data ?? [];
+        final docs = List<HealthDocument>.from(snap.data ?? const [])
+          ..sort((left, right) =>
+              _dateOf(right.data).compareTo(_dateOf(left.data)));
 
         if (docs.isEmpty) {
           return const _EmptyTimeline();
@@ -80,8 +82,7 @@ class MedicationAdjustmentTimeline extends StatelessWidget {
               final doc = docs[i];
               final data = doc.data;
 
-              final ts = data['date'];
-              final date = (ts is Timestamp) ? ts.toDate() : DateTime.now();
+              final date = _dateOf(data);
 
               final note = (data['note'] as String?)?.trim() ?? '';
               final changes =
@@ -113,6 +114,14 @@ class MedicationAdjustmentTimeline extends StatelessWidget {
     return '$y/$m/$d';
   }
 
+  static DateTime _dateOf(Map<String, dynamic> data) {
+    final value = data['date'];
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    return DateTime.tryParse(value?.toString() ?? '') ??
+        DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
   static String _buildSummary(List<Map> changes) {
     if (changes.isEmpty) return '這一天尚未留下明確的藥物變更內容。';
 
@@ -142,11 +151,6 @@ class MedicationAdjustmentTimeline extends StatelessWidget {
     final more = changes.length > 3 ? '，還有 ${changes.length - 3} 項調整' : '';
     return '${items.join('、')}$more';
   }
-
-  static String _fmtWeekday(DateTime dt) {
-    const weekdays = ['一', '二', '三', '四', '五', '六', '日'];
-    return '星期${weekdays[dt.weekday - 1]}';
-  }
 }
 
 class _TimelineItem extends StatelessWidget {
@@ -167,16 +171,13 @@ class _TimelineItem extends StatelessWidget {
   });
 
   static const Color _primaryBlue = MedicationAdjustmentTimeline._primaryBlue;
-  static const Color _softBlue = MedicationAdjustmentTimeline._softBlue;
   static const Color _deepText = MedicationAdjustmentTimeline._deepText;
-  static const Color _mutedText = MedicationAdjustmentTimeline._mutedText;
   static const Color _cardBg = MedicationAdjustmentTimeline._cardBg;
   static const Color _lineColor = MedicationAdjustmentTimeline._lineColor;
 
   @override
   Widget build(BuildContext context) {
     final title = MedicationAdjustmentTimeline._fmtYmd(date);
-    final weekday = MedicationAdjustmentTimeline._fmtWeekday(date);
     final summary = MedicationAdjustmentTimeline._buildSummary(changes);
 
     return IntrinsicHeight(
@@ -259,7 +260,6 @@ class _TimelineItem extends StatelessWidget {
                         children: [
                           _HeaderRow(
                             title: title,
-                            weekday: weekday,
                             count: changes.length,
                           ),
                           const SizedBox(height: 12),
@@ -314,12 +314,10 @@ class _TimelineItem extends StatelessWidget {
 
 class _HeaderRow extends StatelessWidget {
   final String title;
-  final String weekday;
   final int count;
 
   const _HeaderRow({
     required this.title,
-    required this.weekday,
     required this.count,
   });
 
@@ -359,27 +357,13 @@ class _HeaderRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 2),
-              Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      title,
-                      style: const TextStyle(
-                        color: _deepText,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    weekday,
-                    style: const TextStyle(
-                      color: _mutedText,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
+              Text(
+                title,
+                style: const TextStyle(
+                  color: _deepText,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ],
           ),

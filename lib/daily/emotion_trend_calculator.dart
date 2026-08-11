@@ -1,4 +1,155 @@
 import '../models/daily_record.dart';
+import '../models/daily_health_aggregate.dart';
+import '../services/daily_health_aggregation_service.dart';
+
+enum DailyEmotionMainSource {
+  dailyCheckIn,
+  dailyRecord,
+  quickRecordFallback,
+}
+
+class QuickRecordEmotionRange {
+  const QuickRecordEmotionRange({
+    required this.min,
+    required this.max,
+    required this.count,
+  });
+
+  final double min;
+  final double max;
+  final int count;
+
+  bool get shouldDisplay => count >= 2;
+}
+
+class DailyEmotionValuePoint {
+  const DailyEmotionValuePoint({
+    required this.date,
+    required this.emotionName,
+    required this.mainValue,
+    required this.scale,
+    required this.source,
+    this.quickRecordRange,
+  });
+
+  final DateTime date;
+  final String emotionName;
+  final double mainValue;
+  final int scale;
+  final DailyEmotionMainSource source;
+  final QuickRecordEmotionRange? quickRecordRange;
+}
+
+class DailyEmotionAggregateCalculator {
+  DailyEmotionAggregateCalculator._();
+
+  static DailyEmotionValuePoint? calculateForEmotion(
+    DailyHealthAggregate aggregate,
+    String emotionName, {
+    int scale = 5,
+  }) {
+    final summary = aggregate.emotionDailyValues[emotionName];
+    if (summary == null) return null;
+
+    List<DailyValueObservation> valuesFor(DailyHealthValueSource source) =>
+        summary.observations
+            .where((value) => value.source == source && value.scale == scale)
+            .toList();
+
+    final checkIns = valuesFor(DailyHealthValueSource.dailyCheckIn);
+    final records = valuesFor(DailyHealthValueSource.dailyRecord);
+    // QuickRecord is always a 1-5 value. It must never enter a 10-point trend.
+    final events = scale == 5
+        ? valuesFor(DailyHealthValueSource.healthEvent)
+        : const <DailyValueObservation>[];
+
+    final selected = checkIns.isNotEmpty
+        ? checkIns
+        : records.isNotEmpty
+            ? records
+            : events;
+    if (selected.isEmpty) return null;
+
+    final source = checkIns.isNotEmpty
+        ? DailyEmotionMainSource.dailyCheckIn
+        : records.isNotEmpty
+            ? DailyEmotionMainSource.dailyRecord
+            : DailyEmotionMainSource.quickRecordFallback;
+    final mainValue =
+        selected.fold<double>(0, (sum, value) => sum + value.value) /
+            selected.length;
+
+    QuickRecordEmotionRange? range;
+    if (events.isNotEmpty) {
+      final eventValues = events.map((value) => value.value).toList();
+      range = QuickRecordEmotionRange(
+        min: eventValues.reduce((a, b) => a < b ? a : b),
+        max: eventValues.reduce((a, b) => a > b ? a : b),
+        count: eventValues.length,
+      );
+    }
+
+    return DailyEmotionValuePoint(
+      date: aggregate.date,
+      emotionName: emotionName,
+      mainValue: mainValue,
+      scale: scale,
+      source: source,
+      quickRecordRange: range,
+    );
+  }
+
+  static List<DailyEmotionValuePoint> calculate(
+    Iterable<DailyHealthAggregate> aggregates,
+    String emotionName, {
+    int scale = 5,
+  }) {
+    final points = aggregates
+        .map((aggregate) => calculateForEmotion(
+              aggregate,
+              emotionName,
+              scale: scale,
+            ))
+        .whereType<DailyEmotionValuePoint>()
+        .toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+    return points;
+  }
+
+  static double? averageMainValue(Iterable<DailyEmotionValuePoint> points) {
+    final values = points.map((point) => point.mainValue).toList();
+    if (values.isEmpty) return null;
+    return values.reduce((a, b) => a + b) / values.length;
+  }
+
+  static double? movingAverage(
+    Iterable<DailyEmotionValuePoint> points,
+    DateTime targetDate, {
+    int windowDays = 7,
+  }) {
+    final day = DateTime(targetDate.year, targetDate.month, targetDate.day);
+    final start = day.subtract(Duration(days: windowDays - 1));
+    return averageMainValue(points.where((point) {
+      final pointDay =
+          DateTime(point.date.year, point.date.month, point.date.day);
+      return !pointDay.isBefore(start) && !pointDay.isAfter(day);
+    }));
+  }
+
+  static int filledDaysInWindow(
+    Iterable<DailyEmotionValuePoint> points,
+    DateTime targetDate, {
+    int windowDays = 7,
+  }) {
+    final day = DateTime(targetDate.year, targetDate.month, targetDate.day);
+    final start = day.subtract(Duration(days: windowDays - 1));
+    return points.where((point) {
+      final pointDay =
+          DateTime(point.date.year, point.date.month, point.date.day);
+      return !pointDay.isBefore(start) && !pointDay.isAfter(day);
+    }).length;
+  }
+}
 
 enum BasicEmotionCategory {
   joy,
@@ -221,6 +372,63 @@ class EmotionTrendCalculator {
   static List<DailyEmotionTrendPoint> calculate(List<DailyRecord> records) {
     final points = records.map(calculateForRecord).toList()
       ..sort((a, b) => a.date.compareTo(b.date));
+    return points;
+  }
+
+  static List<DailyEmotionTrendPoint> calculateAggregates(
+    Iterable<DailyHealthAggregate> aggregates, {
+    int scale = 5,
+  }) {
+    final points = <DailyEmotionTrendPoint>[];
+    for (final aggregate in aggregates) {
+      var positiveTotal = 0.0;
+      var negativeTotal = 0.0;
+      var positiveCount = 0;
+      var negativeCount = 0;
+      var unknownCount = 0;
+
+      for (final emotionName in aggregate.emotionDailyValues.keys) {
+        if (emotionName == DailyHealthAggregationService.overallMoodKey) {
+          continue;
+        }
+        final point = DailyEmotionAggregateCalculator.calculateForEmotion(
+          aggregate,
+          emotionName,
+          scale: scale,
+        );
+        if (point == null) continue;
+        switch (EmotionClassificationSystem.classify(emotionName).valence) {
+          case AffectValence.positive:
+            positiveTotal += point.mainValue;
+            positiveCount++;
+            break;
+          case AffectValence.negative:
+            negativeTotal += point.mainValue;
+            negativeCount++;
+            break;
+          case AffectValence.neutral:
+          case AffectValence.unknown:
+            unknownCount++;
+            break;
+        }
+      }
+
+      final positiveAverage =
+          positiveCount == 0 ? null : positiveTotal / positiveCount;
+      final negativeAverage =
+          negativeCount == 0 ? null : negativeTotal / negativeCount;
+      if (positiveAverage == null && negativeAverage == null) continue;
+      points.add(DailyEmotionTrendPoint(
+        date: aggregate.date,
+        positiveAverage: positiveAverage,
+        negativeAverage: negativeAverage,
+        emotionBalance: (positiveAverage ?? 0) - (negativeAverage ?? 0),
+        positiveCount: positiveCount,
+        negativeCount: negativeCount,
+        unknownCount: unknownCount,
+      ));
+    }
+    points.sort((a, b) => a.date.compareTo(b.date));
     return points;
   }
 }

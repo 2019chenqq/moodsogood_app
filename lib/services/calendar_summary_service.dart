@@ -3,7 +3,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/calendar_day_summary.dart';
+import '../models/daily_health_aggregate.dart';
+import '../models/health_event.dart';
 import '../utils/health_data_encryption_service.dart';
+import 'daily_health_aggregation_service.dart';
 
 class CalendarSummaryService {
   CalendarSummaryService({
@@ -38,6 +41,12 @@ class CalendarSummaryService {
       summaries: summaries,
     );
 
+    final quickRecordCount = await _loadQuickRecords(
+      uid: uid,
+      range: range,
+      summaries: summaries,
+    );
+
     final diaryCount = await _loadDiary(
       uid: uid,
       range: range,
@@ -61,6 +70,7 @@ class CalendarSummaryService {
 
     final daysWithData = summaries.values.where(_hasAnyData).length;
     debugPrint('[CalendarSummaryService] dailyRecords docs: $dailyCount');
+    debugPrint('[CalendarSummaryService] healthEvents docs: $quickRecordCount');
     debugPrint('[CalendarSummaryService] diary docs: $diaryCount');
     debugPrint('[CalendarSummaryService] period docs: $periodCount');
     debugPrint('[CalendarSummaryService] days with data: $daysWithData');
@@ -287,6 +297,57 @@ class CalendarSummaryService {
     }
 
     return count;
+  }
+
+  Future<int> _loadQuickRecords({
+    required String uid,
+    required _DateRange range,
+    required Map<String, CalendarDaySummary> summaries,
+  }) async {
+    try {
+      final endExclusive = range.end.add(const Duration(days: 1));
+      final documents = await HealthDataEncryptionService.getEncrypted(
+        _firestore
+            .collection('users')
+            .doc(uid)
+            .collection('healthEvents')
+            .where(
+              'timestamp',
+              isGreaterThanOrEqualTo: Timestamp.fromDate(range.start),
+            )
+            .where(
+              'timestamp',
+              isLessThan: Timestamp.fromDate(endExclusive),
+            ),
+      );
+      final events = documents
+          .map((doc) => HealthEvent.fromMap(doc.id, doc.data))
+          .toList(growable: false);
+      final aggregates = const DailyHealthAggregationService().aggregateRange(
+        healthEvents: events,
+        start: range.start,
+        endExclusive: endExclusive,
+      );
+      applyQuickRecordAggregates(summaries, aggregates);
+      return events.length;
+    } catch (error) {
+      debugPrint('[CalendarSummaryService] healthEvents query skipped: $error');
+      return 0;
+    }
+  }
+
+  static void applyQuickRecordAggregates(
+    Map<String, CalendarDaySummary> summaries,
+    Iterable<DailyHealthAggregate> aggregates,
+  ) {
+    for (final aggregate in aggregates) {
+      if (aggregate.eventCount == 0) continue;
+      final current = summaries[aggregate.dateKey] ??
+          CalendarDaySummary.empty(aggregate.date);
+      summaries[aggregate.dateKey] = current.copyWith(
+        quickRecordCount: aggregate.eventCount,
+      );
+    }
   }
 
   Future<int> _loadDiary({
@@ -548,6 +609,7 @@ class CalendarSummaryService {
 
   bool _hasAnyData(CalendarDaySummary s) {
     return s.hasDailyRecord ||
+        s.hasQuickRecord ||
         s.hasDiary ||
         s.hasEmotionData ||
         s.hasSymptomData ||

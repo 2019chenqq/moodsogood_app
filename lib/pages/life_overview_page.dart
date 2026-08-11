@@ -219,12 +219,12 @@ class _LifeOverviewPageState extends State<LifeOverviewPage> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     final docId = (summary.dailyRecordDocId ?? '').trim();
 
-    if (summary.hasDailyRecord && uid != null && docId.isNotEmpty) {
+    if ((summary.hasDailyRecord || summary.hasQuickRecord) && uid != null) {
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => RecordDetailScreen(
             uid: uid,
-            docId: docId,
+            docId: docId.isNotEmpty ? docId : summary.dateKey,
             autoOpenEditor: false,
           ),
         ),
@@ -836,6 +836,7 @@ bool _isSameMonth(DateTime a, DateTime b) {
 
 bool _hasAnyData(CalendarDaySummary s) {
   return s.hasDailyRecord ||
+      s.hasQuickRecord ||
       s.hasDiary ||
       s.hasEmotionData ||
       s.hasSymptomData ||

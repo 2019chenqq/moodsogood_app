@@ -38,8 +38,8 @@ class _DailyCheckInPageState extends State<DailyCheckInPage> {
       final checkIn = await _service.getForDate(_date);
       if (!mounted) return;
       setState(() {
-        _overallMood = checkIn?.overallMood;
-        _healthStatus = checkIn?.healthStatus;
+        _overallMood = checkIn?.overallMood ?? 3;
+        _healthStatus = checkIn?.healthStatus ?? 3;
         _noSpecialEvent = checkIn?.noSpecialEvent ?? false;
         _loading = false;
       });
@@ -152,7 +152,11 @@ class _ScoreCard extends StatelessWidget {
         children: [
           Text(title, style: HealingDesignSystem.titleMedium),
           Text(
-            value == null ? '尚未評分，請滑動選擇 1～5' : '$value / 5',
+            value == null ? '預設 3 / 5' : '$value / 5',
+            style: HealingDesignSystem.bodySmall,
+          ),
+          const Text(
+            '1 分：最差｜3 分：普通｜5 分：最好',
             style: HealingDesignSystem.bodySmall,
           ),
           EmotionSlider(

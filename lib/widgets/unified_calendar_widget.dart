@@ -48,7 +48,8 @@ class _UnifiedCalendarWidgetState extends State<UnifiedCalendarWidget> {
   @override
   void initState() {
     super.initState();
-    _anchorMonth = DateTime(widget.focusedMonth.year, widget.focusedMonth.month, 1);
+    _anchorMonth =
+        DateTime(widget.focusedMonth.year, widget.focusedMonth.month, 1);
     _currentPage = _basePage;
     _pageController = PageController(initialPage: _basePage);
   }
@@ -56,8 +57,10 @@ class _UnifiedCalendarWidgetState extends State<UnifiedCalendarWidget> {
   @override
   void didUpdateWidget(covariant UnifiedCalendarWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final oldFocused = DateTime(oldWidget.focusedMonth.year, oldWidget.focusedMonth.month, 1);
-    final newFocused = DateTime(widget.focusedMonth.year, widget.focusedMonth.month, 1);
+    final oldFocused =
+        DateTime(oldWidget.focusedMonth.year, oldWidget.focusedMonth.month, 1);
+    final newFocused =
+        DateTime(widget.focusedMonth.year, widget.focusedMonth.month, 1);
     if (!_isSameMonth(oldFocused, newFocused)) {
       _anchorMonth = newFocused;
       _currentPage = _basePage;
@@ -81,7 +84,8 @@ class _UnifiedCalendarWidgetState extends State<UnifiedCalendarWidget> {
   List<DateTime> _buildMonthGrid(DateTime month) {
     final firstDayOfMonth = DateTime(month.year, month.month, 1);
     final firstWeekdayIndex = firstDayOfMonth.weekday % 7;
-    final gridStart = firstDayOfMonth.subtract(Duration(days: firstWeekdayIndex));
+    final gridStart =
+        firstDayOfMonth.subtract(Duration(days: firstWeekdayIndex));
     return List.generate(42, (index) {
       final day = gridStart.add(Duration(days: index));
       return DateTime(day.year, day.month, day.day);
@@ -92,7 +96,8 @@ class _UnifiedCalendarWidgetState extends State<UnifiedCalendarWidget> {
     return widget.summariesByDate[_dateKey(date)];
   }
 
-  List<Color> _buildDotColors(CalendarDaySummary? summary, UnifiedCalendarMode mode) {
+  List<Color> _buildDotColors(
+      CalendarDaySummary? summary, UnifiedCalendarMode mode) {
     if (summary == null) return const [];
 
     const dailyDot = Color(0xFF4A90E2);
@@ -107,7 +112,7 @@ class _UnifiedCalendarWidgetState extends State<UnifiedCalendarWidget> {
         return summary.hasDiary ? const [diaryDot] : const [];
       case UnifiedCalendarMode.record:
         return <Color>[
-          if (summary.hasDailyRecord) dailyDot,
+          if (summary.hasDailyRecord || summary.hasQuickRecord) dailyDot,
           if (summary.hasEmotionData) emotionDot,
           if (summary.hasSymptomData) symptomDot,
           if (summary.hasSleepData) sleepDot,
@@ -116,7 +121,7 @@ class _UnifiedCalendarWidgetState extends State<UnifiedCalendarWidget> {
         return summary.hasDailyRecord ? const [periodAssistDot] : const [];
       case UnifiedCalendarMode.overview:
         final dots = <Color>[
-          if (summary.hasDailyRecord) dailyDot,
+          if (summary.hasDailyRecord || summary.hasQuickRecord) dailyDot,
           if (summary.hasDiary) diaryDot,
           if (summary.hasEmotionData) emotionDot,
           if (summary.hasSymptomData) symptomDot,
@@ -194,7 +199,8 @@ class _UnifiedCalendarWidgetState extends State<UnifiedCalendarWidget> {
                   return GridView.builder(
                     physics: const NeverScrollableScrollPhysics(),
                     padding: EdgeInsets.zero,
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 7,
                       mainAxisSpacing: _gridMainSpacing,
                       crossAxisSpacing: _gridCrossSpacing,
@@ -215,7 +221,8 @@ class _UnifiedCalendarWidgetState extends State<UnifiedCalendarWidget> {
                         isSelected: isSelected,
                         isToday: isToday,
                         isPeriodDay: summary?.isPeriodDay ?? false,
-                        isPredictedPeriodDay: summary?.isPredictedPeriodDay ?? false,
+                        isPredictedPeriodDay:
+                            summary?.isPredictedPeriodDay ?? false,
                         dotColors: dots,
                         dotSize: _dotSize,
                         dotGap: _dotGap,
@@ -250,11 +257,13 @@ class _PeriodLegend extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        const Text('●', style: TextStyle(color: Color(0xFFF2A8C3), fontSize: 12)),
+        const Text('●',
+            style: TextStyle(color: Color(0xFFF2A8C3), fontSize: 12)),
         const SizedBox(width: 4),
         Text('生理期', style: textStyle),
         const SizedBox(width: 12),
-        const Text('○', style: TextStyle(color: Color(0xFFE6A6C0), fontSize: 12)),
+        const Text('○',
+            style: TextStyle(color: Color(0xFFE6A6C0), fontSize: 12)),
         const SizedBox(width: 4),
         Text('預測生理期', style: textStyle),
       ],

@@ -1,12 +1,9 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../constants/healing_design_system.dart';
-import '../models/health_event.dart';
 import '../models/unified_health_data.dart';
 import '../repositories/unified_health_data_repository.dart';
 import '../services/health_co_occurrence_service.dart';
-import 'health_event_repository.dart';
 
 class HealthEventCoOccurrencePage extends StatefulWidget {
   const HealthEventCoOccurrencePage({super.key});
@@ -21,16 +18,14 @@ class _HealthEventCoOccurrencePageState
   late final Future<_CoOccurrenceViewData> _future = _load();
 
   Future<_CoOccurrenceViewData> _load() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) throw StateError('請先登入');
     final now = DateTime.now();
-    final events = await HealthEventRepository().getByDateRange(
-      userId: uid,
+    final data = await UnifiedHealthDataRepository().getByDateRange(
       start: DateTime(now.year, now.month, now.day)
           .subtract(const Duration(days: 89)),
       end: now,
+      preserveSourceEvidence: true,
     );
-    return _CoOccurrenceViewData.fromEvents(events);
+    return _CoOccurrenceViewData.fromUnified(data);
   }
 
   @override
@@ -59,13 +54,27 @@ class _HealthEventCoOccurrencePageState
               ),
               const SizedBox(height: HealingDesignSystem.paddingL),
               _TopPairsCard(
-                title: '症狀＋症狀 Top 5',
-                pairs: data.symptomPairs,
+                title: '精確事件症狀共現 Top 5',
+                emptyText: '目前沒有同一筆快速記錄中的症狀共現資料',
+                pairs: data.eventSymptomPairs,
               ),
               const SizedBox(height: HealingDesignSystem.paddingL),
               _TopPairsCard(
-                title: '情緒＋症狀 Top 5',
-                pairs: data.emotionSymptomPairs,
+                title: '精確事件情緒－症狀 Top 5',
+                emptyText: '目前沒有同一筆快速記錄中的情緒與症狀資料',
+                pairs: data.eventEmotionSymptomPairs,
+              ),
+              const SizedBox(height: HealingDesignSystem.paddingL),
+              _TopPairsCard(
+                title: 'Legacy 同日症狀 Top 5',
+                emptyText: '目前沒有舊每日紀錄的同日症狀資料',
+                pairs: data.legacySymptomPairs,
+              ),
+              const SizedBox(height: HealingDesignSystem.paddingL),
+              _TopPairsCard(
+                title: 'Legacy 同日情緒－症狀 Top 5',
+                emptyText: '目前沒有舊每日紀錄的同日情緒與症狀資料',
+                pairs: data.legacyEmotionSymptomPairs,
               ),
             ],
           );
@@ -76,9 +85,14 @@ class _HealthEventCoOccurrencePageState
 }
 
 class _TopPairsCard extends StatelessWidget {
-  const _TopPairsCard({required this.title, required this.pairs});
+  const _TopPairsCard({
+    required this.title,
+    required this.emptyText,
+    required this.pairs,
+  });
 
   final String title;
+  final String emptyText;
   final List<_DisplayPair> pairs;
 
   @override
@@ -92,7 +106,7 @@ class _TopPairsCard extends StatelessWidget {
           Text(title, style: HealingDesignSystem.titleMedium),
           const SizedBox(height: HealingDesignSystem.paddingM),
           if (pairs.isEmpty)
-            Text('目前沒有足夠的共同出現資料', style: HealingDesignSystem.bodySmall)
+            Text(emptyText, style: HealingDesignSystem.bodySmall)
           else
             for (var index = 0; index < pairs.length; index++) ...[
               if (index > 0) const Divider(height: 20),
@@ -104,7 +118,7 @@ class _TopPairsCard extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    '共同出現 ${pairs[index].count} 次',
+                    '${pairs[index].count} ${pairs[index].unitLabel}',
                     style: HealingDesignSystem.labelMedium.copyWith(
                       color: HealingDesignSystem.primaryBlue,
                     ),
@@ -120,59 +134,44 @@ class _TopPairsCard extends StatelessWidget {
 
 class _CoOccurrenceViewData {
   const _CoOccurrenceViewData({
-    required this.symptomPairs,
-    required this.emotionSymptomPairs,
+    required this.eventSymptomPairs,
+    required this.eventEmotionSymptomPairs,
+    required this.legacySymptomPairs,
+    required this.legacyEmotionSymptomPairs,
   });
 
-  final List<_DisplayPair> symptomPairs;
-  final List<_DisplayPair> emotionSymptomPairs;
+  final List<_DisplayPair> eventSymptomPairs;
+  final List<_DisplayPair> eventEmotionSymptomPairs;
+  final List<_DisplayPair> legacySymptomPairs;
+  final List<_DisplayPair> legacyEmotionSymptomPairs;
 
-  factory _CoOccurrenceViewData.fromEvents(List<HealthEvent> events) {
+  factory _CoOccurrenceViewData.fromUnified(List<UnifiedHealthData> data) {
     const service = HealthCoOccurrenceService();
-    final normalized = events
-        .map(UnifiedHealthDataRepository.fromHealthEvent)
-        .toList(growable: false);
-    final emotionSymptom = service.calculate(normalized).eventCoOccurrences;
-
-    // Adapt unordered symptom pairs from each individual event into the
-    // existing pair counter. Events are never combined by calendar day.
-    final symptomPairInputs = <UnifiedHealthData>[];
-    for (final event in events) {
-      final names = event.symptoms.map((item) => item.name).toSet().toList()
-        ..sort();
-      for (var left = 0; left < names.length; left++) {
-        for (var right = left + 1; right < names.length; right++) {
-          symptomPairInputs.add(UnifiedHealthData(
-            source: UnifiedHealthDataSource.healthEvent,
-            precision: UnifiedHealthDataPrecision.timestamp,
-            date: DateTime(
-              event.timestamp.year,
-              event.timestamp.month,
-              event.timestamp.day,
-            ),
-            timestamp: event.timestamp,
-            emotions: [UnifiedScoredValue(name: names[left])],
-            symptoms: [UnifiedScoredValue(name: names[right])],
-          ));
-        }
-      }
-    }
-    final symptomPairs =
-        service.calculate(symptomPairInputs).eventCoOccurrences;
+    final result = service.calculate(data);
 
     return _CoOccurrenceViewData(
-      symptomPairs: _topFive(symptomPairs),
-      emotionSymptomPairs: _topFive(emotionSymptom),
+      eventSymptomPairs: _topFive(result.eventSymptomCoOccurrences,
+          unitLabel: CoOccurrenceEvidence.preciseEvent.countLabel),
+      eventEmotionSymptomPairs: _topFive(result.eventCoOccurrences,
+          unitLabel: CoOccurrenceEvidence.preciseEvent.countLabel),
+      legacySymptomPairs: _topFive(result.legacySymptomSameDayRecords,
+          unitLabel: CoOccurrenceEvidence.legacySameDay.countLabel),
+      legacyEmotionSymptomPairs: _topFive(result.legacySameDayRecords,
+          unitLabel: CoOccurrenceEvidence.legacySameDay.countLabel),
     );
   }
 
-  static List<_DisplayPair> _topFive(Map<String, int> counts) {
+  static List<_DisplayPair> _topFive(
+    Map<String, int> counts, {
+    required String unitLabel,
+  }) {
     final pairs = counts.entries.map((entry) {
       final labels = entry.key.split('\u0000');
       return _DisplayPair(
         left: labels.first,
         right: labels.length > 1 ? labels[1] : '',
         count: entry.value,
+        unitLabel: unitLabel,
       );
     }).toList()
       ..sort((a, b) {
@@ -190,9 +189,11 @@ class _DisplayPair {
     required this.left,
     required this.right,
     required this.count,
+    required this.unitLabel,
   });
 
   final String left;
   final String right;
   final int count;
+  final String unitLabel;
 }

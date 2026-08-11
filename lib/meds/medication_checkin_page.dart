@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../analytics_service.dart';
 import '../utils/health_data_encryption_service.dart';
 import 'medication_local_db.dart';
+import 'medication_checkin_schedule_resolver.dart';
 import 'medication_reminder_service.dart';
 
 class MedicationCheckinPage extends StatefulWidget {
@@ -51,7 +52,7 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
     super.initState();
     _loadSlotTimes();
     _loadData();
-     AnalyticsService.logPage('medication_checkin_page');
+    AnalyticsService.logPage('medication_checkin_page');
   }
 
   String _docId(DateTime d) {
@@ -113,8 +114,9 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
   }
 
   Future<void> _pickReminderTime(String slot) async {
-    final initial =
-        _slotTimes[slot] ?? MedicationReminderService.kSlotTimes[slot] ?? const TimeOfDay(hour: 8, minute: 0);
+    final initial = _slotTimes[slot] ??
+        MedicationReminderService.kSlotTimes[slot] ??
+        const TimeOfDay(hour: 8, minute: 0);
     final picked = await showTimePicker(
       context: context,
       initialTime: initial,
@@ -124,11 +126,14 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
     setState(() => _saving = true);
     try {
       await MedicationReminderService.setSlotTime(slot, picked);
-      final count = await MedicationReminderService.syncDailyRemindersForActiveMeds();
+      final count =
+          await MedicationReminderService.syncDailyRemindersForActiveMeds();
       if (!mounted) return;
       setState(() => _slotTimes[slot] = picked);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已更新「$slot」提醒時間為 ${_fmtTime(picked)}（重建 $count 個時段提醒）')),
+        SnackBar(
+            content:
+                Text('已更新「$slot」提醒時間為 ${_fmtTime(picked)}（重建 $count 個時段提醒）')),
       );
     } catch (_) {
       if (!mounted) return;
@@ -180,13 +185,14 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
       final byDate = <String, _DailyAdherence>{};
       final missedSlotCount = <String, int>{};
       for (final doc in snap.docs) {
-        final data =
-            await HealthDataEncryptionService.decryptData(doc.data());
+        final data = await HealthDataEncryptionService.decryptData(doc.data());
         final date = _parseAnyDate(data['date']);
         if (date == null) continue;
 
-        final checks = Map<String, dynamic>.from(data['checks'] ?? <String, dynamic>{});
-        final statuses = Map<String, dynamic>.from(data['statuses'] ?? <String, dynamic>{});
+        final checks =
+            Map<String, dynamic>.from(data['checks'] ?? <String, dynamic>{});
+        final statuses =
+            Map<String, dynamic>.from(data['statuses'] ?? <String, dynamic>{});
 
         int total;
         int done;
@@ -204,9 +210,13 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
         if (filteredStatuses.isNotEmpty) {
           total = filteredStatuses.length;
           done = filteredStatuses.values
-              .where((v) => v == _CheckinStatus.taken.value || v == _CheckinStatus.delayed.value)
+              .where((v) =>
+                  v == _CheckinStatus.taken.value ||
+                  v == _CheckinStatus.delayed.value)
               .length;
-          missed = filteredStatuses.values.where((v) => v == _CheckinStatus.missed.value).length;
+          missed = filteredStatuses.values
+              .where((v) => v == _CheckinStatus.missed.value)
+              .length;
         } else {
           total = filteredChecks.length;
           done = filteredChecks.values.where((v) => v == true).length;
@@ -229,7 +239,8 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
         );
 
         if (!normalizedDate.isBefore(weekStart)) {
-          final source = filteredStatuses.isNotEmpty ? filteredStatuses : filteredChecks;
+          final source =
+              filteredStatuses.isNotEmpty ? filteredStatuses : filteredChecks;
           for (final entry in source.entries) {
             final k = entry.key;
             final split = k.split('::');
@@ -325,47 +336,59 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
 
     try {
       final meds = await MedicationLocalDB().getMedicationsForDisplay(uid);
-      final activeMeds = meds.where((m) {
-        final isActive = (m['isActive'] as bool?) ?? true;
-        final isInjection = (m['type'] as String?) == 'injection';
-        return isActive && !isInjection;
-      }).toList();
+      final adjustments = await MedicationLocalDB().getAdjustmentRecords(uid);
+      final activeMeds = meds
+          .where((m) =>
+              (m['type'] as String?) != 'injection' &&
+              (((m['isActive'] as bool?) ?? true) ||
+                  MedicationCheckinScheduleResolver.resolve(
+                    medication: m,
+                    adjustmentRecords: adjustments,
+                    selectedDate: _selectedDate,
+                  ).isNotEmpty))
+          .toList();
 
       final items = <_CheckinItem>[];
       for (final med in activeMeds) {
         final medId = (med['id'] ?? '').toString();
         if (medId.isEmpty) continue;
 
-        final name = ((med['name'] ?? med['nameZh'] ?? med['nameEn'] ?? '未命名藥物') as String)
+        final name = ((med['name'] ?? med['nameZh'] ?? med['nameEn'] ?? '未命名藥物')
+                as String)
             .trim();
-        final dose = med['dose'];
-        final dosePerUnit = med['dosePerUnit'];
-        final pillCount = med['pillCount'];
-        final unit = (med['unit'] ?? 'mg').toString();
         final type = (med['type'] ?? 'tablet').toString();
-        final plannedAmount = (type == 'drops')
-          ? ((med['intakeMl'] is num) ? (med['intakeMl'] as num).toDouble() : 1.0)
-          : ((med['pillCount'] is num) ? (med['pillCount'] as num).toDouble() : 1.0);
+        final isCompound =
+            (med['compoundType'] ?? '').toString().contains('複') ||
+                RegExp(r'(\s*\+\s*|[;\n\r])')
+                    .hasMatch((med['nameEn'] ?? '').toString());
         final plannedUnit = type == 'drops' ? 'mL' : '顆';
-        final times = (med['times'] as List?)?.whereType<String>().toList() ?? const <String>[];
-
-        // ── 修正：顯示「每顆劑量 × 顆數 = 總量」，讓打卡頁與藥物卡一致 ──
-        final doseText = _buildCheckinDoseText(
-          dose: dose,
-          dosePerUnit: dosePerUnit,
-          pillCount: pillCount,
-          unit: unit,
-          type: type,
+        final schedules = MedicationCheckinScheduleResolver.resolve(
+          medication: med,
+          adjustmentRecords: adjustments,
+          selectedDate: _selectedDate,
         );
-
-        final slots = times.isEmpty ? <String>['未設定'] : times;
-        for (final slot in slots) {
+        for (final schedule in schedules) {
+          final plannedAmount = type == 'drops'
+              ? ((med['intakeMl'] is num)
+                  ? (med['intakeMl'] as num).toDouble()
+                  : 1.0)
+              : ((schedule.pillCount is num)
+                  ? (schedule.pillCount as num).toDouble()
+                  : 1.0);
+          final doseText = _buildCheckinDoseText(
+            dose: schedule.dose,
+            dosePerUnit: schedule.dosePerUnit,
+            pillCount: schedule.pillCount,
+            unit: schedule.unit,
+            type: type,
+            isCompound: isCompound,
+          );
           items.add(
             _CheckinItem(
               medId: medId,
               medName: name.isEmpty ? '未命名藥物' : name,
               doseText: doseText,
-              slot: slot,
+              slot: schedule.slot,
               plannedAmount: plannedAmount,
               plannedUnit: plannedUnit,
             ),
@@ -384,11 +407,16 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
           ? <String, dynamic>{}
           : await HealthDataEncryptionService.decryptData(snap.data()!);
 
-      final checksMap = Map<String, dynamic>.from(data['checks'] ?? <String, dynamic>{});
-      final statusesMap = Map<String, dynamic>.from(data['statuses'] ?? <String, dynamic>{});
-      final takenAtMap = Map<String, dynamic>.from(data['takenAt'] ?? <String, dynamic>{});
-      final actualAmountMap = Map<String, dynamic>.from(data['actualAmount'] ?? <String, dynamic>{});
-      final prnEventsMap = Map<String, dynamic>.from(data['prnEvents'] ?? <String, dynamic>{});
+      final checksMap =
+          Map<String, dynamic>.from(data['checks'] ?? <String, dynamic>{});
+      final statusesMap =
+          Map<String, dynamic>.from(data['statuses'] ?? <String, dynamic>{});
+      final takenAtMap =
+          Map<String, dynamic>.from(data['takenAt'] ?? <String, dynamic>{});
+      final actualAmountMap = Map<String, dynamic>.from(
+          data['actualAmount'] ?? <String, dynamic>{});
+      final prnEventsMap =
+          Map<String, dynamic>.from(data['prnEvents'] ?? <String, dynamic>{});
 
       final statusByKey = <String, _CheckinStatus>{};
       final statusAt = <String, DateTime>{};
@@ -491,7 +519,8 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
         );
 
     final amountCtrl = TextEditingController(
-      text: (_actualAmountByKey[key] ?? item.safePlannedAmount).toStringAsFixed(1),
+      text: (_actualAmountByKey[key] ?? item.safePlannedAmount)
+          .toStringAsFixed(1),
     );
 
     _TakenEditResult? result;
@@ -501,16 +530,19 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: Text(status == _CheckinStatus.taken ? '設定已服用紀錄' : '設定延後服用紀錄'),
+              title:
+                  Text(status == _CheckinStatus.taken ? '設定已服用紀錄' : '設定延後服用紀錄'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('預計：${item.safePlannedAmount.toStringAsFixed(1)} ${item.safePlannedUnit}'),
+                  Text(
+                      '預計：${item.safePlannedAmount.toStringAsFixed(1)} ${item.safePlannedUnit}'),
                   const SizedBox(height: 8),
                   TextField(
                     controller: amountCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
                     decoration: InputDecoration(
                       labelText: '實際服用',
                       suffixText: item.plannedUnit,
@@ -527,7 +559,8 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
                       final pickedDate = await showDatePicker(
                         context: dialogContext,
                         initialDate: selectedAt,
-                        firstDate: _selectedDate.subtract(const Duration(days: 7)),
+                        firstDate:
+                            _selectedDate.subtract(const Duration(days: 7)),
                         lastDate: _selectedDate.add(const Duration(days: 7)),
                       );
                       if (pickedDate == null) return;
@@ -562,7 +595,8 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
                 ),
                 FilledButton(
                   onPressed: () {
-                    final amount = double.tryParse(amountCtrl.text.trim().replaceAll(',', '.'));
+                    final amount = double.tryParse(
+                        amountCtrl.text.trim().replaceAll(',', '.'));
                     if (amount == null || amount <= 0) return;
                     result = _TakenEditResult(
                       takenAt: selectedAt,
@@ -605,7 +639,8 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
     setState(() {
       _saving = true;
       _statusByKey[key] = nextStatus;
-      if (nextStatus == _CheckinStatus.taken || nextStatus == _CheckinStatus.delayed) {
+      if (nextStatus == _CheckinStatus.taken ||
+          nextStatus == _CheckinStatus.delayed) {
         _statusAt[key] = takenAt ?? DateTime.now();
         _actualAmountByKey[key] = actualAmount ?? item.safePlannedAmount;
       } else {
@@ -626,20 +661,26 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
           ? <String, dynamic>{}
           : await HealthDataEncryptionService.decryptData(snap.data()!);
 
-      final checksMap = Map<String, dynamic>.from(data['checks'] ?? <String, dynamic>{});
-      final statusesMap = Map<String, dynamic>.from(data['statuses'] ?? <String, dynamic>{});
-      final takenAtMap = Map<String, dynamic>.from(data['takenAt'] ?? <String, dynamic>{});
-      final actualAmountMap = Map<String, dynamic>.from(data['actualAmount'] ?? <String, dynamic>{});
+      final checksMap =
+          Map<String, dynamic>.from(data['checks'] ?? <String, dynamic>{});
+      final statusesMap =
+          Map<String, dynamic>.from(data['statuses'] ?? <String, dynamic>{});
+      final takenAtMap =
+          Map<String, dynamic>.from(data['takenAt'] ?? <String, dynamic>{});
+      final actualAmountMap = Map<String, dynamic>.from(
+          data['actualAmount'] ?? <String, dynamic>{});
 
       _ensureFixedSlotKeys(checksMap: checksMap, statusesMap: statusesMap);
 
       statusesMap[key] = nextStatus.value;
-      checksMap[key] =
-          nextStatus == _CheckinStatus.taken || nextStatus == _CheckinStatus.delayed;
+      checksMap[key] = nextStatus == _CheckinStatus.taken ||
+          nextStatus == _CheckinStatus.delayed;
 
-      if (nextStatus == _CheckinStatus.taken || nextStatus == _CheckinStatus.delayed) {
+      if (nextStatus == _CheckinStatus.taken ||
+          nextStatus == _CheckinStatus.delayed) {
         takenAtMap[key] = Timestamp.fromDate(_statusAt[key]!);
-        actualAmountMap[key] = _actualAmountByKey[key] ?? item.safePlannedAmount;
+        actualAmountMap[key] =
+            _actualAmountByKey[key] ?? item.safePlannedAmount;
       } else {
         takenAtMap.remove(key);
         actualAmountMap.remove(key);
@@ -683,12 +724,14 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
     }
   }
 
-  Future<void> _savePrnEvents(_CheckinItem item, List<DateTime> nextEvents) async {
+  Future<void> _savePrnEvents(
+      _CheckinItem item, List<DateTime> nextEvents) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
 
     final key = _itemKey(item);
-    final prev = List<DateTime>.from(_prnEventsByKey[key] ?? const <DateTime>[]);
+    final prev =
+        List<DateTime>.from(_prnEventsByKey[key] ?? const <DateTime>[]);
 
     setState(() {
       _saving = true;
@@ -707,10 +750,14 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
           ? <String, dynamic>{}
           : await HealthDataEncryptionService.decryptData(snap.data()!);
 
-      final checksMap = Map<String, dynamic>.from(data['checks'] ?? <String, dynamic>{});
-      final statusesMap = Map<String, dynamic>.from(data['statuses'] ?? <String, dynamic>{});
-      final takenAtMap = Map<String, dynamic>.from(data['takenAt'] ?? <String, dynamic>{});
-      final prnEventsMap = Map<String, dynamic>.from(data['prnEvents'] ?? <String, dynamic>{});
+      final checksMap =
+          Map<String, dynamic>.from(data['checks'] ?? <String, dynamic>{});
+      final statusesMap =
+          Map<String, dynamic>.from(data['statuses'] ?? <String, dynamic>{});
+      final takenAtMap =
+          Map<String, dynamic>.from(data['takenAt'] ?? <String, dynamic>{});
+      final prnEventsMap =
+          Map<String, dynamic>.from(data['prnEvents'] ?? <String, dynamic>{});
 
       final normalized = List<DateTime>.from(nextEvents)..sort();
       prnEventsMap[key] = normalized.map((e) => Timestamp.fromDate(e)).toList();
@@ -754,7 +801,8 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
   Future<void> _addPrnEvent(_CheckinItem item) async {
     await HapticFeedback.selectionClick();
     final key = _itemKey(item);
-    final current = List<DateTime>.from(_prnEventsByKey[key] ?? const <DateTime>[]);
+    final current =
+        List<DateTime>.from(_prnEventsByKey[key] ?? const <DateTime>[]);
     current.add(DateTime.now());
     await _savePrnEvents(item, current);
   }
@@ -762,7 +810,8 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
   Future<void> _removePrnEventAt(_CheckinItem item, int index) async {
     await HapticFeedback.selectionClick();
     final key = _itemKey(item);
-    final current = List<DateTime>.from(_prnEventsByKey[key] ?? const <DateTime>[]);
+    final current =
+        List<DateTime>.from(_prnEventsByKey[key] ?? const <DateTime>[]);
     if (index < 0 || index >= current.length) return;
     current.removeAt(index);
     await _savePrnEvents(item, current);
@@ -783,7 +832,8 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
   Future<void> _syncReminder() async {
     setState(() => _saving = true);
     try {
-      final count = await MedicationReminderService.syncDailyRemindersForActiveMeds();
+      final count =
+          await MedicationReminderService.syncDailyRemindersForActiveMeds();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('已更新服藥提醒（$count 個時段）')),
@@ -848,12 +898,14 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
     }).length;
     var prnTakenCount = 0;
     for (final item in _items.where((i) => i.slot == '需要時')) {
-      prnTakenCount += (_prnEventsByKey[_itemKey(item)] ?? const <DateTime>[]).length;
+      prnTakenCount +=
+          (_prnEventsByKey[_itemKey(item)] ?? const <DateTime>[]).length;
     }
 
     final avg7 = _averageRate(_stats7Days);
     final avg30 = _averageRate(_stats30Days);
-    final chartData = _statsRange == _StatsRange.week ? _stats7Days : _stats30Days;
+    final chartData =
+        _statsRange == _StatsRange.week ? _stats7Days : _stats30Days;
     final colorScheme = Theme.of(context).colorScheme;
     final progress = total == 0 ? 0.0 : done / total;
 
@@ -901,495 +953,522 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
                   children: [
-                  Card(
-                    elevation: 4,
-                    shadowColor: colorScheme.primary.withOpacity(0.16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            colorScheme.surface,
-                            colorScheme.primaryContainer.withOpacity(0.22),
-                          ],
-                        ),
+                    Card(
+                      elevation: 4,
+                      shadowColor: colorScheme.primary.withOpacity(0.16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  width: 38,
-                                  height: 38,
-                                  decoration: BoxDecoration(
-                                    color: colorScheme.primary.withOpacity(0.14),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    Icons.event_available_outlined,
-                                    color: colorScheme.primary,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Text(
-                                  '${_selectedDate.year}/${_selectedDate.month.toString().padLeft(2, '0')}/${_selectedDate.day.toString().padLeft(2, '0')}',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleMedium
-                                      ?.copyWith(fontWeight: FontWeight.w700),
-                                ),
-                                const Spacer(),
-                                TextButton(
-                                  onPressed: _pickDate,
-                                  child: const Text('切換日期'),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              total == 0
-                                  ? '今日固定時段：無'
-                                  : '今日固定時段完成：$done / $total',
-                            ),
-                            if (prnTakenCount > 0)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 4),
-                                child: Text('需要時今日已服用：$prnTakenCount 次'),
-                              ),
-                            const SizedBox(height: 10),
-                            TweenAnimationBuilder<double>(
-                              tween: Tween<double>(begin: 0, end: progress),
-                              duration: const Duration(milliseconds: 450),
-                              curve: Curves.easeOutCubic,
-                              builder: (context, animatedProgress, child) {
-                                return ClipRRect(
-                                  borderRadius: BorderRadius.circular(999),
-                                  child: LinearProgressIndicator(
-                                    minHeight: 9,
-                                    value: animatedProgress,
-                                    backgroundColor:
-                                        colorScheme.primary.withOpacity(0.12),
-                                  ),
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 6),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 220),
-                                transitionBuilder: (child, animation) {
-                                  return FadeTransition(opacity: animation, child: child);
-                                },
-                                child: Text(
-                                  '${(progress * 100).toStringAsFixed(0)}%',
-                                  key: ValueKey<int>((progress * 100).round()),
-                                  style: Theme.of(context).textTheme.labelMedium,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            Wrap(
-                              alignment: WrapAlignment.spaceBetween,
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                FilledButton.tonalIcon(
-                                  onPressed: _saving ? null : _syncReminder,
-                                  icon:
-                                      const Icon(Icons.notifications_active_outlined),
-                                  label: const Text('更新每日提醒'),
-                                ),
-                                OutlinedButton.icon(
-                                  onPressed: _saving ? null : _cancelReminder,
-                                  icon: const Icon(Icons.notifications_off_outlined),
-                                  label: const Text('清除提醒'),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            Card(
-                              margin: EdgeInsets.zero,
-                              elevation: 0,
-                              color: colorScheme.surfaceContainerHighest
-                                  .withOpacity(0.34),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: ExpansionTile(
-                                initiallyExpanded: _reminderSettingsExpanded,
-                                onExpansionChanged: (expanded) {
-                                  setState(() => _reminderSettingsExpanded = expanded);
-                                },
-                                leading: const Icon(Icons.alarm_outlined),
-                                title: const Text('提醒時間設定'),
-                                subtitle: Text(
-                                  MedicationReminderService.kSlotTimes.keys
-                                      .map((slot) =>
-                                          '$slot ${_fmtTime(_slotTimes[slot] ?? MedicationReminderService.kSlotTimes[slot]!)}')
-                                      .join('  ·  '),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                childrenPadding:
-                                    const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      clipBehavior: Clip.antiAlias,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              colorScheme.surface,
+                              colorScheme.primaryContainer.withOpacity(0.22),
+                            ],
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
                                 children: [
-                                  ...MedicationReminderService.kSlotTimes.keys
-                                      .map((slot) {
-                                    final time = _slotTimes[slot] ??
-                                        MedicationReminderService.kSlotTimes[slot]!;
-                                    return ListTile(
-                                      contentPadding: EdgeInsets.zero,
-                                      dense: true,
-                                      leading: const Icon(Icons.access_time),
-                                      title: Text(slot),
-                                      subtitle: Text('每日 ${_fmtTime(time)}'),
-                                      trailing: TextButton(
-                                        onPressed: _saving
-                                            ? null
-                                            : () => _pickReminderTime(slot),
-                                        child: const Text('調整'),
-                                      ),
-                                    );
-                                  }),
+                                  Container(
+                                    width: 38,
+                                    height: 38,
+                                    decoration: BoxDecoration(
+                                      color:
+                                          colorScheme.primary.withOpacity(0.14),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      Icons.event_available_outlined,
+                                      color: colorScheme.primary,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    '${_selectedDate.year}/${_selectedDate.month.toString().padLeft(2, '0')}/${_selectedDate.day.toString().padLeft(2, '0')}',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(fontWeight: FontWeight.w700),
+                                  ),
+                                  const Spacer(),
+                                  TextButton(
+                                    onPressed: _pickDate,
+                                    child: const Text('切換日期'),
+                                  ),
                                 ],
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: 6),
+                              Text(
+                                total == 0
+                                    ? '今日固定時段：無'
+                                    : '今日固定時段完成：$done / $total',
+                              ),
+                              if (prnTakenCount > 0)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text('需要時今日已服用：$prnTakenCount 次'),
+                                ),
+                              const SizedBox(height: 10),
+                              TweenAnimationBuilder<double>(
+                                tween: Tween<double>(begin: 0, end: progress),
+                                duration: const Duration(milliseconds: 450),
+                                curve: Curves.easeOutCubic,
+                                builder: (context, animatedProgress, child) {
+                                  return ClipRRect(
+                                    borderRadius: BorderRadius.circular(999),
+                                    child: LinearProgressIndicator(
+                                      minHeight: 9,
+                                      value: animatedProgress,
+                                      backgroundColor:
+                                          colorScheme.primary.withOpacity(0.12),
+                                    ),
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 6),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 220),
+                                  transitionBuilder: (child, animation) {
+                                    return FadeTransition(
+                                        opacity: animation, child: child);
+                                  },
+                                  child: Text(
+                                    '${(progress * 100).toStringAsFixed(0)}%',
+                                    key:
+                                        ValueKey<int>((progress * 100).round()),
+                                    style:
+                                        Theme.of(context).textTheme.labelMedium,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                alignment: WrapAlignment.spaceBetween,
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  FilledButton.tonalIcon(
+                                    onPressed: _saving ? null : _syncReminder,
+                                    icon: const Icon(
+                                        Icons.notifications_active_outlined),
+                                    label: const Text('更新每日提醒'),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed: _saving ? null : _cancelReminder,
+                                    icon: const Icon(
+                                        Icons.notifications_off_outlined),
+                                    label: const Text('清除提醒'),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Card(
+                                margin: EdgeInsets.zero,
+                                elevation: 0,
+                                color: colorScheme.surfaceContainerHighest
+                                    .withOpacity(0.34),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: ExpansionTile(
+                                  initiallyExpanded: _reminderSettingsExpanded,
+                                  onExpansionChanged: (expanded) {
+                                    setState(() =>
+                                        _reminderSettingsExpanded = expanded);
+                                  },
+                                  leading: const Icon(Icons.alarm_outlined),
+                                  title: const Text('提醒時間設定'),
+                                  subtitle: Text(
+                                    MedicationReminderService.kSlotTimes.keys
+                                        .map((slot) =>
+                                            '$slot ${_fmtTime(_slotTimes[slot] ?? MedicationReminderService.kSlotTimes[slot]!)}')
+                                        .join('  ·  '),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  childrenPadding:
+                                      const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                                  children: [
+                                    ...MedicationReminderService.kSlotTimes.keys
+                                        .map((slot) {
+                                      final time = _slotTimes[slot] ??
+                                          MedicationReminderService
+                                              .kSlotTimes[slot]!;
+                                      return ListTile(
+                                        contentPadding: EdgeInsets.zero,
+                                        dense: true,
+                                        leading: const Icon(Icons.access_time),
+                                        title: Text(slot),
+                                        subtitle: Text('每日 ${_fmtTime(time)}'),
+                                        trailing: TextButton(
+                                          onPressed: _saving
+                                              ? null
+                                              : () => _pickReminderTime(slot),
+                                          child: const Text('調整'),
+                                        ),
+                                      );
+                                    }),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (_items.isEmpty)
-                    Card(
-                      elevation: 2,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Text('目前沒有可打卡藥物（請先新增「目前服用中」的口服藥）'),
-                      ),
-                    ),
-                  ...sortedSlots.map((slot) {
-                    final entryItems = grouped[slot] ?? const <_CheckinItem>[];
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding:
-                              const EdgeInsets.only(left: 4, top: 8, bottom: 6),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: colorScheme.primary.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              slot,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleSmall
-                                  ?.copyWith(fontWeight: FontWeight.w700),
-                            ),
-                          ),
+                    const SizedBox(height: 12),
+                    if (_items.isEmpty)
+                      Card(
+                        elevation: 2,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
                         ),
-                        Card(
-                          elevation: 2,
-                          shadowColor: colorScheme.primary.withOpacity(0.12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(18),
+                        child: const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Text('目前沒有可打卡藥物（請先新增「目前服用中」的口服藥）'),
+                        ),
+                      ),
+                    ...sortedSlots.map((slot) {
+                      final entryItems =
+                          grouped[slot] ?? const <_CheckinItem>[];
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(
+                                left: 4, top: 8, bottom: 6),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: colorScheme.primary.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                slot,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                            ),
                           ),
-                          child: Column(
-                            children: entryItems.map((item) {
-                              if (item.slot == '需要時') {
+                          Card(
+                            elevation: 2,
+                            shadowColor: colorScheme.primary.withOpacity(0.12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            child: Column(
+                              children: entryItems.map((item) {
+                                if (item.slot == '需要時') {
+                                  final key = _itemKey(item);
+                                  final events = List<DateTime>.from(
+                                    _prnEventsByKey[key] ?? const <DateTime>[],
+                                  )..sort();
+
+                                  return Padding(
+                                    padding:
+                                        const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                                    child: Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.fromLTRB(
+                                          12, 12, 12, 8),
+                                      decoration: BoxDecoration(
+                                        color: colorScheme.secondaryContainer
+                                            .withOpacity(0.3),
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(
+                                          color: colorScheme.secondary
+                                              .withOpacity(0.22),
+                                        ),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            item.medName,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .titleSmall
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                              '${item.doseText} · 今日 ${events.length} 次'),
+                                          const SizedBox(height: 8),
+                                          FilledButton.tonalIcon(
+                                            onPressed: _saving
+                                                ? null
+                                                : () => _addPrnEvent(item),
+                                            icon: const Icon(
+                                                Icons.add_circle_outline),
+                                            label: const Text('＋ 記錄服用一次'),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          if (events.isEmpty)
+                                            const Text('今天尚未記錄服用')
+                                          else
+                                            Wrap(
+                                              alignment:
+                                                  WrapAlignment.spaceBetween,
+                                              spacing: 6,
+                                              runSpacing: 6,
+                                              children: List.generate(
+                                                  events.length, (idx) {
+                                                final d = events[idx];
+                                                final text =
+                                                    '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+                                                return InputChip(
+                                                  label: Text(text),
+                                                  onDeleted: _saving
+                                                      ? null
+                                                      : () => _removePrnEventAt(
+                                                          item, idx),
+                                                );
+                                              }),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                }
+
                                 final key = _itemKey(item);
-                                final events = List<DateTime>.from(
-                                  _prnEventsByKey[key] ?? const <DateTime>[],
-                                )..sort();
+                                final currentStatus =
+                                    _statusByKey[key] ?? _CheckinStatus.pending;
+                                final statusAt = _statusAt[key];
+                                final actualAmount = _actualAmountByKey[key];
+                                final timeText = statusAt == null
+                                    ? '尚未打卡'
+                                    : '時間 ${_fmtDateTime(statusAt)}';
+                                final statusColor = switch (currentStatus) {
+                                  _CheckinStatus.taken =>
+                                    const Color.fromARGB(255, 46, 125, 50),
+                                  _CheckinStatus.delayed =>
+                                    const Color.fromARGB(255, 239, 108, 0),
+                                  _CheckinStatus.missed =>
+                                    const Color.fromARGB(255, 198, 40, 40),
+                                  _CheckinStatus.pending =>
+                                    colorScheme.onSurface.withOpacity(0.66),
+                                };
 
                                 return Padding(
-                                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-                                  child: Container(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 220),
+                                    curve: Curves.easeOutCubic,
                                     width: double.infinity,
-                                    padding:
-                                        const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                                    padding: const EdgeInsets.fromLTRB(
+                                        12, 12, 12, 8),
                                     decoration: BoxDecoration(
-                                      color: colorScheme.secondaryContainer
-                                          .withOpacity(0.3),
+                                      color: colorScheme.primaryContainer
+                                          .withOpacity(0.22),
                                       borderRadius: BorderRadius.circular(14),
                                       border: Border.all(
-                                        color:
-                                            colorScheme.secondary.withOpacity(0.22),
+                                        color: statusColor.withOpacity(0.28),
                                       ),
                                     ),
                                     child: Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
-                                        Text(
-                                          item.medName,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleSmall
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.w700,
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                item.medName,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .titleSmall
+                                                    ?.copyWith(
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
                                               ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text('${item.doseText} · 今日 ${events.length} 次'),
-                                        const SizedBox(height: 8),
-                                        FilledButton.tonalIcon(
-                                          onPressed: _saving
-                                              ? null
-                                              : () => _addPrnEvent(item),
-                                          icon:
-                                              const Icon(Icons.add_circle_outline),
-                                          label: const Text('＋ 記錄服用一次'),
-                                        ),
-                                        const SizedBox(height: 8),
-                                        if (events.isEmpty)
-                                          const Text('今天尚未記錄服用')
-                                        else
-                                          Wrap(
-                                            alignment:
-                                                WrapAlignment.spaceBetween,
-                                            spacing: 6,
-                                            runSpacing: 6,
-                                            children:
-                                                List.generate(events.length, (idx) {
-                                              final d = events[idx];
-                                              final text =
-                                                  '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
-                                              return InputChip(
-                                                label: Text(text),
-                                                onDeleted: _saving
-                                                    ? null
-                                                    : () =>
-                                                        _removePrnEventAt(item, idx),
-                                              );
-                                            }),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              }
-
-                              final key = _itemKey(item);
-                              final currentStatus =
-                                  _statusByKey[key] ?? _CheckinStatus.pending;
-                              final statusAt = _statusAt[key];
-                              final actualAmount = _actualAmountByKey[key];
-                              final timeText = statusAt == null
-                                  ? '尚未打卡'
-                                  : '時間 ${_fmtDateTime(statusAt)}';
-                              final statusColor = switch (currentStatus) {
-                                _CheckinStatus.taken =>
-                                  const Color.fromARGB(255, 46, 125, 50),
-                                _CheckinStatus.delayed =>
-                                  const Color.fromARGB(255, 239, 108, 0),
-                                _CheckinStatus.missed =>
-                                  const Color.fromARGB(255, 198, 40, 40),
-                                _CheckinStatus.pending =>
-                                  colorScheme.onSurface.withOpacity(0.66),
-                              };
-
-                              return Padding(
-                                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 220),
-                                  curve: Curves.easeOutCubic,
-                                  width: double.infinity,
-                                  padding:
-                                      const EdgeInsets.fromLTRB(12, 12, 12, 8),
-                                  decoration: BoxDecoration(
-                                    color:
-                                        colorScheme.primaryContainer.withOpacity(0.22),
-                                    borderRadius: BorderRadius.circular(14),
-                                    border: Border.all(
-                                      color: statusColor.withOpacity(0.28),
-                                    ),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              item.medName,
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .titleSmall
-                                                  ?.copyWith(
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
                                             ),
-                                          ),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 4,
-                                            ),
-                                            child: AnimatedContainer(
-                                              duration:
-                                                  const Duration(milliseconds: 220),
-                                              curve: Curves.easeOut,
+                                            Container(
                                               padding:
                                                   const EdgeInsets.symmetric(
                                                 horizontal: 8,
                                                 vertical: 4,
                                               ),
-                                              decoration: BoxDecoration(
-                                                color: statusColor.withOpacity(0.12),
-                                                borderRadius:
-                                                    BorderRadius.circular(999),
-                                              ),
-                                              child: AnimatedSwitcher(
+                                              child: AnimatedContainer(
                                                 duration: const Duration(
-                                                    milliseconds: 180),
-                                                transitionBuilder:
-                                                    (child, animation) {
-                                                  return FadeTransition(
-                                                    opacity: animation,
-                                                    child: child,
-                                                  );
-                                                },
-                                                child: Text(
-                                                  currentStatus.label,
-                                                  key: ValueKey<String>(
-                                                      currentStatus.value),
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .labelMedium
-                                                      ?.copyWith(
-                                                          color: statusColor),
+                                                    milliseconds: 220),
+                                                curve: Curves.easeOut,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 4,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: statusColor
+                                                      .withOpacity(0.12),
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                          999),
+                                                ),
+                                                child: AnimatedSwitcher(
+                                                  duration: const Duration(
+                                                      milliseconds: 180),
+                                                  transitionBuilder:
+                                                      (child, animation) {
+                                                    return FadeTransition(
+                                                      opacity: animation,
+                                                      child: child,
+                                                    );
+                                                  },
+                                                  child: Text(
+                                                    currentStatus.label,
+                                                    key: ValueKey<String>(
+                                                        currentStatus.value),
+                                                    style: Theme.of(context)
+                                                        .textTheme
+                                                        .labelMedium
+                                                        ?.copyWith(
+                                                            color: statusColor),
+                                                  ),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        '${item.doseText} · 預計 ${item.safePlannedAmount.toStringAsFixed(1)} ${item.safePlannedUnit}'
-                                        '${actualAmount == null ? '' : ' · 實際 ${actualAmount.toStringAsFixed(1)} ${item.safePlannedUnit}'}'
-                                        ' · $timeText',
-                                      ),
-                                      const SizedBox(height: 8),
-                                      SegmentedButton<_CheckinStatus>(
-                                        multiSelectionEnabled: false,
-                                        emptySelectionAllowed: true,
-                                        showSelectedIcon: false,
-                                        segments: const [
-                                          ButtonSegment(
-                                            value: _CheckinStatus.taken,
-                                            label: Text('已服用'),
-                                            icon: Icon(Icons.check_circle_outline),
-                                          ),
-                                          ButtonSegment(
-                                            value: _CheckinStatus.delayed,
-                                            label: Text('延後'),
-                                            icon: Icon(Icons.schedule),
-                                          ),
-                                          ButtonSegment(
-                                            value: _CheckinStatus.missed,
-                                            label: Text('漏服'),
-                                            icon: Icon(Icons.cancel_outlined),
-                                          ),
-                                        ],
-                                        selected: {
-                                          if (currentStatus != _CheckinStatus.pending)
-                                            currentStatus,
-                                        },
-                                        onSelectionChanged: _saving
-                                            ? null
-                                            : (v) async {
-                                                if (v.isEmpty) {
-                                                  await _setStatus(
-                                                      item, _CheckinStatus.pending);
-                                                  return;
-                                                }
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '${item.doseText} · 預計 ${item.safePlannedAmount.toStringAsFixed(1)} ${item.safePlannedUnit}'
+                                          '${actualAmount == null ? '' : ' · 實際 ${actualAmount.toStringAsFixed(1)} ${item.safePlannedUnit}'}'
+                                          ' · $timeText',
+                                        ),
+                                        const SizedBox(height: 8),
+                                        SegmentedButton<_CheckinStatus>(
+                                          multiSelectionEnabled: false,
+                                          emptySelectionAllowed: true,
+                                          showSelectedIcon: false,
+                                          segments: const [
+                                            ButtonSegment(
+                                              value: _CheckinStatus.taken,
+                                              label: Text('已服用'),
+                                              icon: Icon(
+                                                  Icons.check_circle_outline),
+                                            ),
+                                            ButtonSegment(
+                                              value: _CheckinStatus.delayed,
+                                              label: Text('延後'),
+                                              icon: Icon(Icons.schedule),
+                                            ),
+                                            ButtonSegment(
+                                              value: _CheckinStatus.missed,
+                                              label: Text('漏服'),
+                                              icon: Icon(Icons.cancel_outlined),
+                                            ),
+                                          ],
+                                          selected: {
+                                            if (currentStatus !=
+                                                _CheckinStatus.pending)
+                                              currentStatus,
+                                          },
+                                          onSelectionChanged: _saving
+                                              ? null
+                                              : (v) async {
+                                                  if (v.isEmpty) {
+                                                    await _setStatus(item,
+                                                        _CheckinStatus.pending);
+                                                    return;
+                                                  }
 
-                                                final pickedStatus = v.first;
-                                                if (pickedStatus == _CheckinStatus.taken ||
-                                                    pickedStatus ==
-                                                        _CheckinStatus.delayed) {
-                                                  await _setStatus(
-                                                    item,
-                                                    pickedStatus,
-                                                    takenAt: _statusAt[key] ??
-                                                        DateTime.now(),
-                                                    actualAmount:
-                                                        _actualAmountByKey[key] ??
-                                                            item.safePlannedAmount,
-                                                  );
-                                                  return;
-                                                }
-
-                                                await _setStatus(item, pickedStatus);
-                                              },
-                                      ),
-                                      if (currentStatus == _CheckinStatus.taken ||
-                                          currentStatus == _CheckinStatus.delayed)
-                                        Align(
-                                          alignment: Alignment.centerLeft,
-                                          child: TextButton.icon(
-                                            onPressed: _saving
-                                                ? null
-                                                : () async {
-                                                    final edit =
-                                                        await _showTakenEditDialog(
-                                                      item: item,
-                                                      status: currentStatus,
-                                                    );
-                                                    if (edit == null) return;
+                                                  final pickedStatus = v.first;
+                                                  if (pickedStatus ==
+                                                          _CheckinStatus
+                                                              .taken ||
+                                                      pickedStatus ==
+                                                          _CheckinStatus
+                                                              .delayed) {
                                                     await _setStatus(
                                                       item,
-                                                      currentStatus,
-                                                      takenAt: edit.takenAt,
-                                                      actualAmount: edit.actualAmount,
+                                                      pickedStatus,
+                                                      takenAt: _statusAt[key] ??
+                                                          DateTime.now(),
+                                                      actualAmount:
+                                                          _actualAmountByKey[
+                                                                  key] ??
+                                                              item.safePlannedAmount,
                                                     );
-                                                  },
-                                            icon: const Icon(Icons.edit_outlined,
-                                                size: 16),
-                                            label: const Text('修改劑量 / 時間'),
-                                          ),
+                                                    return;
+                                                  }
+
+                                                  await _setStatus(
+                                                      item, pickedStatus);
+                                                },
                                         ),
-                                    ],
+                                        if (currentStatus ==
+                                                _CheckinStatus.taken ||
+                                            currentStatus ==
+                                                _CheckinStatus.delayed)
+                                          Align(
+                                            alignment: Alignment.centerLeft,
+                                            child: TextButton.icon(
+                                              onPressed: _saving
+                                                  ? null
+                                                  : () async {
+                                                      final edit =
+                                                          await _showTakenEditDialog(
+                                                        item: item,
+                                                        status: currentStatus,
+                                                      );
+                                                      if (edit == null) return;
+                                                      await _setStatus(
+                                                        item,
+                                                        currentStatus,
+                                                        takenAt: edit.takenAt,
+                                                        actualAmount:
+                                                            edit.actualAmount,
+                                                      );
+                                                    },
+                                              icon: const Icon(
+                                                  Icons.edit_outlined,
+                                                  size: 16),
+                                              label: const Text('修改劑量 / 時間'),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              );
-                            }).toList(),
+                                );
+                              }).toList(),
+                            ),
                           ),
-                        ),
-                      ],
-                    );
-                  }),
-                  if (_items.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    _buildStatsCard(
-                      context,
-                      avg7: avg7,
-                      avg30: avg30,
-                      chartData: chartData,
-                      streakDays: _targetStreakDays,
-                      missedSlot: _mostMissedSlotThisWeek,
-                    ),
-                  ],
+                        ],
+                      );
+                    }),
+                    if (_items.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      _buildStatsCard(
+                        context,
+                        avg7: avg7,
+                        avg30: avg30,
+                        chartData: chartData,
+                        streakDays: _targetStreakDays,
+                        missedSlot: _mostMissedSlotThisWeek,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1407,159 +1486,167 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     return Card(
-      elevation: 3,
-      shadowColor: colorScheme.primary.withOpacity(0.12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              colorScheme.surface,
-              colorScheme.tertiaryContainer.withOpacity(0.2),
-            ],
+        elevation: 3,
+        shadowColor: colorScheme.primary.withOpacity(0.12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                colorScheme.surface,
+                colorScheme.tertiaryContainer.withOpacity(0.2),
+              ],
+            ),
           ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.monitor_heart_outlined),
-                const SizedBox(width: 8),
-                Text('服藥率趨勢', style: Theme.of(context).textTheme.titleMedium),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(child: _buildMetricTile('近 7 日平均', avg7)),
-                const SizedBox(width: 8),
-                Expanded(child: _buildMetricTile('近 30 日平均', avg30)),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildInfoTile('連續達標天數', '$streakDays 天'),
+                Row(
+                  children: [
+                    const Icon(Icons.monitor_heart_outlined),
+                    const SizedBox(width: 8),
+                    Text('服藥率趨勢',
+                        style: Theme.of(context).textTheme.titleMedium),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _buildInfoTile('本週最常漏服時段', missedSlot),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(child: _buildMetricTile('近 7 日平均', avg7)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _buildMetricTile('近 30 日平均', avg30)),
+                  ],
                 ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            SegmentedButton<_StatsRange>(
-              showSelectedIcon: false,
-              segments: const [
-                ButtonSegment(value: _StatsRange.week, label: Text('7 天')), 
-                ButtonSegment(value: _StatsRange.month, label: Text('30 天')),
-              ],
-              selected: {_statsRange},
-              onSelectionChanged: (v) {
-                setState(() => _statsRange = v.first);
-              },
-            ),
-            const SizedBox(height: 10),
-            if (_statsLoading)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 26),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else
-              SizedBox(
-                height: 190,
-                child: BarChart(
-                  BarChartData(
-                    minY: 0,
-                    maxY: 100,
-                    alignment: BarChartAlignment.spaceAround,
-                    gridData: FlGridData(
-                      show: true,
-                      horizontalInterval: 25,
-                      drawVerticalLine: false,
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildInfoTile('連續達標天數', '$streakDays 天'),
                     ),
-                    borderData: FlBorderData(show: false),
-                    barTouchData: BarTouchData(
-                      enabled: true,
-                      touchTooltipData: BarTouchTooltipData(
-                        getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                          final point = chartData[group.x.toInt()];
-                          final dateLabel =
-                              '${point.date.month}/${point.date.day.toString().padLeft(2, '0')}';
-                          final pct = (point.rate * 100).toStringAsFixed(0);
-                          return BarTooltipItem(
-                            '$dateLabel\n$pct% (${point.done}/${point.total})',
-                            Theme.of(context).textTheme.bodySmall!,
-                          );
-                        },
-                      ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildInfoTile('本週最常漏服時段', missedSlot),
                     ),
-                    titlesData: FlTitlesData(
-                      topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      leftTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          reservedSize: 32,
-                          interval: 25,
-                          getTitlesWidget: (value, _) => Text('${value.toInt()}%'),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                SegmentedButton<_StatsRange>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(value: _StatsRange.week, label: Text('7 天')),
+                    ButtonSegment(
+                        value: _StatsRange.month, label: Text('30 天')),
+                  ],
+                  selected: {_statsRange},
+                  onSelectionChanged: (v) {
+                    setState(() => _statsRange = v.first);
+                  },
+                ),
+                const SizedBox(height: 10),
+                if (_statsLoading)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 26),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else
+                  SizedBox(
+                    height: 190,
+                    child: BarChart(
+                      BarChartData(
+                        minY: 0,
+                        maxY: 100,
+                        alignment: BarChartAlignment.spaceAround,
+                        gridData: FlGridData(
+                          show: true,
+                          horizontalInterval: 25,
+                          drawVerticalLine: false,
                         ),
-                      ),
-                      bottomTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          reservedSize: 26,
-                          getTitlesWidget: (value, _) {
-                            final idx = value.toInt();
-                            if (idx < 0 || idx >= chartData.length) {
-                              return const SizedBox.shrink();
-                            }
-
-                            final date = chartData[idx].date;
-                            final shouldShow = _statsRange == _StatsRange.week
-                                ? (idx % 2 == 0 || idx == chartData.length - 1)
-                                : (date.day == 1 || idx == 0 || idx == chartData.length - 1);
-
-                            if (!shouldShow) return const SizedBox.shrink();
-                            return Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Text('${date.month}/${date.day}'),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                    barGroups: List.generate(chartData.length, (idx) {
-                      final point = chartData[idx];
-                      return BarChartGroupData(
-                        x: idx,
-                        barRods: [
-                          BarChartRodData(
-                            toY: point.rate * 100,
-                            width: _statsRange == _StatsRange.week ? 18 : 8,
-                            borderRadius: BorderRadius.circular(4),
-                            color: Theme.of(context).colorScheme.primary,
+                        borderData: FlBorderData(show: false),
+                        barTouchData: BarTouchData(
+                          enabled: true,
+                          touchTooltipData: BarTouchTooltipData(
+                            getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                              final point = chartData[group.x.toInt()];
+                              final dateLabel =
+                                  '${point.date.month}/${point.date.day.toString().padLeft(2, '0')}';
+                              final pct = (point.rate * 100).toStringAsFixed(0);
+                              return BarTooltipItem(
+                                '$dateLabel\n$pct% (${point.done}/${point.total})',
+                                Theme.of(context).textTheme.bodySmall!,
+                              );
+                            },
                           ),
-                        ],
-                      );
-                    }),
+                        ),
+                        titlesData: FlTitlesData(
+                          topTitles: const AxisTitles(
+                              sideTitles: SideTitles(showTitles: false)),
+                          rightTitles: const AxisTitles(
+                              sideTitles: SideTitles(showTitles: false)),
+                          leftTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: 32,
+                              interval: 25,
+                              getTitlesWidget: (value, _) =>
+                                  Text('${value.toInt()}%'),
+                            ),
+                          ),
+                          bottomTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: 26,
+                              getTitlesWidget: (value, _) {
+                                final idx = value.toInt();
+                                if (idx < 0 || idx >= chartData.length) {
+                                  return const SizedBox.shrink();
+                                }
+
+                                final date = chartData[idx].date;
+                                final shouldShow =
+                                    _statsRange == _StatsRange.week
+                                        ? (idx % 2 == 0 ||
+                                            idx == chartData.length - 1)
+                                        : (date.day == 1 ||
+                                            idx == 0 ||
+                                            idx == chartData.length - 1);
+
+                                if (!shouldShow) return const SizedBox.shrink();
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text('${date.month}/${date.day}'),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                        barGroups: List.generate(chartData.length, (idx) {
+                          final point = chartData[idx];
+                          return BarChartGroupData(
+                            x: idx,
+                            barRods: [
+                              BarChartRodData(
+                                toY: point.rate * 100,
+                                width: _statsRange == _StatsRange.week ? 18 : 8,
+                                borderRadius: BorderRadius.circular(4),
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ],
+                          );
+                        }),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    )
-    );
+              ],
+            ),
+          ),
+        ));
   }
 
   Widget _buildMetricTile(String title, double rate) {
@@ -1621,9 +1708,11 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
     required dynamic pillCount,
     required String unit,
     required String type,
+    bool isCompound = false,
   }) {
     String numStr(dynamic v) {
-      if (v is num) return v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1);
+      if (v is num)
+        return v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1);
       return v?.toString() ?? '?';
     }
 
@@ -1636,6 +1725,11 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
     final perUnit = asDouble(dosePerUnit);
     final count = asDouble(pillCount);
     final totalDose = asDouble(dose);
+
+    if (isCompound && (perUnit == null || perUnit <= 0)) {
+      if (count != null && count > 0) return '每次 ${numStr(count)}顆';
+      return '劑量依複方成分';
+    }
 
     // 口服藥：以「Xmg × Y顆」格式顯示，不自動計算總量。
     if (type == 'tablet' && perUnit != null && count != null) {

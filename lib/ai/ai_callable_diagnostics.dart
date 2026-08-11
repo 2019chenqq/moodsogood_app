@@ -65,7 +65,9 @@ String aiCallableErrorMessage(
     case 'unavailable':
       return '目前無法連線到 AI 服務，可能是網路或 Firebase Functions 暫時不可用，請稍後再試。';
     case 'unauthenticated':
-      return '登入狀態已失效，請重新登入後再試。';
+      return isSignedIn == true
+          ? '帳號已登入，但裝置驗證（Firebase App Check）未通過。若為 Debug 版，請將 Logcat 顯示的 App Check debug token 登錄至 Firebase Console 後再試。'
+          : '登入狀態已失效，請重新登入後再試。';
     case 'permission-denied':
       return 'AI 服務拒絕此請求，請確認帳號權限與 Firebase App Check 設定。';
     case 'deadline-exceeded':

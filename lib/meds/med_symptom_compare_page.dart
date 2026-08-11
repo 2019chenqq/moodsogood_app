@@ -4,9 +4,16 @@ import 'package:flutter/material.dart';
 
 import '../analytics_service.dart';
 import '../constants/healing_design_system.dart';
+import '../daily/health_event_repository.dart';
+import '../models/daily_record.dart';
+import '../models/health_event.dart';
+import '../services/daily_health_aggregation_service.dart';
 import '../utils/health_data_encryption_service.dart';
 import 'med_symptom_compare_models.dart';
+import 'medication_compare_presentation.dart';
 import 'medication_compare_repository.dart';
+import 'medication_subjective_response.dart';
+import 'medication_subjective_summary_builder.dart';
 
 class MedSymptomComparePage extends StatefulWidget {
   const MedSymptomComparePage({super.key});
@@ -24,6 +31,7 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage>
   List<MedicationAdjustmentEvent> _medEvents = const [];
   MedicationAdjustmentEvent? _selectedEvent;
   List<MedicationAdjustmentEvent> _concurrentEvents = const [];
+  List<MedicationSubjectiveResponse> _subjectiveResponses = const [];
   DailyRecordAggregate? _before;
   DailyRecordAggregate? _after;
   List<CompareMetricResult> _results = const [];
@@ -134,6 +142,7 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage>
     _after = null;
     _results = const [];
     _concurrentEvents = const [];
+    _subjectiveResponses = const [];
     _observationStatus = null;
     _beforeAvailableDays = 0;
     _afterAvailableDays = 0;
@@ -339,31 +348,84 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage>
       _error = null;
     });
     try {
-      final anchor =
-          DateTime(event.date.year, event.date.month, event.date.day);
-      final beforeStart = anchor.subtract(Duration(days: requestedWindow));
-      final beforeEndExclusive = anchor;
-      final afterStart = anchor.add(const Duration(days: 1));
-      final afterEndExclusive = afterStart.add(Duration(days: requestedWindow));
+      final window = MedicationComparisonWindow.dateLevel(
+        adjustmentDate: event.date,
+        days: requestedWindow,
+      );
+      final anchor = window.adjustmentDay;
+      final beforeStart = window.beforeStart;
+      final beforeEndExclusive = window.beforeEndExclusive;
+      final afterStart = window.afterStart;
+      final afterEndExclusive = window.afterEndExclusive;
       final observation = ObservationWindowStatus.calculate(
         eventDate: anchor,
         requestedDays: requestedWindow,
       );
-      final documents = await Future.wait([
+      final documents = await Future.wait<List<LogicalDailyRecord>>([
         _fetchDailyRecords(uid, beforeStart, beforeEndExclusive),
         _fetchDailyRecords(uid, afterStart, afterEndExclusive),
       ]);
-      final before = DailyRecordAggregator.aggregate(
+      final healthEvents = await Future.wait<List<HealthEvent>>([
+        HealthEventRepository().getByDateRange(
+          userId: uid,
+          start: beforeStart,
+          end: beforeEndExclusive,
+        ),
+        HealthEventRepository().getByDateRange(
+          userId: uid,
+          start: afterStart,
+          end: afterEndExclusive,
+        ),
+      ]);
+      final beforeBase = DailyRecordAggregator.aggregate(
         documents[0].map((document) => document.data),
       );
-      final after = DailyRecordAggregator.aggregate(
+      final afterBase = DailyRecordAggregator.aggregate(
         documents[1].map((document) => document.data),
+      );
+      List<DailyRecord> recordsFor(List<LogicalDailyRecord> values) => values
+          .map((record) => DailyRecord.fromData(record.id, record.data))
+          .toList();
+      final aggregation = const DailyHealthAggregationService();
+      final before = DailyRecordAggregator.withAggregatedSymptoms(
+        beforeBase,
+        aggregation.aggregateRange(
+          dailyRecords: recordsFor(documents[0]),
+          healthEvents: healthEvents[0],
+          start: beforeStart,
+          endExclusive: beforeEndExclusive,
+        ),
+      );
+      final after = DailyRecordAggregator.withAggregatedSymptoms(
+        afterBase,
+        aggregation.aggregateRange(
+          dailyRecords: recordsFor(documents[1]),
+          healthEvents: healthEvents[1],
+          start: afterStart,
+          endExclusive: afterEndExclusive,
+        ),
       );
       final concurrent = _allEvents.where((other) {
         if (other.eventKey == event.eventKey) return false;
         final day = DateTime(other.date.year, other.date.month, other.date.day);
         return !day.isBefore(beforeStart) && day.isBefore(afterEndExclusive);
       }).toList();
+      final allResponses = await _repository.getSubjectiveResponses(
+        uid: uid,
+        changeRecordId: event.adjustmentId,
+      );
+      final medicationIdsForChange = _allEvents
+          .where((item) => item.adjustmentId == event.adjustmentId)
+          .map((item) => item.medDocId)
+          .where((id) => id.trim().isNotEmpty)
+          .toSet();
+      final subjectiveResponses =
+          MedicationSubjectiveSummaryBuilder.forMedicationChange(
+        allResponses,
+        medicationId: event.medDocId,
+        changeRecordId: event.adjustmentId,
+        medicationIdsForChange: medicationIdsForChange,
+      );
       if (!mounted ||
           _selectedEvent?.eventKey != event.eventKey ||
           _windowDays != requestedWindow) {
@@ -380,6 +442,7 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage>
           hasConcurrentAdjustments: concurrent.isNotEmpty,
         );
         _concurrentEvents = concurrent;
+        _subjectiveResponses = subjectiveResponses;
         _observationStatus = observation;
         _beforeAvailableDays = requestedWindow;
         _afterAvailableDays = observation.elapsedAfterDays;
@@ -542,6 +605,10 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage>
           const SizedBox(height: 12),
           _ConcurrentAdjustmentCard(events: _concurrentEvents),
         ],
+        if (_subjectiveResponses.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _SubjectiveResponseCard(responses: _subjectiveResponses),
+        ],
         if (!observation.completed) ...[
           const SizedBox(height: 12),
           _ObservationIncompleteCard(status: observation),
@@ -689,6 +756,38 @@ class _ConcurrentAdjustmentCard extends StatelessWidget {
   }
 }
 
+class _SubjectiveResponseCard extends StatelessWidget {
+  const _SubjectiveResponseCard({required this.responses});
+
+  final List<MedicationSubjectiveResponse> responses;
+
+  @override
+  Widget build(BuildContext context) => _SoftCard(
+        title: '主觀用藥感受',
+        subtitle: '使用者主觀回報｜$medicationCompareNonCausalNotice',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: responses.map((response) {
+            final presentation =
+                MedicationSubjectiveResponsePresentation(response);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    presentation.title,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  ...presentation.detailLines.map(Text.new),
+                ],
+              ),
+            );
+          }).toList(),
+        ),
+      );
+}
+
 class _ObservationIncompleteCard extends StatelessWidget {
   const _ObservationIncompleteCard({required this.status});
   final ObservationWindowStatus status;
@@ -732,16 +831,9 @@ class _MetricRow extends StatelessWidget {
     if (!item.canCalculate) {
       lines.add('資料不足，無法判定變化');
     } else if (item.kind == CompareMetricKind.symptom) {
-      lines.add(
-          '出現率：${_percent(item.beforeOccurrenceRate)} → ${_percent(item.afterOccurrenceRate)}');
-      lines.add(
-          '出現天數：${item.beforePresentDays}/${item.beforeRecordedDays} → ${item.afterPresentDays}/${item.afterRecordedDays} 天');
-      if (item.beforeAverageScore != null || item.afterAverageScore != null) {
-        lines.add(
-            '平均強度：${_score(item.beforeAverageScore)} → ${_score(item.afterAverageScore)}');
-        lines.add(
-            '最高強度：${_score(item.beforeMaximumScore)} → ${_score(item.afterMaximumScore)}');
-      }
+      final presentation = MedicationCompareMetricPresentation(item);
+      lines.add(presentation.primaryOccurrenceLine);
+      lines.addAll(presentation.symptomDetailLines);
       lines.add(
           '頻率變化：${_changeText(item.occurrenceDirection, item.occurrenceMagnitude)}');
       lines.add(
@@ -778,8 +870,8 @@ class _MetricRow extends StatelessWidget {
           ),
           if (item.newlyAppeared)
             Text(item.afterPresentDays == 1
-                ? '後段新出現 1 次，仍需更多紀錄確認'
-                : '後段新出現 ${item.afterPresentDays} 次'),
+                ? '後段新出現 1 天，仍需更多紀錄確認'
+                : '後段新出現 ${item.afterPresentDays} 天'),
           if (item.disappeared) const Text('觀察期間後段未再出現'),
           ...lines.map((line) => Text(line)),
         ],
@@ -816,8 +908,6 @@ class _MetricRow extends StatelessWidget {
     return '$magnitude$direction';
   }
 
-  static String _percent(double? value) =>
-      value == null ? '未記錄' : '${value.toStringAsFixed(1)}%';
   static String _score(double? value) =>
       value == null ? '未記錄' : value.toStringAsFixed(1);
 

@@ -13,6 +13,8 @@ enum MedicationPerceivedRelation {
 /// clinical effectiveness, causality, or adverse-effect assessment.
 class MedicationSubjectiveResponse {
   static const Set<int> allowedFollowUpDays = {3, 7, 14, 28};
+  static const String legacyUnknownMedicationId =
+      '__legacy_unknown_medication__';
 
   MedicationSubjectiveResponse({
     required String id,
@@ -27,13 +29,13 @@ class MedicationSubjectiveResponse {
     required this.perceivedRelation,
     required List<String> otherFactors,
     this.note = '',
-  }) : id = _requiredText(id, 'id'),
-       medicationId = _requiredText(medicationId, 'medicationId'),
-       medicationName = _requiredText(medicationName, 'medicationName'),
-       changeRecordId = _requiredText(changeRecordId, 'changeRecordId'),
-       followUpDay = _followUpDay(followUpDay),
-       changedAreas = List.unmodifiable(changedAreas),
-       otherFactors = List.unmodifiable(otherFactors);
+  })  : id = _requiredText(id, 'id'),
+        medicationId = _requiredText(medicationId, 'medicationId'),
+        medicationName = _requiredText(medicationName, 'medicationName'),
+        changeRecordId = _requiredText(changeRecordId, 'changeRecordId'),
+        followUpDay = _followUpDay(followUpDay),
+        changedAreas = List.unmodifiable(changedAreas),
+        otherFactors = List.unmodifiable(otherFactors);
 
   final String id;
   final String medicationId;
@@ -49,24 +51,26 @@ class MedicationSubjectiveResponse {
   final String note;
 
   Map<String, dynamic> toMap() => {
-    'id': id,
-    'medicationId': medicationId,
-    'medicationName': medicationName,
-    'changeRecordId': changeRecordId,
-    'changeDate': changeDate.toIso8601String(),
-    'followUpDay': followUpDay,
-    'recordedAt': recordedAt.toIso8601String(),
-    'overallResponse': overallResponse.name,
-    'changedAreas': changedAreas,
-    'perceivedRelation': perceivedRelation.name,
-    'otherFactors': otherFactors,
-    'note': note,
-  };
+        'id': id,
+        'medicationId': medicationId,
+        'medicationName': medicationName,
+        'changeRecordId': changeRecordId,
+        'changeDate': changeDate.toIso8601String(),
+        'followUpDay': followUpDay,
+        'recordedAt': recordedAt.toIso8601String(),
+        'overallResponse': overallResponse.name,
+        'changedAreas': changedAreas,
+        'perceivedRelation': perceivedRelation.name,
+        'otherFactors': otherFactors,
+        'note': note,
+      };
 
   factory MedicationSubjectiveResponse.fromMap(Map<String, dynamic> map) {
+    final rawMedicationId = map['medicationId']?.toString().trim() ?? '';
     return MedicationSubjectiveResponse(
       id: map['id']?.toString() ?? '',
-      medicationId: map['medicationId']?.toString() ?? '',
+      medicationId:
+          rawMedicationId.isEmpty ? legacyUnknownMedicationId : rawMedicationId,
       medicationName: map['medicationName']?.toString() ?? '',
       changeRecordId: map['changeRecordId']?.toString() ?? '',
       changeDate: _date(map['changeDate'], 'changeDate'),

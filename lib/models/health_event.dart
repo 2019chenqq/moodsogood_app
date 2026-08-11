@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../utils/state_change_normalizer.dart';
+
 /// 一筆快速事件紀錄（快速記錄現在狀況）。
 ///
 /// 與 DailyRecord 完全獨立：一天可有多筆，每筆保留精確的 [timestamp]，
@@ -11,7 +13,7 @@ class HealthEvent {
   final DateTime timestamp;
   final List<HealthEventSymptom> symptoms;
   final List<HealthEventEmotion> emotions;
-  final Map<String, int> stateChanges; // keys: energy / appetite / activity
+  final Map<String, int> stateChanges;
   final String? context;
   final String? note;
   final DateTime? createdAt;
@@ -34,7 +36,8 @@ class HealthEvent {
       'timestamp': timestamp,
       'symptoms': symptoms.map((e) => e.toMap()).toList(),
       'emotions': emotions.map((e) => e.toMap()).toList(),
-      if (stateChanges.isNotEmpty) 'stateChanges': Map.of(stateChanges),
+      if (stateChanges.isNotEmpty)
+        'stateChanges': normalizeStateChanges(stateChanges),
       if (context != null && context!.trim().isNotEmpty)
         'context': context!.trim(),
       if (note != null && note!.trim().isNotEmpty) 'note': note!.trim(),
@@ -44,13 +47,14 @@ class HealthEvent {
   factory HealthEvent.fromMap(String id, Map<String, dynamic> map) {
     // Firestore 回傳的 timestamp 是 Timestamp（或被解密成一開始的 DateTime），
     // 不能用 toString() 再 tryParse，否則會全部解析失敗而退回 epoch。
-    final timestamp = _asDate(map['timestamp']) ?? DateTime.fromMillisecondsSinceEpoch(0);
+    final timestamp =
+        _asDate(map['timestamp']) ?? DateTime.fromMillisecondsSinceEpoch(0);
     return HealthEvent(
       id: id,
       timestamp: timestamp,
       symptoms: _parseSymptoms(map['symptoms']),
       emotions: _parseEmotions(map['emotions']),
-      stateChanges: _parseStateChanges(map['stateChanges']),
+      stateChanges: normalizeStateChanges(map['stateChanges']),
       context: map['context']?.toString(),
       note: map['note']?.toString(),
       createdAt: _asDate(map['createdAt']),
@@ -74,18 +78,6 @@ class HealthEvent {
         .map((m) => HealthEventEmotion.fromMap(m.cast<String, dynamic>()))
         .where((e) => e.name.trim().isNotEmpty)
         .toList();
-  }
-
-  static Map<String, int> _parseStateChanges(dynamic raw) {
-    if (raw is! Map) return const {};
-    final result = <String, int>{};
-    for (final entry in raw.entries) {
-      final value = entry.value is num ? (entry.value as num).toInt() : null;
-      if (value != null && value >= 1 && value <= 5) {
-        result[entry.key.toString()] = value;
-      }
-    }
-    return result;
   }
 
   static DateTime? _asDate(dynamic value) {

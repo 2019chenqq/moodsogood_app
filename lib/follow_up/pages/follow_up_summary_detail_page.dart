@@ -260,13 +260,16 @@ class _FollowUpSummaryDetailPageState extends State<FollowUpSummaryDetailPage>
             _card('基本資訊', display.visitInfo, bullets: false),
             _discussionCard(display),
             _card('主要變化', display.keyChanges),
+            _card('紀錄證據摘要', display.recordEvidenceHighlights,
+                emptyText: '此摘要沒有額外的快速記錄統計'),
             FollowUpSleepTrendCard.fromRecord(record: _summary),
-            _card('身體症狀', display.symptoms,
-                emptyText: '此摘要沒有可顯示的症狀資料'),
+            _card('身體症狀', display.symptoms, emptyText: '此摘要沒有可顯示的症狀資料'),
             _card('身體測量', display.bodyMeasurements,
                 emptyText: '此摘要沒有可顯示的體重、體脂率或腰圍資料'),
             _card('藥物調整時間軸', display.medicationTimeline,
                 emptyText: '此摘要沒有藥物調整紀錄'),
+            _card('主觀用藥感受', display.medicationSubjectiveSummaries,
+                emptyText: '此摘要期間沒有主觀用藥感受回報'),
             _card('其他想跟醫師說的內容', display.userSharedNotes,
                 emptyText: '沒有其他想跟醫師說的內容'),
             _card('資料限制', display.dataLimitations),
@@ -451,6 +454,10 @@ class _SummaryEditorState extends State<_SummaryEditor> {
                             timelineRelations: old.timelineRelations,
                             discussionPriorities: const [],
                             discussionItems: _lines('discussionItems'),
+                            medicationSubjectiveSummaries:
+                                old.medicationSubjectiveSummaries,
+                            recordEvidenceHighlights:
+                                old.recordEvidenceHighlights,
                             followUpResponses: old.followUpResponses,
                             userSharedNotes: _lines('sharedNotes'),
                             userReportedConcerns: old.userReportedConcerns,
@@ -599,8 +606,8 @@ class _TimedShareDialogState extends State<_TimedShareDialog> {
                     padding: const EdgeInsets.all(10),
                     child: SizedBox.square(
                         dimension: 220,
-                        child:
-                            CustomPaint(painter: FollowUpQrPainter(session.url))))
+                        child: CustomPaint(
+                            painter: FollowUpQrPainter(session.url))))
               else
                 const Padding(
                   padding: EdgeInsets.all(12),

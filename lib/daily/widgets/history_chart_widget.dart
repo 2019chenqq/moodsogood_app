@@ -5,6 +5,51 @@ import 'package:flutter/material.dart';
 
 import '../../models/daily_record.dart';
 import '../../models/period_cycle.dart';
+import '../emotion_trend_calculator.dart';
+
+class EmotionTrendPointPresentation {
+  const EmotionTrendPointPresentation(this.point);
+
+  final DailyEmotionValuePoint point;
+
+  bool get showsRangeIndicator {
+    final range = point.quickRecordRange;
+    return point.scale == 5 &&
+        range != null &&
+        range.shouldDisplay &&
+        range.min < range.max;
+  }
+
+  List<String> tooltipLines({
+    required String label,
+    required double displayedValue,
+    required bool showsTrendValue,
+  }) {
+    final source = switch (point.source) {
+      DailyEmotionMainSource.dailyCheckIn => '每日基準',
+      DailyEmotionMainSource.dailyRecord => '每日紀錄',
+      DailyEmotionMainSource.quickRecordFallback => '快速記錄平均',
+    };
+    final lines = <String>[
+      '$label：${point.mainValue.toStringAsFixed(1)}/${point.scale}',
+      '代表值來源：$source',
+    ];
+    final range = point.quickRecordRange;
+    if (range != null) {
+      if (range.shouldDisplay) {
+        lines.add(
+          '快速記錄範圍：${range.min.toStringAsFixed(1)}–'
+          '${range.max.toStringAsFixed(1)}',
+        );
+      }
+      lines.add('快速記錄：${range.count}筆');
+    }
+    if (showsTrendValue) {
+      lines.add('趨勢值：${displayedValue.toStringAsFixed(1)}');
+    }
+    return lines;
+  }
+}
 
 class HistoryChartWidget extends StatelessWidget {
   final List<DailyRecord> records;
@@ -15,6 +60,8 @@ class HistoryChartWidget extends StatelessWidget {
   final Map<DateTime, double> diaryMoodScores;
   final String overallMoodLabel;
   final List<PeriodCycle> periodCycles;
+  final List<DailyEmotionValuePoint> dailyEmotionPoints;
+  final List<DailyEmotionValuePoint> fullDailyEmotionPoints;
 
   const HistoryChartWidget({
     super.key,
@@ -26,7 +73,16 @@ class HistoryChartWidget extends StatelessWidget {
     this.diaryMoodScores = const <DateTime, double>{},
     this.overallMoodLabel = '整體情緒',
     this.periodCycles = const <PeriodCycle>[],
+    this.dailyEmotionPoints = const <DailyEmotionValuePoint>[],
+    this.fullDailyEmotionPoints = const <DailyEmotionValuePoint>[],
   });
+
+  Map<DateTime, DailyEmotionValuePoint> _aggregatePointMap(
+    Iterable<DailyEmotionValuePoint> points,
+  ) =>
+      {
+        for (final point in points) _norm(point.date): point,
+      };
 
   /// 正規化日期（去除時間部分）
   DateTime _norm(DateTime d) => DateTime(d.year, d.month, d.day);
@@ -234,7 +290,10 @@ class HistoryChartWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isOverallMood = targetEmotion == overallMoodLabel;
-    if (records.isEmpty && (!isOverallMood || diaryMoodScores.isEmpty)) {
+    final hasAggregatePoints = dailyEmotionPoints.isNotEmpty;
+    if (!hasAggregatePoints &&
+        records.isEmpty &&
+        (!isOverallMood || diaryMoodScores.isEmpty)) {
       return const Center(child: Text('此情緒目前沒有數據'));
     }
 
@@ -244,7 +303,49 @@ class HistoryChartWidget extends StatelessWidget {
 
     final Map<DateTime, double> dateValueMap = {};
     final Map<DateTime, double> emptyPointValueMap = {};
-    if (isOverallMood) {
+    final aggregatePointMap = _aggregatePointMap(dailyEmotionPoints);
+    final fullAggregatePoints = fullDailyEmotionPoints.isEmpty
+        ? dailyEmotionPoints
+        : fullDailyEmotionPoints;
+    if (hasAggregatePoints) {
+      final visibleRawValues = <DateTime, double>{};
+      final fullRawValues = <DateTime, double>{};
+      if (isOverallMood) {
+        for (final entry in diaryMoodScores.entries) {
+          visibleRawValues[_norm(entry.key)] = entry.value;
+          fullRawValues[_norm(entry.key)] = entry.value;
+        }
+      }
+      for (final point in fullAggregatePoints) {
+        fullRawValues[_norm(point.date)] = point.mainValue;
+      }
+      for (final point in dailyEmotionPoints) {
+        visibleRawValues[_norm(point.date)] = point.mainValue;
+      }
+
+      final visibleDates = visibleRawValues.keys.toList()..sort();
+      for (final d in visibleDates) {
+        if (useMovingAverage) {
+          final start = d.subtract(const Duration(days: 6));
+          final values = fullRawValues.entries
+              .where((entry) =>
+                  !entry.key.isBefore(start) && !entry.key.isAfter(d))
+              .map((entry) => entry.value)
+              .toList();
+          if (values.isNotEmpty) {
+            final value = values.reduce((a, b) => a + b) / values.length;
+            final filledDays = values.length;
+            if (filledDays >= 3) {
+              dateValueMap[d] = value;
+            } else if (filledDays > 0) {
+              emptyPointValueMap[d] = value;
+            }
+          }
+        } else {
+          dateValueMap[d] = visibleRawValues[d]!;
+        }
+      }
+    } else if (isOverallMood) {
       final sortedDiaryDates = diaryMoodScores.keys.toList()..sort();
       for (final rawDate in sortedDiaryDates) {
         final d = _norm(rawDate);
@@ -330,6 +431,7 @@ class HistoryChartWidget extends StatelessWidget {
 
     // ===== 3️⃣ 建立 LineChartBarData =====
     final List<LineChartBarData> barDatas = [];
+    final Set<int> rangeBarIndexes = <int>{};
     bool hasDashedSegments = false;
 
     double? pointY(DateTime d) => effectiveValueMap[d] ?? effectiveEmptyMap[d];
@@ -467,6 +569,34 @@ class HistoryChartWidget extends StatelessWidget {
       }
     }
 
+    // Range bars consume the already-aggregated QuickRecord min/max values.
+    // They are visual evidence only and never enter the trend/MA calculation.
+    if (!forceMonthlyAverage) {
+      for (final point in dailyEmotionPoints) {
+        final presentation = EmotionTrendPointPresentation(point);
+        final range = point.quickRecordRange;
+        final day = _norm(point.date);
+        if (!presentation.showsRangeIndicator ||
+            range == null ||
+            (!effectiveValueMap.containsKey(day) &&
+                !effectiveEmptyMap.containsKey(day))) {
+          continue;
+        }
+        rangeBarIndexes.add(barDatas.length);
+        barDatas.add(LineChartBarData(
+          spots: [
+            FlSpot(dayIdx(day).toDouble(), range.min),
+            FlSpot(dayIdx(day).toDouble(), range.max),
+          ],
+          isCurved: false,
+          color: lineColor.withValues(alpha: 0.38),
+          barWidth: 2,
+          dotData: const FlDotData(show: false),
+          belowBarData: BarAreaData(show: false),
+        ));
+      }
+    }
+
     final xBounds = _xBounds(barDatas);
 
     double xForDate(DateTime date) {
@@ -492,7 +622,10 @@ class HistoryChartWidget extends StatelessWidget {
     );
 
     // ===== 5️⃣ 判斷量表範圍：5 點量表 max=5，10 點量表 max=10 =====
-    final maxScale = records.any((r) => r.moodScale == 10) ? 10 : 5;
+    final maxScale = dailyEmotionPoints.any((point) => point.scale == 10) ||
+            records.any((r) => r.moodScale == 10)
+        ? 10
+        : 5;
 
     // ===== 6️⃣ X 軸標籤：依資料點間距動態決定顯示頻率，避免重疊 =====
     final labelPositions = <int>{};
@@ -587,6 +720,37 @@ class HistoryChartWidget extends StatelessWidget {
           ),
         ),
         borderData: FlBorderData(show: false),
+        lineTouchData: LineTouchData(
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipItems: (spots) => spots.map((spot) {
+              if (rangeBarIndexes.contains(spot.barIndex)) return null;
+              final date = dateForX(spot.x.round());
+              final point =
+                  forceMonthlyAverage ? null : aggregatePointMap[_norm(date)];
+              final lines = <String>['${date.year}/${date.month}/${date.day}'];
+              if (point == null) {
+                lines.add(
+                  '$targetEmotion：${spot.y.toStringAsFixed(1)}/$maxScale',
+                );
+              } else {
+                lines.addAll(
+                  EmotionTrendPointPresentation(point).tooltipLines(
+                    label: isOverallMood ? overallMoodLabel : targetEmotion,
+                    displayedValue: spot.y,
+                    showsTrendValue: useMovingAverage,
+                  ),
+                );
+              }
+              return LineTooltipItem(
+                lines.join('\n'),
+                const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              );
+            }).toList(),
+          ),
+        ),
         lineBarsData: barDatas,
       ),
     );

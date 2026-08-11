@@ -174,6 +174,8 @@ class EmotionBalanceChartWidget extends StatelessWidget {
     required this.useMovingAverage,
     this.forceMonthlyAverage = false,
     this.periodCycles = const <PeriodCycle>[],
+    this.aggregatePoints = const <DailyEmotionTrendPoint>[],
+    this.fullAggregatePoints = const <DailyEmotionTrendPoint>[],
   });
 
   final List<DailyRecord> records;
@@ -181,6 +183,8 @@ class EmotionBalanceChartWidget extends StatelessWidget {
   final bool useMovingAverage;
   final bool forceMonthlyAverage;
   final List<PeriodCycle> periodCycles;
+  final List<DailyEmotionTrendPoint> aggregatePoints;
+  final List<DailyEmotionTrendPoint> fullAggregatePoints;
 
   DateTime _norm(DateTime d) => DateTime(d.year, d.month, d.day);
 
@@ -320,8 +324,18 @@ class EmotionBalanceChartWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final visibleSource = _pointMap(records);
-    final fullSource = _pointMap(fullRecords);
+    final visibleSource = aggregatePoints.isEmpty
+        ? _pointMap(records)
+        : {
+            for (final point in aggregatePoints)
+              if (point.hasClassifiedData) _norm(point.date): point,
+          };
+    final fullSource = fullAggregatePoints.isEmpty
+        ? _pointMap(fullRecords)
+        : {
+            for (final point in fullAggregatePoints)
+              if (point.hasClassifiedData) _norm(point.date): point,
+          };
 
     var positiveSeries = _dailySeries(true, visibleSource, fullSource);
     var negativeSeries = _dailySeries(false, visibleSource, fullSource);
@@ -614,6 +628,8 @@ class EmotionBalanceTrendChartWidget extends StatelessWidget {
     required this.useMovingAverage,
     this.forceMonthlyAverage = false,
     this.periodCycles = const <PeriodCycle>[],
+    this.aggregatePoints = const <DailyEmotionTrendPoint>[],
+    this.fullAggregatePoints = const <DailyEmotionTrendPoint>[],
   });
 
   final List<DailyRecord> records;
@@ -621,6 +637,8 @@ class EmotionBalanceTrendChartWidget extends StatelessWidget {
   final bool useMovingAverage;
   final bool forceMonthlyAverage;
   final List<PeriodCycle> periodCycles;
+  final List<DailyEmotionTrendPoint> aggregatePoints;
+  final List<DailyEmotionTrendPoint> fullAggregatePoints;
 
   DateTime _norm(DateTime d) => DateTime(d.year, d.month, d.day);
 
@@ -741,8 +759,18 @@ class EmotionBalanceTrendChartWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final visibleSource = _pointMap(records);
-    final fullSource = _pointMap(fullRecords);
+    final visibleSource = aggregatePoints.isEmpty
+        ? _pointMap(records)
+        : {
+            for (final point in aggregatePoints)
+              if (point.emotionBalance != null) _norm(point.date): point,
+          };
+    final fullSource = fullAggregatePoints.isEmpty
+        ? _pointMap(fullRecords)
+        : {
+            for (final point in fullAggregatePoints)
+              if (point.emotionBalance != null) _norm(point.date): point,
+          };
 
     var series = _dailySeries(visibleSource, fullSource);
     if (forceMonthlyAverage) {

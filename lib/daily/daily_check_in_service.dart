@@ -34,6 +34,44 @@ class DailyCheckInService {
     );
   }
 
+  Future<List<DailyCheckIn>> getByDateRange({
+    required DateTime start,
+    required DateTime endExclusive,
+  }) async {
+    final startDay = DateTime(start.year, start.month, start.day);
+    final endDay = DateTime(
+      endExclusive.year,
+      endExclusive.month,
+      endExclusive.day,
+    );
+    final snapshots = await HealthDataEncryptionService.getEncrypted(
+      _firestore
+          .collection('users')
+          .doc(_uid)
+          .collection('dailyCheckIns')
+          .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startDay))
+          .where('date', isLessThan: Timestamp.fromDate(endDay)),
+    );
+    final checkIns = snapshots
+        .map((snapshot) => DailyCheckIn.fromData(snapshot.data))
+        .toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+    return checkIns;
+  }
+
+  Future<List<DailyCheckIn>> getAll() async {
+    final snapshots = await HealthDataEncryptionService.getEncrypted(
+      _firestore
+          .collection('users')
+          .doc(_uid)
+          .collection('dailyCheckIns')
+          .orderBy('date'),
+    );
+    return snapshots
+        .map((snapshot) => DailyCheckIn.fromData(snapshot.data))
+        .toList(growable: false);
+  }
+
   Future<void> save(DailyCheckIn checkIn) async {
     _validateScore(checkIn.overallMood, 'overallMood');
     _validateScore(checkIn.healthStatus, 'healthStatus');

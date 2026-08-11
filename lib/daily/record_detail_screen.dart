@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'edit_record_page.dart';
 import '../utils/date_helper.dart';
 import '../models/daily_record.dart';
+import '../models/health_event.dart';
 import 'daily_record_repository.dart';
 import '../constants/healing_design_system.dart';
 import '../analytics_service.dart';
@@ -14,6 +15,21 @@ import 'symptom_definitions.dart';
 import 'body_measurement_input.dart';
 import 'unified_sleep_repository.dart';
 import 'unified_body_measurement_repository.dart';
+import 'health_event_repository.dart';
+import 'quick_record_editor.dart';
+import 'quick_record_detail_section.dart';
+
+class _RecordDetailData {
+  const _RecordDetailData({required this.record, required this.events});
+
+  final DailyRecord? record;
+  final List<HealthEvent> events;
+}
+
+List<HealthEvent> sortHealthEventsByTimestamp(Iterable<HealthEvent> events) {
+  return List<HealthEvent>.from(events)
+    ..sort((left, right) => left.timestamp.compareTo(right.timestamp));
+}
 
 class RecordDetailScreen extends StatefulWidget {
   final String uid;
@@ -118,6 +134,34 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
     }
 
     return record;
+  }
+
+  Future<_RecordDetailData> _loadDetailData() async {
+    final date = DateHelper.parseIdToDate(widget.docId);
+    if (date == null) {
+      return const _RecordDetailData(record: null, events: []);
+    }
+    final results = await Future.wait<dynamic>([
+      _loadMergedRecord(),
+      _loadQuickRecordsForDate(date),
+    ]);
+    return _RecordDetailData(
+      record: results[0] as DailyRecord?,
+      events: sortHealthEventsByTimestamp(results[1] as List<HealthEvent>),
+    );
+  }
+
+  Future<List<HealthEvent>> _loadQuickRecordsForDate(DateTime date) async {
+    try {
+      return await HealthEventRepository().getByDateRange(
+        userId: widget.uid,
+        start: date,
+        end: date.add(const Duration(days: 1)),
+      );
+    } catch (error) {
+      debugPrint('QuickRecord detail load failed: $error');
+      return const [];
+    }
   }
 
   DailyRecord _withBodyMeasurement(
@@ -407,10 +451,45 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
     }
   }
 
+  Future<void> _deleteQuickRecord(HealthEvent event) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('刪除這筆快速記錄？'),
+        content: const Text('只會刪除這一筆快速記錄，不會影響每日紀錄。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('刪除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await HealthEventRepository().delete(
+      userId: widget.uid,
+      eventId: event.id,
+    );
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _editQuickRecord(HealthEvent event) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => QuickRecordEditor(initial: event),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<DailyRecord?>(
-      future: _loadMergedRecord(),
+    return FutureBuilder<_RecordDetailData>(
+      future: _loadDetailData(),
       builder: (context, snap) {
         // 1. 處理載入中與錯誤
         if (snap.connectionState == ConnectionState.waiting) {
@@ -418,10 +497,17 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
               body: Center(child: CircularProgressIndicator()));
         }
 
-        final record = snap.data;
-        if (record == null) {
+        final detail = snap.data;
+        if (detail == null ||
+            (detail.record == null && detail.events.isEmpty)) {
           return const Scaffold(body: Center(child: Text('找不到資料')));
         }
+
+        final date = DateHelper.parseIdToDate(widget.docId) ?? DateTime.now();
+        final hasDailyRecord = detail.record != null;
+        final record =
+            detail.record ?? DailyRecord(id: widget.docId, date: date);
+        final quickRecords = detail.events;
 
         final sleep = record.sleep;
 
@@ -441,37 +527,39 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
               ),
             ),
             actions: [
-              IconButton(
-                icon: const Icon(Icons.edit),
-                tooltip: '編輯',
-                onPressed: () async {
-                  try {
-                    // 這裡把 Model 轉回 Map 傳給編輯頁 (保持相容性)
-                    final changed = await Navigator.push<bool>(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => EditRecordPage(
-                          uid: widget.uid,
-                          docId: widget.docId,
-                          initData: record.toFirestore(), // Model -> Map
+              if (hasDailyRecord)
+                IconButton(
+                  icon: const Icon(Icons.edit),
+                  tooltip: '編輯',
+                  onPressed: () async {
+                    try {
+                      // 這裡把 Model 轉回 Map 傳給編輯頁 (保持相容性)
+                      final changed = await Navigator.push<bool>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => EditRecordPage(
+                            uid: widget.uid,
+                            docId: widget.docId,
+                            initData: record.toFirestore(), // Model -> Map
+                          ),
                         ),
-                      ),
-                    );
+                      );
 
-                    // 如果編輯頁返回 true，觸發畫面更新
-                    if (changed == true) {
-                      setState(() {});
+                      // 如果編輯頁返回 true，觸發畫面更新
+                      if (changed == true) {
+                        setState(() {});
+                      }
+                    } catch (e) {
+                      debugPrint('開啟編輯頁錯誤：$e');
                     }
-                  } catch (e) {
-                    debugPrint('開啟編輯頁錯誤：$e');
-                  }
-                },
-              ),
-              IconButton(
-                icon: const Icon(Icons.delete_outline),
-                tooltip: '清除當日資料',
-                onPressed: () => _clearRecord(context),
-              ),
+                  },
+                ),
+              if (hasDailyRecord)
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: '清除當日資料',
+                  onPressed: () => _clearRecord(context),
+                ),
             ],
           ),
           body: ListView(
@@ -700,6 +788,14 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
                   ],
                 ),
               ),
+              if (quickRecords.isNotEmpty) ...[
+                _sectionHeader(context, '快速記錄'),
+                QuickRecordDetailSection(
+                  events: quickRecords,
+                  onEdit: _editQuickRecord,
+                  onDelete: _deleteQuickRecord,
+                ),
+              ],
             ],
           ),
         );

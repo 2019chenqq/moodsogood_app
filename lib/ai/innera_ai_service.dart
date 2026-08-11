@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
 import '../daily/emotion_dimensions.dart';
@@ -142,9 +144,7 @@ class InneraAiService {
     };
 
     try {
-      final result = await _functions
-          .httpsCallable(AiCallableEndpoints.chat)
-          .call(payload)
+      final result = await _callWithTokenRefresh(payload)
           .timeout(const Duration(seconds: 60));
       final data = _asMap(result.data);
       final response = _parseResponse(data, contextSources);
@@ -168,6 +168,33 @@ class InneraAiService {
       debugPrint('InneraAiService generate failed: $error');
       debugPrintStack(stackTrace: stackTrace);
       throw const InneraAiException('目前暫時無法取得 AI 回覆，請稍後再試。');
+    }
+  }
+
+  Future<HttpsCallableResult<dynamic>> _callWithTokenRefresh(
+    Map<String, dynamic> payload,
+  ) async {
+    final callable = _functions.httpsCallable(AiCallableEndpoints.chat);
+    try {
+      return await callable.call(payload);
+    } on FirebaseFunctionsException catch (error) {
+      if (error.code != 'unauthenticated' ||
+          FirebaseAuth.instance.currentUser == null) {
+        rethrow;
+      }
+
+      // A callable may report unauthenticated for either an expired Auth token
+      // or a rejected App Check token. Refresh both once before surfacing the
+      // error; retrying is safe because authentication is rejected before the
+      // AI handler performs work.
+      try {
+        await FirebaseAuth.instance.currentUser!.getIdToken(true);
+        await FirebaseAppCheck.instance.getToken(true);
+      } catch (refreshError, stackTrace) {
+        debugPrint('AI callable token refresh failed: $refreshError');
+        debugPrintStack(stackTrace: stackTrace);
+      }
+      return callable.call(payload);
     }
   }
 

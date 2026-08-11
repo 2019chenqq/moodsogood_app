@@ -933,6 +933,14 @@ class _AiOutputContent extends StatelessWidget {
       children: [
         _AiOutputSection(title: '主要變化', items: output.keyChanges),
         _AiOutputSection(
+          title: '紀錄證據摘要',
+          items: output.recordEvidenceHighlights,
+        ),
+        _AiOutputSection(
+          title: '主觀用藥感受',
+          items: output.medicationSubjectiveSummaries,
+        ),
+        _AiOutputSection(
           title: '其他想跟醫師說的內容',
           items: output.userSharedNotes,
         ),

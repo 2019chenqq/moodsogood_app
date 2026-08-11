@@ -9,16 +9,21 @@ class MedicationSubjectiveSummaryBuilder {
   }) {
     final grouped = <String, List<MedicationSubjectiveResponse>>{};
     for (final response in responses) {
-      grouped.putIfAbsent(response.changeRecordId, () => []).add(response);
+      grouped.putIfAbsent(groupKey(response), () => []).add(response);
     }
     final groups = grouped.entries.map((entry) {
       final items = entry.value
         ..sort((left, right) => left.followUpDay.compareTo(right.followUpDay));
       final first = items.first;
       return <String, dynamic>{
-        'changeRecordId': entry.key,
+        'medicationId': first.medicationId,
+        'changeRecordId': first.changeRecordId,
         'medicationName': first.medicationName,
         'changeDate': _date(first.changeDate),
+        'pairingStatus': first.medicationId ==
+                MedicationSubjectiveResponse.legacyUnknownMedicationId
+            ? 'legacy_unassigned'
+            : 'matched_by_medication_id_and_change_record_id',
         'responses': items
             .map((item) => <String, dynamic>{
                   'followUpDay': item.followUpDay,
@@ -34,6 +39,27 @@ class MedicationSubjectiveSummaryBuilder {
       ..sort((left, right) => (right['changeDate'] as String)
           .compareTo(left['changeDate'] as String));
     return groups.take(maxCycles).toList().reversed.toList();
+  }
+
+  static String groupKey(MedicationSubjectiveResponse response) =>
+      '${response.medicationId}\u0000${response.changeRecordId}';
+
+  static List<MedicationSubjectiveResponse> forMedicationChange(
+    Iterable<MedicationSubjectiveResponse> responses, {
+    required String medicationId,
+    required String changeRecordId,
+    required Set<String> medicationIdsForChange,
+  }) {
+    final allowLegacyFallback = medicationIdsForChange.length <= 1;
+    final result = responses.where((response) {
+      if (response.changeRecordId != changeRecordId) return false;
+      if (response.medicationId == medicationId) return true;
+      return allowLegacyFallback &&
+          response.medicationId ==
+              MedicationSubjectiveResponse.legacyUnknownMedicationId;
+    }).toList()
+      ..sort((a, b) => a.followUpDay.compareTo(b.followUpDay));
+    return result;
   }
 
   static List<String> fallbackSummaries(
@@ -52,7 +78,12 @@ class MedicationSubjectiveSummaryBuilder {
       ..sort((left, right) => _day(left).compareTo(_day(right)));
     if (responses.isEmpty) return '';
 
-    final prefix = medicationName.isEmpty ? '' : '$medicationName：';
+    final pairingStatus = group['pairingStatus']?.toString() ?? '';
+    final prefix = pairingStatus == 'unsafe_to_assign_to_one_medication'
+        ? '無法安全配對至單一藥物的使用者主觀回報：'
+        : medicationName.isEmpty
+            ? '使用者主觀回報：'
+            : '$medicationName（使用者主觀回報）：';
     if (responses.length == 1) {
       final response = responses.first;
       final parts = <String>[
