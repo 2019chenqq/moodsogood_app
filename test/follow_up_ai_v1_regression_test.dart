@@ -5,6 +5,138 @@ import 'package:moodsogood_app/follow_up/services/follow_up_ai_service.dart';
 import 'package:moodsogood_app/follow_up/widgets/follow_up_sleep_trend_card.dart';
 
 void main() {
+  test('follow-up parser preserves three successful questions', () {
+    final result = FollowUpAiService.parseFollowUpQuestionResponse(
+      '{"questions":["最近是否影響工作？","症狀多久一次？","最想先討論什麼？"]}',
+      _input(),
+    );
+
+    expect(result.isSuccess, isTrue);
+    expect(result.questions, hasLength(3));
+  });
+
+  test('single structured question succeeds', () {
+    final result = FollowUpAiService.parseFollowUpQuestionResponse(
+      '{"questions":["最近睡眠如何？"]}',
+      _input(),
+    );
+
+    expect(result.isSuccess, isTrue);
+    expect(result.questions, ['最近睡眠如何？']);
+  });
+
+  test('follow-up parser distinguishes a successful empty question list', () {
+    final result = FollowUpAiService.parseFollowUpQuestionResponse(
+      '{"questions":[]}',
+      _input(),
+    );
+
+    expect(result.isSuccess, isTrue);
+    expect(result.questions, isEmpty);
+  });
+
+  test('follow-up parser reports malformed replies as failure', () {
+    final result = FollowUpAiService.parseFollowUpQuestionResponse(
+      'not json',
+      _input(),
+    );
+
+    expect(result.isSuccess, isFalse);
+    expect(result.questions, isNull);
+  });
+
+  test('dedicated transport follow-up question is accepted', () {
+    final result = FollowUpAiService.parseFollowUpQuestionResponse(
+      '{}',
+      _input(),
+      followUpQuestion: '最近的睡眠狀況是否影響白天活動？',
+    );
+
+    expect(result.isSuccess, isTrue);
+    expect(result.questions, ['最近的睡眠狀況是否影響白天活動？']);
+  });
+
+  test('structured questions without punctuation are canonicalized', () {
+    final result = FollowUpAiService.parseFollowUpQuestionResponse(
+      '{"questions":["最近睡眠是否影響白天活動"]}',
+      _input(),
+    );
+
+    expect(result.isSuccess, isTrue);
+    expect(result.questions, ['最近睡眠是否影響白天活動？']);
+  });
+
+  test('nested transport reply JSON is accepted', () {
+    final result = FollowUpAiService.parseFollowUpQuestionResponse(
+      '{"reply":"{\\"questions\\":[\\"最近睡眠是否影響工作\\"]}"}',
+      _input(),
+    );
+
+    expect(result.isSuccess, isTrue);
+    expect(result.questions, ['最近睡眠是否影響工作？']);
+  });
+
+  test('plain text questions with explicit punctuation are accepted', () {
+    final result = FollowUpAiService.parseFollowUpQuestionResponse(
+      '1. 最近睡眠是否影響工作？\n2. 最近是否常在夜間醒來？',
+      _input(),
+    );
+
+    expect(result.isSuccess, isTrue);
+    expect(result.questions, hasLength(2));
+  });
+
+  test('single plain text question uses constrained fallback', () {
+    final result = FollowUpAiService.parseFollowUpQuestionResponse(
+      '最近睡眠如何？',
+      _input(),
+    );
+
+    expect(result.isSuccess, isTrue);
+    expect(result.questions, ['最近睡眠如何？']);
+  });
+
+  test('plain text preface remains a failure', () {
+    final result = FollowUpAiService.parseFollowUpQuestionResponse(
+      '以下是建議問題：',
+      _input(),
+    );
+
+    expect(result.isSuccess, isFalse);
+    expect(result.error, 'invalid_questions_json');
+  });
+
+  test('no important gap statement remains a failure', () {
+    final result = FollowUpAiService.parseFollowUpQuestionResponse(
+      '無重要缺漏',
+      _input(),
+    );
+
+    expect(result.isSuccess, isFalse);
+    expect(result.error, 'invalid_questions_json');
+  });
+
+  test('non-empty array containing only empty values remains a failure', () {
+    final result = FollowUpAiService.parseFollowUpQuestionResponse(
+      '{"questions":[""]}',
+      _input(),
+    );
+
+    expect(result.isSuccess, isFalse);
+    expect(result.questions, isNull);
+    expect(result.error, 'invalid_questions_array');
+  });
+
+  test('medication filter reports when it removes every question', () {
+    final result = FollowUpAiService.parseFollowUpQuestionResponse(
+      '{"questions":["目前服用鋰鹽後是否有副作用？"]}',
+      _input(),
+    );
+
+    expect(result.isSuccess, isFalse);
+    expect(result.error, 'medication_filter_removed_all');
+  });
+
   test('scheduleChanged uses times and never renders a dose arrow', () {
     final text = FollowUpAiService.formatMedicationTimelineEvent({
       'date': '2026-07-31',

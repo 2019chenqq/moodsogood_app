@@ -288,6 +288,18 @@ void main() {
       expect(draft.sleep.flags, isEmpty);
     });
 
+    test('golden path keeps yesterday sleep out of today facts', () {
+      const input = '我昨天很難睡，今天下午突然很焦慮，還有心悸。';
+      final draft = InneraAiRecordDraft.empty(
+        DateTime(2026, 8, 19),
+      ).mergeExplicitRecordFacts(input);
+
+      expect(mentionsPreviousDaySleep(input), isTrue);
+      expect(draft.sleep.flags, isEmpty);
+      expect(draft.emotions.map((item) => item.name), contains('焦慮'));
+      expect(draft.symptoms, contains('心悸'));
+    });
+
     test('limits yesterday to its own clause and keeps later emotions today',
         () {
       final draft =

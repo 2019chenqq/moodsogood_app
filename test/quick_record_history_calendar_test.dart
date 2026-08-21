@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:moodsogood_app/daily/quick_record_detail_section.dart';
 import 'package:moodsogood_app/daily/record_detail_screen.dart';
 import 'package:moodsogood_app/models/calendar_day_summary.dart';
+import 'package:moodsogood_app/models/daily_check_in.dart';
 import 'package:moodsogood_app/models/daily_record.dart';
 import 'package:moodsogood_app/models/health_event.dart';
 import 'package:moodsogood_app/services/calendar_summary_service.dart';
@@ -36,6 +37,52 @@ void main() {
     expect(result, hasLength(1));
     expect(result.single.hasDailyRecord, isFalse);
     expect(result.single.recorded, isTrue);
+  });
+
+  test('DailyCheckIn-only date remains a history aggregate', () {
+    final result = aggregation.aggregateRange(
+      dailyCheckIns: [
+        DailyCheckIn(
+          date: DateTime(2026, 8, 11),
+          overallMood: 4,
+          healthStatus: 3,
+          noSpecialEvent: true,
+        ),
+      ],
+    );
+
+    expect(result, hasLength(1));
+    expect(result.single.hasDailyCheckIn, isTrue);
+    expect(result.single.recorded, isTrue);
+  });
+
+  test('legacy detail sections only retain actual emotion and symptom data',
+      () {
+    final record = DailyRecord(
+      id: '2026-08-11',
+      date: DateTime(2026, 8, 11),
+      emotions: const [
+        Emotion(name: '', value: 4),
+        Emotion(name: '平靜', value: null),
+        Emotion(name: '開心', value: 5),
+      ],
+      symptoms: const ['', '   ', '頭痛'],
+    );
+
+    expect(legacyEmotionsWithData(record).map((item) => item.name), ['開心']);
+    expect(legacySymptomsWithData(record), ['頭痛']);
+  });
+
+  test('empty legacy emotion and symptom data creates no detail sections', () {
+    final record = DailyRecord(
+      id: '2026-08-11',
+      date: DateTime(2026, 8, 11),
+      emotions: const [Emotion(name: '平靜', value: null)],
+      symptoms: const ['', '   '],
+    );
+
+    expect(legacyEmotionsWithData(record), isEmpty);
+    expect(legacySymptomsWithData(record), isEmpty);
   });
 
   testWidgets('detail section renders every QuickRecord', (tester) async {

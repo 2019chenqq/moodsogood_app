@@ -51,6 +51,40 @@ void main() {
       expect(ended.followUpDates[7], DateTime(2026, 8, 8));
       expect(ended.supersededByChangeRecordId, 'change-2');
     });
+
+    test('episode fields serialize while legacy cycle falls back safely', () {
+      final episode = MedicationSubjectiveTrackingCycle(
+        id: 'episode-change-1',
+        medicationId: 'med-2',
+        changeRecordId: 'change-2',
+        changeDate: DateTime(2026, 8, 15),
+        medicationName: 'B',
+        changeType: MedicationTrackingChangeType.doseAdjusted,
+        active: true,
+        episodeId: 'episode-change-1',
+        episodeStartDate: DateTime(2026, 8, 14),
+        changeRecordIds: const ['change-1', 'change-2'],
+        medicationIds: const ['med-1', 'med-2'],
+        adjustmentTypes: const ['scheduleChanged', 'doseChanged'],
+      );
+      final restored = MedicationSubjectiveTrackingCycle.fromMap(
+        episode.toMap(),
+      );
+      expect(restored.changeDate, DateTime(2026, 8, 15));
+      expect(restored.episodeStartDate, DateTime(2026, 8, 14));
+      expect(restored.changeRecordIds, ['change-1', 'change-2']);
+
+      final legacyMap = episode.toMap()
+        ..remove('episodeId')
+        ..remove('episodeStartDate')
+        ..remove('changeRecordIds')
+        ..remove('medicationIds')
+        ..remove('adjustmentTypes');
+      final legacy = MedicationSubjectiveTrackingCycle.fromMap(legacyMap);
+      expect(legacy.episodeId, legacy.changeRecordId);
+      expect(legacy.changeRecordIds, [legacy.changeRecordId]);
+      expect(legacy.medicationIds, [legacy.medicationId]);
+    });
   });
 
   group('MedicationTrackingCycleFactory', () {
@@ -105,18 +139,47 @@ void main() {
       );
     });
 
-    test('does not track schedule-only or indeterminate dose changes', () {
+    test('tracks schedule-only and indeterminate legacy dose changes', () {
+      final schedule = build([
+        {
+          'type': 'scheduleChanged',
+          'name': 'A',
+          'oldTimes': ['早上'],
+          'newTimes': ['睡前'],
+        }
+      ]);
       expect(
-          build([
-            {'type': 'scheduleChanged', 'name': 'A'}
-          ]),
-          isNull);
-      expect(
-        build([
-          {'type': 'doseChanged', 'name': 'A', 'newDose': 10}
-        ]),
-        isNull,
+        schedule!.changeType,
+        MedicationTrackingChangeType.scheduleChanged,
       );
+      expect(schedule.oldTimes, ['早上']);
+      expect(schedule.newTimes, ['睡前']);
+      expect(schedule.adjustmentSummary, '服藥時間：早上 → 睡前');
+      final dose = build([
+        {'type': 'doseChanged', 'name': 'A', 'newDose': 10}
+      ]);
+      expect(dose, isNotNull);
+      expect(dose!.changeType, MedicationTrackingChangeType.doseAdjusted);
+    });
+
+    test('dose and schedule changes share one cycle and one summary', () {
+      final cycle = build([
+        {
+          'type': 'doseChanged',
+          'name': 'A',
+          'oldDose': 10,
+          'newDose': 20,
+          'unit': 'mg',
+          'oldTimes': ['早上'],
+          'newTimes': ['睡前'],
+        }
+      ]);
+
+      expect(cycle!.changeType, MedicationTrackingChangeType.doseIncreased);
+      expect(cycle.adjustmentSummary, '10mg → 20mg；服藥時間：早上 → 睡前');
+      final restored = MedicationSubjectiveTrackingCycle.fromMap(cycle.toMap());
+      expect(restored.oldTimes, ['早上']);
+      expect(restored.newTimes, ['睡前']);
     });
 
     test('creates one cycle for a medication when resumed and dose changed',
@@ -127,6 +190,35 @@ void main() {
       ]);
       expect(cycle!.changeType, MedicationTrackingChangeType.resumed);
       expect(cycle.newDose, 20);
+    });
+
+    test('tracks doseChanged even when legacy dose direction is unavailable',
+        () {
+      final cycle = MedicationTrackingCycleFactory.fromAdjustmentItems(
+        changeRecordId: 'change-compound',
+        changeDate: DateTime(2026, 8, 14),
+        medicationId: 'med-compound',
+        items: const [
+          {'type': 'doseChanged', 'name': '複方藥物'},
+        ],
+      );
+
+      expect(cycle, isNotNull);
+      expect(cycle!.changeType, MedicationTrackingChangeType.doseAdjusted);
+      expect(cycle.adjustmentSummary, '調整劑量');
+    });
+
+    test('stopped is a valid episode adjustment', () {
+      final cycle = MedicationTrackingCycleFactory.fromAdjustmentItems(
+        changeRecordId: 'change-stop',
+        changeDate: DateTime(2026, 8, 15),
+        medicationId: 'med-stop',
+        items: const [
+          {'type': 'stopped', 'name': 'A'},
+        ],
+      );
+      expect(cycle, isNotNull);
+      expect(cycle!.changeType, MedicationTrackingChangeType.stopped);
     });
   });
 }

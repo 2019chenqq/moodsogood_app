@@ -39,7 +39,7 @@ void main() {
     expect(symptom['maxSeverity'], 5);
   });
 
-  test('event and legacy co-occurrence remain separate evidence', () {
+  test('event and legacy evidence are merged into one descriptive cluster', () {
     final summary = const FollowUpHealthSummaryBuilder().build(
       dailyRecords: [
         DailyRecord(
@@ -73,13 +73,11 @@ void main() {
       endExclusive: DateTime(2026, 8, 4),
     );
 
-    final event = (summary.coOccurrences['eventLevel'] as List).single as Map;
-    final legacy =
-        (summary.coOccurrences['legacySameDay'] as List).single as Map;
-    expect(event['coOccurrenceEventCount'], 1);
-    expect(event['evidence'], 'same_quick_record_event');
-    expect(legacy['coOccurrenceDays'], 1);
-    expect(legacy['evidence'], 'legacy_same_day_only');
+    final cluster = (summary.coOccurrences['clusters'] as List).single as Map;
+    expect(cluster['coreItems'], containsAll(['心悸', '噁心']));
+    expect(cluster['occurrenceCount'], 3);
+    expect(cluster['sameDayCount'], 3);
+    expect(cluster['nearbyTimeCount'], 1);
   });
 
   test('subjective responses are period-filtered and isolated by medication',
@@ -115,7 +113,7 @@ void main() {
     expect(groups['m2']!['concurrentMedicationAdjustments'], ['藥物甲']);
   });
 
-  test('fallback exposes days, event counts and both co-occurrence units', () {
+  test('fallback exposes the precomputed co-occurrence cluster', () {
     final input = _baseInput(
       symptoms: const [
         {
@@ -126,16 +124,14 @@ void main() {
         },
       ],
       coOccurrences: const {
-        'eventLevel': [
+        'clusters': [
           {
-            'symptoms': ['心悸', '噁心'],
-            'coOccurrenceEventCount': 2,
-          },
-        ],
-        'legacySameDay': [
-          {
-            'symptoms': ['頭痛', '疲倦'],
-            'coOccurrenceDays': 3,
+            'coreItems': ['心悸', '噁心', '焦慮'],
+            'companionItems': ['腸胃不適'],
+            'occurrenceCount': 3,
+            'sameDayCount': 3,
+            'nearbyTimeCount': 2,
+            'windowMinutes': 120,
           },
         ],
       },
@@ -144,8 +140,9 @@ void main() {
 
     expect(output.recordEvidenceHighlights.join(), contains('1 個記錄日'));
     expect(output.recordEvidenceHighlights.join(), contains('3 次'));
-    expect(output.recordEvidenceHighlights.join(), contains('2 次快速記錄事件'));
-    expect(output.recordEvidenceHighlights.join(), contains('3 個記錄日同日出現'));
+    expect(output.recordEvidenceHighlights.join(), contains('重複共同出現 3 次'));
+    expect(output.recordEvidenceHighlights.join(), contains('2 次發生於相近時間'));
+    expect(output.recordEvidenceHighlights.join(), contains('常伴隨腸胃不適'));
     expect(output.usedFallback, isTrue);
   });
 

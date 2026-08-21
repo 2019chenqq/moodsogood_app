@@ -60,20 +60,20 @@ void main() {
     expect(reminders.map((item) => item.followUpDay), [14, 28]);
   });
 
-  test('different medication cycles receive different notification ids', () {
+  test('same changeRecord with multiple medications schedules one set', () {
     final reminders = MedicationSubjectiveReminderPlanner.build(
       cycles: [
         cycle(),
         cycle(
           id: 'cycle-2',
           medicationId: 'med-2',
-          changeRecordId: 'change-2',
+          changeRecordId: 'change-1',
         ),
       ],
       responses: const [],
       now: DateTime(2026, 8, 1),
     );
-    expect(reminders.map((item) => item.notificationId).toSet(), hasLength(8));
+    expect(reminders.map((item) => item.notificationId).toSet(), hasLength(4));
   });
 
   test('payload round-trips questionnaire routing fields', () {

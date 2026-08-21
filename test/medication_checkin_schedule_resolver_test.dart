@@ -88,4 +88,59 @@ void main() {
 
     expect(schedules.map((item) => item.slot), ['下午', '晚上']);
   });
+
+  test('effectiveDateTime overrides adjustment time on the same day', () {
+    final schedules = MedicationCheckinScheduleResolver.resolve(
+      medication: medication,
+      adjustmentRecords: [
+        {
+          'date': DateTime(2026, 8, 17, 15),
+          'adjustmentDateTime': DateTime(2026, 8, 17, 15),
+          'effectiveDateTime': DateTime(2026, 8, 17, 21),
+          'items': [
+            {
+              'medDocId': 'med-1',
+              'type': 'doseChanged',
+              'oldDose': 10,
+              'newDose': 20,
+              'oldTimes': ['早上', '晚上', '睡前'],
+              'newTimes': ['早上', '晚上', '睡前'],
+              'oldUnit': 'mg',
+            },
+          ],
+        },
+      ],
+      selectedDate: DateTime(2026, 8, 17),
+    );
+
+    expect(schedules.map((item) => item.slot), ['早上', '晚上', '睡前']);
+    expect(schedules[0].dose, 10);
+    expect(schedules[1].dose, 10);
+    expect(schedules[2].dose, 20);
+  });
+
+  test('future effective prescription keeps the old schedule today', () {
+    final schedules = MedicationCheckinScheduleResolver.resolve(
+      medication: medication,
+      adjustmentRecords: [
+        {
+          'date': DateTime(2026, 8, 17, 15),
+          'effectiveDateTime': DateTime(2026, 8, 18, 8),
+          'items': [
+            {
+              'medDocId': 'med-1',
+              'type': 'doseChanged',
+              'oldDose': 10,
+              'oldTimes': ['早上', '晚上'],
+              'oldUnit': 'mg',
+            },
+          ],
+        },
+      ],
+      selectedDate: DateTime(2026, 8, 17),
+    );
+
+    expect(schedules.map((item) => item.slot), ['早上', '晚上']);
+    expect(schedules.every((item) => item.dose == 10), isTrue);
+  });
 }

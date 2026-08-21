@@ -6,6 +6,7 @@ void main() {
     String details = '最近工作壓力想請教',
     String notes = '最近完成一件開心的事',
     List<String> priorities = const ['最近工作壓力想請教。', '睡眠可否改善'],
+    List<String> discussionItems = const [],
     List<String> shared = const [],
     List<String> legacy = const [],
   }) =>
@@ -27,6 +28,7 @@ void main() {
           keyChanges: const ['頭痛出現 3 天', '平均睡眠 7 小時。', '情緒較平穩'],
           timelineRelations: const ['8/1 後睡眠紀錄增加'],
           discussionPriorities: priorities,
+          discussionItems: discussionItems,
           userSharedNotes: shared,
           userReportedConcerns: legacy,
           dataLimitations: const ['有效紀錄 12 天。。'],
@@ -47,14 +49,46 @@ void main() {
         medicationTimeline: const [],
       );
 
-  test('merges topics, discussion details and AI priorities without duplicates',
-      () {
+  test('preserves discussion details without using legacy priorities', () {
     final display = FollowUpSummaryDisplayModel.fromRecord(record());
     expect(display.topicLabels, ['睡眠品質']);
+    expect(display.discussionItems, ['最近工作壓力想請教']);
+  });
+
+  test('shows raw details before AI follow-up summaries and deduplicates', () {
+    final display = FollowUpSummaryDisplayModel.fromRecord(record(
+      details: '最近工作壓力想請教',
+      discussionItems: const [
+        '最近工作壓力想請教。',
+        '工作壓力通常在下午加重',
+      ],
+    ));
+
     expect(display.discussionItems, [
-      '最近工作壓力想請教。',
-      '睡眠可否改善。',
+      '最近工作壓力想請教',
+      '工作壓力通常在下午加重。',
     ]);
+  });
+
+  test('AI failure keeps details and never exposes raw follow-up Q/A', () {
+    final source = record().copyWith(
+      aiOutput: FollowUpAiOutput(
+        keyChanges: const ['一', '二', '三'],
+        timelineRelations: const [],
+        discussionPriorities: const [],
+        followUpResponses: const [
+          {'question': '什麼時候加重？', 'answer': '下午'}
+        ],
+        generatedAt: DateTime.utc(2026, 8, 5),
+        dataLimitations: const [],
+        usedFallback: true,
+      ),
+    );
+    final display = FollowUpSummaryDisplayModel.fromRecord(source);
+
+    expect(display.discussionItems, ['最近工作壓力想請教']);
+    expect(display.toJson().toString(), isNot(contains('什麼時候加重')));
+    expect(display.toJson().toString(), isNot(contains('下午')));
   });
 
   test('health records never become user shared notes', () {
@@ -109,7 +143,7 @@ void main() {
     expect(display['sleepTrend'], isNotEmpty);
   });
 
-  test('compacts a verbose sleep change using app-calculated values', () {
+  test('keeps verbose sleep metrics out of main changes', () {
     final source = record().copyWith(
       aiOutput: FollowUpAiOutput(
         keyChanges: const [
@@ -152,19 +186,18 @@ void main() {
 
     expect(
       FollowUpSummaryDisplayModel.fromRecord(custom).keyChanges.take(3),
-      ['睡眠平均時間：8.37小時。', '最低：6小時。', '最高：11.1小時。'],
+      ['情緒較平穩。', '頭痛出現 3 天。'],
     );
   });
 
-  test('each user-entered discussion line becomes its own bullet', () {
+  test('preserves multiline user-entered discussion details verbatim', () {
     final display = FollowUpSummaryDisplayModel.fromRecord(record(
       details: '生活近況：登頂合歡主峰的相關影響\n睡眠品質與身體不適症狀',
       priorities: const [],
     ));
 
     expect(display.discussionItems, [
-      '生活近況：登頂合歡主峰的相關影響。',
-      '睡眠品質與身體不適症狀。',
+      '生活近況：登頂合歡主峰的相關影響\n睡眠品質與身體不適症狀',
     ]);
   });
 }

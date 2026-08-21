@@ -6,6 +6,7 @@ const {
   SHARE_DURATION_MS,
   authorizeShareRevocation,
   buildShareDocument,
+  hashToken,
   validateShareDocument,
 } = require("../follow_up_share");
 
@@ -39,6 +40,9 @@ test("normal share is valid for 36 hours and contains no identifiers", () => {
   assert.equal(result.ok, true);
   assert.equal(share.expiresAt.getTime() - now.getTime(), SHARE_DURATION_MS);
   assert.equal(share.document.token, undefined);
+  assert.equal(share.document.summarySnapshot, undefined);
+  assert.equal(share.document.encryptedSummary.algorithm, "aes-256-gcm");
+  assert.ok(share.document.encryptedSummary.ciphertext.length > 0);
   assert.ok(share.shareId.length >= 20);
   assert.equal(result.summarySnapshot.uid, undefined);
   assert.equal(result.summarySnapshot.email, undefined);
@@ -116,11 +120,11 @@ test("public page renders the canonical display model in App order", () => {
     "utf8",
   );
   const renderCalls = [
-    "card('回診資料'", "discussion(d)", "card('主要變化'",
-    "card('身體症狀'", "card('紀錄重點'", "card('重要時間關聯'",
-    "<h2>睡眠趨勢</h2>", "card('藥物調整時間軸'",
-    "card('主觀用藥感受'", "card('其他想跟醫師說的內容'",
-    "card('資料限制'", "card('AI 整理時間'",
+    "card('基本資訊'", "card('想跟醫師討論的事'",
+    "card('主要變化'", "<h2>睡眠趨勢</h2>",
+    "card('症狀與情緒共現模式'", "card('身體測量'",
+    "card('藥物調整時間軸'", "card('其他想跟醫師說的內容'",
+    "card('資料限制'",
   ];
   let previous = -1;
   for (const call of renderCalls) {
@@ -130,4 +134,56 @@ test("public page renders the canonical display model in App order", () => {
   }
   assert.match(html, /s\.display\|\|displayFromLegacy/);
   assert.match(html, /<li>/);
+  assert.doesNotMatch(html, /card\('重要時間關聯'/);
+  assert.match(html, /Math\.floor\(dataMin-1\)/);
+  assert.match(html, /Math\.ceil\(dataMax\+1\)/);
+  assert.match(html, /viewBox="0 0 600 220"/);
+  assert.match(html, /stroke="#63A8C7"/);
+  assert.match(html, /fill="#4E6AA5"/);
+});
+
+test("stored share ciphertext does not expose medical summary text", () => {
+  const secretText = "體重減少 0.5kg";
+  const share = buildShareDocument({
+    ownerUid: "u",
+    now,
+    summarySnapshot: { display: { bodyMeasurements: [secretText] } },
+  });
+  assert.doesNotMatch(JSON.stringify(share.document), new RegExp(secretText));
+  const result = validateShareDocument({ document: share.document, token: share.token, now });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.summarySnapshot.display.bodyMeasurements, [secretText]);
+});
+
+test("ciphertext cannot be decrypted with a different token or after tampering", () => {
+  const share = buildShareDocument({ ownerUid: "u", now, summarySnapshot: { display: {} } });
+  const wrongTokenDocument = { ...share.document, tokenHash: hashToken("different-token") };
+  assert.deepEqual(validateShareDocument({
+    document: wrongTokenDocument,
+    token: "different-token",
+    now,
+  }), { ok: false, reason: "invalid_encrypted_summary" });
+
+  const tampered = structuredClone(share.document);
+  const ciphertext = Buffer.from(tampered.encryptedSummary.ciphertext, "base64");
+  ciphertext[0] ^= 1;
+  tampered.encryptedSummary.ciphertext = ciphertext.toString("base64");
+  assert.deepEqual(validateShareDocument({ document: tampered, token: share.token, now }), {
+    ok: false,
+    reason: "invalid_encrypted_summary",
+  });
+});
+
+test("legacy plaintext shares are rejected", () => {
+  const token = "legacy-token";
+  assert.deepEqual(validateShareDocument({
+    document: {
+      tokenHash: hashToken(token),
+      summarySnapshot: { display: {} },
+      expiresAt: new Date(now.getTime() + 1000),
+      revokedAt: null,
+    },
+    token,
+    now,
+  }), { ok: false, reason: "legacy_plaintext" });
 });

@@ -51,7 +51,7 @@ void main() {
     expect(point.quickRecordRange?.max, 3);
   });
 
-  test('QuickRecord average is fallback when no day-level value exists', () {
+  test('QuickRecord even-count median is fallback without day-level value', () {
     final aggregate = aggregation.aggregateDay(
       date: DateTime(2026, 8, 11),
       healthEvents: _events([2, 4], name: 'calm'),
@@ -63,6 +63,24 @@ void main() {
 
     expect(point.mainValue, 3);
     expect(point.source, DailyEmotionMainSource.quickRecordFallback);
+  });
+
+  test('QuickRecord skewed odd-count median is used instead of average', () {
+    final aggregate = aggregation.aggregateDay(
+      date: DateTime(2026, 8, 11),
+      healthEvents: _events([2, 2, 2, 2, 5], name: 'calm'),
+    );
+    final summary = aggregate.emotionDailyValues['calm']!;
+    final point = DailyEmotionAggregateCalculator.calculateForEmotion(
+      aggregate,
+      'calm',
+    )!;
+
+    expect(summary.median, 2);
+    expect(summary.average, 2.6);
+    expect(point.mainValue, 2);
+    expect(point.quickRecordRange?.min, 2);
+    expect(point.quickRecordRange?.max, 5);
   });
 
   test('five same-day events still produce one trend point', () {
@@ -129,6 +147,175 @@ void main() {
     expect(oldPoint.mainValue, 8);
     expect(oldPoint.quickRecordRange, isNull);
     expect(newPoint.mainValue, 3);
+    expect(newPoint.source, DailyEmotionMainSource.quickRecordFallback);
+  });
+
+  test('5-point and legacy 10-point records stay in separate chart inputs', () {
+    final records = [_record(4), _record(8, scale: 10)];
+
+    expect(
+      emotionTrendRecordsForScale(records, 5).map((record) => record.moodScale),
+      [5],
+    );
+    expect(
+      emotionTrendRecordsForScale(records, 10)
+          .map((record) => record.moodScale),
+      [10],
+    );
+  });
+
+  test('new mode options exclude legacy DailyRecord emotions at every scale',
+      () {
+    final aggregates = aggregation.aggregateRange(
+      dailyRecords: [
+        DailyRecord(
+          id: 'legacy-5',
+          date: DateTime(2026, 8, 11),
+          emotions: const [
+            Emotion(name: '幸福', value: 4),
+            Emotion(name: '感恩', value: 5),
+          ],
+          moodScale: 5,
+        ),
+        DailyRecord(
+          id: 'legacy-10',
+          date: DateTime(2026, 8, 12),
+          emotions: const [Emotion(name: '憤怒', value: 8)],
+          moodScale: 10,
+        ),
+      ],
+      dailyCheckIns: [
+        DailyCheckIn(
+          date: DateTime(2026, 8, 11),
+          overallMood: 3,
+          healthStatus: 3,
+          noSpecialEvent: false,
+        ),
+      ],
+      healthEvents: _events([2], name: '焦慮'),
+    );
+
+    expect(newModeEmotionNames(aggregates), ['焦慮']);
+    expect(newModeEmotionNames(aggregates), isNot(contains('幸福')));
+    expect(newModeEmotionNames(aggregates), isNot(contains('感恩')));
+    expect(newModeEmotionNames(aggregates), isNot(contains('憤怒')));
+    expect(
+      legacyEmotionNames(aggregates.expand((day) => day.dailyRecords)),
+      containsAll(['幸福', '感恩', '憤怒']),
+    );
+  });
+
+  test('new individual chart excludes same-name legacy DailyRecord value', () {
+    final aggregate = aggregation.aggregateDay(
+      date: DateTime(2026, 8, 11),
+      dailyRecords: [_record(5)],
+      healthEvents: _events([1, 3], name: 'calm'),
+    );
+    final point = DailyEmotionAggregateCalculator.calculateNewModeForEmotion(
+      aggregate,
+      'calm',
+    )!;
+
+    expect(point.mainValue, 2);
+    expect(point.source, DailyEmotionMainSource.quickRecordFallback);
+    expect(point.quickRecordRange?.min, 1);
+    expect(point.quickRecordRange?.max, 3);
+  });
+
+  test('legacy chart visibility requires actual 10-point DailyRecord data', () {
+    expect(
+        hasLegacyTenPointEmotionData([_record(8, scale: 10)], 'calm'), isTrue);
+    expect(hasLegacyTenPointEmotionData([_record(4)], 'calm'), isFalse);
+    expect(
+      hasLegacyTenPointEmotionData(
+        [
+          DailyRecord(
+            id: 'empty-legacy',
+            date: DateTime(2026, 8, 11),
+            emotions: const [Emotion(name: 'calm', value: null)],
+            moodScale: 10,
+          ),
+        ],
+        'calm',
+      ),
+      isFalse,
+    );
+  });
+
+  test('legacy balance trend uses only 10-point DailyRecord values', () {
+    final legacyRecords = emotionTrendRecordsForScale(
+      [
+        DailyRecord(
+          id: 'new',
+          date: DateTime(2026, 8, 11),
+          emotions: const [Emotion(name: '快樂', value: 4)],
+          moodScale: 5,
+        ),
+        DailyRecord(
+          id: 'legacy',
+          date: DateTime(2026, 8, 11),
+          emotions: const [Emotion(name: '快樂', value: 8)],
+          moodScale: 10,
+        ),
+      ],
+      10,
+    );
+    final legacyPoints = EmotionTrendCalculator.calculate(legacyRecords);
+    final newPoints = EmotionTrendCalculator.calculateAggregates(
+      aggregation.aggregateRange(
+        dailyRecords: legacyRecords,
+        healthEvents: _events([1, 5], name: '快樂'),
+      ),
+      scale: 5,
+    );
+
+    expect(legacyPoints, hasLength(1));
+    expect(legacyPoints.single.positiveAverage, 8);
+    expect(newPoints, hasLength(1));
+    expect(newPoints.single.positiveAverage, 3);
+  });
+
+  test('balance trend uses per-emotion daily medians for QuickRecords', () {
+    final points = EmotionTrendCalculator.calculateAggregates(
+      aggregation.aggregateRange(
+        healthEvents: [
+          ..._events([2, 2, 2, 2, 5], name: '快樂'),
+          ..._events([4], name: '焦慮'),
+        ],
+      ),
+      scale: 5,
+    );
+
+    expect(points, hasLength(1));
+    expect(points.single.positiveAverage, 2);
+    expect(points.single.negativeAverage, 4);
+    expect(points.single.emotionBalance, -2);
+  });
+
+  test('balance MA7 gives each day equal weight regardless of event count', () {
+    final aggregates = aggregation.aggregateRange(
+      healthEvents: [
+        ..._events(List.filled(10, 5), name: '快樂'),
+        HealthEvent(
+          id: 'next-day-positive',
+          timestamp: DateTime(2026, 8, 12, 9),
+          emotions: const [HealthEventEmotion(name: '快樂', intensity: 1)],
+        ),
+      ],
+    );
+    final dailyEmotionPoints = DailyEmotionAggregateCalculator.calculate(
+      aggregates,
+      '快樂',
+    );
+
+    expect(dailyEmotionPoints, hasLength(2));
+    expect(
+      DailyEmotionAggregateCalculator.movingAverage(
+        dailyEmotionPoints,
+        DateTime(2026, 8, 12),
+      ),
+      3,
+    );
   });
 
   test('7 30 90 and all ranges retain one point per included date', () {

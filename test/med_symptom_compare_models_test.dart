@@ -491,6 +491,28 @@ void main() {
     expect(groups, hasLength(1));
     expect(groups.values.single, hasLength(2));
   });
+
+  test('調藥事件使用 effectiveDateTime 並對舊資料 fallback date', () {
+    final modern = MedicationAdjustmentEvent.fromRecord({
+      'id': 'modern',
+      'date': '2026-08-17T15:00:00',
+      'effectiveDateTime': '2026-08-17T21:00:00',
+      'items': [
+        {'medDocId': 'm1', 'name': 'A', 'type': 'doseChanged'}
+      ],
+    }).single;
+    final legacy = MedicationAdjustmentEvent.fromRecord({
+      'id': 'legacy',
+      'date': '2026-08-16T10:00:00',
+      'items': [
+        {'medDocId': 'm1', 'name': 'A', 'type': 'doseChanged'}
+      ],
+    }).single;
+
+    expect(modern.date, DateTime(2026, 8, 17, 15));
+    expect(modern.effectiveDateTime, DateTime(2026, 8, 17, 21));
+    expect(legacy.effectiveDateTime, legacy.date);
+  });
 }
 
 CompareMetricResult _emotionResult(
