@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../constants/healing_design_system.dart';
 import '../models/follow_up_ai_summary.dart';
 import '../services/follow_up_ai_service.dart';
+import '../services/follow_up_summary_section_builder.dart';
 import '../widgets/follow_up_sleep_trend_card.dart';
 
 class FollowUpAiPreviewPage extends StatefulWidget {
@@ -41,7 +42,6 @@ class _FollowUpAiPreviewPageState extends State<FollowUpAiPreviewPage> {
   late final TextEditingController _additionalNotesController;
   bool _regenerating = false;
   String? _error;
-  final Set<String> _selectedDiaryHighlights = {};
 
   @override
   void initState() {
@@ -54,13 +54,16 @@ class _FollowUpAiPreviewPageState extends State<FollowUpAiPreviewPage> {
   void _replaceSummary(FollowUpAiOutput value) {
     final previousControllers = _controllers;
     _summary = value;
-    _selectedDiaryHighlights.clear();
-    final discussionItems = FollowUpSummaryTextFormatter.safeDiscussionItems([
-      if (widget.aiInput?.discussionDetails.trim().isNotEmpty == true)
-        widget.aiInput!.discussionDetails,
-      ...value.discussionItems,
-      ...value.discussionPriorities,
-    ]);
+    final discussionDetails = widget.aiInput?.discussionDetails ?? '';
+    final detailsKey =
+        FollowUpSummaryTextFormatter.comparisonKey(discussionDetails);
+    final discussionItems = FollowUpSummaryTextFormatter.safeDiscussionItems(
+      value.discussionItems,
+    ).where((item) {
+      final itemKey = FollowUpSummaryTextFormatter.comparisonKey(item);
+      return itemKey.isNotEmpty &&
+          (detailsKey.isEmpty || !detailsKey.contains(itemKey));
+    }).toList(growable: false);
     _controllers = {
       'keyChanges': _make(value.keyChanges),
       'discussionItems': _make(discussionItems),
@@ -105,11 +108,7 @@ class _FollowUpAiPreviewPageState extends State<FollowUpAiPreviewPage> {
         recordEvidenceHighlights: _summary.recordEvidenceHighlights,
         userSharedNotes: _texts('userSharedNotes'),
         userReportedConcerns: _summary.userReportedConcerns,
-        diaryHighlights: _summary.diaryHighlights
-            .where((item) => _selectedDiaryHighlights.contains(
-                  _diaryHighlightKey(item),
-                ))
-            .toList(growable: false),
+        diaryHighlights: _summary.diaryHighlights,
         dataLimitations: _texts('dataLimitations'),
         generatedAt: _summary.generatedAt,
         usedFallback: _summary.usedFallback,
@@ -211,29 +210,28 @@ class _FollowUpAiPreviewPageState extends State<FollowUpAiPreviewPage> {
           if (widget.aiInput != null)
             FollowUpSleepTrendCard(input: widget.aiInput!),
           if (widget.aiInput != null) ...[
-            _readOnlySection('身體症狀', _symptomItems(),
-                emptyText: '此摘要沒有可顯示的症狀資料'),
-            _readOnlySection('身體測量', _bodyMeasurementItems(),
-                emptyText: '此摘要沒有可顯示的體重、體脂率或腰圍資料'),
-          ] else ...[
-            _readOnlySection('身體症狀', const [], emptyText: '此摘要沒有可顯示的症狀資料'),
-            _readOnlySection('身體測量', const [],
-                emptyText: '此摘要沒有可顯示的體重、體脂率或腰圍資料'),
+            if (_cooccurrenceItems().isNotEmpty)
+              _readOnlySection(
+                '症狀與情緒共現模式',
+                _cooccurrenceItems(),
+              ),
+            if (_bodyMeasurementItems().isNotEmpty)
+              _readOnlySection('身體測量', _bodyMeasurementItems()),
           ],
-          _diaryHighlightsSection(),
           _medicationTimelineSection(),
           _additionalNotesSection(),
-          _readOnlySection(
-            '主觀用藥感受',
-            _summary.medicationSubjectiveSummaries,
-            emptyText: '此摘要期間沒有主觀用藥感受回報',
-          ),
-          _section('資料限制', 'dataLimitations', showWhenEmpty: true),
+          if (_texts('dataLimitations').isNotEmpty)
+            _section('資料限制', 'dataLimitations'),
           const SizedBox(height: 8),
         ],
       ),
     );
   }
+
+  List<String> _cooccurrenceItems() =>
+      FollowUpSummarySectionBuilder.cooccurrenceItems(
+        widget.aiInput?.highFrequencySymptoms ?? const [],
+      );
 
   Widget _basicInfoSection() {
     final statistics = widget.aiInput?.statistics;
@@ -246,36 +244,6 @@ class _FollowUpAiPreviewPageState extends State<FollowUpAiPreviewPage> {
       '統計期間：${date(statistics.periodStart)}～${date(statistics.periodEnd)}',
       '有效紀錄天數：${statistics.validRecordDays} 天',
     ]);
-  }
-
-  List<String> _symptomItems() {
-    final input = widget.aiInput;
-    if (input == null) return const [];
-    String compact(dynamic value) {
-      final number = value is num
-          ? value.toDouble()
-          : double.tryParse(value?.toString() ?? '');
-      if (number == null) return value?.toString().trim() ?? '';
-      return number == number.roundToDouble()
-          ? number.toInt().toString()
-          : number.toStringAsFixed(1);
-    }
-
-    final symptoms = input.highFrequencySymptoms.take(5).map((symptom) {
-      final name = symptom['name']?.toString().trim() ?? '';
-      final days = (symptom['occurrenceDays'] as num?)?.toInt();
-      final events = (symptom['eventCount'] as num?)?.toInt();
-      final severity = symptom['averageSeverity'];
-      final maxSeverity = symptom['maxSeverity'];
-      return [
-        name,
-        if (days != null) '出現 $days 天',
-        if (events != null && events > 0) '快速記錄 $events 次',
-        if (severity is num) '平均程度 ${compact(severity)}',
-        if (maxSeverity is num) '最高程度 ${compact(maxSeverity)}/5',
-      ].where((part) => part.isNotEmpty).join('，');
-    }).where((item) => item.trim().isNotEmpty);
-    return FollowUpSummaryTextFormatter.sentences(symptoms);
   }
 
   List<String> _bodyMeasurementItems() {
@@ -314,61 +282,6 @@ class _FollowUpAiPreviewPageState extends State<FollowUpAiPreviewPage> {
             .toList() ??
         const <String>[];
     return _readOnlySection('藥物調整時間軸', items, emptyText: '此摘要沒有藥物調整紀錄');
-  }
-
-  String _diaryHighlightKey(FollowUpDiaryHighlight item) =>
-      '${item.date}|${item.category}|${item.summary}';
-
-  Widget _diaryHighlightsSection() {
-    if (_summary.diaryHighlights.isEmpty) return const SizedBox.shrink();
-    const labels = {
-      'life_event': '重要生活事件',
-      'subjective_feeling': '主觀感受',
-      'sleep_note': '睡眠補充',
-      'symptom_note': '症狀補充',
-      'share_with_doctor': '想告訴醫師的事情',
-    };
-    return Card(
-      elevation: 0,
-      color: HealingDesignSystem.adaptiveSurface(context),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('來自日記的候選重點', style: HealingDesignSystem.titleSmall),
-            const SizedBox(height: 6),
-            Text(
-              '只有勾選的摘要會加入正式摘要；日記原文不會放入 QR Code 或 PDF。',
-              style: HealingDesignSystem.bodySmall,
-            ),
-            const SizedBox(height: 8),
-            for (final item in _summary.diaryHighlights)
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
-                value: _selectedDiaryHighlights.contains(
-                  _diaryHighlightKey(item),
-                ),
-                title: Text(item.summary),
-                subtitle: Text(
-                  '${item.date}・${labels[item.category] ?? item.category}',
-                ),
-                onChanged: (selected) {
-                  setState(() {
-                    final key = _diaryHighlightKey(item);
-                    if (selected == true) {
-                      _selectedDiaryHighlights.add(key);
-                    } else {
-                      _selectedDiaryHighlights.remove(key);
-                    }
-                  });
-                },
-              ),
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _additionalNotesSection() => Card(
@@ -530,7 +443,10 @@ class _FollowUpAiPreviewPageState extends State<FollowUpAiPreviewPage> {
             .toList() ??
         const <String>[];
     final discussionItems = _controllers['discussionItems']!;
-    if (labels.isEmpty && discussionItems.isEmpty) {
+    final discussionDetails = input?.discussionDetails ?? '';
+    if (labels.isEmpty &&
+        discussionDetails.trim().isEmpty &&
+        discussionItems.isEmpty) {
       return const SizedBox.shrink();
     }
     return Card(
@@ -548,6 +464,10 @@ class _FollowUpAiPreviewPageState extends State<FollowUpAiPreviewPage> {
               children:
                   labels.map((label) => Chip(label: Text(label))).toList(),
             ),
+          ],
+          if (discussionDetails.trim().isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(discussionDetails),
           ],
           for (var index = 0; index < discussionItems.length; index++)
             Padding(

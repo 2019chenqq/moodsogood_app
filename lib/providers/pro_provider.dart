@@ -6,7 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// 🚧 開發/測試用開關：正式版必須維持 false，避免所有人直接解鎖 Pro。
-const bool kDebugUnlockAllProFeatures = false;
+const bool kDebugUnlockAllProFeatures = kDebugMode;
 const bool kAppStoreReviewScreenshotMode = bool.fromEnvironment(
     'APP_STORE_REVIEW_SCREENSHOT_MODE',
     defaultValue: false);

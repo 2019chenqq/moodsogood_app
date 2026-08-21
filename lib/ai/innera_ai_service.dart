@@ -62,6 +62,55 @@ class InneraAiService {
   final InneraAiSafetyService _safetyService;
   final FirebaseFunctions _functions;
 
+  Future<InneraAiRecordDraft> summarizeHealthEvents({
+    required List<InneraAiMessage> messages,
+    required InneraAiRecordDraft draft,
+  }) async {
+    if (draft.eventDrafts.isEmpty) return draft;
+    final relevantMessages = messages
+        .where((item) => item.canPersist)
+        .where((item) =>
+            item.role == InneraAiMessageRole.user ||
+            item.role == InneraAiMessageRole.assistant)
+        .where((item) => item.safetyLevel == AiSafetyLevel.normal)
+        .map((item) => <String, dynamic>{
+              'role':
+                  item.role == InneraAiMessageRole.user ? 'user' : 'assistant',
+              'content': item.text.trim(),
+            })
+        .where((item) => (item['content'] as String).isNotEmpty)
+        .toList();
+    try {
+      final result = await _functions
+          .httpsCallable(AiCallableEndpoints.eventSummaries)
+          .call({
+        'requestId': createAiRequestId(),
+        'messages': relevantMessages,
+        'eventDrafts': draft.eventDrafts.map((item) => item.toMap()).toList(),
+      }).timeout(const Duration(seconds: 60));
+      final data = _asMap(result.data);
+      var updated = draft;
+      for (final raw in (data['eventSummaries'] as List? ?? const [])) {
+        if (raw is! Map) continue;
+        final eventId = (raw['eventId'] ?? '').toString().trim();
+        final summary = (raw['summary'] ?? '').toString().trim();
+        if (eventId.isNotEmpty && summary.isNotEmpty) {
+          updated = updated.withEventSummary(eventId, summary);
+        }
+      }
+      return updated;
+    } on FirebaseFunctionsException catch (error, stackTrace) {
+      logAiCallableFailure(
+        functionName: AiCallableEndpoints.eventSummaries,
+        error: error,
+        stackTrace: stackTrace,
+      );
+      rethrow;
+    } on TimeoutException {
+      throw const InneraAiException('AI 整理逾時，原對話與事件草稿均已保留。');
+    }
+  }
+
   Future<InneraAiResponse> sendMessage({
     required InneraAiMode mode,
     required List<InneraAiMessage> history,
@@ -266,10 +315,13 @@ class InneraAiService {
 
   InneraAiResponse _fixedSafetyResponse(AiSafetyLevel level) {
     final medical = level == AiSafetyLevel.medicalUrgency;
+    final urgent = level == AiSafetyLevel.imminentDanger;
     return InneraAiResponse(
       reply: medical
           ? InneraAiSafetyService.medicalUrgencyReply
-          : InneraAiSafetyService.imminentSelfHarmReply,
+          : urgent
+              ? InneraAiSafetyService.imminentSelfHarmReply
+              : InneraAiSafetyService.concernSelfHarmReply,
       followUpQuestion: null,
       sources: const <AiContextSource>[],
       suggestedActions: const <String>[],
@@ -284,6 +336,7 @@ class InneraAiService {
   }
 
   bool _requiresFixedSafetyUi(AiSafetyLevel level) =>
+      level == AiSafetyLevel.possibleSelfHarm ||
       level == AiSafetyLevel.imminentDanger ||
       level == AiSafetyLevel.medicalUrgency;
 

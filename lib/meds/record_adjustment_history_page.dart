@@ -5,6 +5,7 @@ import 'medication_local_db.dart';
 import '../analytics_service.dart';
 import 'med_symptom_compare_models.dart';
 import 'medication_compare_repository.dart';
+import 'medication_adjustment_history_presentation.dart';
 
 class RecordAdjustmentHistoryPage extends StatefulWidget {
   const RecordAdjustmentHistoryPage({super.key});
@@ -114,11 +115,8 @@ class _RecordAdjustmentHistoryPageState
             return Center(child: Text('讀取失敗：${snap.error}'));
           }
 
-          final records = (snap.data ?? [])
-              .where((record) =>
-                  MedicationAdjustmentEvent.fromRecord(record).isNotEmpty)
-              .toList();
-          if (records.isEmpty) {
+          final entries = buildMedicationAdjustmentHistory(snap.data ?? []);
+          if (entries.isEmpty) {
             return const _EmptyHistoryTimeline();
           }
 
@@ -126,17 +124,18 @@ class _RecordAdjustmentHistoryPageState
             color: HealingDesignSystem.adaptiveBackground(context),
             child: ListView.builder(
               padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
-              itemCount: records.length,
+              itemCount: entries.length,
               itemBuilder: (context, i) {
-                final record = records[i];
+                final entry = entries[i];
+                final record = entry.record;
 
-                final dateStr = record['date']?.toString() ?? '';
+                final dateStr = entry.dateLabel;
                 final note = record['note']?.toString().trim() ?? '';
-                final events = MedicationAdjustmentEvent.fromRecord(record);
+                final events = entry.events;
                 final summary = _buildSummary(events);
 
                 final isFirst = i == 0;
-                final isLast = i == records.length - 1;
+                final isLast = i == entries.length - 1;
 
                 return _HistoryTimelineItem(
                   dateText: dateStr,

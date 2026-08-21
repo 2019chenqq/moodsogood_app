@@ -8,6 +8,57 @@ enum DailyEmotionMainSource {
   quickRecordFallback,
 }
 
+List<DailyRecord> emotionTrendRecordsForScale(
+  Iterable<DailyRecord> records,
+  int scale,
+) =>
+    records.where((record) => record.moodScale == scale).toList();
+
+List<String> newModeEmotionNames(
+  Iterable<DailyHealthAggregate> aggregates,
+) {
+  final names = <String>{};
+  for (final aggregate in aggregates) {
+    for (final entry in aggregate.emotionDailyValues.entries) {
+      if (entry.key == DailyHealthAggregationService.overallMoodKey) continue;
+      if (entry.value.observations.any(
+        (value) => value.source == DailyHealthValueSource.healthEvent,
+      )) {
+        names.add(entry.key);
+      }
+    }
+  }
+  return names.toList()..sort();
+}
+
+List<String> legacyEmotionNames(Iterable<DailyRecord> records) {
+  final names = <String>{};
+  for (final record in records) {
+    for (final emotion in record.emotions) {
+      if (emotion.name.trim().isNotEmpty && emotion.value != null) {
+        names.add(emotion.name);
+      }
+    }
+  }
+  return names.toList()..sort();
+}
+
+bool hasLegacyTenPointEmotionData(
+  Iterable<DailyRecord> records,
+  String emotionName, {
+  String overallMoodLabel = '整體情緒',
+}) {
+  return records.where((record) => record.moodScale == 10).any((record) {
+    if (emotionName == overallMoodLabel) return record.overallMood != null;
+    return record.emotions.any(
+      (emotion) =>
+          emotion.name == emotionName &&
+          emotion.name.trim().isNotEmpty &&
+          emotion.value != null,
+    );
+  });
+}
+
 class QuickRecordEmotionRange {
   const QuickRecordEmotionRange({
     required this.min,
@@ -75,8 +126,9 @@ class DailyEmotionAggregateCalculator {
         : records.isNotEmpty
             ? DailyEmotionMainSource.dailyRecord
             : DailyEmotionMainSource.quickRecordFallback;
-    final mainValue =
-        selected.fold<double>(0, (sum, value) => sum + value.value) /
+    final mainValue = source == DailyEmotionMainSource.quickRecordFallback
+        ? DailyValueSummary(events).median!
+        : selected.fold<double>(0, (sum, value) => sum + value.value) /
             selected.length;
 
     QuickRecordEmotionRange? range;
@@ -97,6 +149,62 @@ class DailyEmotionAggregateCalculator {
       source: source,
       quickRecordRange: range,
     );
+  }
+
+  static DailyEmotionValuePoint? calculateNewModeForEmotion(
+    DailyHealthAggregate aggregate,
+    String emotionName,
+  ) {
+    final summary = aggregate.emotionDailyValues[emotionName];
+    if (summary == null) return null;
+    final isOverallMood =
+        emotionName == DailyHealthAggregationService.overallMoodKey;
+    final observations = summary.observations.where((value) {
+      if (value.scale != 5) return false;
+      return isOverallMood
+          ? value.source == DailyHealthValueSource.dailyCheckIn
+          : value.source == DailyHealthValueSource.healthEvent;
+    }).toList();
+    if (observations.isEmpty) return null;
+
+    final source = isOverallMood
+        ? DailyEmotionMainSource.dailyCheckIn
+        : DailyEmotionMainSource.quickRecordFallback;
+    final mainValue = isOverallMood
+        ? observations.fold<double>(0, (sum, value) => sum + value.value) /
+            observations.length
+        : DailyValueSummary(observations).median!;
+    final range = isOverallMood
+        ? null
+        : QuickRecordEmotionRange(
+            min: observations.map((value) => value.value).reduce(
+                  (left, right) => left < right ? left : right,
+                ),
+            max: observations.map((value) => value.value).reduce(
+                  (left, right) => left > right ? left : right,
+                ),
+            count: observations.length,
+          );
+    return DailyEmotionValuePoint(
+      date: aggregate.date,
+      emotionName: emotionName,
+      mainValue: mainValue,
+      scale: 5,
+      source: source,
+      quickRecordRange: range,
+    );
+  }
+
+  static List<DailyEmotionValuePoint> calculateNewMode(
+    Iterable<DailyHealthAggregate> aggregates,
+    String emotionName,
+  ) {
+    final points = aggregates
+        .map((aggregate) => calculateNewModeForEmotion(aggregate, emotionName))
+        .whereType<DailyEmotionValuePoint>()
+        .toList()
+      ..sort((left, right) => left.date.compareTo(right.date));
+    return points;
   }
 
   static List<DailyEmotionValuePoint> calculate(
@@ -378,6 +486,7 @@ class EmotionTrendCalculator {
   static List<DailyEmotionTrendPoint> calculateAggregates(
     Iterable<DailyHealthAggregate> aggregates, {
     int scale = 5,
+    bool newModeOnly = false,
   }) {
     final points = <DailyEmotionTrendPoint>[];
     for (final aggregate in aggregates) {
@@ -391,11 +500,16 @@ class EmotionTrendCalculator {
         if (emotionName == DailyHealthAggregationService.overallMoodKey) {
           continue;
         }
-        final point = DailyEmotionAggregateCalculator.calculateForEmotion(
-          aggregate,
-          emotionName,
-          scale: scale,
-        );
+        final point = newModeOnly
+            ? DailyEmotionAggregateCalculator.calculateNewModeForEmotion(
+                aggregate,
+                emotionName,
+              )
+            : DailyEmotionAggregateCalculator.calculateForEmotion(
+                aggregate,
+                emotionName,
+                scale: scale,
+              );
         if (point == null) continue;
         switch (EmotionClassificationSystem.classify(emotionName).valence) {
           case AffectValence.positive:

@@ -134,56 +134,6 @@ class HistoryChartWidget extends StatelessWidget {
     return (minY: bottom - padding, maxY: top + padding);
   }
 
-  /// 建立經期粉紅區塊（依照日期距離 startDate 的天數作為 x 座標，並限制在 minX/maxX 內）
-  // ignore: unused_element
-  List<VerticalRangeAnnotation> _buildPeriodRanges(
-    List<DailyRecord> sorted, {
-    required double Function(DateTime date) xForDate,
-    required double minX,
-    required double maxX,
-  }) {
-    final List<VerticalRangeAnnotation> list = [];
-    double? periodStartX;
-
-    for (var r in sorted) {
-      final dayX = xForDate(r.date);
-      if (r.isPeriod) {
-        periodStartX ??= dayX;
-      } else if (periodStartX != null) {
-        double x1 = periodStartX - 0.5;
-        double x2 =
-            xForDate(_norm(r.date).subtract(const Duration(days: 1))) + 0.5;
-        // 限制區塊在 minX/maxX 內
-        x1 = x1.clamp(minX, maxX);
-        x2 = x2.clamp(minX, maxX);
-        if (x2 >= x1) {
-          list.add(VerticalRangeAnnotation(
-            x1: x1,
-            x2: x2,
-            color: Colors.pink.withValues(alpha: 0.15),
-          ));
-        }
-        periodStartX = null;
-      }
-    }
-    // 若最後一筆仍為經期
-    if (periodStartX != null && sorted.isNotEmpty) {
-      final lastX = xForDate(sorted.last.date);
-      double x1 = periodStartX - 0.5;
-      double x2 = lastX + 0.5;
-      x1 = x1.clamp(minX, maxX);
-      x2 = x2.clamp(minX, maxX);
-      if (x2 >= x1) {
-        list.add(VerticalRangeAnnotation(
-          x1: x1,
-          x2: x2,
-          color: Colors.pink.withValues(alpha: 0.15),
-        ));
-      }
-    }
-    return list;
-  }
-
   /// 將每日點轉為「月移動平均」點（key 為每月 1 日）
   List<VerticalRangeAnnotation> _buildVisiblePeriodRanges(
     List<PeriodCycle> cycles, {

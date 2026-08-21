@@ -14,6 +14,7 @@ class HealthEvent {
   final List<HealthEventSymptom> symptoms;
   final List<HealthEventEmotion> emotions;
   final Map<String, int> stateChanges;
+  final String? timePrecision;
   final String? context;
   final String? note;
   final DateTime? createdAt;
@@ -25,6 +26,7 @@ class HealthEvent {
     this.symptoms = const [],
     this.emotions = const [],
     this.stateChanges = const {},
+    this.timePrecision,
     this.context,
     this.note,
     this.createdAt,
@@ -38,6 +40,7 @@ class HealthEvent {
       'emotions': emotions.map((e) => e.toMap()).toList(),
       if (stateChanges.isNotEmpty)
         'stateChanges': normalizeStateChanges(stateChanges),
+      if (timePrecision != null) 'timePrecision': timePrecision,
       if (context != null && context!.trim().isNotEmpty)
         'context': context!.trim(),
       if (note != null && note!.trim().isNotEmpty) 'note': note!.trim(),
@@ -55,6 +58,7 @@ class HealthEvent {
       symptoms: _parseSymptoms(map['symptoms']),
       emotions: _parseEmotions(map['emotions']),
       stateChanges: normalizeStateChanges(map['stateChanges']),
+      timePrecision: map['timePrecision']?.toString(),
       context: map['context']?.toString(),
       note: map['note']?.toString(),
       createdAt: _asDate(map['createdAt']),
@@ -93,6 +97,7 @@ class HealthEvent {
     List<HealthEventSymptom>? symptoms,
     List<HealthEventEmotion>? emotions,
     Map<String, int>? stateChanges,
+    String? timePrecision,
     String? context,
     bool clearContext = false,
     String? note,
@@ -104,6 +109,7 @@ class HealthEvent {
       symptoms: symptoms ?? this.symptoms,
       emotions: emotions ?? this.emotions,
       stateChanges: stateChanges ?? this.stateChanges,
+      timePrecision: timePrecision ?? this.timePrecision,
       context: clearContext ? null : (context ?? this.context),
       note: clearNote ? null : (note ?? this.note),
       createdAt: createdAt,

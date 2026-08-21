@@ -5,6 +5,7 @@ import 'package:printing/printing.dart';
 
 import '../models/follow_up_ai_summary.dart';
 import '../models/follow_up_sleep_summary_view_model.dart';
+import '../services/follow_up_summary_section_builder.dart';
 
 class FollowUpSummaryPdfService {
   const FollowUpSummaryPdfService();
@@ -28,6 +29,7 @@ class FollowUpSummaryPdfService {
       record,
       options: options,
     );
+    final sections = FollowUpSummarySectionBuilder.fromDisplay(display);
     document.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
@@ -48,58 +50,10 @@ class FollowUpSummaryPdfService {
               style:
                   pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold)),
           pw.SizedBox(height: 10),
-          _heading('基本資訊'),
-          _info(display),
-          if (options.discussionTopics) ..._discussion(display),
-          ..._section('主要變化', display.keyChanges),
-          if (options.sleep) ...[
-            _heading('睡眠趨勢'),
-            if (display.sleepTrend.isNotEmpty)
-              pw.SvgImage(svg: _sleepChartSvg(display.sleepTrend), height: 150)
-            else
-              pw.Text('統計期間內沒有可用的睡眠時數紀錄。'),
-            pw.SizedBox(height: 6),
-            _sleepMetricsCards(display.sleepSummaryItems),
-            pw.SizedBox(height: 8),
-          ],
-          if (options.emotionsAndSymptoms)
-            ..._section(
-              '身體症狀',
-              display.symptoms,
-              emptyText: '此摘要沒有可顯示的症狀資料。',
-            ),
-          if (options.emotionsAndSymptoms &&
-              display.recordEvidenceHighlights.isNotEmpty)
-            ..._section('紀錄重點', display.recordEvidenceHighlights),
-          if (options.bodyMeasurements)
-            ..._section(
-              '身體測量（體重、體脂率、腰圍）',
-              display.bodyMeasurements,
-              emptyText: '此摘要沒有可顯示的體重、體脂率或腰圍資料。',
-            ),
-          if (options.medicationAdjustments)
-            ..._section(
-              '藥物調整時間軸',
-              display.medicationTimeline,
-              emptyText: '此摘要沒有藥物調整紀錄。',
-            ),
-          if (options.medicationAdjustments &&
-              display.medicationSubjectiveSummaries.isNotEmpty)
-            ..._section(
-              '主觀用藥感受',
-              display.medicationSubjectiveSummaries,
-            ),
-          if (options.lifeUpdates)
-            ..._section(
-              '其他想跟醫師說的內容',
-              display.userSharedNotes,
-              emptyText: '沒有其他想跟醫師說的內容。',
-            ),
-          ..._section(
-            '資料限制',
-            display.dataLimitations,
-            emptyText: '沒有其他資料限制。',
-          ),
+          ...sections.expand((section) => _renderSection(
+                section,
+                display,
+              )),
           pw.Divider(),
           pw.Text('AI 整理時間：${display.generatedAt}',
               style: const pw.TextStyle(fontSize: 9)),
@@ -107,6 +61,39 @@ class FollowUpSummaryPdfService {
       ),
     );
     return document.save();
+  }
+
+  List<pw.Widget> _renderSection(
+    FollowUpSummarySection section,
+    FollowUpSummaryDisplayModel display,
+  ) {
+    if (section.id == FollowUpSummarySectionId.basicInfo) {
+      return [_heading(section.title), _info(display), pw.SizedBox(height: 8)];
+    }
+    if (section.id == FollowUpSummarySectionId.sleep) {
+      return [
+        _heading(section.title),
+        if (display.sleepTrend.isNotEmpty)
+          pw.SvgImage(svg: _sleepChartSvg(display.sleepTrend), height: 150),
+        pw.SizedBox(height: 6),
+        _sleepMetricsCards(section.items),
+        pw.SizedBox(height: 8),
+      ];
+    }
+    if (section.id == FollowUpSummarySectionId.discussion) {
+      return [
+        _heading(section.title),
+        if (section.labels.isNotEmpty)
+          pw.Text('主題標籤：${section.labels.join('、')}'),
+        if (section.labels.isNotEmpty) pw.SizedBox(height: 4),
+        ...section.items.map((item) => pw.Padding(
+              padding: const pw.EdgeInsets.only(bottom: 4),
+              child: _bullet(item),
+            )),
+        pw.SizedBox(height: 8),
+      ];
+    }
+    return _section(section.title, section.items);
   }
 
   Future<void> sharePdf(
@@ -143,16 +130,6 @@ class FollowUpSummaryPdfService {
           ],
         ),
       );
-
-  List<pw.Widget> _discussion(FollowUpSummaryDisplayModel display) => [
-        _heading('想跟醫師討論的事'),
-        if (display.topicLabels.isNotEmpty)
-          pw.Text('已選主題：${display.topicLabels.join('、')}'),
-        ...display.discussionItems.map(_bullet),
-        if (display.topicLabels.isEmpty && display.discussionItems.isEmpty)
-          pw.Text('尚無資料'),
-        pw.SizedBox(height: 8),
-      ];
 
   List<pw.Widget> _section(
     String title,

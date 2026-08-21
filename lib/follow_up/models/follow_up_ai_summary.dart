@@ -875,6 +875,22 @@ class FollowUpSummaryShareOptions {
       );
 }
 
+List<String> _discussionDisplayItems(FollowUpSummaryRecord record) {
+  final details = record.discussionDetails;
+  final detailsKey = FollowUpSummaryTextFormatter.comparisonKey(details);
+  final aiItems = FollowUpSummaryTextFormatter.safeDiscussionItems(
+    record.aiOutput.discussionItems,
+  ).where((item) {
+    final itemKey = FollowUpSummaryTextFormatter.comparisonKey(item);
+    return itemKey.isNotEmpty &&
+        (detailsKey.isEmpty || !detailsKey.contains(itemKey));
+  });
+  return <String>[
+    if (details.trim().isNotEmpty) details,
+    ...aiItems,
+  ];
+}
+
 class FollowUpSummaryDisplayModel {
   const FollowUpSummaryDisplayModel({
     required this.visitInfo,
@@ -952,14 +968,8 @@ class FollowUpSummaryDisplayModel {
         '有效紀錄天數：${record.validRecordDays} 天',
       ],
       topicLabels: options.discussionTopics ? labels : const [],
-      discussionItems: options.discussionTopics
-          ? FollowUpSummaryTextFormatter.safeDiscussionItems([
-              if (record.discussionDetails.trim().isNotEmpty)
-                record.discussionDetails,
-              ...output.discussionItems,
-              ...output.discussionPriorities,
-            ])
-          : const [],
+      discussionItems:
+          options.discussionTopics ? _discussionDisplayItems(record) : const [],
       keyChanges: options.emotionsAndSymptoms
           ? _withoutMedicationTimelineDuplicates(
               record,
@@ -1148,6 +1158,27 @@ class FollowUpSummaryDisplayModel {
           : number.toStringAsFixed(1);
     }
 
+    final cooccurrences = record.highFrequencySymptoms.take(5).map((item) {
+      final items = _strings(item['items']);
+      final count = (item['coOccurrenceCount'] as num?)?.toInt();
+      if (items.length < 2 || count == null || count <= 0) return '';
+      final averages = _map(item['averageValues']);
+      final averageText = items
+          .where((name) => averages[name] is num)
+          .map((name) => '$name平均 ${compact(averages[name])}/5')
+          .join('、');
+      return '${items.join('與')}共同記錄 $count 次'
+          '${averageText.isEmpty ? '' : '（$averageText）'}';
+    }).where((item) => item.isNotEmpty);
+    if (cooccurrences.isNotEmpty) {
+      return FollowUpSummaryTextFormatter.sentences([
+        ...cooccurrences,
+        '共現僅代表同次記錄中共同出現，不代表因果關係',
+      ]);
+    }
+
+    // Read-only compatibility for summaries created before event-level
+    // co-occurrence became the canonical summary content.
     final symptoms = record.highFrequencySymptoms.take(5).map((symptom) {
       final name = symptom['name']?.toString().trim() ?? '';
       final days = (symptom['occurrenceDays'] as num?)?.toInt();

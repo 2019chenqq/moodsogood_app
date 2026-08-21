@@ -33,28 +33,6 @@ class EmotionSlider extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Text(label, style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 12),
-
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 42),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: List.generate(
-              safeMax,
-              (index) => Container(
-                width: 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: index + 1 == safeValue
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.outlineVariant,
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-          ),
-        ),
-
         Row(
           key: sliderKey,
           children: [

@@ -25,6 +25,7 @@ import 'utils/firebase_sync_config.dart';
 import 'providers/theme_provider.dart';
 
 import 'daily/daily_record_repository.dart';
+import 'daily/period_cycle_service.dart';
 import 'app_lock_screen.dart';
 import 'providers/pro_provider.dart';
 import 'pdf/pdf_export_provider.dart'; // 引入 PDFExportProvider
@@ -804,6 +805,13 @@ class _EncryptionGateState extends State<EncryptionGate> {
         // Keep login available during a temporary network failure. Because the
         // migration marker is not written, the next launch retries safely.
         debugPrint('Health data encryption migration deferred: $error');
+        debugPrint('$stackTrace');
+      }
+      try {
+        await PeriodCycleService().migrateLegacyCycles(user.uid);
+      } catch (error, stackTrace) {
+        // This migration is idempotent and will retry after the next login.
+        debugPrint('Period cycle legacy migration deferred: $error');
         debugPrint('$stackTrace');
       }
       try {

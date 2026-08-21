@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../constants/healing_design_system.dart';
 import '../daily/body_measurement_trend_page.dart';
 import '../daily/daily_record_history.dart';
+import '../follow_up/pages/follow_up_hub_page.dart';
 import '../meds/med_symptom_compare_page.dart';
 
 class TrendReviewHubPage extends StatelessWidget {
@@ -37,6 +38,14 @@ class TrendReviewHubPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
+          _TrendEntryCard(
+            icon: Icons.medical_information_outlined,
+            title: '回診整理',
+            subtitle: '資料足夠時，整理近期變化與待討論重點',
+            color: HealingDesignSystem.primaryBlue,
+            onTap: () => _push(context, const FollowUpHubPage()),
+          ),
+          const SizedBox(height: 12),
           _TrendEntryCard(
             icon: Icons.bedtime_outlined,
             title: '睡眠洞察',

@@ -49,6 +49,28 @@ class HealthEventRepository {
     return ref.id;
   }
 
+  /// 以穩定 id 建立或覆寫 AI 已確認的事件，讓重試不會產生重複紀錄。
+  Future<String> upsertConfirmedDraft({
+    required String userId,
+    required String eventId,
+    required HealthEvent event,
+  }) async {
+    if (eventId.trim().isEmpty || eventId.contains('/')) {
+      throw ArgumentError('eventId must be a non-empty Firestore document id');
+    }
+    final ref = _events(userId).doc(eventId);
+    await HealthDataEncryptionService.setEncrypted(
+      ref,
+      {
+        ...event.toMap(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      merge: false,
+    );
+    return ref.id;
+  }
+
   /// 更新既有快速事件。
   Future<void> update({
     required String userId,
@@ -77,6 +99,7 @@ class HealthEventRepository {
   Future<List<HealthEvent>> getByDateRange({
     required String userId,
     required DateTime start,
+
     /// Exclusive upper bound.
     required DateTime end,
   }) async {

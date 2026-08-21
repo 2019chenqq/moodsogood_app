@@ -115,7 +115,7 @@ class MedicationAdjustmentTimeline extends StatelessWidget {
   }
 
   static DateTime _dateOf(Map<String, dynamic> data) {
-    final value = data['date'];
+    final value = data['effectiveDateTime'] ?? data['date'];
     if (value is Timestamp) return value.toDate();
     if (value is DateTime) return value;
     return DateTime.tryParse(value?.toString() ?? '') ??

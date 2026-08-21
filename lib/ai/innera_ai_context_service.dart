@@ -11,6 +11,7 @@ import '../models/daily_check_in.dart';
 import '../models/daily_record.dart';
 import '../models/health_event.dart';
 import '../services/daily_health_aggregation_service.dart';
+import '../daily/period_cycle_service.dart';
 import '../utils/health_data_encryption_service.dart';
 import 'innera_ai_message.dart';
 import 'innera_ai_mode.dart';
@@ -374,37 +375,30 @@ class InneraAiContextService {
     List<String> failures,
   ) async {
     try {
-      final documents = await HealthDataEncryptionService.getEncrypted(
-        _firestore
-            .collection('users')
-            .doc(uid)
-            .collection('periodCycles')
-            .where('startDate', isLessThanOrEqualTo: Timestamp.fromDate(today))
-            .orderBy('startDate', descending: true)
-            .limit(6),
-      );
-      final cycles = documents
-          .map((doc) => {'id': doc.id, ...doc.data})
-          .where((cycle) {
-            final end =
-                _asDate(cycle['endDate']) ?? _asDate(cycle['startDate']);
-            return end == null || !end.isBefore(start);
-          })
+      final unified = await PeriodCycleService().getUnifiedCycles(uid);
+      final cycles = unified.where((cycle) {
+        final end = cycle.endDate;
+        return !cycle.startDate.isAfter(today) &&
+            (end == null || !end.isBefore(start));
+      }).toList()
+        ..sort((a, b) => b.startDate.compareTo(a.startDate));
+      final compactCycles = cycles
+          .take(6)
           .map(
             (cycle) => {
-              'id': cycle['id'],
-              'startDate': _formatNullableDate(_asDate(cycle['startDate'])),
-              'endDate': _formatNullableDate(_asDate(cycle['endDate'])),
+              'id': cycle.id,
+              'startDate': _formatNullableDate(cycle.startDate),
+              'endDate': _formatNullableDate(cycle.endDate),
             },
           )
           .toList();
-      data['recentPeriodCycles'] = cycles;
-      if (cycles.isNotEmpty) {
+      data['recentPeriodCycles'] = compactCycles;
+      if (compactCycles.isNotEmpty) {
         sources.add(
           AiContextSource(
             label: '經期資料',
             dateRange: _rangeLabel(start, today),
-            count: cycles.length,
+            count: compactCycles.length,
           ),
         );
       }
@@ -581,9 +575,6 @@ class InneraAiContextService {
         sameDayEvents,
       ).take(12).toList(),
       'sleep': sleep,
-      'isPeriod': record['isPeriod'] == true ||
-          (record['periodData'] is Map &&
-              record['periodData']['isPeriod'] == true),
     };
   }
 
@@ -607,9 +598,6 @@ class InneraAiContextService {
         sameDayEvents,
       ).take(12).toList(),
       'sleep': _compactSleep(record['sleep']),
-      'isPeriod': record['isPeriod'] == true ||
-          (record['periodData'] is Map &&
-              record['periodData']['isPeriod'] == true),
     };
   }
 

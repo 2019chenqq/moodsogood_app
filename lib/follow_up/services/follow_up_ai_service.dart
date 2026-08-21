@@ -9,17 +9,31 @@ import '../../meds/medication_subjective_summary_builder.dart';
 import '../models/follow_up_ai_summary.dart';
 import 'follow_up_question_parser.dart';
 
+class FollowUpQuestionResult {
+  const FollowUpQuestionResult.success(this.questions) : error = null;
+  const FollowUpQuestionResult.failure(this.error) : questions = null;
+
+  final List<String>? questions;
+  final Object? error;
+
+  bool get isSuccess => questions != null;
+}
+
 class FollowUpAiService {
   FollowUpAiService({InneraAiService? inneraAiService})
       : _inneraAiService = inneraAiService ?? InneraAiService();
 
   final InneraAiService _inneraAiService;
 
-  Future<List<String>> generateFollowUpQuestions(
+  Future<FollowUpQuestionResult> generateFollowUpQuestions(
       FollowUpAiV1Input input) async {
-    final response = await _send(
-      input,
-      '''用藥判讀規則：
+    if (kDebugMode) {
+      debugPrint('FollowUpAiService generateFollowUpQuestions called=true');
+    }
+    try {
+      final response = await _send(
+        input,
+        '''用藥判讀規則：
 1. 只有 currentMedications 或 medicationTimeline 明確存在的藥物，才能詢問藥效、副作用、服藥情況或服用後變化。
 2. 研究主題、關鍵字、醫師提及、曾詢問或討論過的藥物，都不代表使用者已取得或正在服用。
 3. 自由文字與結構化用藥資料不一致時，一律以 currentMedications 與 medicationTimeline 為準。
@@ -27,31 +41,239 @@ class FollowUpAiService {
 5. 不得把「拿到關鍵字／資訊」理解成「拿到或服用藥物」。
 
 '''
-      '''你正在執行「回診摘要補問」。請先檢查 app 已計算好的資料與使用者主題，只針對會明顯影響回診討論的重要缺漏提出 2～4 個簡短問題；不得重問已有明確資料。若沒有重要缺漏可回傳空陣列。questions 陣列只能放實際問題，不得放問候、開場白、前言或「請問：」等引導文字；每個問題必須以「？」結尾。reply 必須只包含以下 JSON，不要 Markdown 或說明：
-{"questions":["問題一"]}''',
-    );
-    final json = _tryReplyJson(response.reply);
-    if (json != null) {
-      final questions = normalizeFollowUpQuestions(
-        _questionValues(json['questions']),
+        '''你正在執行「回診摘要補問」。請先檢查 app 已計算好的資料與使用者主題，只針對會明顯影響回診討論的重要缺漏提出 2～4 個簡短問題；不得重問已有明確資料。若沒有重要缺漏可回傳空陣列。questions 陣列只能放實際問題，不得放問候、開場白、前言或「請問：」等引導文字；每個問題必須以「？」結尾。reply 必須只包含以下 JSON，不要 Markdown 或說明：
+{"questions":["最近是否有影響日常生活？"]}。即使只有 1 題，也必須回傳 {"questions":["...？"]}；沒有問題時回傳 {"questions":[]}。不得只回傳問題文字。''',
       );
-      if (questions.isNotEmpty) {
-        return _filterUnsupportedMedicationQuestions(questions, input)
-            .take(4)
-            .toList();
+      if (kDebugMode) {
+        debugPrint('FollowUpAiService _send success=true');
+        debugPrint(
+          'FollowUpAiService response replyLength=${response.reply.length} '
+          'followUpQuestionExists='
+          '${response.followUpQuestion?.trim().isNotEmpty == true}',
+        );
+        debugPrint(
+          'FollowUpAiService replyPreview='
+          '${_debugReplyPreview(response.reply)}',
+        );
       }
+      return parseFollowUpQuestionResponse(
+        response.reply,
+        input,
+        followUpQuestion: response.followUpQuestion,
+      );
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('FollowUpAiService _send success=false');
+        debugPrint(
+          'FollowUpAiService errorType=${error.runtimeType} '
+          'errorMessage=$error',
+        );
+        debugPrint(
+          'FollowUpAiService failure=ai_request_failed',
+        );
+      }
+      return FollowUpQuestionResult.failure(error);
     }
-    final fallback = normalizeFollowUpQuestions([
-      if (response.followUpQuestion?.trim().isNotEmpty == true)
-        response.followUpQuestion!.trim(),
-      ...response.reply
+  }
+
+  @visibleForTesting
+  static FollowUpQuestionResult parseFollowUpQuestionResponse(
+    String reply,
+    FollowUpAiV1Input input, {
+    String? followUpQuestion,
+  }) {
+    final json = _tryReplyJson(reply);
+    if (kDebugMode) {
+      debugPrint(
+        'FollowUpAiService jsonParseSuccess=${json != null} '
+        'jsonKeys=${json == null ? const <String>[] : json.keys.toList()}',
+      );
+    }
+    if (json == null || json['questions'] is! List) {
+      if (json?['reply'] is String &&
+          (json!['reply'] as String).trim() != reply.trim()) {
+        final nested = parseFollowUpQuestionResponse(
+          json['reply'] as String,
+          input,
+          followUpQuestion: followUpQuestion,
+        );
+        if (nested.isSuccess) return nested;
+      }
+      final transportQuestions = normalizeFollowUpQuestions(
+        _canonicalQuestionValues([
+          if (followUpQuestion?.trim().isNotEmpty == true) followUpQuestion!,
+        ]),
+      );
+      if (transportQuestions.isNotEmpty) {
+        final questions = _filterUnsupportedMedicationQuestions(
+          transportQuestions,
+          input,
+        ).take(4).toList(growable: false);
+        if (kDebugMode) {
+          debugPrint(
+            'FollowUpAiService questionCount raw=1 '
+            'normalized=${transportQuestions.length} '
+            'medicationFilter=${questions.length}',
+          );
+        }
+        if (questions.isNotEmpty) {
+          return FollowUpQuestionResult.success(questions);
+        }
+        if (kDebugMode) {
+          debugPrint(
+            'FollowUpAiService failure=medication_filter_removed_all',
+          );
+        }
+        return const FollowUpQuestionResult.failure(
+          'medication_filter_removed_all',
+        );
+      }
+      final replyLines = reply
           .split(RegExp(r'[\r\n]+'))
-          .map(_cleanListItem)
-          .where((line) => line.endsWith('？') || line.endsWith('?')),
-    ]);
-    return _filterUnsupportedMedicationQuestions(fallback, input)
-        .take(4)
-        .toList();
+          .map((line) => line.trim())
+          .where((line) => line.isNotEmpty)
+          .toList(growable: false);
+      final plainTextQuestions = normalizeFollowUpQuestions(
+        replyLines
+            .map(_cleanListItem)
+            .where((line) => line.endsWith('？') || line.endsWith('?')),
+      );
+      if (replyLines.length > 1 && plainTextQuestions.isNotEmpty) {
+        final questions = _filterUnsupportedMedicationQuestions(
+          plainTextQuestions,
+          input,
+        ).take(4).toList(growable: false);
+        if (kDebugMode) {
+          debugPrint(
+            'FollowUpAiService questionCount '
+            'raw=${plainTextQuestions.length} '
+            'normalized=${plainTextQuestions.length} '
+            'medicationFilter=${questions.length}',
+          );
+        }
+        if (questions.isNotEmpty) {
+          return FollowUpQuestionResult.success(questions);
+        }
+        if (kDebugMode) {
+          debugPrint(
+            'FollowUpAiService failure=medication_filter_removed_all',
+          );
+        }
+        return const FollowUpQuestionResult.failure(
+          'medication_filter_removed_all',
+        );
+      }
+      final singleQuestion = _singlePlainTextQuestion(reply);
+      if (singleQuestion != null) {
+        final normalized = normalizeFollowUpQuestions([singleQuestion]);
+        final questions = _filterUnsupportedMedicationQuestions(
+          normalized,
+          input,
+        ).take(4).toList(growable: false);
+        if (kDebugMode) {
+          debugPrint(
+            'FollowUpAiService parserPath=single_plain_text_question '
+            'questionCount raw=1 normalized=${normalized.length} '
+            'medicationFilter=${questions.length}',
+          );
+        }
+        if (questions.isNotEmpty) {
+          return FollowUpQuestionResult.success(questions);
+        }
+        if (kDebugMode) {
+          debugPrint(
+            'FollowUpAiService failure=medication_filter_removed_all',
+          );
+        }
+        return const FollowUpQuestionResult.failure(
+          'medication_filter_removed_all',
+        );
+      }
+      if (kDebugMode) {
+        final failure =
+            json == null ? 'invalid_questions_json' : 'invalid_questions_array';
+        debugPrint(
+            'FollowUpAiService parser questionCount before=unknown after=0');
+        debugPrint('FollowUpAiService failure=$failure');
+      }
+      return FollowUpQuestionResult.failure(
+        json == null ? 'invalid_questions_json' : 'invalid_questions_array',
+      );
+    }
+    final rawList = json['questions'] as List;
+    final rawQuestions = _questionValues(rawList);
+    if (rawList.isNotEmpty && rawQuestions.isEmpty) {
+      if (kDebugMode) {
+        debugPrint(
+          'FollowUpAiService parser questionCount '
+          'before=${rawList.length} after=0',
+        );
+        debugPrint('FollowUpAiService failure=invalid_questions_array');
+      }
+      return const FollowUpQuestionResult.failure('invalid_questions_array');
+    }
+    final parsedQuestions = normalizeFollowUpQuestions(
+      _canonicalQuestionValues(rawQuestions),
+    );
+    final questions = _filterUnsupportedMedicationQuestions(
+      parsedQuestions,
+      input,
+    ).take(4).toList(growable: false);
+    if (kDebugMode) {
+      debugPrint(
+        'FollowUpAiService questionCount raw=${rawQuestions.length} '
+        'normalized=${parsedQuestions.length} '
+        'medicationFilter=${questions.length}',
+      );
+    }
+    // Only an explicitly empty AI array means "no clarification needed".
+    // Non-empty content that the parser or safety filter cannot accept is a
+    // failure, otherwise malformed output could silently skip clarification.
+    if (rawQuestions.isNotEmpty && questions.isEmpty) {
+      final failure = parsedQuestions.isEmpty
+          ? 'no_valid_questions_after_parsing'
+          : 'medication_filter_removed_all';
+      if (kDebugMode) {
+        debugPrint('FollowUpAiService failure=$failure');
+      }
+      return FollowUpQuestionResult.failure(failure);
+    }
+    return FollowUpQuestionResult.success(questions);
+  }
+
+  static Iterable<String> _canonicalQuestionValues(Iterable<String> values) =>
+      values.map((value) {
+        final question = value.trim();
+        if (question.isEmpty ||
+            question.endsWith('？') ||
+            question.endsWith('?')) {
+          return question;
+        }
+        return '$question？';
+      });
+
+  static String _debugReplyPreview(String reply) {
+    final singleLine = reply
+        .replaceAll(RegExp(r'[\r\n]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    return singleLine.length <= 120 ? singleLine : singleLine.substring(0, 120);
+  }
+
+  static String? _singlePlainTextQuestion(String reply) {
+    final value = reply.trim();
+    if (value.length < 5 || value.length > 120) return null;
+    if (value.contains('\n') || value.contains('\r')) return null;
+    if (!value.endsWith('?') && !value.endsWith('？')) return null;
+    if (RegExp(r'[{}\[\]]|```').hasMatch(value)) return null;
+    if (RegExp(
+      r'^(以下|建議|說明|無需|沒有|無重要缺漏|錯誤|error)',
+      caseSensitive: false,
+    ).hasMatch(value)) {
+      return null;
+    }
+    if (RegExp(r'^(?:#{1,6}\s|[-*+]\s|>\s)').hasMatch(value)) return null;
+    return value;
   }
 
   static List<String> _filterUnsupportedMedicationQuestions(
@@ -77,8 +299,9 @@ class FollowUpAiService {
       });
     }
 
+    final source = questions.toList(growable: false);
     final result = <String>[];
-    for (final question in questions) {
+    for (final question in source) {
       final asksAboutMedication = RegExp(
         r'藥|服用|服藥|用藥|劑量|漏服|停藥|停用',
       ).hasMatch(question);
@@ -108,12 +331,14 @@ class FollowUpAiService {
         result.add(question);
         continue;
       }
-      if (kDebugMode) {
-        debugPrint(
-          'FollowUpAiService filtered follow-up question: '
-          'reason=medication_not_in_structured_data, question=$question',
-        );
-      }
+    }
+    if (kDebugMode && result.length < source.length) {
+      debugPrint(
+        'FollowUpAiService medicationFilter '
+        'questionCountBefore=${source.length} '
+        'questionCountAfter=${result.length} '
+        'reason=medication_not_in_structured_data',
+      );
     }
     return result;
   }
@@ -136,7 +361,8 @@ class FollowUpAiService {
     final response = await _send(
       input,
       '''你正在產生可供回診使用的資料摘要。補問題目與原始回答只供這次整理使用，不得逐字放入任何輸出欄位：${jsonEncode(followUpAnswers)}
-只能描述資料支持的觀察與日期先後；不得診斷躁期或鬱期、不得斷言或暗示藥物因果、不得建議自行停藥或調藥。有價值的日期先後資訊可放入 keyChanges，但不得與 App 的藥物調整時間軸逐字重複。睡眠、症狀及其他基本紀錄只能放在 keyChanges，不得放入 userSharedNotes。請把已選主題、discussionDetails，以及有內容的補問題目與答案整合成 discussionItems：共 1～5 項，每項為可直接提供醫師閱讀的完整中性句子；合併相近內容，移除口語贅詞、聊天語氣、表情符號與重複內容；保留使用者明確提到的時間、頻率、程度及生活影響；不得加入未說過的資訊。discussionItems 不得保留 Q／A 格式，也不得出現「使用者回答」、「AI 提問」、「AI 補問」、「問題一」、「問：」或「答：」。userSharedNotes 只可忠實保留 additionalNotes，不得放入任何補問原始回答，不得擴寫、推測或放入症狀、睡眠、情緒、藥物、身體數據。若 diaryContext 不為空，必須逐篇檢視每一則日記，只要內容包含重要生活事件、主觀感受、睡眠或症狀補充、想告訴醫師的事情、正向事件或成就，就必須為該篇產生至少一筆對應的 diaryHighlights 候選（同一篇最多 2 筆）；只有在該篇完全沒有可用內容時才可略過，不得因保守或不確定而整體省略 diaryHighlights。日記提到藥名不得視為目前用藥；不得依日記判定躁期、鬱期或診斷；與結構化資料衝突時以結構化資料為準。diaryHighlights 只摘要原意，不得加入醫療推論。主要變化不得重複睡眠卡已有的平均、最低、最高與事件天數；睡眠只在 App 提供的 comparison 顯示明顯增減時，簡短描述與前期相差多少。keyChanges 必須 3～5 項。請將下列格式的摘要 JSON 序列化後放在 reply 字串中，不要在 reply 加入 Markdown 或其他說明：
+以下規則優先於後文：discussionDetails 是使用者原文，由 App 另行逐字顯示，AI 不得改寫、摘要、複製或放入任何輸出欄位。discussionItems 只可整理有內容的補問回答，沒有回答時必須是空陣列；內容若只是重複 discussionDetails 已明確寫過的資訊，也必須略過。
+只能描述資料支持的觀察與日期先後；不得診斷躁期或鬱期、不得斷言或暗示藥物因果、不得建議自行停藥或調藥。coOccurrenceSummary.clusters 是唯一可使用的共現結果，只能整理既有 coreItems、companionItems 與客觀次數，不得新增模式或使用「導致、造成、引發、證明、副作用、高度相關」等因果式文字。有價值的日期先後資訊可放入 keyChanges，但不得與 App 的藥物調整時間軸逐字重複。睡眠、症狀及其他基本紀錄只能放在 keyChanges，不得放入 userSharedNotes。請把已選主題、discussionDetails，以及有內容的補問題目與答案整合成 discussionItems：共 1～5 項，每項為可直接提供醫師閱讀的完整中性句子；合併相近內容，移除口語贅詞、聊天語氣、表情符號與重複內容；保留使用者明確提到的時間、頻率、程度及生活影響；不得加入未說過的資訊。discussionItems 不得保留 Q／A 格式，也不得出現「使用者回答」、「AI 提問」、「AI 補問」、「問題一」、「問：」或「答：」。userSharedNotes 只可忠實保留 additionalNotes，不得放入任何補問原始回答，不得擴寫、推測或放入症狀、睡眠、情緒、藥物、身體數據。若 diaryContext 不為空，必須逐篇檢視每一則日記，只要內容包含重要生活事件、主觀感受、睡眠或症狀補充、想告訴醫師的事情、正向事件或成就，就必須為該篇產生至少一筆對應的 diaryHighlights 候選（同一篇最多 2 筆）；只有在該篇完全沒有可用內容時才可略過，不得因保守或不確定而整體省略 diaryHighlights。日記提到藥名不得視為目前用藥；不得依日記判定躁期、鬱期或診斷；與結構化資料衝突時以結構化資料為準。diaryHighlights 只摘要原意，不得加入醫療推論。主要變化不得重複睡眠卡已有的平均、最低、最高與事件天數；睡眠只在 App 提供的 comparison 顯示明顯增減時，簡短描述與前期相差多少。keyChanges 必須 3～5 項。請將下列格式的摘要 JSON 序列化後放在 reply 字串中，不要在 reply 加入 Markdown 或其他說明：
 {"keyChanges":["主要變化一（附資料）","主要變化二（附資料）","主要變化三（附資料）"],"discussionItems":["可直接提供醫師閱讀的完整句子。"],"userSharedNotes":[],"dataLimitations":[],"diaryHighlights":[{"date":"YYYY-MM-DD","category":"life_event|subjective_feeling|sleep_note|symptom_note|share_with_doctor","summary":"忠於原意的簡短摘要","source":"diary"}]}''',
     );
     final json = _tryReplyJson(response.reply);
@@ -358,16 +584,6 @@ class FollowUpAiService {
       keyChanges.add('目前可用紀錄較少，這次摘要以使用者提供的內容為主要依據。');
     }
 
-    // Even in fallback mode, an answered follow-up question must still show
-    // up somewhere in the visible summary, not only in the private
-    // followUpResponses field.
-    final answeredFollowUps = followUpAnswers.values
-        .map((answer) => answer.trim())
-        .where((answer) => answer.isNotEmpty);
-    final discussionItems = FollowUpSummaryTextFormatter.safeDiscussionItems([
-      if (input.discussionDetails.trim().isNotEmpty) input.discussionDetails,
-      ...answeredFollowUps,
-    ]);
     final sharedNotes = <String>[
       if (input.additionalNotes.trim().isNotEmpty) input.additionalNotes.trim(),
     ];
@@ -376,7 +592,7 @@ class FollowUpAiService {
     return FollowUpAiOutput(
       keyChanges: keyChanges.take(5).toList(),
       discussionPriorities: const [],
-      discussionItems: discussionItems,
+      discussionItems: const [],
       timelineRelations: MedicationSubjectiveSummaryBuilder.fallbackSummaries(
         input.medicationSubjectiveReports,
       ),
@@ -475,13 +691,10 @@ class FollowUpAiService {
     return FollowUpAiOutput(
       keyChanges: keyChanges.take(5).toList(growable: false),
       discussionPriorities: const [],
-      discussionItems: discussionItems.isNotEmpty
-          ? discussionItems
-          : FollowUpSummaryTextFormatter.safeDiscussionItems([
-              if (input.discussionDetails.trim().isNotEmpty)
-                input.discussionDetails,
-              ...followUpAnswers.values.map((answer) => answer.trim()),
-            ]),
+      discussionItems: _withoutDiscussionDetailsDuplicates(
+        discussionItems,
+        input.discussionDetails,
+      ),
       medicationSubjectiveSummaries: medicationSubjectiveSummaries,
       recordEvidenceHighlights: output.recordEvidenceHighlights.isNotEmpty
           ? output.recordEvidenceHighlights
@@ -515,28 +728,25 @@ class FollowUpAiService {
       );
     }
 
-    final eventPairs = input.coOccurrenceSummary['eventLevel'];
-    if (eventPairs is List) {
-      for (final raw in eventPairs.whereType<Map>().take(2)) {
-        final symptoms = _strings(raw['symptoms']);
-        final count = raw['coOccurrenceEventCount'];
-        if (symptoms.length == 2 && count is num) {
-          result.add(
-            '${symptoms[0]}與${symptoms[1]}曾於 ${count.toInt()} 次快速記錄事件中共同出現。',
-          );
+    final clusters = input.coOccurrenceSummary['clusters'];
+    if (clusters is List) {
+      for (final raw in clusters.whereType<Map>().take(3)) {
+        final core = _strings(raw['coreItems']);
+        final companions = _strings(raw['companionItems']);
+        final count = raw['occurrenceCount'];
+        final nearby = raw['nearbyTimeCount'];
+        if (core.length < 2 || count is! num) continue;
+        final sentence = StringBuffer(
+          '${core.join('、')}於觀察期間重複共同出現 ${count.toInt()} 次',
+        );
+        if (nearby is num && nearby > 0) {
+          sentence.write('，其中 ${nearby.toInt()} 次發生於相近時間');
         }
-      }
-    }
-    final legacyPairs = input.coOccurrenceSummary['legacySameDay'];
-    if (legacyPairs is List) {
-      for (final raw in legacyPairs.whereType<Map>().take(2)) {
-        final symptoms = _strings(raw['symptoms']);
-        final count = raw['coOccurrenceDays'];
-        if (symptoms.length == 2 && count is num) {
-          result.add(
-            '${symptoms[0]}與${symptoms[1]}曾於 ${count.toInt()} 個記錄日同日出現。',
-          );
+        if (companions.isNotEmpty) {
+          sentence.write('；另常伴隨${companions.join('、')}');
         }
+        sentence.write('。');
+        result.add(sentence.toString());
       }
     }
     return result.take(5).toList(growable: false);
@@ -615,6 +825,18 @@ class FollowUpAiService {
             !blockedQuestionKeys.contains(_summaryComparisonKey(item)))
         .take(5)
         .toList(growable: false);
+  }
+
+  static List<String> _withoutDiscussionDetailsDuplicates(
+    Iterable<String> values,
+    String discussionDetails,
+  ) {
+    final detailsKey = _summaryComparisonKey(discussionDetails);
+    if (detailsKey.isEmpty) return values.toList(growable: false);
+    return values.where((item) {
+      final itemKey = _summaryComparisonKey(item);
+      return itemKey.isNotEmpty && !detailsKey.contains(itemKey);
+    }).toList(growable: false);
   }
 
   /// Only the literal question text is blocked here: an item that merely

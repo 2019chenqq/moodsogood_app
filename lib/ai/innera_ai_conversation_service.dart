@@ -24,7 +24,11 @@ class InneraAiConversationService {
 
   static const maxStoredMessages = 120;
 
-  static String conversationDocumentId(
+  /// The primary conversation is shared by every purpose on the same day.
+  static String conversationDocumentId(String dateKey) => dateKey;
+
+  /// Pre-unification document id. Kept only for reading existing conversations.
+  static String legacyModeConversationDocumentId(
     String dateKey,
     InneraAiMode mode,
   ) =>
@@ -38,16 +42,19 @@ class InneraAiConversationService {
   }) async {
     final uid = _requireUid();
     final dateKey = _todayKey();
-    final snapshot = await _conversationRef(uid, dateKey, mode).get();
+    final snapshot = await _conversationRef(uid, dateKey).get();
     final conversation = await _conversationFromSnapshot(snapshot);
     if (conversation != null) return conversation;
 
-    // Read the old once-per-day document only when its saved mode matches.
-    // This preserves existing conversations without letting one mode replace
-    // the mode explicitly selected from the home screen.
-    final legacySnapshot = await _legacyConversationRef(uid, dateKey).get();
-    final legacyConversation = await _conversationFromSnapshot(legacySnapshot);
-    return legacyConversation?.mode == mode ? legacyConversation : null;
+    // Fall back to the old per-mode document selected by the entry point.
+    // The next save writes it to the shared daily document without deleting
+    // any old data or requiring a migration.
+    final legacySnapshot = await _legacyModeConversationRef(
+      uid,
+      dateKey,
+      mode,
+    ).get();
+    return _conversationFromSnapshot(legacySnapshot);
   }
 
   Future<InneraAiConversation?> _conversationFromSnapshot(
@@ -88,7 +95,7 @@ class InneraAiConversationService {
         ? persistable.length - maxStoredMessages
         : 0;
     await HealthDataEncryptionService.setEncrypted(
-      _conversationRef(uid, _todayKey(), mode),
+      _conversationRef(uid, _todayKey()),
       {
         'schemaVersion': 1,
         'dateKey': _todayKey(),
@@ -110,7 +117,7 @@ class InneraAiConversationService {
     final uid = _requireUid();
     final dateKey = _todayKey();
     final batch = _firestore.batch();
-    batch.delete(_conversationRef(uid, dateKey, mode));
+    batch.delete(_conversationRef(uid, dateKey));
     if (deleteRecordDraft) {
       batch.delete(
         _firestore
@@ -120,18 +127,22 @@ class InneraAiConversationService {
             .doc(dateKey),
       );
     }
-    final legacyRef = _legacyConversationRef(uid, dateKey);
-    final legacySnapshot = await legacyRef.get();
-    final legacyData = legacySnapshot.data();
-    if (legacyData != null &&
-        (await HealthDataEncryptionService.decryptData(legacyData))['mode'] ==
-            mode.name) {
-      batch.delete(legacyRef);
-    }
+    // Old per-mode documents are intentionally retained. Reset applies only
+    // to the unified conversation and must not destroy legacy history.
     await batch.commit();
   }
 
   DocumentReference<Map<String, dynamic>> _conversationRef(
+    String uid,
+    String dateKey,
+  ) =>
+      _firestore
+          .collection('users')
+          .doc(uid)
+          .collection('aiConversations')
+          .doc(conversationDocumentId(dateKey));
+
+  DocumentReference<Map<String, dynamic>> _legacyModeConversationRef(
     String uid,
     String dateKey,
     InneraAiMode mode,
@@ -140,17 +151,7 @@ class InneraAiConversationService {
           .collection('users')
           .doc(uid)
           .collection('aiConversations')
-          .doc(conversationDocumentId(dateKey, mode));
-
-  DocumentReference<Map<String, dynamic>> _legacyConversationRef(
-    String uid,
-    String dateKey,
-  ) =>
-      _firestore
-          .collection('users')
-          .doc(uid)
-          .collection('aiConversations')
-          .doc(dateKey);
+          .doc(legacyModeConversationDocumentId(dateKey, mode));
 
   String _requireUid() {
     final uid = _auth.currentUser?.uid;

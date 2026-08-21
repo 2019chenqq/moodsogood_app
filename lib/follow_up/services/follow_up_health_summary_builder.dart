@@ -6,7 +6,7 @@ import '../../models/health_event.dart';
 import '../../models/unified_health_data.dart';
 import '../../repositories/unified_health_data_repository.dart';
 import '../../services/daily_health_aggregation_service.dart';
-import '../../services/health_co_occurrence_service.dart';
+import '../../services/cooccurrence_cluster_service.dart';
 
 class FollowUpHealthSummary {
   const FollowUpHealthSummary({
@@ -30,7 +30,7 @@ class FollowUpHealthSummaryBuilder {
   const FollowUpHealthSummaryBuilder();
 
   static const _aggregation = DailyHealthAggregationService();
-  static const _coOccurrence = HealthCoOccurrenceService();
+  static const _coOccurrence = CooccurrenceClusterService();
 
   FollowUpHealthSummary build({
     required Iterable<DailyRecord> dailyRecords,
@@ -77,29 +77,24 @@ class FollowUpHealthSummaryBuilder {
             })
         .toList(growable: false);
 
-    final evidence = <UnifiedHealthData>[
-      ...records.map(UnifiedHealthDataRepository.fromLegacyDailyRecord),
-      ...events.map(UnifiedHealthDataRepository.fromHealthEvent),
-    ];
-    final coOccurrences = _coOccurrence.calculate(evidence);
+    final evidence = UnifiedHealthDataRepository.normalize(
+      legacyRecords: records,
+      healthEvents: events,
+      dailyCheckIns: checkIns,
+    );
+    final coOccurrences = _coOccurrence.analyze(
+      CooccurrenceEvidenceAdapter.fromUnified(evidence),
+    );
 
     return FollowUpHealthSummary(
       aggregates: aggregates,
       recordedDays: recordedDays,
       symptoms: symptoms,
       coOccurrences: {
-        'eventLevel': _topPairs(
-          coOccurrences.eventSymptomCoOccurrences,
-          maxCoOccurrencePairs,
-          countKey: 'coOccurrenceEventCount',
-          evidenceLabel: 'same_quick_record_event',
-        ),
-        'legacySameDay': _topPairs(
-          coOccurrences.legacySymptomSameDayRecords,
-          maxCoOccurrencePairs,
-          countKey: 'coOccurrenceDays',
-          evidenceLabel: 'legacy_same_day_only',
-        ),
+        'clusters': coOccurrences
+            .take(maxCoOccurrencePairs)
+            .map((cluster) => cluster.toMap())
+            .toList(growable: false),
       },
       dailySummary: _dailySummary(aggregates),
       representativeEvents:
@@ -188,27 +183,6 @@ class FollowUpHealthSummaryBuilder {
               .toList(),
       },
     };
-  }
-
-  static List<Map<String, dynamic>> _topPairs(
-    Map<String, int> values,
-    int limit, {
-    required String countKey,
-    required String evidenceLabel,
-  }) {
-    final entries = values.entries.toList()
-      ..sort((a, b) {
-        final count = b.value.compareTo(a.value);
-        return count != 0 ? count : a.key.compareTo(b.key);
-      });
-    return entries.take(limit).map((entry) {
-      final pair = entry.key.split('\u0000');
-      return <String, dynamic>{
-        'symptoms': pair,
-        countKey: entry.value,
-        'evidence': evidenceLabel,
-      };
-    }).toList(growable: false);
   }
 
   static List<Map<String, dynamic>> _representativeEvents(

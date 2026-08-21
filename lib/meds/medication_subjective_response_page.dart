@@ -38,7 +38,7 @@ class MedicationSubjectiveResponsePage extends StatefulWidget {
       medicationId: event.medDocId,
       medicationName: event.medName,
       changeRecordId: event.adjustmentId,
-      changeDate: event.date,
+      changeDate: event.effectiveDateTime,
       adjustmentSummary: MedicationAdjustmentFormatter.detailSummary(event),
       followUpDay: followUpDay,
     );

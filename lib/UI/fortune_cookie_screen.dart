@@ -17,6 +17,8 @@ class FortuneCookieScreen extends StatefulWidget {
 }
 
 class _FortuneCookieScreenState extends State<FortuneCookieScreen> {
+  static const _backgroundColor = Color(0xFFF6DF8D);
+
   late final VideoPlayerController _vc;
   late final Future<void> _initVideoFuture;
 
@@ -127,14 +129,14 @@ class _FortuneCookieScreenState extends State<FortuneCookieScreen> {
           // ===== 背景（霧面）=====
           Positioned.fill(
             child: Container(
-              color: const Color(0xFFF6DF8D), // 幸運餅乾頁主背景色
+              color: _backgroundColor, // 幸運餅乾頁主背景色
             ),
           ),
           Positioned.fill(
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
               child: Container(
-                color: const Color(0xFFF6DF8D).withValues(alpha: 0.25),
+                color: _backgroundColor.withValues(alpha: 0.25),
               ),
             ),
           ),
@@ -251,11 +253,23 @@ class _FortuneCookieScreenState extends State<FortuneCookieScreen> {
         _vc.value.isInitialized && (_vc.value.isPlaying || _isPlaying);
 
     if (showVideo) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: AspectRatio(
-          aspectRatio: _vc.value.aspectRatio == 0 ? 1 : _vc.value.aspectRatio,
-          child: VideoPlayer(_vc),
+      return ShaderMask(
+        blendMode: BlendMode.dstIn,
+        shaderCallback: (bounds) => const RadialGradient(
+          radius: 0.72,
+          colors: [
+            Colors.white,
+            Colors.white,
+            Colors.transparent,
+          ],
+          stops: [0, 0.88, 1],
+        ).createShader(bounds),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: AspectRatio(
+            aspectRatio: _vc.value.aspectRatio == 0 ? 1 : _vc.value.aspectRatio,
+            child: VideoPlayer(_vc),
+          ),
         ),
       );
     }

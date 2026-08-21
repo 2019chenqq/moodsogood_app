@@ -33,6 +33,7 @@ import 'health_event_repository.dart';
 import '../services/daily_health_aggregation_service.dart';
 import 'daily_check_in_service.dart';
 import 'emotion_trend_calculator.dart';
+import 'period_cycle_service.dart';
 
 const Map<String, String> ksleepFlagMap = {
   'good': '優',
@@ -87,14 +88,15 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
 
   // 動態情緒選擇
   String _selectedEmotion = '';
+  String _selectedLegacyEmotion = '';
 
   // 用於強制刷新的計數器
   int _refreshCounter = 0;
   Future<WeeklyRecord?>? _currentWeeklyRecordFuture;
   String? _weeklyRecordUserId;
 
-  String? _periodLabel(DailyRecord r) {
-    if (r.isPeriod == true) {
+  String? _periodLabel(DailyRecord r, List<PeriodCycle> cycles) {
+    if (cycles.any((cycle) => cycle.containsDate(r.date))) {
       return '生理期';
     }
     return null;
@@ -394,7 +396,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
                     cycles,
                     isPro,
                   ),
-                _ => _buildListPage(listAggregates, isPro, uid),
+                _ => _buildListPage(listAggregates, cycles, isPro, uid),
               };
             },
           );
@@ -511,96 +513,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
   }
 
   Future<List<PeriodCycle>> _loadPeriodCalendarCycles(String uid) async {
-    final startDate = DateTime(2020, 1, 1);
-    final endDate = DateTime.now().add(const Duration(days: 365));
-    final markedDays = <DateTime>{};
-
-    Map<String, dynamic>? periodMap(dynamic value) {
-      if (value is Map) return value.cast<String, dynamic>();
-      if (value is String && value.trim().isNotEmpty) {
-        try {
-          final decoded = jsonDecode(value);
-          if (decoded is Map) return decoded.cast<String, dynamic>();
-        } catch (_) {}
-      }
-      return null;
-    }
-
-    try {
-      final repo = DailyRecordRepository();
-      final localRecords = await repo.getDailyRecordsByDateRange(
-        userId: uid,
-        startDate: startDate,
-        endDate: endDate,
-      );
-      for (final row in localRecords) {
-        final data = periodMap(row['periodData']);
-        if (data?['isPeriod'] != true) continue;
-        final date = DateTime.tryParse(row['date']?.toString() ?? '');
-        if (date != null) {
-          markedDays.add(_dateOnly(date));
-        }
-      }
-    } catch (e) {
-      debugPrint('Local period calendar load failed: $e');
-    }
-
-    if (FirebaseSyncConfig.shouldSync()) {
-      try {
-        final snapshot = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .collection('dailyRecords')
-            .where('date',
-                isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
-            .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
-            .get();
-
-        for (final doc in snapshot.docs) {
-          final data =
-              await HealthDataEncryptionService.decryptData(doc.data());
-          final isPeriod = data['isPeriod'] == true ||
-              periodMap(data['periodData'])?['isPeriod'] == true;
-          if (!isPeriod) continue;
-          final ts = data['date'] as Timestamp?;
-          if (ts != null) {
-            markedDays.add(_dateOnly(ts.toDate()));
-          }
-        }
-      } catch (e) {
-        debugPrint('Cloud period calendar load failed: $e');
-      }
-    }
-
-    return _periodCyclesFromMarkedDays(markedDays);
-  }
-
-  List<PeriodCycle> _periodCyclesFromMarkedDays(Set<DateTime> markedDays) {
-    final sorted = markedDays.toList()..sort();
-    if (sorted.isEmpty) return const <PeriodCycle>[];
-
-    final cycles = <PeriodCycle>[];
-    var start = sorted.first;
-    var previous = sorted.first;
-
-    void addCycle() {
-      cycles.add(PeriodCycle(
-        id: DateHelper.toId(start),
-        startDate: start,
-        endDate: previous,
-      ));
-    }
-
-    for (var i = 1; i < sorted.length; i++) {
-      final day = sorted[i];
-      if (day.difference(previous).inDays > 1) {
-        addCycle();
-        start = day;
-      }
-      previous = day;
-    }
-    addCycle();
-    return cycles;
+    return PeriodCycleService().getUnifiedCycles(uid);
   }
 
   /// 將單個本地記錄轉換為 DailyRecord 對象
@@ -839,29 +752,6 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
     return scores;
   }
 
-  Map<DateTime, _DiaryMoodScore> _applyDiaryMoodDateFilter(
-    Map<DateTime, _DiaryMoodScore> input,
-  ) {
-    if (_selectedDateRange != null) {
-      final start = _dateOnly(_selectedDateRange!.start);
-      final end = _dateOnly(_selectedDateRange!.end);
-      return Map.fromEntries(input.entries.where((entry) {
-        final date = _dateOnly(entry.key);
-        return !date.isBefore(start) && !date.isAfter(end);
-      }));
-    }
-
-    final days = _selectedRangeDays;
-    if (days == null) return input;
-
-    final today = _dateOnly(DateTime.now());
-    final start = today.subtract(Duration(days: days - 1));
-    return Map.fromEntries(input.entries.where((entry) {
-      final date = _dateOnly(entry.key);
-      return !date.isBefore(start) && !date.isAfter(today);
-    }));
-  }
-
   bool _isHistoryLocked(bool isPro) {
     if (isPro) return false;
 
@@ -876,6 +766,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
 
   Widget _buildListPage(
     List<DailyHealthAggregate> aggregates,
+    List<PeriodCycle> cycles,
     bool isPro,
     String uid,
   ) {
@@ -968,7 +859,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
                           final r = aggregate.dailyRecords.isEmpty
                               ? null
                               : aggregate.dailyRecords.first;
-                          final periodText = r == null ? null : _periodLabel(r);
+                          final periodText =
+                              r == null ? null : _periodLabel(r, cycles);
                           final nightMinutes =
                               r == null ? null : _nightSleepMinutes(r.sleep);
                           final sleepText = nightMinutes != null
@@ -1568,27 +1460,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
   }
 
   /// 依照 moodScale 將紀錄分成 5 點與 10 點兩個群組
-  bool _isFivePointScaleRecord(DailyRecord record) {
-    return record.moodScale == 5;
-  }
-
   List<DailyRecord> _recordsWithScale(List<DailyRecord> records, int scale) {
-    if (scale == 5) {
-      return records.where(_isFivePointScaleRecord).toList();
-    }
-    return records.where((r) => r.moodScale == scale).toList();
-  }
-
-  /// 將 diaryMoodScores 也依照對應的 daily record 分組
-  Map<DateTime, double> _filterDiaryScoresByScale(
-    Map<DateTime, _DiaryMoodScore> scores,
-    int scale,
-  ) {
-    return Map.fromEntries(
-      scores.entries
-          .where((e) => e.value.scale == scale)
-          .map((e) => MapEntry(e.key, e.value.score)),
-    );
+    return emotionTrendRecordsForScale(records, scale);
   }
 
   // --- 分頁 2: 圖表 UI (重點修改) ---
@@ -1606,102 +1479,116 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
     final bool isLocked = _isHistoryLocked(isPro);
     final uid = FirebaseAuth.instance.currentUser?.uid;
 
-    // 按 moodScale 分組
-    final records5 = _recordsWithScale(filteredRecords, 5);
-    final records10 = _recordsWithScale(filteredRecords, 10);
-    final hasAggregate5 = filteredAggregates.any(
-      (aggregate) => aggregate.emotionDailyValues.values.any(
-        (summary) => summary.observations.any((value) => value.scale == 5),
-      ),
-    );
-    final has5 = records5.isNotEmpty || hasAggregate5;
+    final legacyRecords5 = _recordsWithScale(filteredRecords, 5);
+    final legacyRecords10 = _recordsWithScale(filteredRecords, 10);
+    final fullLegacyRecords5 = _recordsWithScale(allRecords, 5);
+    final fullRecords10 = _recordsWithScale(allRecords, 10);
     final balancePoints5 = EmotionTrendCalculator.calculateAggregates(
       filteredAggregates,
       scale: 5,
+      newModeOnly: true,
     );
     final fullBalancePoints5 = EmotionTrendCalculator.calculateAggregates(
       allAggregates,
       scale: 5,
+      newModeOnly: true,
     );
+    final legacyBalancePoints5 =
+        EmotionTrendCalculator.calculate(legacyRecords5);
+    final fullLegacyBalancePoints5 =
+        EmotionTrendCalculator.calculate(fullLegacyRecords5);
+    final balancePoints10 = EmotionTrendCalculator.calculate(legacyRecords10);
+    final fullBalancePoints10 = EmotionTrendCalculator.calculate(fullRecords10);
 
     return FutureBuilder<Map<DateTime, _DiaryMoodScore>>(
       future: uid == null
           ? Future.value(const <DateTime, _DiaryMoodScore>{})
           : _loadDiaryMoodScores(uid),
       builder: (context, diarySnapshot) {
-        final allDiaryScores = _applyDiaryMoodDateFilter(
-          diarySnapshot.data ?? const <DateTime, _DiaryMoodScore>{},
-        );
-
-        // 合併 emotions：從 5 分和 10 分 records 中萃取
-        final mergedChartEmotionNames = <String>{
-          ..._extractEmotionNames(records5),
-          ..._extractEmotionNames(records10),
-          for (final aggregate in filteredAggregates)
-            for (final entry in aggregate.emotionDailyValues.entries)
-              if (entry.key != DailyHealthAggregationService.overallMoodKey &&
-                  entry.value.observations.any((value) => value.scale == 5))
-                entry.key,
-        };
-        final chartEmotionNames = mergedChartEmotionNames.toList()..sort();
+        final newChartEmotionNames = newModeEmotionNames(filteredAggregates);
+        final legacyChartEmotionNames = legacyEmotionNames(filteredRecords);
         final hasAggregateOverallMood = filteredAggregates.any(
           (aggregate) =>
               aggregate
                   .emotionDailyValues[
                       DailyHealthAggregationService.overallMoodKey]
                   ?.observations
-                  .any((value) => value.scale == 5) ==
+                  .any(
+                (value) =>
+                    value.scale == 5 &&
+                    value.source == DailyHealthValueSource.dailyCheckIn,
+              ) ==
               true,
         );
-        if ((allDiaryScores.isNotEmpty || hasAggregateOverallMood) &&
-            !chartEmotionNames.contains(_overallMoodLabel)) {
-          chartEmotionNames.insert(0, _overallMoodLabel);
+        if (hasAggregateOverallMood &&
+            !newChartEmotionNames.contains(_overallMoodLabel)) {
+          newChartEmotionNames.insert(0, _overallMoodLabel);
         }
 
-        if (chartEmotionNames.isNotEmpty && _selectedEmotion.isEmpty) {
+        if (newChartEmotionNames.isNotEmpty && _selectedEmotion.isEmpty) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
-              setState(() => _selectedEmotion = chartEmotionNames.first);
+              setState(() => _selectedEmotion = newChartEmotionNames.first);
+            }
+          });
+        }
+        if (legacyChartEmotionNames.isNotEmpty &&
+            _selectedLegacyEmotion.isEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              setState(
+                () => _selectedLegacyEmotion = legacyChartEmotionNames.first,
+              );
             }
           });
         }
 
-        final activeEmotion = _selectedEmotion.isNotEmpty &&
-                chartEmotionNames.contains(_selectedEmotion)
+        final activeNewEmotion = _selectedEmotion.isNotEmpty &&
+                newChartEmotionNames.contains(_selectedEmotion)
             ? _selectedEmotion
-            : (chartEmotionNames.isNotEmpty ? chartEmotionNames.first : '');
+            : (newChartEmotionNames.isNotEmpty
+                ? newChartEmotionNames.first
+                : '');
+        final activeLegacyEmotion = _selectedLegacyEmotion.isNotEmpty &&
+                legacyChartEmotionNames.contains(_selectedLegacyEmotion)
+            ? _selectedLegacyEmotion
+            : (legacyChartEmotionNames.isNotEmpty
+                ? legacyChartEmotionNames.first
+                : '');
 
-        // 將 diaryScores 也依 moodScale 分組
-        final diary5 = _filterDiaryScoresByScale(allDiaryScores, 5);
-        final diary10 = _filterDiaryScoresByScale(allDiaryScores, 10);
-
-        final aggregateEmotionKey = activeEmotion == _overallMoodLabel
+        final aggregateEmotionKey = activeNewEmotion == _overallMoodLabel
             ? DailyHealthAggregationService.overallMoodKey
-            : activeEmotion;
+            : activeNewEmotion;
         final aggregateEmotionPoints5 =
-            DailyEmotionAggregateCalculator.calculate(
+            DailyEmotionAggregateCalculator.calculateNewMode(
           filteredAggregates,
           aggregateEmotionKey,
-          scale: 5,
         );
         final fullAggregateEmotionPoints5 =
-            DailyEmotionAggregateCalculator.calculate(
+            DailyEmotionAggregateCalculator.calculateNewMode(
           allAggregates,
           aggregateEmotionKey,
-          scale: 5,
         );
 
         // 檢查各量表是否有該情緒的資料
         bool hasChartData(
-            List<DailyRecord> recs, Map<DateTime, double> diScores) {
-          if (activeEmotion == _overallMoodLabel) return diScores.isNotEmpty;
-          return recs
-              .any((r) => r.emotions.any((e) => e.name == activeEmotion));
+          List<DailyRecord> recs,
+          Map<DateTime, double> diScores,
+          String emotionName,
+        ) {
+          if (emotionName == _overallMoodLabel) return diScores.isNotEmpty;
+          return recs.any(
+            (record) => record.emotions.any(
+              (emotion) => emotion.name == emotionName && emotion.value != null,
+            ),
+          );
         }
 
-        final has5Data = aggregateEmotionPoints5.isNotEmpty ||
-            hasChartData(records5, diary5);
-        final has10Data = hasChartData(records10, diary10);
+        final has5Data = aggregateEmotionPoints5.isNotEmpty;
+        final hasLegacy5Data =
+            hasChartData(legacyRecords5, const {}, activeLegacyEmotion);
+        final hasLegacy10Data =
+            hasChartData(legacyRecords10, const {}, activeLegacyEmotion);
 
         return Padding(
           padding: const EdgeInsets.all(16.0),
@@ -1757,242 +1644,73 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
                         ),
                         const SizedBox(height: 10),
                       ],
-                      Text(
-                        '情緒平衡趨勢圖',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color:
-                              HealingDesignSystem.adaptivePrimaryText(context),
-                        ),
-                      ),
-                      if (useMA) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          '使用 7 天移動平均',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: HealingDesignSystem.adaptiveSecondaryText(
-                                context),
+                      if (newChartEmotionNames.isNotEmpty || has5Data)
+                        _buildEmotionTrendSection(
+                          title: '新版情緒趨勢｜5 點量表',
+                          accentColor: Colors.teal,
+                          isLegacy: false,
+                          records: const [],
+                          fullRecords: const [],
+                          balancePoints: balancePoints5,
+                          fullBalancePoints: fullBalancePoints5,
+                          useMA: useMA,
+                          forceMonthlyAverage:
+                              _shouldUseMonthlyChartForAggregates(
+                                  filteredAggregates),
+                          cycles: cycles,
+                          emotionNames: newChartEmotionNames,
+                          activeEmotion: activeNewEmotion,
+                          onEmotionChanged: (emotion) => setState(
+                            () => _selectedEmotion = emotion,
                           ),
+                          hasEmotionData: has5Data,
+                          emotionPoints: aggregateEmotionPoints5,
+                          fullEmotionPoints: fullAggregateEmotionPoints5,
                         ),
-                      ],
-                      const SizedBox(height: 4),
-                      Text(
-                        '以正向感受平均減去負向感受平均，協助觀察整體感受傾向的變化。',
-                        style: TextStyle(
-                          fontSize: 12,
-                          height: 1.4,
-                          color: HealingDesignSystem.adaptiveSecondaryText(
-                              context),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      if (has5) ...[
-                        Text(
-                          '5 點量表',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: HealingDesignSystem.adaptiveAccent(context),
+                      if (legacyChartEmotionNames.isNotEmpty &&
+                          (legacyRecords5.isNotEmpty ||
+                              legacyBalancePoints5.isNotEmpty))
+                        _buildEmotionTrendSection(
+                          title: '歷史情緒紀錄｜5 點量表',
+                          accentColor: Colors.orange,
+                          isLegacy: true,
+                          records: legacyRecords5,
+                          fullRecords: fullLegacyRecords5,
+                          balancePoints: legacyBalancePoints5,
+                          fullBalancePoints: fullLegacyBalancePoints5,
+                          useMA: useMA,
+                          forceMonthlyAverage:
+                              _shouldUseMonthlyChartForRecords(legacyRecords5),
+                          cycles: cycles,
+                          emotionNames: legacyChartEmotionNames,
+                          activeEmotion: activeLegacyEmotion,
+                          onEmotionChanged: (emotion) => setState(
+                            () => _selectedLegacyEmotion = emotion,
                           ),
+                          hasEmotionData: hasLegacy5Data,
                         ),
-                        const SizedBox(height: 4),
-                        SizedBox(
-                          height: 210,
-                          width: double.infinity,
-                          child: EmotionBalanceTrendChartWidget(
-                            records: records5,
-                            fullRecords: records5,
-                            useMovingAverage: useMA,
-                            forceMonthlyAverage:
-                                _shouldUseMonthlyChartForAggregates(
-                                    filteredAggregates),
-                            periodCycles: cycles,
-                            aggregatePoints: balancePoints5,
-                            fullAggregatePoints: fullBalancePoints5,
+                      if (legacyChartEmotionNames.isNotEmpty &&
+                          (legacyRecords10.isNotEmpty ||
+                              balancePoints10.isNotEmpty))
+                        _buildEmotionTrendSection(
+                          title: '歷史情緒紀錄｜10 點量表',
+                          accentColor: Colors.orange,
+                          isLegacy: true,
+                          records: legacyRecords10,
+                          fullRecords: fullRecords10,
+                          balancePoints: balancePoints10,
+                          fullBalancePoints: fullBalancePoints10,
+                          useMA: useMA,
+                          forceMonthlyAverage: _shouldUseMonthlyChartForRecords(
+                            legacyRecords10,
                           ),
-                        ),
-                        const SizedBox(height: 14),
-                      ],
-                      const Divider(height: 24),
-                      Text(
-                        '正向 / 負向感受趨勢圖',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color:
-                              HealingDesignSystem.adaptivePrimaryText(context),
-                        ),
-                      ),
-                      if (useMA) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          '使用 7 天移動平均',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: HealingDesignSystem.adaptiveSecondaryText(
-                                context),
+                          cycles: cycles,
+                          emotionNames: legacyChartEmotionNames,
+                          activeEmotion: activeLegacyEmotion,
+                          onEmotionChanged: (emotion) => setState(
+                            () => _selectedLegacyEmotion = emotion,
                           ),
-                        ),
-                      ],
-                      const SizedBox(height: 4),
-                      Text(
-                        '分別呈現正向感受與負向感受的平均起伏。未分類的自訂情緒暫不納入平均。',
-                        style: TextStyle(
-                          fontSize: 12,
-                          height: 1.4,
-                          color: HealingDesignSystem.adaptiveSecondaryText(
-                              context),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      if (has5) ...[
-                        Text(
-                          '5 點量表',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: HealingDesignSystem.adaptiveAccent(context),
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        SizedBox(
-                          height: 210,
-                          width: double.infinity,
-                          child: EmotionBalanceChartWidget(
-                            records: records5,
-                            fullRecords: records5,
-                            useMovingAverage: useMA,
-                            forceMonthlyAverage:
-                                _shouldUseMonthlyChartForAggregates(
-                                    filteredAggregates),
-                            periodCycles: cycles,
-                            aggregatePoints: balancePoints5,
-                            fullAggregatePoints: fullBalancePoints5,
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                      ],
-                      const Divider(height: 24),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context)
-                                  .inputDecorationTheme
-                                  .fillColor ??
-                              Theme.of(context).cardColor,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: chartEmotionNames.isEmpty
-                                ? null
-                                : activeEmotion,
-                            isExpanded: true,
-                            dropdownColor: Theme.of(context).cardColor,
-                            icon: Icon(
-                              Icons.arrow_drop_down,
-                              color: Theme.of(context).iconTheme.color,
-                            ),
-                            items: chartEmotionNames.isEmpty
-                                ? [
-                                    const DropdownMenuItem(
-                                      value: null,
-                                      child: Text('尚無情緒資料'),
-                                    )
-                                  ]
-                                : chartEmotionNames
-                                    .map(
-                                      (e) => DropdownMenuItem(
-                                        value: e,
-                                        child: Text(e),
-                                      ),
-                                    )
-                                    .toList(),
-                            style: TextStyle(
-                              color:
-                                  Theme.of(context).textTheme.bodyLarge?.color,
-                            ),
-                            onChanged: (val) {
-                              if (val != null) {
-                                setState(() => _selectedEmotion = val);
-                              }
-                            },
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      // 5 點量表圖表（如有資料）
-                      if (has5Data) ...[
-                        Text(
-                          '新版情緒趨勢｜5 點量表',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.teal,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        SizedBox(
-                          height: 180,
-                          width: double.infinity,
-                          child: HistoryChartWidget(
-                            records: records5,
-                            fullRecords: records5,
-                            targetEmotion: activeEmotion,
-                            useMovingAverage: useMA,
-                            forceMonthlyAverage:
-                                _shouldUseMonthlyChartForAggregates(
-                                    filteredAggregates),
-                            diaryMoodScores: diary5,
-                            overallMoodLabel: _overallMoodLabel,
-                            periodCycles: cycles,
-                            dailyEmotionPoints: aggregateEmotionPoints5,
-                            fullDailyEmotionPoints: fullAggregateEmotionPoints5,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-                      // 10 點量表圖表（如有資料）
-                      if (has10Data) ...[
-                        Text(
-                          '過去紀錄｜10 點量表',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.orange,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        SizedBox(
-                          height: 180,
-                          width: double.infinity,
-                          child: HistoryChartWidget(
-                            records: records10,
-                            fullRecords: records10,
-                            targetEmotion: activeEmotion,
-                            useMovingAverage: useMA,
-                            forceMonthlyAverage:
-                                _shouldUseMonthlyChartForRecords(records10),
-                            diaryMoodScores: diary10,
-                            overallMoodLabel: _overallMoodLabel,
-                            periodCycles: cycles,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-                      if (!has5Data && !has10Data)
-                        const Center(
-                          child: Padding(
-                            padding: EdgeInsets.only(top: 32),
-                            child: Text(
-                              '所選時間範圍內沒有此情緒的資料',
-                              style: TextStyle(color: Colors.grey),
-                            ),
-                          ),
+                          hasEmotionData: hasLegacy10Data,
                         ),
                     ],
                   ),
@@ -2006,6 +1724,187 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
 
   // --- 輔助方法 ---
   // --- 輔助方法 ---
+
+  Widget _buildEmotionTrendSection({
+    required String title,
+    required Color accentColor,
+    required bool isLegacy,
+    required List<DailyRecord> records,
+    required List<DailyRecord> fullRecords,
+    required List<DailyEmotionTrendPoint> balancePoints,
+    required List<DailyEmotionTrendPoint> fullBalancePoints,
+    required bool useMA,
+    required bool forceMonthlyAverage,
+    required List<PeriodCycle> cycles,
+    required List<String> emotionNames,
+    required String activeEmotion,
+    required ValueChanged<String> onEmotionChanged,
+    required bool hasEmotionData,
+    Map<DateTime, double> diaryMoodScores = const {},
+    List<DailyEmotionValuePoint> emotionPoints = const [],
+    List<DailyEmotionValuePoint> fullEmotionPoints = const [],
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 18),
+      padding: const EdgeInsets.all(16),
+      decoration: HealingDesignSystem.adaptiveCardDecoration(context),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              color: accentColor,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _trendSubheading('情緒平衡趨勢圖', useMA),
+          Text(
+            isLegacy
+                ? '僅使用舊版 10 點量表 DailyRecord，以正向平均減去負向平均，不混入快速記錄。'
+                : '每天先為各感受產生代表值；同日多筆快速記錄取中位數，再以正向平均減去負向平均。每天權重相同。',
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.4,
+              color: HealingDesignSystem.adaptiveSecondaryText(context),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 210,
+            width: double.infinity,
+            child: EmotionBalanceTrendChartWidget(
+              records: records,
+              fullRecords: fullRecords,
+              useMovingAverage: useMA,
+              forceMonthlyAverage: forceMonthlyAverage,
+              periodCycles: cycles,
+              aggregatePoints: balancePoints,
+              fullAggregatePoints: fullBalancePoints,
+            ),
+          ),
+          const Divider(height: 28),
+          _trendSubheading('正向 / 負向感受趨勢圖', useMA),
+          Text(
+            isLegacy
+                ? '分別呈現舊版 10 點量表的正向與負向感受平均起伏；未分類的自訂情緒不納入。'
+                : '分別呈現每天正向與負向感受代表值的平均起伏。同日多筆快速記錄先取中位數；未分類的自訂情緒不納入。',
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.4,
+              color: HealingDesignSystem.adaptiveSecondaryText(context),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 210,
+            width: double.infinity,
+            child: EmotionBalanceChartWidget(
+              records: records,
+              fullRecords: fullRecords,
+              useMovingAverage: useMA,
+              forceMonthlyAverage: forceMonthlyAverage,
+              periodCycles: cycles,
+              aggregatePoints: balancePoints,
+              fullAggregatePoints: fullBalancePoints,
+            ),
+          ),
+          const Divider(height: 28),
+          _buildEmotionSelector(
+            emotionNames,
+            activeEmotion,
+            onEmotionChanged,
+          ),
+          const SizedBox(height: 12),
+          if (hasEmotionData)
+            SizedBox(
+              height: 180,
+              width: double.infinity,
+              child: HistoryChartWidget(
+                records: records,
+                fullRecords: fullRecords,
+                targetEmotion: activeEmotion,
+                useMovingAverage: useMA,
+                forceMonthlyAverage: forceMonthlyAverage,
+                diaryMoodScores: diaryMoodScores,
+                overallMoodLabel: _overallMoodLabel,
+                periodCycles: cycles,
+                dailyEmotionPoints: emotionPoints,
+                fullDailyEmotionPoints: fullEmotionPoints,
+              ),
+            )
+          else
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Text('所選時間範圍內沒有此情緒的資料'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _trendSubheading(String title, bool useMA) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: HealingDesignSystem.adaptivePrimaryText(context),
+          ),
+        ),
+        if (useMA)
+          Text(
+            '使用 7 天移動平均',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: HealingDesignSystem.adaptiveSecondaryText(context),
+            ),
+          ),
+        const SizedBox(height: 4),
+      ],
+    );
+  }
+
+  Widget _buildEmotionSelector(
+    List<String> emotionNames,
+    String activeEmotion,
+    ValueChanged<String> onEmotionChanged,
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).inputDecorationTheme.fillColor ??
+            Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: emotionNames.isEmpty ? null : activeEmotion,
+          isExpanded: true,
+          dropdownColor: Theme.of(context).cardColor,
+          items: emotionNames.isEmpty
+              ? const [DropdownMenuItem(value: null, child: Text('尚無情緒資料'))]
+              : emotionNames
+                  .map((emotion) => DropdownMenuItem(
+                        value: emotion,
+                        child: Text(emotion),
+                      ))
+                  .toList(),
+          onChanged: (value) {
+            if (value != null) onEmotionChanged(value);
+          },
+        ),
+      ),
+    );
+  }
 
   Widget _buildDateRangeDropdown({bool compact = false}) {
     return Column(

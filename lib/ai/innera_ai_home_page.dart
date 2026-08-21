@@ -7,7 +7,6 @@ import '../providers/pro_provider.dart';
 import '../widgets/main_drawer.dart';
 import 'innera_ai_chat_page.dart';
 import 'innera_ai_mode.dart';
-import 'widgets/ai_mode_card.dart';
 
 class InneraAiHomePage extends StatelessWidget {
   const InneraAiHomePage({super.key});
@@ -59,7 +58,6 @@ class InneraAiHomePage extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
             children: [
               _HeroHeader(
-                isPro: isPro,
                 onStart: () => isPro
                     ? _openChat(context, InneraAiMode.emotionalSupport)
                     : _openSubscription(context),
@@ -67,17 +65,7 @@ class InneraAiHomePage extends StatelessWidget {
               const SizedBox(height: 16),
               if (proProvider.loading)
                 const Center(child: CircularProgressIndicator())
-              else if (isPro)
-                ...InneraAiMode.values.map(
-                  (mode) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: AiModeCard(
-                      mode: mode,
-                      onTap: () => _openChat(context, mode),
-                    ),
-                  ),
-                )
-              else
+              else if (!isPro)
                 _ProRequiredCard(
                   onUpgrade: () => _openSubscription(context),
                 ),
@@ -100,9 +88,8 @@ class InneraAiHomePage extends StatelessWidget {
 }
 
 class _HeroHeader extends StatelessWidget {
-  const _HeroHeader({required this.isPro, required this.onStart});
+  const _HeroHeader({required this.onStart});
 
-  final bool isPro;
   final VoidCallback onStart;
 
   @override
@@ -127,7 +114,7 @@ class _HeroHeader extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           Text(
-            '心域 AI',
+            '有什麼想說的？',
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   color: HealingDesignSystem.adaptivePrimaryText(context),
                   fontWeight: FontWeight.w900,
@@ -135,7 +122,7 @@ class _HeroHeader extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '根據你授權的紀錄，協助整理現在與近期的狀態',
+            '不用先選模式，從你現在最想說的開始就好。',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: HealingDesignSystem.adaptiveSecondaryText(context),
                   height: 1.45,
@@ -144,9 +131,8 @@ class _HeroHeader extends StatelessWidget {
           const SizedBox(height: 14),
           FilledButton.icon(
             onPressed: onStart,
-            icon: Icon(
-                isPro ? Icons.chat_rounded : Icons.workspace_premium_rounded),
-            label: Text(isPro ? '開始對話' : '查看 Pro 方案'),
+            icon: const Icon(Icons.chat_bubble_outline_rounded),
+            label: const Text('跟 Innera 說說'),
           ),
         ],
       ),
@@ -202,28 +188,23 @@ class _AiScopeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
       decoration: HealingDesignSystem.adaptiveCardDecoration(context),
-      child: const Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '心域 AI 能做什麼',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-          ),
-          SizedBox(height: 10),
-          Text('• 陪你整理當下的感受與想法'),
-          Text('• 回顧你授權的情緒、睡眠、症狀與日記紀錄'),
-          Text('• 協助建立每日紀錄草稿與整理可討論的重點'),
-          SizedBox(height: 12),
-          Text(
-            '能力限制與重要提醒',
-            style: TextStyle(fontWeight: FontWeight.w800),
-          ),
-          SizedBox(height: 6),
-          Text(
-            'AI 可能產生不完整或不正確的內容，僅供自我覺察與紀錄整理參考；不能診斷疾病、判定病因、調整藥物或取代醫師、心理師及其他專業人員的評估與治療，也不提供緊急醫療服務。',
-            style: TextStyle(height: 1.55),
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        title: Text(
+          '心域 AI 能做什麼',
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: HealingDesignSystem.adaptivePrimaryText(context),
+              ),
+        ),
+        children: const [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '陪你整理當下感受、回顧授權的近期紀錄，並協助整理狀態紀錄。\n\nAI 內容僅供自我覺察與紀錄參考，不能診斷、調整藥物或取代專業評估與緊急服務。',
+              style: TextStyle(height: 1.55),
+            ),
           ),
         ],
       ),

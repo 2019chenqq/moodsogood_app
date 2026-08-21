@@ -78,6 +78,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
   final _conversationService = InneraAiConversationService();
   final _imageService = InneraAiChatImageService();
   final _imagePicker = ImagePicker();
+  final _safetyService = InneraAiSafetyService();
   InneraAiRecordDraft? _recordDraft;
   bool _loadingDraft = false;
   bool _isExtractingDiary = false;
@@ -405,6 +406,17 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     }
     final text = enteredText.isEmpty ? '請幫我閱讀並說明這張照片的內容。' : enteredText;
 
+    final localSafety = _safetyService.assess(text);
+    if (localSafety.level == AiSafetyLevel.normal) {
+      final intendedMode = resolveInneraAiModeIntent(
+        activeMode: _mode,
+        message: text,
+      );
+      if (intendedMode != _mode) {
+        _setActiveMode(intendedMode);
+      }
+    }
+
     setState(() {
       _isSending = true;
       _lastFailedInput = null;
@@ -508,7 +520,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
           .timeout(const Duration(seconds: 70));
       if (!mounted) return;
       InneraAiRecordDraft? nextDraftWithFallback;
-      if (_mode.supportsDailyRecordDraft) {
+      if (_mode.supportsDailyRecordDraft && !response.requiresFixedSafetyUi) {
         final recordDraftPatch = response.recordDraft == null
             ? null
             : Map<String, dynamic>.from(response.recordDraft!);
@@ -519,15 +531,26 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
         final nextDraft =
             (_recordDraft ?? InneraAiRecordDraft.empty(DateTime.now()))
                 .mergePatch(recordDraftPatch, rawUserEntry: text);
-        nextDraftWithFallback = _mode == InneraAiMode.dailyRecord
-            ? nextDraft.mergeExplicitRecordFacts(text)
-            : nextDraft;
+        nextDraftWithFallback = (_mode == InneraAiMode.dailyRecord
+                ? nextDraft.mergeExplicitRecordFacts(text)
+                : nextDraft)
+            .mergeExplicitHealthEventFacts(text, DateTime.now());
         await _draftService.save(nextDraftWithFallback);
       }
       if (!mounted) return;
       setState(() {
         _messages.removeWhere((message) => message.isLoading);
         _activeSafetyLevel = response.safetyLevel;
+        if (response.requiresFixedSafetyUi) {
+          final userMessageIndex = _messages.lastIndexWhere(
+            (message) => message.role == InneraAiMessageRole.user,
+          );
+          if (userMessageIndex >= 0) {
+            _messages[userMessageIndex] = _messages[userMessageIndex].copyWith(
+              safetyLevel: response.safetyLevel,
+            );
+          }
+        }
         if (!response.requiresFixedSafetyUi) {
           _messages.add(
             InneraAiMessage(
@@ -647,8 +670,31 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
   }
 
   Future<void> _showDraftPreview() async {
-    final draft = _recordDraft;
-    if (draft == null) return;
+    final initialDraft = _recordDraft;
+    if (initialDraft == null) return;
+    var draft = initialDraft;
+    if (draft.eventDrafts.isNotEmpty) {
+      setState(() => _isSending = true);
+      try {
+        draft = await _service.summarizeHealthEvents(
+          messages: _messages,
+          draft: draft,
+        );
+        await _draftService.save(draft);
+        if (!mounted) return;
+        setState(() => _recordDraft = draft);
+      } catch (error, stackTrace) {
+        debugPrint('Innera event summary failed: $error');
+        debugPrintStack(stackTrace: stackTrace);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('目前無法整理事件文字，原對話與草稿均已保留。')),
+        );
+        return;
+      } finally {
+        if (mounted) setState(() => _isSending = false);
+      }
+    }
     var workingDraft = draft;
     final bodyInputValidity = <String, bool>{
       'weightKg': true,
@@ -671,6 +717,44 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                 '今天的紀錄草稿',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
+              if (workingDraft.eventDrafts.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text(
+                  '將建立 ${workingDraft.eventDrafts.length} 筆事件紀錄',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 8),
+                ...workingDraft.eventDrafts.map(
+                  (event) => Card(
+                    color: HealingDesignSystem.adaptiveSurface(context),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            event.timeLabel,
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                          const SizedBox(height: 4),
+                          TextFormField(
+                            key: ValueKey('event-summary-${event.id}'),
+                            initialValue: event.note,
+                            minLines: 2,
+                            maxLines: 5,
+                            decoration: const InputDecoration(
+                              labelText: 'AI 整理',
+                              alignLabelWithHint: true,
+                            ),
+                            onChanged: (value) => workingDraft =
+                                workingDraft.withEventSummary(event.id, value),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               Text('情緒', style: Theme.of(context).textTheme.titleSmall),
               if (workingDraft.overallMood != null)
@@ -1006,7 +1090,11 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                         workingDraft.bodyMeasurement?.isValid == false
                     ? null
                     : () => Navigator.pop(context, workingDraft),
-                child: const Text('儲存草稿'),
+                child: Text(
+                  workingDraft.eventDrafts.isEmpty
+                      ? '儲存草稿'
+                      : '確認並建立 ${workingDraft.eventDrafts.length} 筆事件紀錄',
+                ),
               ),
               if (workingDraft.emotions.any(
                 (item) => !item.hasValidDimension || item.score == null,
@@ -1026,12 +1114,22 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     );
     if (confirmedDraft == null || !mounted) return;
     try {
-      await _draftService.save(confirmedDraft);
+      if (confirmedDraft.eventDrafts.isEmpty) {
+        await _draftService.save(confirmedDraft);
+      } else {
+        await _draftService.confirmHealthEvents(confirmedDraft);
+      }
       if (!mounted) return;
-      setState(() => _recordDraft = confirmedDraft);
+      setState(() => _recordDraft = confirmedDraft.copyWith(
+            confirmed: confirmedDraft.eventDrafts.isNotEmpty,
+          ));
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('草稿已儲存，可以繼續補充；尚未加入每日紀錄。'),
+        SnackBar(
+          content: Text(
+            confirmedDraft.eventDrafts.isEmpty
+                ? '草稿已儲存，可以繼續補充；尚未加入每日紀錄。'
+                : '已建立 ${confirmedDraft.eventDrafts.length} 筆事件紀錄。',
+          ),
         ),
       );
     } catch (error, stackTrace) {
@@ -1324,52 +1422,16 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    await _persistConversation();
-    if (!mounted) return;
+    _setActiveMode(selected);
+  }
+
+  void _setActiveMode(InneraAiMode nextMode) {
+    if (!mounted || nextMode == _mode) return;
     setState(() {
-      _mode = selected;
-      _loadingDraft = true;
-      _activeSafetyLevel = AiSafetyLevel.normal;
+      _mode = nextMode;
       _hasLoggedTaskStart = false;
     });
-    try {
-      final conversation = await _conversationService.loadToday(mode: selected);
-      final draft = selected.supportsDailyRecordDraft
-          ? await _draftService.loadOrCreateToday()
-          : null;
-      final imageMigration = await _migrateLegacyImages(
-        conversation?.messages ?? const <InneraAiMessage>[],
-      );
-      if (!mounted) return;
-      setState(() {
-        _messages
-          ..clear()
-          ..addAll(
-            imageMigration.messages.isEmpty
-                ? [_welcomeMessage()]
-                : imageMigration.messages,
-          );
-        _recordDraft = draft;
-        _activeSafetyLevel = _messages.last.safetyLevel;
-        _loadingDraft = false;
-      });
-      if (imageMigration.hasChanges) {
-        final saved = await _persistConversation();
-        await _finishImageMigration(imageMigration, saved: saved);
-      }
-    } catch (error, stackTrace) {
-      debugPrint('InneraAiChatPage mode conversation load failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
-      if (!mounted) return;
-      setState(() {
-        _messages
-          ..clear()
-          ..add(_welcomeMessage());
-        _loadingDraft = false;
-      });
-    }
-    await _persistConversation();
-    _scrollToBottom();
+    unawaited(_persistConversation());
   }
 
   @override
@@ -1439,7 +1501,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                   _scrollToBottom();
                 },
               ),
-              if (_mode.supportsDailyRecordDraft &&
+              if (_mode == InneraAiMode.dailyRecord &&
                   !_loadingDraft &&
                   _recordDraft != null)
                 AiRecordDraftCard(

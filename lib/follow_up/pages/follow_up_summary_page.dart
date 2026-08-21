@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -40,6 +41,8 @@ class FollowUpTopicOption {
   final String? hint;
 }
 
+enum _FollowUpFailureAction { retry, skip }
+
 class FollowUpSummaryPage extends StatefulWidget {
   const FollowUpSummaryPage({super.key, this.aiOutput});
 
@@ -65,6 +68,9 @@ class _FollowUpSummaryPageState extends State<FollowUpSummaryPage> {
   bool _isLoadingPreparation = true;
   bool _draftDirty = false;
   bool _allowDiaryReference = false;
+  List<DiaryEntry> _availableDiaries = const [];
+  final Set<String> _selectedDiaryDates = {};
+  bool _loadingDiaries = false;
   int _draftRevision = 0;
   String? _draftStatus;
 
@@ -145,7 +151,9 @@ class _FollowUpSummaryPageState extends State<FollowUpSummaryPage> {
         ..clear()
         ..addAll(selectedTypes);
       _isLoadingPreparation = false;
-      _allowDiaryReference = workspace.aiAllowDiaryReference;
+      // Diary consent is intentionally session-scoped. A previous broad
+      // consent must never silently select new or existing diary entries.
+      _allowDiaryReference = false;
       _draftStatus = selectedTypes.isNotEmpty ||
               _discussionDetailsController.text.trim().isNotEmpty ||
               _additionalNotesController.text.trim().isNotEmpty
@@ -227,14 +235,17 @@ class _FollowUpSummaryPageState extends State<FollowUpSummaryPage> {
   Future<List<Map<String, dynamic>>> _loadDiaryContext(
     FollowUpAiV1Input input,
   ) async {
-    final entries = await DiaryRepository().listInRange(
-      input.statistics.periodStart,
-      input.statistics.periodEnd,
-    );
+    final entries = _availableDiaries.isNotEmpty
+        ? _availableDiaries
+        : await DiaryRepository().listInRange(
+            input.statistics.periodStart,
+            input.statistics.periodEnd,
+          );
     String date(DateTime value) => '${value.year.toString().padLeft(4, '0')}-'
         '${value.month.toString().padLeft(2, '0')}-'
         '${value.day.toString().padLeft(2, '0')}';
     return entries
+        .where((entry) => _selectedDiaryDates.contains(date(entry.date)))
         .map((entry) => <String, dynamic>{
               'date': date(entry.date),
               if (entry.title.trim().isNotEmpty) 'title': entry.title.trim(),
@@ -255,6 +266,93 @@ class _FollowUpSummaryPageState extends State<FollowUpSummaryPage> {
         .toList(growable: false);
   }
 
+  String _diaryDate(DateTime value) =>
+      '${value.year.toString().padLeft(4, '0')}-'
+      '${value.month.toString().padLeft(2, '0')}-'
+      '${value.day.toString().padLeft(2, '0')}';
+
+  Future<void> _chooseDiaries() async {
+    setState(() => _loadingDiaries = true);
+    try {
+      final input = await _aggregator.build(
+        discussionTopics: _discussionTopics,
+        discussionDetails: _discussionDetailsController.text,
+        additionalNotes: _additionalNotesController.text,
+        currentAppointmentDate: _selectedDate,
+      );
+      final diaries = await DiaryRepository().listInRange(
+        input.statistics.periodStart,
+        input.statistics.periodEnd,
+      );
+      if (!mounted) return;
+      _availableDiaries = diaries;
+      final selected = Set<String>.from(_selectedDiaryDates)
+        ..removeWhere(
+          (date) => !diaries.any((entry) => _diaryDate(entry.date) == date),
+        );
+      final result = await showDialog<Set<String>>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('選擇要提供給 AI 的日記'),
+            content: SizedBox(
+              width: 520,
+              child: diaries.isEmpty
+                  ? const Text('本次回診統計期間內沒有日記。')
+                  : ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: diaries.length,
+                      itemBuilder: (context, index) {
+                        final entry = diaries[index];
+                        final date = _diaryDate(entry.date);
+                        final title = entry.title.trim();
+                        return CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: selected.contains(date),
+                          title: Text(title.isEmpty ? date : '$date　$title'),
+                          subtitle: const Text('勾選後，這篇日記的文字欄位會提供給 AI 整理'),
+                          onChanged: (checked) => setDialogState(() {
+                            if (checked == true) {
+                              selected.add(date);
+                            } else {
+                              selected.remove(date);
+                            }
+                          }),
+                        );
+                      },
+                    ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, selected),
+                child: const Text('確認選擇'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (!mounted || result == null) return;
+      setState(() {
+        _selectedDiaryDates
+          ..clear()
+          ..addAll(result);
+        _allowDiaryReference = result.isNotEmpty;
+      });
+      _queueDraftSave();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('目前無法載入日記：${_errorMessage(error)}')),
+      );
+    } finally {
+      if (mounted) setState(() => _loadingDiaries = false);
+    }
+  }
+
   Future<void> _startAiSummary() async {
     if (_selectedTopics.isEmpty &&
         _discussionDetailsController.text.trim().isEmpty &&
@@ -262,6 +360,12 @@ class _FollowUpSummaryPageState extends State<FollowUpSummaryPage> {
         !_allowDiaryReference) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('請至少選擇一個主題或輸入想討論的內容')),
+      );
+      return;
+    }
+    if (_allowDiaryReference && _selectedDiaryDates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('請先選擇要提供給 AI 的日記')),
       );
       return;
     }
@@ -294,8 +398,27 @@ class _FollowUpSummaryPageState extends State<FollowUpSummaryPage> {
         );
       }
       if (!mounted) return;
-      final questions = await _aiService.generateFollowUpQuestions(input);
-      if (!mounted) return;
+      List<String> questions;
+      while (true) {
+        final questionResult =
+            await _aiService.generateFollowUpQuestions(input);
+        if (!mounted) return;
+        if (questionResult.isSuccess) {
+          questions = questionResult.questions!;
+          break;
+        }
+        final action = await _showFollowUpQuestionFailure(
+          questionResult.error,
+        );
+        if (!mounted) return;
+        if (action == _FollowUpFailureAction.retry) continue;
+        if (action == _FollowUpFailureAction.skip) {
+          questions = const [];
+          break;
+        }
+        setState(() => _isSaving = false);
+        return;
+      }
       final answers = questions.isEmpty
           ? const <String, String>{}
           : await _showFollowUpQuestions(questions);
@@ -366,6 +489,9 @@ class _FollowUpSummaryPageState extends State<FollowUpSummaryPage> {
 
   Future<Map<String, String>?> _showFollowUpQuestions(
       List<String> questions) async {
+    if (kDebugMode) {
+      debugPrint('FollowUpSummaryPage entered follow-up UI=true');
+    }
     final controllers = [for (final _ in questions) TextEditingController()];
     final result = await showDialog<Map<String, String>>(
       context: context,
@@ -418,6 +544,29 @@ class _FollowUpSummaryPageState extends State<FollowUpSummaryPage> {
       controller.dispose();
     }
     return result;
+  }
+
+  Future<_FollowUpFailureAction?> _showFollowUpQuestionFailure(Object? error) {
+    return showDialog<_FollowUpFailureAction>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('AI 補問暫時無法完成'),
+        content: kDebugMode && error != null
+            ? Text('Debug code：${error.runtimeType}: $error')
+            : null,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, _FollowUpFailureAction.retry),
+            child: const Text('重試'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, _FollowUpFailureAction.skip),
+            child: const Text('略過並產生摘要'),
+          ),
+        ],
+      ),
+    );
   }
 
   String _errorMessage(Object error) {
@@ -700,19 +849,38 @@ class _FollowUpSummaryPageState extends State<FollowUpSummaryPage> {
           _SectionCard(
             title: '日記內容',
             icon: Icons.auto_stories_outlined,
-            child: SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('允許 AI 參考本次回診期間的日記內容'),
-              subtitle: const Text(
-                '預設關閉；只讀取本次統計期間，產生的候選重點需由你勾選後才會加入摘要。',
-              ),
-              value: _allowDiaryReference,
-              onChanged: _isLoadingPreparation
-                  ? null
-                  : (value) {
-                      setState(() => _allowDiaryReference = value);
-                      _queueDraftSave();
-                    },
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('預設不提供日記。只有你逐篇勾選的日記才會交給 AI 整理。'),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  key: const ValueKey('choose-follow-up-diaries'),
+                  onPressed: _isLoadingPreparation || _loadingDiaries
+                      ? null
+                      : _chooseDiaries,
+                  icon: _loadingDiaries
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.checklist_rounded),
+                  label: Text(
+                    _selectedDiaryDates.isEmpty
+                        ? '選擇日記'
+                        : '已選 ${_selectedDiaryDates.length} 篇，重新選擇',
+                  ),
+                ),
+                if (_selectedDiaryDates.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    (_selectedDiaryDates.toList()..sort()).join('、'),
+                    style: HealingDesignSystem.bodySmall.copyWith(
+                      color: HealingDesignSystem.adaptiveSecondaryText(context),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
           if (_draftStatus != null) ...[

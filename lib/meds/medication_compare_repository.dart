@@ -79,7 +79,8 @@ class MedicationCompareRepository {
       String uid) async {
     final records = await _localDb.getAdjustmentRecords(uid);
     return records.expand(MedicationAdjustmentEvent.fromRecord).toList()
-      ..sort((left, right) => right.date.compareTo(left.date));
+      ..sort((left, right) =>
+          right.effectiveDateTime.compareTo(left.effectiveDateTime));
   }
 
   Future<List<MedicationCompareOption>> getCompareOptions(

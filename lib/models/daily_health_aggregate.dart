@@ -48,6 +48,14 @@ class DailyValueSummary {
           observations.length
       : null;
 
+  double? get median {
+    if (!hasCompatibleScale || observations.isEmpty) return null;
+    final values = observations.map((item) => item.value).toList()..sort();
+    final middle = values.length ~/ 2;
+    if (values.length.isOdd) return values[middle];
+    return (values[middle - 1] + values[middle]) / 2;
+  }
+
   double? get min => hasCompatibleScale && observations.isNotEmpty
       ? observations
           .map((item) => item.value)
