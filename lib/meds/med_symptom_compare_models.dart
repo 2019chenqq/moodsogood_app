@@ -230,6 +230,7 @@ class MedicationAdjustmentEvent {
     required this.medDocId,
     required this.medName,
     required this.date,
+    DateTime? effectiveDateTime,
     required this.type,
     this.oldDose,
     this.newDose,
@@ -246,13 +247,14 @@ class MedicationAdjustmentEvent {
     this.origin = AdjustmentEventOrigin.persisted,
     this.source,
     this.inferenceReason,
-  });
+  }) : effectiveDateTime = effectiveDateTime ?? date;
 
   final String adjustmentId;
   final int itemIndex;
   final String medDocId;
   final String medName;
   final DateTime date;
+  final DateTime effectiveDateTime;
   final String type;
   final double? oldDose;
   final double? newDose;
@@ -281,9 +283,10 @@ class MedicationAdjustmentEvent {
   double? get resolvedNewTotalDose =>
       newDose ?? _multiply(newDosePerUnit, newPillCount);
 
-  String get dateLabel => '${date.year.toString().padLeft(4, '0')}/'
-      '${date.month.toString().padLeft(2, '0')}/'
-      '${date.day.toString().padLeft(2, '0')}';
+  String get dateLabel =>
+      '${effectiveDateTime.year.toString().padLeft(4, '0')}/'
+      '${effectiveDateTime.month.toString().padLeft(2, '0')}/'
+      '${effectiveDateTime.day.toString().padLeft(2, '0')}';
 
   String get typeLabel => MedicationAdjustmentFormatter.typeLabel(this);
 
@@ -334,6 +337,7 @@ class MedicationAdjustmentEvent {
   ) {
     final adjustmentId = (record['id'] ?? '').toString();
     final date = _date(record['date']);
+    final effectiveDateTime = _date(record['effectiveDateTime']) ?? date;
     final items = record['items'];
     if (adjustmentId.isEmpty || date == null || items is! List) return const [];
 
@@ -350,6 +354,7 @@ class MedicationAdjustmentEvent {
         medDocId: (item['medDocId'] ?? item['medId'] ?? '').toString(),
         medName: (item['name'] ?? item['medName'] ?? '未命名藥物').toString().trim(),
         date: date,
+        effectiveDateTime: effectiveDateTime,
         type: type,
         oldDose: _number(item['oldDose']),
         newDose: _number(item['newDose']),
@@ -1541,6 +1546,18 @@ class MedicationComparisonWindow {
       afterEndExclusive: afterStart.add(Duration(days: days)),
     );
   }
+
+  factory MedicationComparisonWindow.timestampLevel({
+    required DateTime effectiveDateTime,
+    required int days,
+  }) =>
+      MedicationComparisonWindow(
+        beforeStart: effectiveDateTime.subtract(Duration(days: days)),
+        beforeEndExclusive: effectiveDateTime,
+        adjustmentDay: effectiveDateTime,
+        afterStart: effectiveDateTime,
+        afterEndExclusive: effectiveDateTime.add(Duration(days: days)),
+      );
 }
 
 class LogicalDailyRecord {

@@ -102,7 +102,7 @@ class _UnifiedCalendarWidgetState extends State<UnifiedCalendarWidget> {
 
     const dailyDot = Color(0xFF4A90E2);
     const diaryDot = Color(0xFFC9B6FF);
-    const emotionDot = Color(0xFF58B8C0);
+    const quickRecordDot = Color(0xFF58B8C0);
     const symptomDot = Color(0xFFF4B183);
     const sleepDot = Color(0xFF9AB3F5);
     const periodAssistDot = Color(0x664A90E2);
@@ -113,21 +113,18 @@ class _UnifiedCalendarWidgetState extends State<UnifiedCalendarWidget> {
       case UnifiedCalendarMode.record:
         return <Color>[
           if (summary.hasDailyRecord || summary.hasQuickRecord) dailyDot,
-          if (summary.hasEmotionData) emotionDot,
+          if (summary.hasEmotionData) quickRecordDot,
           if (summary.hasSymptomData) symptomDot,
           if (summary.hasSleepData) sleepDot,
         ].take(3).toList();
       case UnifiedCalendarMode.period:
         return summary.hasDailyRecord ? const [periodAssistDot] : const [];
       case UnifiedCalendarMode.overview:
-        final dots = <Color>[
-          if (summary.hasDailyRecord || summary.hasQuickRecord) dailyDot,
+        return <Color>[
           if (summary.hasDiary) diaryDot,
-          if (summary.hasEmotionData) emotionDot,
-          if (summary.hasSymptomData) symptomDot,
-          if (summary.hasSleepData) sleepDot,
+          if (summary.hasQuickRecord) quickRecordDot,
+          if (summary.hasDailyCheckIn) dailyDot,
         ];
-        return dots.take(3).toList();
     }
   }
 

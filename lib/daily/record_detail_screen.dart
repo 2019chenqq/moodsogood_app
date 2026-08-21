@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:convert';
 import 'edit_record_page.dart';
 import '../utils/date_helper.dart';
+import '../models/daily_check_in.dart';
 import '../models/daily_record.dart';
 import '../models/health_event.dart';
 import 'daily_record_repository.dart';
@@ -18,13 +19,27 @@ import 'unified_body_measurement_repository.dart';
 import 'health_event_repository.dart';
 import 'quick_record_editor.dart';
 import 'quick_record_detail_section.dart';
+import 'daily_check_in_service.dart';
 
 class _RecordDetailData {
-  const _RecordDetailData({required this.record, required this.events});
+  const _RecordDetailData({
+    required this.record,
+    required this.events,
+    required this.checkIn,
+  });
 
   final DailyRecord? record;
   final List<HealthEvent> events;
+  final DailyCheckIn? checkIn;
 }
+
+List<Emotion> legacyEmotionsWithData(DailyRecord record) => record.emotions
+    .where((emotion) => emotion.name.trim().isNotEmpty && emotion.value != null)
+    .toList(growable: false);
+
+List<String> legacySymptomsWithData(DailyRecord record) => record.symptoms
+    .where((symptom) => symptom.trim().isNotEmpty)
+    .toList(growable: false);
 
 List<HealthEvent> sortHealthEventsByTimestamp(Iterable<HealthEvent> events) {
   return List<HealthEvent>.from(events)
@@ -139,16 +154,27 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
   Future<_RecordDetailData> _loadDetailData() async {
     final date = DateHelper.parseIdToDate(widget.docId);
     if (date == null) {
-      return const _RecordDetailData(record: null, events: []);
+      return const _RecordDetailData(record: null, events: [], checkIn: null);
     }
     final results = await Future.wait<dynamic>([
       _loadMergedRecord(),
       _loadQuickRecordsForDate(date),
+      _loadDailyCheckIn(date),
     ]);
     return _RecordDetailData(
       record: results[0] as DailyRecord?,
       events: sortHealthEventsByTimestamp(results[1] as List<HealthEvent>),
+      checkIn: results[2] as DailyCheckIn?,
     );
+  }
+
+  Future<DailyCheckIn?> _loadDailyCheckIn(DateTime date) async {
+    try {
+      return await DailyCheckInService().getForDate(date);
+    } catch (error) {
+      debugPrint('DailyCheckIn detail load failed: $error');
+      return null;
+    }
   }
 
   Future<List<HealthEvent>> _loadQuickRecordsForDate(DateTime date) async {
@@ -499,7 +525,9 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
 
         final detail = snap.data;
         if (detail == null ||
-            (detail.record == null && detail.events.isEmpty)) {
+            (detail.record == null &&
+                detail.events.isEmpty &&
+                detail.checkIn == null)) {
           return const Scaffold(body: Center(child: Text('找不到資料')));
         }
 
@@ -508,6 +536,9 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
         final record =
             detail.record ?? DailyRecord(id: widget.docId, date: date);
         final quickRecords = detail.events;
+        final checkIn = detail.checkIn;
+        final legacyEmotions = legacyEmotionsWithData(record);
+        final legacySymptoms = legacySymptomsWithData(record);
 
         final sleep = record.sleep;
 
@@ -565,42 +596,65 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
           body: ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              // ===== 情緒 =====
-              _sectionHeader(context, '情緒'),
-              Container(
-                margin: const EdgeInsets.only(bottom: 18),
-                decoration: HealingDesignSystem.adaptiveCardDecoration(
-                  context,
-                  bgColor: HealingDesignSystem.adaptiveSurface(context),
-                ),
-                child: Column(
-                  children: [
-                    if (record.emotions.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text('無情緒紀錄',
-                            style: HealingDesignSystem.bodySmall.copyWith(
-                                color:
-                                    HealingDesignSystem.adaptiveSecondaryText(
-                                        context))),
+              if (checkIn != null) ...[
+                _sectionHeader(context, '每日 Check-in'),
+                Container(
+                  margin: const EdgeInsets.only(bottom: 18),
+                  decoration: HealingDesignSystem.adaptiveCardDecoration(
+                    context,
+                    bgColor: HealingDesignSystem.adaptiveSurface(context),
+                  ),
+                  child: Column(
+                    children: [
+                      _detailTile(
+                        context,
+                        '整體心情',
+                        '${checkIn.overallMood} / 5',
                       ),
-                    ...record.emotions.map((e) => ListTile(
-                          title: Text(e.name,
-                              style: HealingDesignSystem.bodyMedium.copyWith(
-                                  color:
-                                      HealingDesignSystem.adaptivePrimaryText(
-                                          context))),
-                          trailing: Text(
-                            e.value == null ? '-' : '${e.value}',
-                            style: HealingDesignSystem.bodyMedium.copyWith(
-                                color: HealingDesignSystem.adaptivePrimaryText(
-                                    context),
-                                fontWeight: FontWeight.w600),
-                          ),
-                        )),
-                  ],
+                      _detailTile(
+                        context,
+                        '整體健康狀態',
+                        '${checkIn.healthStatus} / 5',
+                      ),
+                      _detailTile(
+                        context,
+                        '今日無特殊事件或症狀',
+                        checkIn.noSpecialEvent ? '是' : '否',
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+              ],
+              // ===== 情緒 =====
+              if (legacyEmotions.isNotEmpty) ...[
+                _sectionHeader(context, '情緒'),
+                Container(
+                  margin: const EdgeInsets.only(bottom: 18),
+                  decoration: HealingDesignSystem.adaptiveCardDecoration(
+                    context,
+                    bgColor: HealingDesignSystem.adaptiveSurface(context),
+                  ),
+                  child: Column(
+                    children: legacyEmotions
+                        .map((e) => ListTile(
+                              title: Text(e.name,
+                                  style: HealingDesignSystem.bodyMedium
+                                      .copyWith(
+                                          color: HealingDesignSystem
+                                              .adaptivePrimaryText(context))),
+                              trailing: Text(
+                                e.value == null ? '-' : '${e.value}',
+                                style: HealingDesignSystem.bodyMedium.copyWith(
+                                    color:
+                                        HealingDesignSystem.adaptivePrimaryText(
+                                            context),
+                                    fontWeight: FontWeight.w600),
+                              ),
+                            ))
+                        .toList(),
+                  ),
+                ),
+              ],
 
               if (record.stateChanges.isNotEmpty) ...[
                 _sectionHeader(context, '今日狀態變化'),
@@ -626,42 +680,26 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
               ],
 
               // ===== 症狀 =====
-              _sectionHeader(context, '症狀'),
-              Container(
-                margin: const EdgeInsets.only(bottom: 18),
-                decoration: HealingDesignSystem.adaptiveCardDecoration(
-                  context,
-                  bgColor: HealingDesignSystem.adaptiveSurface(context),
+              if (legacySymptoms.isNotEmpty) ...[
+                _sectionHeader(context, '症狀'),
+                Container(
+                  margin: const EdgeInsets.only(bottom: 18),
+                  decoration: HealingDesignSystem.adaptiveCardDecoration(
+                    context,
+                    bgColor: HealingDesignSystem.adaptiveSurface(context),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 14),
+                    child: Text(
+                      legacySymptoms.join('、'),
+                      style: HealingDesignSystem.bodyMedium.copyWith(
+                          color:
+                              HealingDesignSystem.adaptivePrimaryText(context)),
+                    ),
+                  ),
                 ),
-                child: record.symptoms.isEmpty
-                    ? Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Center(
-                          child: Text(
-                            '無症狀紀錄',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: HealingDesignSystem.adaptiveSecondaryText(
-                                  context),
-                              fontSize: 12,
-                              height: 1.4,
-                            ),
-                          ),
-                        ),
-                      )
-                    : Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 14),
-                        child: Text(
-                          record.symptoms
-                              .where((s) => s.trim().isNotEmpty)
-                              .join('、'),
-                          style: HealingDesignSystem.bodyMedium.copyWith(
-                              color: HealingDesignSystem.adaptivePrimaryText(
-                                  context)),
-                        ),
-                      ),
-              ),
+              ],
 
               if (record.bodyMeasurement?.hasData == true) ...[
                 _sectionHeader(context, '身體數據'),
@@ -850,6 +888,39 @@ Widget _sectionHeader(BuildContext context, String title,
 
 /// 明細行
 Widget _detailTile(BuildContext context, String label, String value) {
+  if (value.contains('\n')) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 48),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: HealingDesignSystem.bodyMedium.copyWith(
+                  color: HealingDesignSystem.adaptiveSecondaryText(context),
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                value,
+                textAlign: TextAlign.end,
+                style: HealingDesignSystem.bodyMedium.copyWith(
+                  color: HealingDesignSystem.adaptivePrimaryText(context),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   return ListTile(
     dense: true,
     title: Text(label,

@@ -29,20 +29,49 @@ class MedicationCheckinScheduleResolver {
   }) {
     final medicationId = (medication['id'] ?? '').toString();
     final sameDayItems = <({DateTime date, Map<String, dynamic> item})>[];
+    final futureItems = <({DateTime date, Map<String, dynamic> item})>[];
     for (final record in adjustmentRecords) {
-      final date = _date(record['date']);
-      if (date == null || !_sameDay(date, selectedDate)) continue;
+      final date = _date(record['effectiveDateTime']) ?? _date(record['date']);
+      if (date == null) continue;
       final rawItems = record['items'] ?? record['changes'];
       if (rawItems is! Iterable) continue;
       for (final raw in rawItems.whereType<Map>()) {
         final item = Map<String, dynamic>.from(raw);
         if ((item['medDocId'] ?? '').toString() == medicationId) {
-          sameDayItems.add((date: date, item: item));
+          if (_sameDay(date, selectedDate)) {
+            sameDayItems.add((date: date, item: item));
+          } else if (date.isAfter(DateTime(
+            selectedDate.year,
+            selectedDate.month,
+            selectedDate.day,
+            23,
+            59,
+            59,
+            999,
+          ))) {
+            futureItems.add((date: date, item: item));
+          }
         }
       }
     }
     sameDayItems.sort((a, b) => a.date.compareTo(b.date));
     if (sameDayItems.isEmpty) {
+      futureItems.sort((a, b) => a.date.compareTo(b.date));
+      if (futureItems.isNotEmpty) {
+        final future = futureItems.first.item;
+        if ((future['type'] ?? '').toString() == 'added') return const [];
+        final oldTimes = _strings(future['oldTimes']);
+        return oldTimes
+            .map((slot) => MedicationCheckinScheduleSnapshot(
+                  slot: slot,
+                  dose: future['oldDose'],
+                  dosePerUnit: future['oldDosePerUnit'],
+                  pillCount: future['oldPillCount'],
+                  unit:
+                      (future['oldUnit'] ?? future['unit'] ?? 'mg').toString(),
+                ))
+            .toList();
+      }
       if (medication['isActive'] == false) return const [];
       return _currentSnapshots(medication);
     }

@@ -4,6 +4,7 @@ import '../daily/emotion_dimensions.dart';
 import '../daily/daily_state_dimensions.dart';
 import '../daily/symptom_definitions.dart';
 import '../models/daily_record.dart';
+import 'innera_ai_health_event_draft.dart';
 
 enum AiDraftSource {
   explicitUserInput,
@@ -109,6 +110,14 @@ Set<String> _symptomNamesFromText(String text) => {
       for (final rule in _symptomPatterns.entries)
         if (RegExp(rule.value).hasMatch(text)) rule.key,
     };
+
+bool mentionsPreviousDaySleep(String text) {
+  const sleepTerms = r'睡眠|入睡|起床|睡覺|難睡|難入睡|睡不著|睡不好|沒睡好|早醒|半夜.*醒|睡睡醒醒';
+  return RegExp('昨天[^，。！？\\n]{0,20}($sleepTerms)').hasMatch(text) ||
+      RegExp('($sleepTerms)[^，。！？\\n]{0,20}昨天').hasMatch(text) ||
+      RegExp('昨晚[^，。！？\\n]{0,20}($sleepTerms)').hasMatch(text) ||
+      RegExp('($sleepTerms)[^，。！？\\n]{0,20}昨晚').hasMatch(text);
+}
 
 class AiEmotionDraft {
   const AiEmotionDraft({
@@ -363,6 +372,7 @@ class InneraAiRecordDraft {
     this.bodyMeasurement,
     this.sleep = const AiSleepDraft(),
     this.events = const [],
+    this.eventDrafts = const [],
     this.rawUserEntries = const [],
     this.diaryText = '',
     this.missingFields = const [],
@@ -380,6 +390,7 @@ class InneraAiRecordDraft {
   final BodyMeasurement? bodyMeasurement;
   final AiSleepDraft sleep;
   final List<String> events;
+  final List<InneraAiHealthEventDraft> eventDrafts;
   final List<String> rawUserEntries;
   final String diaryText;
   final List<String> missingFields;
@@ -444,6 +455,14 @@ class InneraAiRecordDraft {
       bodyMeasurement: _bodyMeasurement(map['bodyMeasurement']),
       sleep: AiSleepDraft.fromMap(_map(map['sleep'])),
       events: eventSet.toList(),
+      eventDrafts: (map['eventDrafts'] as List?)
+              ?.whereType<Map>()
+              .map((item) => InneraAiHealthEventDraft.fromMap(
+                    Map<String, dynamic>.from(item),
+                  ))
+              .where((item) => item.id.isNotEmpty && item.hasContent)
+              .toList() ??
+          const [],
       rawUserEntries: _strings(map['rawUserEntries']),
       diaryText: (map['diaryText'] ?? '').toString().trim(),
       missingFields: _strings(map['missingFields'])
@@ -467,6 +486,7 @@ class InneraAiRecordDraft {
         'bodyMeasurement': bodyMeasurement?.toJson(),
         'sleep': sleep.toMap(),
         'events': events,
+        'eventDrafts': eventDrafts.map((item) => item.toMap()).toList(),
         'rawUserEntries': rawUserEntries,
         'diaryText': diaryText,
         'missingFields': missingFields,
@@ -487,6 +507,7 @@ class InneraAiRecordDraft {
         'bodyMeasurement': bodyMeasurement?.toJson(),
         'sleep': sleep.toMap(),
         'events': events,
+        'eventDrafts': eventDrafts.map((item) => item.toMap()).toList(),
         'rawUserEntries': rawUserEntries,
         'diaryText': diaryText,
         'missingFields': missingFields,
@@ -524,6 +545,12 @@ class InneraAiRecordDraft {
     if (rawUserEntry != null && rawUserEntry.trim().isNotEmpty) {
       entries.add(rawUserEntry.trim());
     }
+    final eventDraftMap = <String, InneraAiHealthEventDraft>{
+      for (final item in eventDrafts) item.id: item,
+    };
+    for (final item in parsed.eventDrafts) {
+      eventDraftMap[item.id] = eventDraftMap[item.id]?.merge(item) ?? item;
+    }
     return InneraAiRecordDraft(
       dateKey: dateKey,
       overallMood: parsed.overallMood ?? overallMood,
@@ -536,6 +563,7 @@ class InneraAiRecordDraft {
       ),
       sleep: sleep.merge(parsed.sleep),
       events: {...events, ...parsed.events}.toList(),
+      eventDrafts: eventDraftMap.values.toList(),
       rawUserEntries: entries,
       diaryText: parsed.diaryText.isNotEmpty ? parsed.diaryText : diaryText,
       missingFields:
@@ -545,6 +573,32 @@ class InneraAiRecordDraft {
       hasExistingRecord: hasExistingRecord,
     );
   }
+
+  InneraAiRecordDraft mergeExplicitHealthEventFacts(
+    String rawUserEntry,
+    DateTime messageTime,
+  ) =>
+      InneraAiRecordDraft(
+        dateKey: dateKey,
+        overallMood: overallMood,
+        emotions: emotions,
+        symptoms: symptoms,
+        stateChanges: stateChanges,
+        bodyMeasurement: bodyMeasurement,
+        sleep: sleep,
+        events: events,
+        eventDrafts: mergeExplicitHealthEventDrafts(
+          existing: eventDrafts,
+          text: rawUserEntry,
+          messageTime: messageTime,
+        ),
+        rawUserEntries: rawUserEntries,
+        diaryText: diaryText,
+        missingFields: missingFields,
+        updatedAt: DateTime.now(),
+        confirmed: false,
+        hasExistingRecord: hasExistingRecord,
+      );
 
   /// Deterministic compatibility fallback for explicit facts. The backend
   /// remains authoritative; these declarative rules prevent a partial/older
@@ -696,6 +750,7 @@ class InneraAiRecordDraft {
         naps: sleep.naps,
       ),
       events: eventSet.toList(),
+      eventDrafts: eventDrafts,
       rawUserEntries: rawUserEntries,
       diaryText: diaryText,
       missingFields: {
@@ -734,6 +789,7 @@ class InneraAiRecordDraft {
       bodyMeasurement: bodyMeasurement,
       sleep: sleep,
       events: events,
+      eventDrafts: eventDrafts,
       rawUserEntries: rawUserEntries,
       diaryText: diaryText,
       missingFields:
@@ -767,6 +823,7 @@ class InneraAiRecordDraft {
       bodyMeasurement: bodyMeasurement,
       sleep: sleep,
       events: events,
+      eventDrafts: eventDrafts,
       rawUserEntries: rawUserEntries,
       diaryText: diaryText,
       missingFields: missingFields,
@@ -785,6 +842,7 @@ class InneraAiRecordDraft {
         bodyMeasurement: bodyMeasurement,
         sleep: sleep,
         events: events,
+        eventDrafts: eventDrafts,
         rawUserEntries: rawUserEntries,
         diaryText: diaryText,
         missingFields:
@@ -811,6 +869,28 @@ class InneraAiRecordDraft {
         replaceBodyMeasurement: true,
       );
 
+  InneraAiRecordDraft withEventSummary(String eventId, String summary) =>
+      InneraAiRecordDraft(
+        dateKey: dateKey,
+        overallMood: overallMood,
+        emotions: emotions,
+        symptoms: symptoms,
+        stateChanges: stateChanges,
+        bodyMeasurement: bodyMeasurement,
+        sleep: sleep,
+        events: events,
+        eventDrafts: eventDrafts
+            .map((item) =>
+                item.id == eventId ? item.copyWith(note: summary.trim()) : item)
+            .toList(),
+        rawUserEntries: rawUserEntries,
+        diaryText: diaryText,
+        missingFields: missingFields,
+        updatedAt: DateTime.now(),
+        confirmed: false,
+        hasExistingRecord: hasExistingRecord,
+      );
+
   InneraAiRecordDraft _copyWithRecordFields({
     Map<String, int>? stateChanges,
     BodyMeasurement? bodyMeasurement,
@@ -826,6 +906,7 @@ class InneraAiRecordDraft {
             replaceBodyMeasurement ? bodyMeasurement : this.bodyMeasurement,
         sleep: sleep,
         events: events,
+        eventDrafts: eventDrafts,
         rawUserEntries: rawUserEntries,
         diaryText: diaryText,
         missingFields: missingFields,
@@ -846,6 +927,7 @@ class InneraAiRecordDraft {
       bodyMeasurement: bodyMeasurement,
       sleep: sleep,
       events: events,
+      eventDrafts: eventDrafts,
       rawUserEntries: [...rawUserEntries, entry],
       diaryText: diaryText,
       missingFields: missingFields,
@@ -864,6 +946,7 @@ class InneraAiRecordDraft {
         bodyMeasurement: bodyMeasurement,
         sleep: sleep,
         events: events,
+        eventDrafts: eventDrafts,
         rawUserEntries: rawUserEntries,
         diaryText: diaryText,
         missingFields: missingFields,

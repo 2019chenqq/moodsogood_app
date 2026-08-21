@@ -2,11 +2,16 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../daily/daily_check_in_page.dart';
+import '../daily/daily_record_history.dart';
 import '../daily/record_detail_screen.dart';
 import '../diary/diary_page_demo.dart';
 import '../models/calendar_day_summary.dart';
-import '../services/ai_feedback_service.dart';
+import '../models/life_timeline_item.dart';
+import '../meds/record_adjustment_history_page.dart';
 import '../services/calendar_summary_service.dart';
+import '../services/life_timeline_service.dart';
+import '../services/life_cooccurrence_service.dart';
+import '../services/cooccurrence_cluster_service.dart';
 import '../widgets/unified_calendar_widget.dart';
 import '../analytics_service.dart';
 
@@ -19,7 +24,9 @@ class LifeOverviewPage extends StatefulWidget {
 
 class _LifeOverviewPageState extends State<LifeOverviewPage> {
   final CalendarSummaryService _summaryService = CalendarSummaryService();
-  final AIFeedbackService _aiFeedbackService = AIFeedbackService();
+  final LifeTimelineService _timelineService = LifeTimelineService();
+  final LifeCooccurrenceService _cooccurrenceService =
+      const LifeCooccurrenceService();
 
   late DateTime _selectedDate;
   late DateTime _focusedMonth;
@@ -28,9 +35,15 @@ class _LifeOverviewPageState extends State<LifeOverviewPage> {
   bool _isLoading = true;
   String? _errorMessage;
   int _loadToken = 0;
-
-  bool _isGeneratingFeedback = false;
-  String? _aiErrorMessage;
+  List<LifeTimelineItem> _timelineItems = const [];
+  bool _isTimelineLoading = true;
+  String? _timelineErrorMessage;
+  int _timelineLoadToken = 0;
+  int _selectedRangeDays = 1;
+  _MultiDayViewData? _multiDayData;
+  bool _isRangeLoading = false;
+  String? _rangeErrorMessage;
+  int _rangeLoadToken = 0;
 
   @override
   void initState() {
@@ -40,6 +53,7 @@ class _LifeOverviewPageState extends State<LifeOverviewPage> {
     _selectedDate = DateTime(now.year, now.month, now.day);
     _focusedMonth = DateTime(now.year, now.month, 1);
     _loadMonthSummary(_focusedMonth, showLoading: true);
+    _loadDayTimeline(_selectedDate);
   }
 
   void _safeSetState(VoidCallback fn) {
@@ -48,13 +62,6 @@ class _LifeOverviewPageState extends State<LifeOverviewPage> {
       if (!mounted) return;
       setState(fn);
     });
-  }
-
-  bool _hasMeaningfulDiaryInput(CalendarDaySummary summary) {
-    final title = (summary.diaryTitle ?? '').trim();
-    final content = (summary.diaryContent ?? '').trim();
-    final digest = (summary.diarySummary ?? '').trim();
-    return title.isNotEmpty || content.isNotEmpty || digest.isNotEmpty;
   }
 
   Future<void> _loadMonthSummary(
@@ -89,51 +96,86 @@ class _LifeOverviewPageState extends State<LifeOverviewPage> {
     }
   }
 
-  Future<void> _generateIntegratedFeedback(CalendarDaySummary summary) async {
-    if (_isGeneratingFeedback) return;
-
-    if (!_hasMeaningfulDiaryInput(summary)) {
+  Future<void> _loadDayTimeline(DateTime date) async {
+    final token = ++_timelineLoadToken;
+    if (FirebaseAuth.instance.currentUser == null) {
       _safeSetState(() {
-        _aiErrorMessage = '請先填寫日記內容，再產生溫柔回饋。';
+        _timelineItems = const [];
+        _isTimelineLoading = false;
+        _timelineErrorMessage = null;
       });
       return;
     }
 
     _safeSetState(() {
-      _isGeneratingFeedback = true;
-      _aiErrorMessage = null;
+      _isTimelineLoading = true;
+      _timelineErrorMessage = null;
     });
-
     try {
-      final feedback = await _aiFeedbackService.generateDiaryFeedback(
-        mode: AIFeedbackMode.dailyIntegrated,
-        daySummary: summary,
+      final items = await _timelineService.loadDay(date);
+      if (!mounted || token != _timelineLoadToken) return;
+      _safeSetState(() {
+        _timelineItems = items;
+        _isTimelineLoading = false;
+      });
+    } catch (error) {
+      if (!mounted || token != _timelineLoadToken) return;
+      _safeSetState(() {
+        _timelineItems = const [];
+        _isTimelineLoading = false;
+        _timelineErrorMessage = '當日生活軌跡載入失敗，請稍後再試。';
+      });
+      debugPrint('[LifeOverviewPage] timeline load failed: $error');
+    }
+  }
+
+  Future<void> _selectRange(int days) async {
+    if (_selectedRangeDays == days) return;
+    _safeSetState(() => _selectedRangeDays = days);
+    if (days == 1) {
+      await _loadDayTimeline(_selectedDate);
+    } else {
+      await _loadMultiDayRange(days);
+    }
+  }
+
+  Future<void> _loadMultiDayRange(int days, {bool force = false}) async {
+    final end = DateTime(
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day,
+    );
+    final start = end.subtract(Duration(days: days - 1));
+    final token = ++_rangeLoadToken;
+    _safeSetState(() {
+      _isRangeLoading = true;
+      _rangeErrorMessage = null;
+    });
+    try {
+      final range = await _timelineService.loadRange(start: start, end: end);
+      final data = _MultiDayViewData(
+        range: range,
+        patterns: _cooccurrenceService.analyze(range.itemsByDate),
       );
-
-      final key = summary.dateKey;
-      final current = _summaries[key] ?? summary;
-
+      if (!mounted || token != _rangeLoadToken) return;
       _safeSetState(() {
-        _summaries[key] = current.copyWith(aiFeedback: feedback);
-        _isGeneratingFeedback = false;
+        _multiDayData = data;
+        _isRangeLoading = false;
       });
-    } catch (e) {
+    } catch (error) {
+      if (!mounted || token != _rangeLoadToken) return;
       _safeSetState(() {
-        _isGeneratingFeedback = false;
-        _aiErrorMessage = '暫時無法產生溫柔回饋，請稍後再試。';
+        _multiDayData = null;
+        _isRangeLoading = false;
+        _rangeErrorMessage = '多日生活軌跡載入失敗，請稍後再試。';
       });
-      debugPrint('[LifeOverviewPage] AI feedback error: $e');
+      debugPrint('[LifeOverviewPage] range load failed: $error');
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
-    final selectedKey = _dateKey(_selectedDate);
-    final summary =
-        _summaries[selectedKey] ?? CalendarDaySummary.empty(_selectedDate);
-    final canGenerateAiFeedback = _hasMeaningfulDiaryInput(summary);
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('生活軌跡'),
@@ -190,8 +232,12 @@ class _LifeOverviewPageState extends State<LifeOverviewPage> {
                   final normalized = DateTime(date.year, date.month, date.day);
                   _safeSetState(() {
                     _selectedDate = normalized;
-                    _aiErrorMessage = null;
                   });
+                  if (_selectedRangeDays == 1) {
+                    _loadDayTimeline(normalized);
+                  } else {
+                    _loadMultiDayRange(_selectedRangeDays);
+                  }
                 },
               ),
             if (user != null && !_isLoading && _errorMessage == null) ...[
@@ -199,54 +245,115 @@ class _LifeOverviewPageState extends State<LifeOverviewPage> {
               const _LifeOverviewLegend(),
             ],
             const SizedBox(height: 16),
-            _DailyMindBodySummaryCard(
-              summary: summary,
-              canGenerateFeedback: canGenerateAiFeedback,
-              isGeneratingFeedback: _isGeneratingFeedback,
-              aiErrorMessage: _aiErrorMessage,
-              onGenerateFeedback: () => _generateIntegratedFeedback(summary),
-              onOpenDailyRecord: () => _openDailyRecordPage(summary),
-              onOpenDiary: _openDiaryPage,
-              onOpenPeriodPage: _openPeriodPage,
-            ),
+            if (user != null) ...[
+              _TimelineRangeSelector(
+                selectedDays: _selectedRangeDays,
+                onSelected: _selectRange,
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (user != null)
+              if (_selectedRangeDays == 1)
+                _DailyTimelineSection(
+                  date: _selectedDate,
+                  items: _timelineItems,
+                  isLoading: _isTimelineLoading,
+                  errorMessage: _timelineErrorMessage,
+                  onRetry: () => _loadDayTimeline(_selectedDate),
+                  onTapItem: _openTimelineItem,
+                  onOpenDailyRecord: _openDailyRecordEntry,
+                  onOpenDiary: _openDiaryPage,
+                )
+              else
+                _MultiDayTimelineSection(
+                  data: _multiDayData,
+                  isLoading: _isRangeLoading,
+                  errorMessage: _rangeErrorMessage,
+                  onRetry: () =>
+                      _loadMultiDayRange(_selectedRangeDays, force: true),
+                ),
           ],
         ),
       ),
     );
   }
 
-  Future<void> _openDailyRecordPage(CalendarDaySummary summary) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    final docId = (summary.dailyRecordDocId ?? '').trim();
-
-    if ((summary.hasDailyRecord || summary.hasQuickRecord) && uid != null) {
+  Future<void> _openTimelineItem(LifeTimelineItem item) async {
+    if (item.type == LifeTimelineType.diary) {
+      await _openDiaryPage();
+      return;
+    }
+    if (item.type == LifeTimelineType.dailyCheckIn) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+            builder: (_) => DailyCheckInPage(date: _selectedDate)),
+      );
+      await _refreshSelectedDay();
+      return;
+    }
+    if (item.type == LifeTimelineType.medication) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const RecordAdjustmentHistoryPage()),
+      );
+      await _refreshSelectedDay();
+      return;
+    }
+    if (item.type == LifeTimelineType.emotion ||
+        item.type == LifeTimelineType.symptom ||
+        item.type == LifeTimelineType.sleep) {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      final sourceId = (item.sourceId ?? '').trim();
+      if (uid == null || sourceId.isEmpty) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => RecordDetailScreen(
             uid: uid,
-            docId: docId.isNotEmpty ? docId : summary.dateKey,
+            docId: sourceId,
             autoOpenEditor: false,
           ),
         ),
       );
+      await _refreshSelectedDay();
+    }
+  }
+
+  Future<void> _openDailyRecordEntry() async {
+    final hasExistingRecord = _timelineItems.any(
+      (item) =>
+          item.type == LifeTimelineType.emotion ||
+          item.type == LifeTimelineType.symptom ||
+          item.type == LifeTimelineType.sleep ||
+          item.type == LifeTimelineType.dailyCheckIn,
+    );
+    if (hasExistingRecord) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => const DailyRecordHistory(initialTab: 0),
+        ),
+      );
+      await _refreshSelectedDay();
       return;
     }
-
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => DailyCheckInPage(date: _selectedDate)),
     );
+    await _refreshSelectedDay();
+  }
+
+  Future<void> _refreshSelectedDay() async {
+    await Future.wait([
+      _loadDayTimeline(_selectedDate),
+      _loadMonthSummary(_focusedMonth, showLoading: false),
+      if (_selectedRangeDays > 1)
+        _loadMultiDayRange(_selectedRangeDays, force: true),
+    ]);
   }
 
   Future<void> _openDiaryPage() async {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => DiaryPageDemo(date: _selectedDate)),
     );
-  }
-
-  Future<void> _openPeriodPage() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => DailyCheckInPage(date: _selectedDate)),
-    );
+    await _refreshSelectedDay();
   }
 }
 
@@ -385,9 +492,9 @@ class _LifeOverviewLegend extends StatelessWidget {
             const Text('○',
                 style: TextStyle(color: Color(0xFFE6A6C0), fontSize: 12)),
             '預測生理期'),
-        item(const _LegendDot(color: Color(0xFF4A90E2)), '每日紀錄'),
         item(const _LegendDot(color: Color(0xFFC9B6FF)), '日記'),
-        item(const _LegendDot(color: Color(0xFF58B8C0)), '情緒'),
+        item(const _LegendDot(color: Color(0xFF58B8C0)), '快速紀錄'),
+        item(const _LegendDot(color: Color(0xFF4A90E2)), '每日 Check-in'),
       ],
     );
   }
@@ -411,297 +518,394 @@ class _LegendDot extends StatelessWidget {
   }
 }
 
-class _DailyMindBodySummaryCard extends StatelessWidget {
-  final CalendarDaySummary summary;
-  final bool canGenerateFeedback;
-  final bool isGeneratingFeedback;
-  final String? aiErrorMessage;
-  final VoidCallback onGenerateFeedback;
-  final VoidCallback onOpenDailyRecord;
-  final VoidCallback onOpenDiary;
-  final VoidCallback onOpenPeriodPage;
-
-  const _DailyMindBodySummaryCard({
-    required this.summary,
-    required this.canGenerateFeedback,
-    required this.isGeneratingFeedback,
-    required this.aiErrorMessage,
-    required this.onGenerateFeedback,
-    required this.onOpenDailyRecord,
-    required this.onOpenDiary,
-    required this.onOpenPeriodPage,
+class _TimelineRangeSelector extends StatelessWidget {
+  const _TimelineRangeSelector({
+    required this.selectedDays,
+    required this.onSelected,
   });
+
+  final int selectedDays;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) => Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final option in const [
+            (1, '單日'),
+            (7, '7 天'),
+            (14, '14 天'),
+            (30, '30 天')
+          ])
+            ChoiceChip(
+              label: Text(option.$2),
+              selected: selectedDays == option.$1,
+              onSelected: (_) => onSelected(option.$1),
+              selectedColor: const Color(0xFFDDF1F3),
+              side: const BorderSide(color: Color(0xFFD1E6E9)),
+              labelStyle: TextStyle(
+                color: selectedDays == option.$1
+                    ? const Color(0xFF2D6974)
+                    : const Color(0xFF718D93),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+        ],
+      );
+}
+
+class _MultiDayTimelineSection extends StatelessWidget {
+  const _MultiDayTimelineSection({
+    required this.data,
+    required this.isLoading,
+    required this.errorMessage,
+    required this.onRetry,
+  });
+
+  final _MultiDayViewData? data;
+  final bool isLoading;
+  final String? errorMessage;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
-    final isEmptyDay = !_hasAnyData(summary);
-    final emotions = summary.emotionNames.take(3).toList();
-    final symptoms = summary.symptomNames.take(3).toList();
-    final observations = _buildObservations(summary);
-
-    String sleepText;
-    if (summary.sleepHours == null &&
-        (summary.sleepQuality == null || summary.sleepQuality!.isEmpty)) {
-      sleepText = '睡眠：尚無資料';
-    } else {
-      final parts = <String>[];
-      if (summary.sleepHours != null) {
-        parts.add(_formatSleepDuration(summary.sleepHours!));
-      }
-      if (summary.sleepQuality != null && summary.sleepQuality!.isNotEmpty) {
-        parts.add('品質：${summary.sleepQuality}');
-      }
-      sleepText = '睡眠：${parts.join('，')}';
+    if (isLoading) {
+      return const _RangeCard(child: _TimelineLoadingState());
     }
+    if (errorMessage != null || data == null) {
+      return _RangeCard(
+        child: _TimelineErrorState(
+          message: errorMessage ?? '多日生活軌跡暫時無法顯示。',
+          onRetry: onRetry,
+        ),
+      );
+    }
+    final value = data!;
+    final recordedEntries = value.range.itemsByDate.entries
+        .where((entry) => entry.value.isNotEmpty)
+        .toList()
+      ..sort((left, right) => right.key.compareTo(left.key));
 
-    final periodText = summary.isPeriodDay
-        ? '生理週期：生理期'
-        : summary.isPredictedPeriodDay
-            ? '生理週期：預測生理期'
-            : '生理週期：尚無標記';
+    return Column(
+      children: [
+        _RangeCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${_shortDate(value.range.start)}－${_shortDate(value.range.end)}',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: const Color(0xFF2C6774),
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                '有紀錄 ${value.range.recordedDayCount} 天',
+                style: const TextStyle(
+                  color: Color(0xFF78969C),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '多日軌跡',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: const Color(0xFF315F68),
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+              const SizedBox(height: 10),
+              if (recordedEntries.isEmpty)
+                const Text(
+                  '這段期間還沒有留下生活紀錄。',
+                  style: TextStyle(color: Color(0xFF718E94)),
+                )
+              else
+                for (final entry in recordedEntries)
+                  _CompactDaySummary(date: entry.key, items: entry.value),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        _RangeCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '重複出現的組合',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: const Color(0xFF315F68),
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                '以下只整理同日或兩小時內重複出現的紀錄，可作為後續觀察線索，不代表因果關係。',
+                style: TextStyle(
+                  color: Color(0xFF78969C),
+                  height: 1.4,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (value.patterns.isEmpty)
+                const Text(
+                  '目前還沒有足夠的重複紀錄形成可觀察的共現模式。',
+                  style: TextStyle(color: Color(0xFF718E94), height: 1.4),
+                )
+              else
+                for (final pattern in value.patterns.take(5))
+                  _CooccurrenceRow(pattern: pattern),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RangeCard extends StatelessWidget {
+  const _RangeCard({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFDCEEF1)),
+        ),
+        child: child,
+      );
+}
+
+class _CompactDaySummary extends StatelessWidget {
+  const _CompactDaySummary({required this.date, required this.items});
+
+  final DateTime date;
+  final List<LifeTimelineItem> items;
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = items.where(_isMultiDayPrimaryItem).take(4).toList();
+    if (visible.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 48,
+            child: Text(
+              _shortDate(date),
+              style: const TextStyle(
+                color: Color(0xFF4F767E),
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final item in visible)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 5),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          _timelineIcon(item.type),
+                          size: 16,
+                          color: const Color(0xFF65AEB8),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            '${item.title}｜${_timelineSummary(item)}',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0xFF587A81),
+                              height: 1.35,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (items.length > visible.length)
+                  Text(
+                    '另有 ${items.length - visible.length} 筆紀錄',
+                    style: const TextStyle(
+                      color: Color(0xFF91A6AA),
+                      fontSize: 11,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CooccurrenceRow extends StatelessWidget {
+  const _CooccurrenceRow({required this.pattern});
+
+  final CooccurrenceCluster pattern;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(top: 5),
+              child: _LegendDot(color: Color(0xFF65AEB8)),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _cooccurrenceText(pattern),
+                style: const TextStyle(
+                  color: Color(0xFF587A81),
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+class _MultiDayViewData {
+  const _MultiDayViewData({required this.range, required this.patterns});
+
+  final LifeTimelineRangeData range;
+  final List<CooccurrenceCluster> patterns;
+}
+
+bool _isMultiDayPrimaryItem(LifeTimelineItem item) =>
+    item.type != LifeTimelineType.diary;
+
+String _cooccurrenceText(CooccurrenceCluster pattern) {
+  final lines = <String>[
+    pattern.coreItems.join('＋'),
+    pattern.nearbyTimeCount > 0
+        ? '重複出現 ${pattern.occurrenceCount} 次'
+        : '同日重複出現 ${pattern.sameDayCount} 次',
+  ];
+  if (pattern.companionItems.isNotEmpty) {
+    lines.add('常伴隨：${pattern.companionItems.join('、')}');
+  }
+  if (pattern.nearbyTimeCount > 0) {
+    lines.add(
+      '其中 ${pattern.nearbyTimeCount} 次在 ${pattern.windowMinutes ~/ 60} 小時內出現',
+    );
+  }
+  return lines.join('\n');
+}
+
+String _shortDate(DateTime value) => '${value.month}/${value.day}';
+
+class _DailyTimelineSection extends StatelessWidget {
+  const _DailyTimelineSection({
+    required this.date,
+    required this.items,
+    required this.isLoading,
+    required this.errorMessage,
+    required this.onRetry,
+    required this.onTapItem,
+    required this.onOpenDailyRecord,
+    required this.onOpenDiary,
+  });
+
+  final DateTime date;
+  final List<LifeTimelineItem> items;
+  final bool isLoading;
+  final String? errorMessage;
+  final VoidCallback onRetry;
+  final ValueChanged<LifeTimelineItem> onTapItem;
+  final VoidCallback onOpenDailyRecord;
+  final VoidCallback onOpenDiary;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasDailyRecord = items.any(
+      (item) =>
+          item.type == LifeTimelineType.dailyCheckIn ||
+          item.type == LifeTimelineType.emotion ||
+          item.type == LifeTimelineType.symptom ||
+          item.type == LifeTimelineType.sleep,
+    );
+    final hasDiary = items.any((item) => item.type == LifeTimelineType.diary);
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFFDCEEF1)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x12000000),
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '日期：${summary.date.year}/${summary.date.month.toString().padLeft(2, '0')}/${summary.date.day.toString().padLeft(2, '0')}',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: const Color(0xFF7D969C),
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '當日身心狀態回顧',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            '${date.month} 月 ${date.day} 日',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   color: const Color(0xFF2C6774),
                   fontWeight: FontWeight.w700,
                 ),
           ),
-          const SizedBox(height: 12),
-          Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _StatusChip(
-                  label: '每日紀錄',
-                  active: summary.hasDailyRecord,
-                  activeColor: const Color(0xFF4A90E2)),
-              _StatusChip(
-                  label: '日記',
-                  active: summary.hasDiary,
-                  activeColor: const Color(0xFFC9B6FF)),
-              _StatusChip(
-                  label: '情緒',
-                  active: summary.hasEmotionData,
-                  activeColor: const Color(0xFF58B8C0)),
-              _StatusChip(
-                  label: '症狀',
-                  active: summary.hasSymptomData,
-                  activeColor: const Color(0xFFF4B183)),
-              _StatusChip(
-                  label: '睡眠',
-                  active: summary.hasSleepData,
-                  activeColor: const Color(0xFF9AB3F5)),
-              _StatusChip(
-                  label: '生理期',
-                  active: summary.isPeriodDay,
-                  activeColor: const Color(0xFFFFBFD4)),
-              _StatusChip(
-                label: '預測生理期',
-                active: summary.isPredictedPeriodDay,
-                activeColor: const Color(0xFFFFDDEA),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          _SectionLine(
-            label: '平均心情',
-            value: summary.averageMood != null
-                ? '${summary.averageMood!.toStringAsFixed(1)} / 10'
-                : '尚無資料',
-          ),
-          const SizedBox(height: 8),
-          _SectionLine(
-            label: '主要情緒',
-            value: emotions.isNotEmpty ? emotions.join('、') : '尚無資料',
-          ),
-          const SizedBox(height: 8),
-          _SectionLine(
-            label: '主要症狀',
-            value: symptoms.isNotEmpty ? symptoms.join('、') : '尚無資料',
-          ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 2),
           Text(
-            sleepText,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: const Color(0xFF4D7880),
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            periodText,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: const Color(0xFF4D7880),
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            '日記狀態',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: const Color(0xFF2F6975),
-                  fontWeight: FontWeight.w700,
-                ),
-          ),
-          const SizedBox(height: 6),
-          if (summary.hasDiary) ...[
-            Text(
-              '這一天有留下日記',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: const Color(0xFF4D7880),
-                    fontWeight: FontWeight.w600,
-                  ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '日記內容已加密，請進入日記頁查看。',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: const Color(0xFF5E7F86),
-                    height: 1.45,
-                  ),
-            ),
-          ] else
-            Text(
-              '這一天尚未留下日記。',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: const Color(0xFF6F8F95),
-                  ),
-            ),
-          const SizedBox(height: 14),
-          Text(
-            '系統觀察',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: const Color(0xFF2F6975),
-                  fontWeight: FontWeight.w700,
-                ),
-          ),
-          const SizedBox(height: 6),
-          ...observations.map(
-            (insight) => Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.only(top: 6),
-                    child: _LegendDot(color: Color(0xFF7BBAC4)),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      insight,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: const Color(0xFF5E7F86),
-                            height: 1.45,
-                          ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            '溫柔回饋',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: const Color(0xFF2F6975),
-                  fontWeight: FontWeight.w700,
-                ),
-          ),
-          const SizedBox(height: 8),
-          if (isGeneratingFeedback)
-            const SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(strokeWidth: 2.4),
-            )
-          else
-            FilledButton.tonal(
-              onPressed: canGenerateFeedback ? onGenerateFeedback : null,
-              child: Text(canGenerateFeedback ? '產生溫柔回饋' : '請先填寫日記內容'),
-            ),
-          if (aiErrorMessage != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              aiErrorMessage!,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFF6F8F95),
-                    fontWeight: FontWeight.w600,
-                  ),
-            ),
-          ],
-          if (summary.aiFeedback != null && summary.aiFeedback!.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF2F9FA),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFD8EAED)),
-              ),
-              child: Text(
-                summary.aiFeedback!,
-                textAlign: TextAlign.justify,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: const Color(0xFF567C83),
-                      height: 1.45,
-                    ),
-              ),
-            ),
-          ],
-          const SizedBox(height: 14),
-          Text(
-            isEmptyDay ? '這一天還沒有留下紀錄' : '這一天已留下部分身心狀態，可以作為回顧參考。',
+            '當日生活軌跡',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: const Color(0xFF6F8F95),
-                  height: 1.4,
+                  color: const Color(0xFF78969C),
+                  fontWeight: FontWeight.w600,
                 ),
           ),
+          const SizedBox(height: 16),
+          if (isLoading)
+            const _TimelineLoadingState()
+          else if (errorMessage != null)
+            _TimelineErrorState(message: errorMessage!, onRetry: onRetry)
+          else if (items.isEmpty)
+            const _TimelineEmptyState()
+          else
+            for (var index = 0; index < items.length; index++)
+              _TimelineRow(
+                item: items[index],
+                isLast: index == items.length - 1,
+                onTap: _isTimelineItemActionable(items[index])
+                    ? () => onTapItem(items[index])
+                    : null,
+              ),
           const SizedBox(height: 14),
           Wrap(
-            alignment: WrapAlignment.spaceBetween,
             spacing: 8,
             runSpacing: 8,
             children: [
-              OutlinedButton(
+              OutlinedButton.icon(
                 onPressed: onOpenDailyRecord,
-                child: Text(summary.hasDailyRecord ? '查看每日紀錄' : '新增每日紀錄'),
+                icon: const Icon(Icons.check_circle_outline_rounded, size: 18),
+                label: Text(hasDailyRecord ? '查看每日紀錄' : '新增每日紀錄'),
               ),
-              OutlinedButton(
+              OutlinedButton.icon(
                 onPressed: onOpenDiary,
-                child: Text(summary.hasDiary ? '查看日記' : '補寫日記'),
-              ),
-              OutlinedButton(
-                onPressed: onOpenPeriodPage,
-                child: const Text('查看生理期'),
+                icon: const Icon(Icons.menu_book_rounded, size: 18),
+                label: Text(hasDiary ? '查看日記' : '補寫日記'),
               ),
             ],
           ),
@@ -710,138 +914,266 @@ class _DailyMindBodySummaryCard extends StatelessWidget {
     );
   }
 
-  List<String> _buildObservations(CalendarDaySummary s) {
-    final observations = <String>[];
-
-    final mood = s.averageMood;
-    if (mood != null) {
-      if (mood <= 4) {
-        observations.add('今天整體情緒偏低，可以回顧是否有壓力事件或耗能情境影響到你。');
-      } else if (mood < 7) {
-        observations.add('今天整體情緒落在中等區間，建議一起觀察睡眠與症狀是否有連動。');
-      } else {
-        observations.add('今天整體情緒表現不錯，這是你照顧自己的一個正向訊號。');
-      }
+  bool _isTimelineItemActionable(LifeTimelineItem item) {
+    if (item.type == LifeTimelineType.diary ||
+        item.type == LifeTimelineType.dailyCheckIn ||
+        item.type == LifeTimelineType.medication) {
+      return true;
     }
-
-    if (s.hasSymptomData) {
-      observations.add('今天有身體症狀紀錄，可以留意症狀出現時段與情緒變化是否重疊。');
-    }
-
-    if (s.hasSleepData) {
-      observations.add('今天有睡眠資料，建議對照睡眠品質與白天情緒起伏。');
-    }
-
-    if (s.isPeriodDay) {
-      observations.add('今天位於生理期中，身心感受可能受到週期影響，請先溫柔看待自己。');
-    }
-
-    if (s.isPredictedPeriodDay) {
-      observations.add('目前接近預測生理期，這段時間可多觀察情緒與身體訊號的變化。');
-    }
-
-    if (s.hasDiary) {
-      observations.add('這一天有日記紀錄，建議回到日記內容理解當天情緒脈絡。');
-    }
-
-    if (observations.isEmpty) {
-      observations.add('今天資料還不多，先維持簡單記錄也很好，之後會更容易看見自己的節奏。');
-    }
-
-    return observations.take(3).toList();
-  }
-
-  String _formatSleepDuration(double hours) {
-    if (hours.isNaN || hours.isInfinite || hours <= 0) {
-      return '尚無資料';
-    }
-
-    final totalMinutes = (hours * 60).round();
-    final h = totalMinutes ~/ 60;
-    final m = totalMinutes % 60;
-
-    return '$h小時$m分';
+    return (item.type == LifeTimelineType.emotion ||
+            item.type == LifeTimelineType.symptom ||
+            item.type == LifeTimelineType.sleep) &&
+        (item.sourceId ?? '').trim().isNotEmpty;
   }
 }
 
-class _SectionLine extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _SectionLine({
-    required this.label,
-    required this.value,
+class _TimelineRow extends StatelessWidget {
+  const _TimelineRow({
+    required this.item,
+    required this.isLast,
+    this.onTap,
   });
+
+  final LifeTimelineItem item;
+  final bool isLast;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      '$label：$value',
-      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: const Color(0xFF4D7880),
-            fontWeight: FontWeight.w600,
+    final precise = item.hasExplicitTime;
+    final timeLabel = precise
+        ? '${item.time.hour.toString().padLeft(2, '0')}:${item.time.minute.toString().padLeft(2, '0')}'
+        : '當日紀錄';
+
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: 58,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(
+                timeLabel,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: precise
+                          ? const Color(0xFF4E747C)
+                          : const Color(0xFF91A6AA),
+                      fontWeight: precise ? FontWeight.w700 : FontWeight.w500,
+                    ),
+              ),
+            ),
           ),
+          SizedBox(
+            width: 24,
+            child: Column(
+              children: [
+                const SizedBox(height: 15),
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF65AEB8),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                if (!isLast)
+                  Expanded(
+                    child: Container(
+                      width: 1.5,
+                      color: const Color(0xFFD5E8EA),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: isLast ? 2 : 10),
+              child: Material(
+                color: const Color(0xFFF7FBFC),
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  onTap: onTap,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE1EFF1)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          _timelineIcon(item.type),
+                          size: 20,
+                          color: const Color(0xFF4D929D),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      item.title,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(
+                                            color: const Color(0xFF315F68),
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                  ),
+                                  if (onTap != null)
+                                    const Icon(
+                                      Icons.chevron_right_rounded,
+                                      size: 18,
+                                      color: Color(0xFF91AAAF),
+                                    ),
+                                ],
+                              ),
+                              if (_timelineSummary(item).isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  _timelineSummary(item),
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                        color: const Color(0xFF5F7F86),
+                                        height: 1.4,
+                                      ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _StatusChip extends StatelessWidget {
-  final String label;
-  final bool active;
-  final Color activeColor;
-
-  const _StatusChip({
-    required this.label,
-    required this.active,
-    required this.activeColor,
-  });
+class _TimelineLoadingState extends StatelessWidget {
+  const _TimelineLoadingState();
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: active
-            ? activeColor.withValues(alpha: 0.22)
-            : const Color(0xFFF4F8F9),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: active
-              ? activeColor.withValues(alpha: 0.55)
-              : const Color(0xFFDDE8EA),
+  Widget build(BuildContext context) => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 28),
+        child: Center(
+          child: CircularProgressIndicator(
+            strokeWidth: 2.4,
+            color: Color(0xFF63AAB6),
+          ),
         ),
-      ),
-      child: Text(
-        active ? '$label：有' : '$label：無',
-        style: TextStyle(
-          color: active ? const Color(0xFF35545B) : const Color(0xFF839CA2),
-          fontWeight: FontWeight.w600,
-          fontSize: 12,
+      );
+}
+
+class _TimelineErrorState extends StatelessWidget {
+  const _TimelineErrorState({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Column(
+          children: [
+            Text(message, style: const TextStyle(color: Color(0xFF6F8F95))),
+            const SizedBox(height: 8),
+            TextButton(onPressed: onRetry, child: const Text('重新載入')),
+          ],
         ),
-      ),
-    );
+      );
+}
+
+class _TimelineEmptyState extends StatelessWidget {
+  const _TimelineEmptyState();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 26),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF7FBFC),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE1EFF1)),
+        ),
+        child: const Text(
+          '這一天還沒有留下生活紀錄。',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Color(0xFF718E94)),
+        ),
+      );
+}
+
+IconData _timelineIcon(String type) {
+  switch (type) {
+    case LifeTimelineType.quickRecord:
+      return Icons.bolt_rounded;
+    case LifeTimelineType.dailyCheckIn:
+      return Icons.check_circle_rounded;
+    case LifeTimelineType.emotion:
+      return Icons.mood_rounded;
+    case LifeTimelineType.symptom:
+      return Icons.healing_rounded;
+    case LifeTimelineType.sleep:
+      return Icons.bedtime_rounded;
+    case LifeTimelineType.diary:
+      return Icons.menu_book_rounded;
+    case LifeTimelineType.period:
+      return Icons.water_drop_rounded;
+    case LifeTimelineType.activity:
+      return Icons.directions_walk_rounded;
+    case LifeTimelineType.medication:
+      return Icons.medication_rounded;
+    case LifeTimelineType.subjectiveMedicationResponse:
+      return Icons.monitor_heart_rounded;
+    default:
+      return Icons.circle_outlined;
   }
 }
 
-String _dateKey(DateTime date) {
-  final y = date.year.toString().padLeft(4, '0');
-  final m = date.month.toString().padLeft(2, '0');
-  final d = date.day.toString().padLeft(2, '0');
-  return '$y-$m-$d';
+String _timelineSummary(LifeTimelineItem item) {
+  if (item.type != LifeTimelineType.emotion) return item.summary;
+  final metadata = item.metadata;
+  final scale = metadata?['moodScale'];
+  if (scale != 5 && scale != 10) return item.summary;
+
+  final parts = <String>[];
+  final emotions = metadata?['emotions'];
+  if (emotions is Iterable) {
+    for (final raw in emotions.whereType<Map>()) {
+      final name = (raw['name'] ?? '').toString().trim();
+      final value = raw['value'];
+      if (name.isEmpty) continue;
+      parts.add(value is num ? '$name ${_numberText(value)}/$scale' : name);
+    }
+  }
+  final overallMood = metadata?['overallMood'];
+  if (overallMood is num) {
+    parts.add('整體情緒 ${_numberText(overallMood)}/$scale');
+  }
+  return parts.isEmpty ? item.summary : parts.join('、');
 }
+
+String _numberText(num value) => value.toDouble() == value.roundToDouble()
+    ? value.toInt().toString()
+    : value.toStringAsFixed(1);
 
 bool _isSameMonth(DateTime a, DateTime b) {
   return a.year == b.year && a.month == b.month;
-}
-
-bool _hasAnyData(CalendarDaySummary s) {
-  return s.hasDailyRecord ||
-      s.hasQuickRecord ||
-      s.hasDiary ||
-      s.hasEmotionData ||
-      s.hasSymptomData ||
-      s.hasSleepData ||
-      s.isPeriodDay ||
-      s.isPredictedPeriodDay ||
-      s.averageMood != null;
 }

@@ -14,6 +14,7 @@ import '../widgets/main_drawer.dart';
 import 'daily_record_repository.dart';
 import 'sleep_record_service.dart';
 import 'unified_sleep_repository.dart';
+import 'period_cycle_service.dart';
 import '../models/sleep_record.dart';
 
 // Import refactored modules
@@ -216,32 +217,24 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       if (savedCycle != null && savedCycle >= 21 && savedCycle <= 45) {
         _periodCycleLength = savedCycle;
       }
-
-      final savedDays =
-          prefs.getStringList('period_selected_dates') ?? const [];
-      for (final id in savedDays) {
-        final d = DateTime.tryParse(id);
-        if (d != null) selected.add(_dateOnly(d));
-      }
     } catch (_) {}
 
     try {
-      final repo = DailyRecordRepository();
-      final localRecords = await repo.getDailyRecordsByDateRange(
-        userId: uid,
-        startDate: startDate,
-        endDate: endDate,
-      );
-      for (final row in localRecords) {
-        final periodData = row['periodData'];
-        final isPeriod = periodData is Map && periodData['isPeriod'] == true;
-        if (!isPeriod) continue;
-        final date = DateTime.tryParse(row['date']?.toString() ?? '');
-        if (date != null) {
-          selected.add(_dateOnly(date));
+      final cycles = await PeriodCycleService().getUnifiedCycles(uid);
+      for (final cycle in cycles) {
+        final cycleStart = _dateOnly(cycle.startDate);
+        final cycleEnd = _dateOnly(cycle.endDate ?? endDate);
+        final first = cycleStart.isBefore(startDate) ? startDate : cycleStart;
+        final last = cycleEnd.isAfter(endDate) ? endDate : cycleEnd;
+        for (var day = first;
+            !day.isAfter(last);
+            day = day.add(const Duration(days: 1))) {
+          selected.add(day);
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('讀取統一生理期資料失敗: $e');
+    }
 
     if (FirebaseSyncConfig.shouldSync()) {
       try {
@@ -259,25 +252,6 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         final cloudCycle = (config?['cycleLength'] as num?)?.toInt();
         if (cloudCycle != null && cloudCycle >= 21 && cloudCycle <= 45) {
           _periodCycleLength = cloudCycle;
-        }
-
-        final periodSnap = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .collection('dailyRecords')
-            .where('date',
-                isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
-            .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
-            .get();
-
-        for (final doc in periodSnap.docs) {
-          final data =
-              await HealthDataEncryptionService.decryptData(doc.data());
-          if (data['isPeriod'] != true) continue;
-          final ts = data['date'] as Timestamp?;
-          if (ts != null) {
-            selected.add(_dateOnly(ts.toDate()));
-          }
         }
       } catch (e) {
         debugPrint('讀取生理期月曆資料失敗: $e');
@@ -1100,22 +1074,6 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       }
     }
 
-    Map<String, dynamic>? periodData;
-    if (data['periodData'] != null) {
-      try {
-        if (data['periodData'] is String) {
-          periodData = jsonDecode(data['periodData']) as Map<String, dynamic>;
-        } else if (data['periodData'] is Map) {
-          periodData = data['periodData'] as Map<String, dynamic>;
-        } else {
-          throw TypeError();
-        }
-        debugPrint('✅ Parsed period data');
-      } catch (e) {
-        debugPrint('❌ Failed to parse periodData: $e');
-      }
-    }
-
     SleepData sleepData = SleepData();
     if (data['sleep'] != null) {
       try {
@@ -1199,8 +1157,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         ..addAll(sleepData.naps);
 
       // 生理期狀態（月曆資料優先）
-      final localPeriod = periodData?['isPeriod'] == true;
-      _isPeriod = _periodSelectedDates.contains(_dateOnly(date)) || localPeriod;
+      _isPeriod = _periodSelectedDates.contains(_dateOnly(date));
 
       debugPrint('✅ All data applied to UI successfully');
     });
@@ -1272,8 +1229,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         );
 
       // 生理期狀態（月曆資料優先）
-      _isPeriod =
-          _periodSelectedDates.contains(_dateOnly(date)) || record.isPeriod;
+      _isPeriod = _periodSelectedDates.contains(_dateOnly(date));
     });
   }
 

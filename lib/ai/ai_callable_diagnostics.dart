@@ -9,6 +9,7 @@ class AiCallableEndpoints {
 
   static const region = 'us-central1';
   static const chat = 'generateInneraAiChat';
+  static const eventSummaries = 'summarizeInneraHealthEvents';
   static const diaryDraft = 'generateInneraDiaryDraft';
   static const recommendSongs = 'recommendInneraSongs';
   static const searchSongs = 'searchInneraSongs';

@@ -16,13 +16,17 @@ class AiSafetyNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (level != AiSafetyLevel.imminentDanger &&
+    if (level != AiSafetyLevel.possibleSelfHarm &&
+        level != AiSafetyLevel.imminentDanger &&
         level != AiSafetyLevel.medicalUrgency) {
       return const SizedBox.shrink();
     }
 
     final isMedical = level == AiSafetyLevel.medicalUrgency;
-    final color = Theme.of(context).colorScheme.error;
+    final isUrgent = level == AiSafetyLevel.imminentDanger || isMedical;
+    final color = isUrgent
+        ? Theme.of(context).colorScheme.tertiary
+        : HealingDesignSystem.primaryBlue;
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       padding: const EdgeInsets.all(16),
@@ -36,11 +40,20 @@ class AiSafetyNotice extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.emergency_rounded, color: color),
+              Icon(
+                isUrgent
+                    ? Icons.emergency_rounded
+                    : Icons.health_and_safety_outlined,
+                color: color,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  isMedical ? '可能需要立即醫療評估' : '請先確認目前安全',
+                  isMedical
+                      ? '可能需要立即醫療評估'
+                      : isUrgent
+                          ? '請優先確認目前安全'
+                          : '你不需要獨自承受',
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         color: color,
                         fontWeight: FontWeight.w800,
@@ -53,23 +66,33 @@ class AiSafetyNotice extends StatelessWidget {
           Text(
             isMedical
                 ? InneraAiSafetyService.medicalUrgencyReply
-                : InneraAiSafetyService.imminentSelfHarmReply,
+                : isUrgent
+                    ? InneraAiSafetyService.imminentSelfHarmReply
+                    : InneraAiSafetyService.concernSelfHarmReply,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: HealingDesignSystem.adaptivePrimaryText(context),
                   height: 1.55,
                 ),
           ),
           const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: _CallButton(
+              label: isUrgent ? '撥打 119 緊急救護' : '撥打 1925 安心專線',
+              phone: isUrgent ? '119' : '1925',
+              primary: true,
+            ),
+          ),
+          const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: [
-              _CallButton(label: '撥打 119', phone: '119'),
-              if (!isMedical) ...const [
-                _CallButton(label: '撥打 1925', phone: '1925'),
-                _CallButton(label: '撥打 1995', phone: '1995'),
-                _CallButton(label: '撥打 1980', phone: '1980'),
-              ],
+            children: const [
+              _CallButton(label: '119 緊急救護', phone: '119'),
+              _CallButton(label: '110 警察', phone: '110'),
+              _CallButton(label: '1925 安心專線', phone: '1925'),
+              _CallButton(label: '1995 生命線', phone: '1995'),
+              _CallButton(label: '1980 張老師', phone: '1980'),
             ],
           ),
           if (!isMedical) ...[
@@ -86,20 +109,34 @@ class AiSafetyNotice extends StatelessWidget {
 }
 
 class _CallButton extends StatelessWidget {
-  const _CallButton({required this.label, required this.phone});
+  const _CallButton({
+    required this.label,
+    required this.phone,
+    this.primary = false,
+  });
 
   final String label;
   final String phone;
+  final bool primary;
 
   @override
   Widget build(BuildContext context) {
+    Future<void> onPressed() async {
+      final uri = Uri(scheme: 'tel', path: phone);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    }
+
+    if (!primary) {
+      return OutlinedButton.icon(
+        onPressed: onPressed,
+        icon: const Icon(Icons.phone_outlined, size: 18),
+        label: Text(label),
+      );
+    }
     return FilledButton.icon(
-      onPressed: () async {
-        final uri = Uri.parse('tel:$phone');
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri);
-        }
-      },
+      onPressed: onPressed,
       icon: const Icon(Icons.phone_rounded, size: 18),
       label: Text(label),
     );

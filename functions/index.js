@@ -3,9 +3,17 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const OpenAI = require("openai");
+const INNERA_UNIFIED_PROMPT = require("./innera_unified_prompt");
+const { inneraModePrompt, sanitizeModeFollowUp } = require("./innera_mode_prompt");
 const crypto = require("crypto");
 const { buildSleepTimeStats } = require("./sleep_review_stats");
 const { buildEmotionStats } = require("./emotion_review_stats");
+const { detectInneraSelfHarm } = require("./innera_safety");
+const { normalizeInneraEventDrafts } = require("./innera_event_drafts");
+const {
+  alignEventSummaries,
+  normalizeSummaryInput,
+} = require("./innera_event_summaries");
 const {
   AI_QUOTED_POINTS,
   createAiUsageTracker,
@@ -23,6 +31,10 @@ const {
   buildShareDocument,
   validateShareDocument,
 } = require("./follow_up_share");
+const {
+  isFollowUpQuestionRequest,
+  parseFollowUpQuestionsCompletion,
+} = require("./innera_ai_response");
 
 // 初始化 Admin SDK (擁有繞過 Security Rules 的最高權限)
 admin.initializeApp();
@@ -32,8 +44,9 @@ const lastFmApiKey = defineSecret("LASTFM_API_KEY");
 const spotifyClientId = defineSecret("SPOTIFY_CLIENT_ID");
 const spotifyClientSecret = defineSecret("SPOTIFY_CLIENT_SECRET");
 const DEFAULT_AI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
-const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v8-state-body-measurement";
+const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v12-chat-response-depth";
 const DIARY_EXTRACTION_PROMPT_VERSION = "diary_extraction_v1";
+const EVENT_SUMMARY_PROMPT_VERSION = "innera-event-summary-v1";
 
 async function requireAiCapacity(uid, feature) {
   try {
@@ -126,7 +139,6 @@ exports.aggregateDailyAiUsage = onSchedule(
     });
   },
 );
-
 exports.createFollowUpSummaryShare = onCall({ enforceAppCheck: true }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "請先登入後再建立分享");
   const summaryId = String(request.data?.summaryId || "").trim();
@@ -189,6 +201,45 @@ exports.getFollowUpSummaryShare = onRequest(async (request, response) => {
   response.set("Cache-Control", "no-store");
   return response.json({ summary: validation.summarySnapshot, expiresAt: validation.expiresAt.toISOString() });
 });
+
+exports.cleanupFollowUpSummaryShares = onSchedule(
+  {
+    schedule: "every 15 minutes",
+    timeZone: "Asia/Taipei",
+    region: "us-central1",
+    retryCount: 1,
+    maxInstances: 1,
+  },
+  async () => {
+    const now = Date.now();
+    let deletedCount = 0;
+    for (const collectionName of [
+      "followUpSummaryShares",
+      "follow_up_summary_shares",
+    ]) {
+      const snapshot = await db.collection(collectionName).get();
+      const deletions = snapshot.docs.filter((doc) => {
+        const data = doc.data();
+        const expiresAt = data.expiresAt?.toMillis?.() ??
+          new Date(data.expiresAt || 0).getTime();
+        const containsPlaintext = Object.prototype.hasOwnProperty.call(
+          data,
+          "summarySnapshot",
+        );
+        return containsPlaintext || !Number.isFinite(expiresAt) || expiresAt <= now;
+      });
+      for (let index = 0; index < deletions.length; index += 500) {
+        const batch = db.batch();
+        for (const doc of deletions.slice(index, index + 500)) {
+          batch.delete(doc.ref);
+        }
+        await batch.commit();
+      }
+      deletedCount += deletions.length;
+    }
+    console.log("Follow-up summary share cleanup completed", { deletedCount });
+  },
+);
 
 exports.cleanupExpiredAiChatImages = onSchedule(
   {
@@ -431,6 +482,7 @@ const inneraChatSchema = {
     "sources",
     "suggestedActions",
     "recordDraft",
+    "eventDrafts",
     "safetyLevel",
     "requiresFixedSafetyUi",
   ],
@@ -637,6 +689,54 @@ const inneraChatSchema = {
         },
       },
     },
+    eventDrafts: {
+      type: "array",
+      maxItems: 20,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "id",
+          "eventTime",
+          "timeContext",
+          "timePrecision",
+          "symptoms",
+          "stateChanges",
+          "rawUserEntries",
+          "note",
+        ],
+        properties: {
+          id: { type: "string" },
+          eventTime: nullableStringSchema,
+          timeContext: nullableStringSchema,
+          timePrecision: {
+            type: "string",
+            enum: ["exact", "approximate", "unspecified"],
+          },
+          symptoms: {
+            type: "array",
+            maxItems: 20,
+            items: { type: "string" },
+          },
+          stateChanges: {
+            type: "object",
+            additionalProperties: false,
+            required: ["energy_change", "appetite_change", "activity_change"],
+            properties: {
+              energy_change: nullableScoreSchema,
+              appetite_change: nullableScoreSchema,
+              activity_change: nullableScoreSchema,
+            },
+          },
+          rawUserEntries: {
+            type: "array",
+            maxItems: 20,
+            items: { type: "string" },
+          },
+          note: { type: "string" },
+        },
+      },
+    },
     safetyLevel: {
       type: "string",
       enum: [
@@ -649,80 +749,18 @@ const inneraChatSchema = {
     requiresFixedSafetyUi: { type: "boolean" },
   },
 };
-
-const DAILY_RECORD_CLASSIFICATION_PROMPT = `
-你正在協助使用者完成今天的結構化紀錄。你必須把對話分別分類到 emotionMentions、stateChanges、symptoms、bodyMeasurement、sleep，不得只產生文字摘要。
-
-情緒主體判定是最高優先規則，必須先判定「誰有這個情緒」，再決定是否抽取：
-- 每筆 emotionMention 必須輸出 subjectType、subjectText、isQuotedSpeech。
-- subjectType=user：使用者明確說「我／自己」的感受，或省略主詞但語境清楚是在說自己的當下感受。subjectText 填「我」或 null。
-- subjectType=other：爸爸、媽媽、弟弟、朋友、同事、醫師、對方、他／她等其他人的情緒；subjectText 保留原始主詞。
-- subjectType=shared：句子明確說「我們都／我也和他一樣」且有使用者自己的情緒證據。
-- subjectType=unknown：無法可靠判定主體。不可為了填欄位而猜成 user。
-- 他人情緒、他人說的話、引述句、歌詞、電影／文章／貼文中的情緒，不得寫入使用者 emotionMentions；保留在 events 或 diaryText，且不得改寫主體。
-- 混合句必須按逗號與「但／可是／不過／然而」拆開。例如「爸爸很快樂，但我超級不爽」只記錄「我超級不爽」為 user，爸爸快樂留在 events。
-- 「嗆他、摔門、不理他」是行為，不等於明確情緒。若依上下文推測情緒，source=inferred、needsConfirmation=true、confidence 不得高於 0.75；證據不足就不要建立 emotionMention。
-
-主體範例：
-- 「弟弟氣到哭，我很心疼」：弟弟生氣是 other，放 events；只把「我很心疼」列為 user emotionMention。
-- 「爸爸說他很快樂，我嗆他整趟只有你在快樂」：快樂是爸爸／引述內容，不得成為使用者情緒；「嗆他」本身也不得直接當成生氣。
-- 「媽媽很擔心我，害我也開始焦慮」：媽媽擔心放 events；只記錄使用者焦慮。
-- 「朋友說我看起來很焦慮，我自己也覺得是」：第二句是使用者確認，可記錄使用者焦慮；第一句本身不是使用者自述。
-
-分類優先順序：
-1. 睡眠時間、入睡、夜醒、早醒、睡眠品質優先放入 sleep。
-2. 明確情緒詞先保留為 emotionMentions.rawText，再嘗試映射到系統提供的正式情緒維度。
-3. 與平常相比的能量、食慾、活動量方向放入 stateChanges；只允許 energy_change、appetite_change、activity_change。3 代表和平常相同，沒有比較證據不得填 3；只有方向時保守使用 2 或 4。
-4. 具體身體或行為表現放入 symptoms；只有使用者明確提供測量數值與單位時才放入 bodyMeasurement，禁止從「變胖了」等模糊敘述猜數字。
-5. bodyMeasurement 數值最多一位小數且不得截斷多位整數。只接受體重 20～300 kg、體脂率 1～70%、腰圍 30～250 cm；超出範圍不要寫入數值，原句保留在 rawUserEntries 供確認。
-6. measurementTiming 只允許 afterWaking、afterBreakfast、afterLunch、afterDinner、beforeSleep、other。「晚餐後量的」對應 afterDinner；「起床量 75.5 公斤」對應 afterWaking。無法對應固定選項但有明確時間描述時使用 other，並把原本時間描述放入 customMeasurementTime。沒提時間時兩欄皆為 null，不得猜測。
-5. 同一句可以拆到多個欄位。
-5. 情緒沒有明確 1～5 分時仍必須保留，value=null、mentioned=true、needsFollowUp=true。
-6. 使用者明確說出的情緒 source=explicit。每筆保留 rawText、confidence、needsConfirmation、timeContext 和 evidence。
-7. 不得把早上興奮、下午無聊簡化成只有 overallMood。
-8. 不得把入睡困難放入 symptoms。
-9. normalizedDimensionId 與 normalizedDimensionName 只能使用請求中 emotionDimensions 的成對值。
-10. 無法可靠映射時兩者都輸出 null、needsConfirmation=true；不得建立新維度，也不得使用「無聊程度、空虛程度、興奮程度、焦慮程度」等舊名稱。
-11. 疲倦、白天嗜睡、身體沉重、食慾降低、一直想吃東西、噁心反胃等具體表現屬於 symptoms；能量、食慾、活動量絕對不得放入 emotionMentions 或要求情緒分數。
-12. 日期詞只作用於它所在的子句，不得跨越逗號、句號或轉折詞污染後續敘述。在 dailyRecord 中，後續子句沒有再次標示昨天／前天時，一律視為今天。
-
-睡眠 flags：入睡困難=initInsomnia；半夜反覆醒／維持睡眠困難=interrupted；
-太早醒=earlyWake；淺眠=lightSleep；多夢／惡夢=dreams；睡眠不足=insufficient；
-睡眠斷續=fragmented；夜尿=nocturia。
-
-睡眠時間欄位不得混用：
-- finalWakeTime 是甦醒時刻，對應「醒來、醒著、睜眼、清醒」。
-- wakeTime 是離床活動時刻，對應「起床、離床、下床開始活動」。
-- 「凌晨4點醒來，5點起床」必須是 finalWakeTime="04:00"、wakeTime="05:00"。
-- 若半夜醒來後又睡著，該時間放入 midWakeList／interrupted，不是 finalWakeTime。
-- 最近一次昨晚入睡、今天起床的跨夜睡眠歸入今天的 sleep。
-
-範例一：
-輸入：我今天很疲倦，晚上躺很久都睡不著。
-正確：symptoms=[{"name":"疲倦","source":"explicit"}]；
-sleep.flags=["initInsomnia"]。不得把入睡困難放進 symptoms。
-
-輸入：今天完全沒精神，一直想吃東西，體重 75.5 公斤，吃完又會反胃。
-正確：stateChanges.energy_change=1、appetite_change=4；symptoms 包含「一直想吃東西、噁心反胃」；bodyMeasurement.weightKg=75.5；emotionMentions 不得包含能量或食慾。
-
-範例二：
-輸入：我下午很無聊，也覺得很空虛，但早上看到比賽消息時很興奮。整體心情大概3分。
-正確：overallMood=3；emotionMentions 保留 rawText=無聊、空虛、興奮，
-依 emotionDimensions 映射成正式新維度；value=null，並保留下午／早上的 timeContext。
-
-範例三：
-輸入：我焦慮大概4分，昨天半夜醒了三次。
-正確：rawText=焦慮、value=4、source=explicit，映射到正式維度「焦慮」；
-若「昨天半夜」明確是較早、且不屬於最近一次跨夜睡眠，才不得寫入今天的 sleep；無法確認時可針對睡眠日期補問。
-
-範例四：
-輸入：昨天睡了11小時，可是還是覺得好累，心情也不太好，也有點想哭，還一直沒有原因哀嚎。
-正確：最近一次跨夜睡眠可歸入今天的 sleep；疲倦是今天的 symptom；心情不太好、想哭、哀嚎是今天的 emotionMentions，timeContext 不得填「昨天」。回覆也不得把這些後續狀態說成昨天。
-
-dailyRecord 模式每次最多補問一至兩個最重要的缺漏。已辨識但無分數的情緒可以詢問強度，
-但不得忽略、不得填暫定 3 分，也不得自動套用 overallMood。
-其他模式只需安靜更新 recordDraft，不得為了補欄位而追加問題或改變原本的對話方向。
-`;
+const followUpQuestionsSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["questions"],
+  properties: {
+    questions: {
+      type: "array",
+      maxItems: 4,
+      items: { type: "string" },
+    },
+  },
+};
 
 const ALLOWED_MUSIC_TAGS = new Set([
   "calm",
@@ -2423,6 +2461,104 @@ exports.searchInneraSongs = onCall(
   },
 );
 
+exports.summarizeInneraHealthEvents = onCall(
+  { secrets: [openAiApiKey], enforceAppCheck: true },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "請先登入後再整理事件紀錄");
+    }
+    const input = normalizeSummaryInput({
+      messages: request.data?.messages,
+      eventDrafts: request.data?.eventDrafts,
+      detectSafety: detectInneraSelfHarm,
+    });
+    if (!input.eventDrafts.length) {
+      throw new HttpsError("invalid-argument", "沒有可整理的事件草稿");
+    }
+    if (!input.messages.some((item) => item.role === "user")) {
+      throw new HttpsError("invalid-argument", "沒有可整理的使用者對話");
+    }
+
+    await requireAiCapacity(request.auth.uid, "innera_chat");
+    const usageTracker = createAiUsageTracker({
+      db,
+      admin,
+      uid: request.auth.uid,
+      requestId: request.data?.requestId,
+      feature: "innera_chat",
+      model: DEFAULT_AI_MODEL,
+      promptVersion: EVENT_SUMMARY_PROMPT_VERSION,
+      quotedPoints: AI_QUOTED_POINTS.innera_chat,
+      metadata: { task: "event_summaries", eventCount: input.eventDrafts.length },
+    });
+    await usageTracker.start();
+    let completion;
+    try {
+      const apiKey = openAiApiKey.value();
+      if (!apiKey) throw new HttpsError("internal", "缺少 OPENAI_API_KEY 設定");
+      const client = new OpenAI({ apiKey });
+      completion = await client.chat.completions.create({
+        model: DEFAULT_AI_MODEL,
+        temperature: 0.2,
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "innera_event_summaries",
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              required: ["eventSummaries"],
+              properties: {
+                eventSummaries: {
+                  type: "array",
+                  maxItems: 20,
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    required: ["eventId", "summary"],
+                    properties: {
+                      eventId: { type: "string" },
+                      summary: { type: "string" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        messages: [
+          {
+            role: "system",
+            content: [
+              "你是心域 Innera 的事件紀錄整理器，只做逐事件摘要。",
+              "eventDrafts 的結構化欄位是事實基準，不得改寫其數值或推論新欄位。",
+              "對話只用來補足使用者明確說過的自然語言脈絡；不得把 assistant 問句寫入摘要。",
+              "每個 eventDraft 必須輸出且只輸出一個相同 eventId 的 summary，不得合併不同事件。",
+              "同一事件的多輪使用者補充應整合成一段自然、精簡的繁體中文紀錄。",
+              "不得捏造原因、壓力、睡眠、食慾或因果。數值量表是絕對 1–5；除非使用者明說，不得寫成比平常上升或下降。",
+              "摘要不必機械式重複所有數字，不要診斷，不要處理或重新分類安全風險。",
+            ].join("\n"),
+          },
+          { role: "user", content: JSON.stringify(input) },
+        ],
+      });
+      const raw = String(completion.choices?.[0]?.message?.content || "").trim();
+      if (!raw) throw new Error("Empty event summary response");
+      const parsed = JSON.parse(stripMarkdownFence(raw));
+      const eventSummaries = alignEventSummaries(parsed.eventSummaries, input.eventDrafts);
+      if (eventSummaries.some((item) => !item.summary)) throw new Error("Missing event summary");
+      await usageTracker.succeed(completion);
+      return { eventSummaries, model: DEFAULT_AI_MODEL, promptVersion: EVENT_SUMMARY_PROMPT_VERSION };
+    } catch (error) {
+      await usageTracker.fail(error, completion);
+      console.error("summarizeInneraHealthEvents failed", { message: error?.message || String(error) });
+      if (error instanceof HttpsError) throw error;
+      throw new HttpsError("internal", "目前無法整理事件文字，原草稿不會變更。");
+    }
+  },
+);
+
 exports.generateInneraAiChat = onCall(
   { secrets: [openAiApiKey], enforceAppCheck: true },
   async (request) => {
@@ -2526,16 +2662,8 @@ exports.generateInneraAiChat = onCall(
       throw new HttpsError("invalid-argument", "請輸入想和心域 AI 說的內容");
     }
 
-    const imminentPhrases = [
-      "割腕",
-      "跳樓",
-      "吞藥",
-      "已經準備好工具",
-      "等一下就要做",
-      "正在傷害自己",
-      "想殺人",
-      "想傷害別人",
-    ];
+    const safetySignal = detectInneraSelfHarm(message);
+    const harmToOthersPhrases = ["想殺人", "想傷害別人"];
     const medicalUrgencyPhrases = [
       "吐血",
       "黑便",
@@ -2546,16 +2674,23 @@ exports.generateInneraAiChat = onCall(
       "意識不清",
       "持續大量出血",
     ];
-    const hasImminentDanger = imminentPhrases.some((phrase) => message.includes(phrase));
+    const hasImminentDanger = harmToOthersPhrases.some((phrase) =>
+      message.includes(phrase),
+    );
     const hasMedicalUrgency = medicalUrgencyPhrases.some((phrase) => message.includes(phrase));
-    if (hasImminentDanger || hasMedicalUrgency) {
+    if (safetySignal.detected || hasImminentDanger || hasMedicalUrgency) {
       return {
         reply: "",
         followUpQuestion: null,
         sources: [],
         suggestedActions: [],
         recordDraft: null,
-        safetyLevel: hasMedicalUrgency ? "medicalUrgency" : "imminentDanger",
+        eventDrafts: [],
+        safetyLevel: hasMedicalUrgency
+          ? "medicalUrgency"
+          : safetySignal.level === "concern"
+            ? "possibleSelfHarm"
+            : "imminentDanger",
         requiresFixedSafetyUi: true,
         model: null,
       };
@@ -2563,6 +2698,7 @@ exports.generateInneraAiChat = onCall(
 
     const usageFeature =
       mode === "recentReview" ? "recent_review" : "innera_chat";
+    const followUpQuestionRequest = isFollowUpQuestionRequest(mode, message);
     await requireAiCapacity(request.auth.uid, usageFeature);
     const usageTracker = createAiUsageTracker({
       db,
@@ -2645,50 +2781,19 @@ exports.generateInneraAiChat = onCall(
         response_format: {
           type: "json_schema",
           json_schema: {
-            name: "innera_chat_response",
+            name: followUpQuestionRequest
+              ? "follow_up_questions_response"
+              : "innera_chat_response",
             strict: true,
-            schema: inneraChatSchema,
+            schema: followUpQuestionRequest
+              ? followUpQuestionsSchema
+              : inneraChatSchema,
           },
         },
         messages: [
           {
             role: "system",
-            content: [
-              "You are Innera AI, a mental-health record and reflection assistant.",
-              "Reply in Traditional Chinese with a gentle, respectful, non-judgmental tone.",
-              "You are not a doctor, therapist, or emergency service.",
-              "Do not diagnose, claim causation, recommend medication changes, or invent records.",
-              "When an image is provided, describe only what is visibly supported and clearly state uncertainty. Do not identify a person, diagnose from an image, or treat image interpretation as a confirmed medical fact.",
-              "Image-derived observations must never be added to recordDraft automatically. Only facts explicitly stated in the user's text may update the daily record; ask the user to confirm any image-derived detail first.",
-              "Medication records may contain Chinese product names and English generic names or active ingredients. When discussing a recorded medication, use nameEn and ingredientLines as the primary identification evidence, understand English ingredient names even when the user writes in Chinese, and explain in Traditional Chinese.",
-              "Clearly separate facts present in the user's medication record from general medication knowledge. If an ingredient is missing, ambiguous, misspelled, or unfamiliar, say that it cannot be identified reliably and suggest confirming the package, prescription, doctor, or pharmacist; never guess the ingredient, indication, interaction, side effect, or clinical effect.",
-              "Do not minimize self-harm, violence, or medical emergency risk.",
-              "Return only JSON with reply, followUpQuestion, sources, suggestedActions, recordDraft, safetyLevel, requiresFixedSafetyUi.",
-              ...(supportsDailyRecordDraft
-                ? [
-                    "Daily record, emotional support, and physical health modes support the shared daily record. Update recordDraft only with facts the user explicitly states about today.",
-                    "Do not copy historical context, general questions, guesses, or assistant content into today's recordDraft.",
-                    "Outside dailyRecord mode, keep the selected mode's conversation goal primary and update recordDraft silently; do not change the topic or ask form-like questions just to complete the record.",
-                    `${DAILY_RECORD_CLASSIFICATION_PROMPT}\n正式情緒維度：${JSON.stringify(emotionDimensions)}`,
-                  ]
-                : [
-                    "Recent review mode never reads, creates, or updates today's recordDraft. Return recordDraft as null.",
-                    "Focus on dailyRecordStats, recentDailyRecords, and recentDiaries across the supplied date range. Do not reduce the review to today only.",
-                    "When at least two distinct dates are available, cite cross-date evidence and summarize recurring patterns or changes. If the data covers only one day, state that a trend cannot be determined.",
-                    "For bedtime claims, sleepTimeStats and its bedtimeEvidence are authoritative. Never infer a late bedtime from fatigue, dreams, low sleep quality, sleep flags, wake time, or previous assistant messages.",
-                    "Only say that sleeping after midnight is frequent when sleepTimeStats.frequentAfterMidnightSleep is true. State afterMidnightSleepDays / validSleepTimeDays and relevant dates; otherwise do not describe the user as often or generally sleeping late.",
-                    "If a previous assistant claim conflicts with the supplied records or computed stats, correct it explicitly. Previous assistant text is conversation context, not record evidence.",
-                    "For emotion frequency claims, emotionStats is authoritative. A value of 4 or 5 is intensity on that date, not evidence that the emotion occurred frequently.",
-                    "Use emotionStats.emotions occurrenceDays, dates, and frequent fields. Only describe an emotion as frequent or dominant when its computed frequency supports that wording, and state the count. Prefer mostFrequentEmotions when summarizing the main emotions.",
-                  ]),
-              "sources must only reuse the supplied contextSources without private text.",
-              "requiresFixedSafetyUi must be false unless an urgent risk needs emergency help.",
-              mode === "physicalHealth"
-                  ? "Separate observations, missing information, what to keep recording, and when to seek care. Do not diagnose."
-                  : mode === "recentReview"
-                    ? "Separate record facts, possible relationships, and directions to notice. State the actual recorded-day count and covered period. Missing data does not mean an event did not occur."
-                    : "Respond to emotions first. Ask at most one open question and encourage real-world support when appropriate.",
-            ].join("\n"),
+            content: `${INNERA_UNIFIED_PROMPT}\n\n${inneraModePrompt(mode)}`,
           },
           {
             role: "user",
@@ -2711,6 +2816,24 @@ exports.generateInneraAiChat = onCall(
           },
         ],
       });
+
+      if (followUpQuestionRequest) {
+        const questionResult = parseFollowUpQuestionsCompletion(completion);
+        if (!questionResult.parsed) {
+          throw new Error(questionResult.failure || "Invalid follow-up questions response");
+        }
+        await usageTracker.succeed(completion);
+        return {
+          ...questionResult.parsed,
+          sources: [],
+          safetyLevel: "normal",
+          requiresFixedSafetyUi: false,
+          model: DEFAULT_AI_MODEL,
+          promptVersion: INNERA_AI_PROMPT_VERSION,
+          inputTokens: completion.usage?.prompt_tokens ?? null,
+          outputTokens: completion.usage?.completion_tokens ?? null,
+        };
+      }
 
       const rawText = String(completion.choices?.[0]?.message?.content || "").trim();
       if (!rawText) {
@@ -2752,6 +2875,15 @@ exports.generateInneraAiChat = onCall(
             message,
           )
         : null;
+      const normalizedEventDrafts = supportsDailyRecordDraft
+        ? normalizeInneraEventDrafts(
+            image ? existingRecordDraft.eventDrafts : parsed.eventDrafts,
+            existingRecordDraft.eventDrafts,
+          )
+        : [];
+      if (normalizedRecordDraft) {
+        normalizedRecordDraft.eventDrafts = normalizedEventDrafts;
+      }
       const asksExcludedEmotionScore =
         normalizedRecordDraft &&
         /(幾分|分數|強度|程度)/.test(rawFollowUpQuestion) &&
@@ -2760,12 +2892,15 @@ exports.generateInneraAiChat = onCall(
         );
       const result = {
         reply,
-        followUpQuestion: asksExcludedEmotionScore ? "" : rawFollowUpQuestion,
+        followUpQuestion: asksExcludedEmotionScore
+          ? ""
+          : sanitizeModeFollowUp(mode, rawFollowUpQuestion),
         sources: contextSources,
         suggestedActions: Array.isArray(parsed.suggestedActions)
           ? parsed.suggestedActions.map((item) => String(item).trim()).filter(Boolean).slice(0, 4)
           : [],
         recordDraft: normalizedRecordDraft,
+        eventDrafts: normalizedEventDrafts,
         safetyLevel: "normal",
         requiresFixedSafetyUi: false,
         model: DEFAULT_AI_MODEL,

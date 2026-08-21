@@ -10,6 +10,7 @@ import '../pdf/follow_up_summary_pdf_service.dart';
 import '../qr/follow_up_qr_painter.dart';
 import '../qr/follow_up_summary_share_service.dart';
 import '../services/follow_up_service.dart';
+import '../services/follow_up_summary_section_builder.dart';
 import '../../utils/app_lock_session_service.dart';
 import '../widgets/follow_up_sleep_trend_card.dart';
 import 'follow_up_share_preview_page.dart';
@@ -245,6 +246,7 @@ class _FollowUpSummaryDetailPageState extends State<FollowUpSummaryDetailPage>
       );
     }
     final display = FollowUpSummaryDisplayModel.fromRecord(_summary);
+    final sections = FollowUpSummarySectionBuilder.fromDisplay(display);
     final hasActiveShare =
         _activeShare != null && _activeShare!.expiresAt.isAfter(DateTime.now());
     return Scaffold(
@@ -257,23 +259,17 @@ class _FollowUpSummaryDetailPageState extends State<FollowUpSummaryDetailPage>
         ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            _card('基本資訊', display.visitInfo, bullets: false),
-            _discussionCard(display),
-            _card('主要變化', display.keyChanges),
-            _card('紀錄證據摘要', display.recordEvidenceHighlights,
-                emptyText: '此摘要沒有額外的快速記錄統計'),
-            FollowUpSleepTrendCard.fromRecord(record: _summary),
-            _card('身體症狀', display.symptoms, emptyText: '此摘要沒有可顯示的症狀資料'),
-            _card('身體測量', display.bodyMeasurements,
-                emptyText: '此摘要沒有可顯示的體重、體脂率或腰圍資料'),
-            _card('藥物調整時間軸', display.medicationTimeline,
-                emptyText: '此摘要沒有藥物調整紀錄'),
-            _card('主觀用藥感受', display.medicationSubjectiveSummaries,
-                emptyText: '此摘要期間沒有主觀用藥感受回報'),
-            _card('其他想跟醫師說的內容', display.userSharedNotes,
-                emptyText: '沒有其他想跟醫師說的內容'),
-            _card('資料限制', display.dataLimitations),
-            _card('AI 整理時間', [display.generatedAt], bullets: false),
+            ...sections
+                .map((section) => section.id == FollowUpSummarySectionId.sleep
+                    ? FollowUpSleepTrendCard.fromRecord(record: _summary)
+                    : section.id == FollowUpSummarySectionId.discussion
+                        ? _discussionCard(section)
+                        : _card(
+                            section.title,
+                            section.items,
+                            bullets: section.id !=
+                                FollowUpSummarySectionId.basicInfo,
+                          )),
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
               child: Text('摘要僅供回診溝通參考，不取代醫師判斷。'),
@@ -336,39 +332,32 @@ class _FollowUpSummaryDetailPageState extends State<FollowUpSummaryDetailPage>
     );
   }
 
-  Widget _discussionCard(FollowUpSummaryDisplayModel display) => Card(
+  Widget _discussionCard(FollowUpSummarySection section) => Card(
         elevation: 0,
         color: HealingDesignSystem.adaptiveSurface(context),
         child: Padding(
           padding: const EdgeInsets.all(14),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('想跟醫師討論的事', style: HealingDesignSystem.titleSmall),
-            if (display.topicLabels.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: display.topicLabels
-                    .map((label) => Chip(label: Text(label)))
-                    .toList(),
-              ),
-            ],
-            if (display.discussionItems.isEmpty && display.topicLabels.isEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text('尚無資料',
-                    style: TextStyle(
-                        color: HealingDesignSystem.adaptiveSecondaryText(
-                            context))),
-              )
-            else
-              ...display.discussionItems.map((item) => Padding(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(section.title, style: HealingDesignSystem.titleSmall),
+              if (section.labels.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: section.labels
+                      .map((label) => Chip(label: Text(label)))
+                      .toList(),
+                ),
+              ],
+              ...section.items.map((item) => Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child:
                         Text('• $item', style: const TextStyle(height: 1.45)),
                   )),
-          ]),
+            ],
+          ),
         ),
       );
 
@@ -396,12 +385,9 @@ class _SummaryEditorState extends State<_SummaryEditor> {
       'notes': TextEditingController(text: widget.summary.additionalNotes),
       'changes': TextEditingController(text: output.keyChanges.join('\n')),
       'discussionItems': TextEditingController(
-        text: FollowUpSummaryTextFormatter.safeDiscussionItems([
-          if (widget.summary.discussionDetails.trim().isNotEmpty)
-            widget.summary.discussionDetails,
-          ...output.discussionItems,
-          ...output.discussionPriorities,
-        ]).join('\n'),
+        text: FollowUpSummaryTextFormatter.safeDiscussionItems(
+          output.discussionItems,
+        ).join('\n'),
       ),
       'sharedNotes':
           TextEditingController(text: output.userSharedNotes.join('\n')),

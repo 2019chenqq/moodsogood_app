@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../constants/healing_design_system.dart';
 import '../models/follow_up_ai_summary.dart';
+import '../services/follow_up_summary_section_builder.dart';
 import '../widgets/follow_up_sleep_trend_card.dart';
 
 enum FollowUpShareActionType { pdf, qr }
@@ -43,6 +44,7 @@ class _FollowUpSharePreviewPageState extends State<FollowUpSharePreviewPage> {
       widget.summary,
       options: _options,
     );
+    final sections = FollowUpSummarySectionBuilder.fromDisplay(display);
     return Scaffold(
       backgroundColor: HealingDesignSystem.adaptiveBackground(context),
       appBar: AppBar(
@@ -90,32 +92,17 @@ class _FollowUpSharePreviewPageState extends State<FollowUpSharePreviewPage> {
           ),
           const SizedBox(height: 8),
           Text('去識別化分享預覽', style: HealingDesignSystem.titleMedium),
-          _card('基本資訊', display.visitInfo, bullets: false),
-          if (_options.discussionTopics)
-            _discussionCard(display.topicLabels, display.discussionItems),
-          if (_options.emotionsAndSymptoms) ...[
-            _card('主要變化', display.keyChanges),
-          ],
-          if (_options.sleep)
-            FollowUpSleepTrendCard.fromRecord(record: widget.summary),
-          if (_options.emotionsAndSymptoms)
-            _card('身體症狀', display.symptoms, emptyText: '此摘要沒有可顯示的症狀資料'),
-          if (_options.emotionsAndSymptoms &&
-              display.recordEvidenceHighlights.isNotEmpty)
-            _card('紀錄重點', display.recordEvidenceHighlights),
-          if (_options.bodyMeasurements)
-            _card('身體測量', display.bodyMeasurements,
-                emptyText: '此摘要沒有可顯示的體重、體脂率或腰圍資料'),
-          if (_options.medicationAdjustments)
-            _card('藥物調整時間軸', display.medicationTimeline,
-                emptyText: '此摘要沒有藥物調整紀錄'),
-          if (_options.medicationAdjustments &&
-              display.medicationSubjectiveSummaries.isNotEmpty)
-            _card('主觀用藥感受', display.medicationSubjectiveSummaries),
-          if (_options.lifeUpdates)
-            _card('其他想跟醫師說的內容', display.userSharedNotes,
-                emptyText: '沒有其他想跟醫師說的內容'),
-          if (_options.dataLimitations) _card('資料限制', display.dataLimitations),
+          ...sections
+              .map((section) => section.id == FollowUpSummarySectionId.sleep
+                  ? FollowUpSleepTrendCard.fromRecord(record: widget.summary)
+                  : section.id == FollowUpSummarySectionId.discussion
+                      ? _discussionCard(section)
+                      : _card(
+                          section.title,
+                          section.items,
+                          bullets:
+                              section.id != FollowUpSummarySectionId.basicInfo,
+                        )),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Text('摘要僅供回診溝通參考，不取代醫師判斷。'),
@@ -175,31 +162,31 @@ class _FollowUpSharePreviewPageState extends State<FollowUpSharePreviewPage> {
         ),
       );
 
-  Widget _discussionCard(List<String> labels, List<String> items) => Card(
+  Widget _discussionCard(FollowUpSummarySection section) => Card(
         elevation: 0,
         child: Padding(
           padding: const EdgeInsets.all(14),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('想跟醫師討論的事', style: HealingDesignSystem.titleSmall),
-            if (labels.isNotEmpty)
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children:
-                    labels.map((label) => Chip(label: Text(label))).toList(),
-              ),
-            if (labels.isEmpty && items.isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(top: 8),
-                child: Text('尚無資料'),
-              )
-            else
-              ...items.map((item) => Padding(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(section.title, style: HealingDesignSystem.titleSmall),
+              if (section.labels.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: section.labels
+                      .map((label) => Chip(label: Text(label)))
+                      .toList(),
+                ),
+              ],
+              ...section.items.map((item) => Padding(
                     padding: const EdgeInsets.only(top: 8),
-                    child: Text('• $item'),
+                    child:
+                        Text('• $item', style: const TextStyle(height: 1.45)),
                   )),
-          ]),
+            ],
+          ),
         ),
       );
 }

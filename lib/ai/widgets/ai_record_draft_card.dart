@@ -24,35 +24,38 @@ class AiRecordDraftCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final summary = <String>[];
+    if (draft.eventDrafts.isNotEmpty) {
+      summary.add('將建立 ${draft.eventDrafts.length} 筆事件紀錄');
+      for (final event in draft.eventDrafts.take(2)) {
+        final content =
+            event.symptoms.isEmpty ? event.note : event.symptoms.join('、');
+        summary.add('${event.timeLabel}：$content');
+      }
+    }
     if (draft.emotions.isNotEmpty) {
-      summary.add(
-        draft.emotions.map(
-          (item) {
-            final label = item.normalizedDimensionName == null
-                ? '${item.rawText}：待選情緒'
-                : item.rawText == item.normalizedDimensionName
-                    ? item.normalizedDimensionName!
-                    : '${item.rawText} → ${item.normalizedDimensionName}';
-            return item.score == null
-                ? '$label：待補分數'
-                : '$label ${item.score} / 5';
-          },
-        ).join('、'),
-      );
+      final item = draft.emotions.first;
+      final label = item.normalizedDimensionName ?? item.rawText;
+      summary.add(item.score == null ? label : '$label ${item.score}/5');
     }
     if (draft.symptoms.isNotEmpty) {
-      summary.add('症狀：${draft.symptoms.join('、')}');
+      summary.add(draft.symptoms.first);
     }
     if (draft.stateChanges.isNotEmpty) {
-      final values = draft.stateChanges.entries.map((entry) {
-        final dimension = kDailyStateDimensionsById[entry.key];
-        return dimension == null
-            ? null
-            : '${dimension.displayName} ${entry.value}/5';
-      }).whereType<String>();
-      summary.add('狀態變化：${values.join('、')}');
+      final entry = draft.stateChanges.entries.first;
+      final dimension = kDailyStateDimensionsById[entry.key];
+      if (dimension != null) {
+        summary.add(
+          '${dimension.displayName}：${dailyStateValueLabel(dimension, entry.value)}',
+        );
+      }
     }
-    if (draft.bodyMeasurement?.hasData == true) {
+    final timeContext = draft.emotions
+        .map((item) => item.timeContext?.trim())
+        .whereType<String>()
+        .where((value) => value.isNotEmpty)
+        .firstOrNull;
+    if (timeContext != null) summary.add('$timeContext發生');
+    if (summary.length < 4 && draft.bodyMeasurement?.hasData == true) {
       final measurement = draft.bodyMeasurement!;
       final values = <String>[
         if (measurement.weightKg != null)
@@ -65,16 +68,10 @@ class AiRecordDraftCard extends StatelessWidget {
           measurement.measurementTimeDisplay ??
               measurement.measurementTiming!.displayName,
       ];
-      summary.add('身體組成：${values.join('、')}');
+      summary.add(values.join('、'));
     }
-    if (draft.sleep.hasData) {
+    if (summary.length < 4 && draft.sleep.hasData) {
       summary.add('睡眠：已補充');
-    }
-    if (draft.events.isNotEmpty) {
-      summary.add('生活事件：${draft.events.take(2).join('、')}');
-    }
-    if (draft.diaryText.isNotEmpty || draft.rawUserEntries.isNotEmpty) {
-      summary.add('日記：已整理 ${draft.diaryText.length} 字');
     }
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
@@ -88,9 +85,9 @@ class AiRecordDraftCard extends StatelessWidget {
               children: [
                 const Icon(Icons.auto_awesome_rounded, size: 18),
                 const SizedBox(width: 8),
-                Text('目前已整理', style: textTheme.titleSmall),
-                const Spacer(),
-                TextButton(onPressed: onPreview, child: const Text('查看完整草稿')),
+                Expanded(
+                  child: Text('可以整理成紀錄', style: textTheme.titleSmall),
+                ),
               ],
             ),
             const SizedBox(height: 6),
@@ -100,20 +97,33 @@ class AiRecordDraftCard extends StatelessWidget {
               ...summary.take(4).map(
                     (item) => Padding(
                       padding: const EdgeInsets.only(top: 3),
-                      child: Text(item,
-                          maxLines: 2, overflow: TextOverflow.ellipsis),
+                      child: Text(
+                        item,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ),
             if (draft.missingFields.isNotEmpty) ...[
               const SizedBox(height: 6),
-              Text('仍可補充：${draft.missingFields.take(2).join('、')}',
-                  style: textTheme.bodySmall),
+              Text(
+                '還可以補充：${draft.missingFields.take(2).join('、')}',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: textTheme.bodySmall?.copyWith(
+                  color: HealingDesignSystem.adaptiveSecondaryText(context),
+                ),
+              ),
             ],
             const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
-                onPressed: isExtractingDiary ? null : onExtractDiary,
+                onPressed: isExtractingDiary
+                    ? null
+                    : draft.eventDrafts.isNotEmpty && !draft.confirmed
+                        ? onPreview
+                        : onExtractDiary,
                 icon: isExtractingDiary
                     ? const SizedBox.square(
                         dimension: 16,
@@ -128,9 +138,11 @@ class AiRecordDraftCard extends StatelessWidget {
                 label: Text(
                   isExtractingDiary
                       ? '正在整理…'
-                      : draft.confirmed
-                          ? '再次加入／補充每日紀錄'
-                          : '加入每日紀錄',
+                      : draft.eventDrafts.isNotEmpty && !draft.confirmed
+                          ? '查看並確認 ${draft.eventDrafts.length} 筆紀錄'
+                          : draft.confirmed
+                              ? '新增另一筆紀錄'
+                              : '查看並確認',
                 ),
               ),
             ),

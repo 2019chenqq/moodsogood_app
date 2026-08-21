@@ -252,6 +252,7 @@ class MedicationLocalDB {
   ) async {
     final data = cycle.toMap()..remove('id');
     data['changeDate'] = Timestamp.fromDate(cycle.changeDate);
+    data['episodeStartDate'] = Timestamp.fromDate(cycle.episodeStartDate);
     if (cycle.endedAt != null) {
       data['endedAt'] = Timestamp.fromDate(cycle.endedAt!);
     }
@@ -265,8 +266,7 @@ class MedicationLocalDB {
     );
   }
 
-  Future<List<MedicationSubjectiveTrackingCycle>>
-      getSubjectiveTrackingCycles({
+  Future<List<MedicationSubjectiveTrackingCycle>> getSubjectiveTrackingCycles({
     required String uid,
     String? medicationId,
     bool? active,
@@ -310,6 +310,76 @@ class MedicationLocalDB {
           endedAt: endedAt,
           reason: reason,
           supersededByChangeRecordId: supersededByChangeRecordId,
+        ),
+      );
+    }
+  }
+
+  Future<void> endActiveSubjectiveTrackingCyclesExceptChangeRecord({
+    required String uid,
+    required String changeRecordId,
+    required DateTime endedAt,
+  }) async {
+    final activeCycles = await getSubjectiveTrackingCycles(
+      uid: uid,
+      active: true,
+    );
+    for (final cycle in activeCycles) {
+      if (cycle.changeRecordId == changeRecordId) continue;
+      await saveSubjectiveTrackingCycle(
+        uid,
+        cycle.end(
+          endedAt: endedAt,
+          reason: 'supersededByMedicationChange',
+          supersededByChangeRecordId: changeRecordId,
+        ),
+      );
+    }
+  }
+
+  Future<void> endDuplicateSubjectiveTrackingCyclesForChangeRecord({
+    required String uid,
+    required String changeRecordId,
+    required String keepCycleId,
+    required DateTime endedAt,
+  }) async {
+    final activeCycles = await getSubjectiveTrackingCycles(
+      uid: uid,
+      active: true,
+    );
+    for (final cycle in activeCycles) {
+      if (cycle.changeRecordId != changeRecordId || cycle.id == keepCycleId) {
+        continue;
+      }
+      await saveSubjectiveTrackingCycle(
+        uid,
+        cycle.end(
+          endedAt: endedAt,
+          reason: 'mergedIntoChangeRecordTracking',
+          supersededByChangeRecordId: changeRecordId,
+        ),
+      );
+    }
+  }
+
+  Future<void> endActiveSubjectiveTrackingCyclesExceptCycle({
+    required String uid,
+    required String keepCycleId,
+    required DateTime endedAt,
+    required String episodeId,
+  }) async {
+    final activeCycles = await getSubjectiveTrackingCycles(
+      uid: uid,
+      active: true,
+    );
+    for (final cycle in activeCycles) {
+      if (cycle.id == keepCycleId) continue;
+      await saveSubjectiveTrackingCycle(
+        uid,
+        cycle.end(
+          endedAt: endedAt,
+          reason: 'supersededByMedicationEpisode',
+          supersededByChangeRecordId: episodeId,
         ),
       );
     }

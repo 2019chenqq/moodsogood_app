@@ -491,27 +491,8 @@ class NotificationHelper {
   }
 
   String _trackingChangeSummary(MedicationSubjectiveTrackingCycle cycle) {
-    switch (cycle.changeType) {
-      case MedicationTrackingChangeType.added:
-        return '新增藥物';
-      case MedicationTrackingChangeType.resumed:
-        return '重新開始使用';
-      case MedicationTrackingChangeType.doseIncreased:
-      case MedicationTrackingChangeType.doseDecreased:
-        final unit = cycle.doseUnit?.trim() ?? '';
-        final oldDose = cycle.oldDose;
-        final newDose = cycle.newDose;
-        if (oldDose != null && newDose != null) {
-          return '${_doseText(oldDose)}$unit → ${_doseText(newDose)}$unit';
-        }
-        return cycle.changeType == MedicationTrackingChangeType.doseIncreased
-            ? '增加劑量'
-            : '減少劑量';
-    }
+    return cycle.adjustmentSummary;
   }
-
-  String _doseText(double dose) =>
-      dose == dose.roundToDouble() ? dose.toInt().toString() : dose.toString();
 
   bool _navigateToDailyRecord() {
     final navigator = rootNavigatorKey.currentState;

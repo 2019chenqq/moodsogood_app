@@ -162,6 +162,9 @@ class UnifiedHealthDataRepository {
       stateChanges:
           Map.unmodifiable(normalizeStateChanges(record.stateChanges)),
       overallMood: record.overallMood,
+      sourceId: record.id,
+      sleepFlags: List.unmodifiable(record.sleep.flags),
+      sleepQuality: record.sleep.quality,
     );
   }
 
@@ -183,6 +186,7 @@ class UnifiedHealthDataRepository {
           )
           .toList(growable: false),
       stateChanges: Map.unmodifiable(normalizeStateChanges(event.stateChanges)),
+      sourceId: event.id,
     );
   }
 

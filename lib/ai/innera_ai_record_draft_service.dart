@@ -2,7 +2,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../daily/emotion_dimensions.dart';
+import '../daily/health_event_repository.dart';
 import '../diary/diary_repository.dart';
+import '../models/health_event.dart';
 import '../utils/health_data_encryption_service.dart';
 import '../models/daily_record.dart';
 import 'innera_ai_record_draft.dart';
@@ -77,6 +79,7 @@ class InneraAiRecordDraftService {
   }) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) throw StateError('A signed-in user is required.');
+    await _saveHealthEventDrafts(uid, draft);
     final recordRef = _recordRef(uid, draft.dateKey);
     await HealthDataEncryptionService.mutateEncrypted(recordRef, (current) {
       final currentEmotions = _emotionMap(current['emotions']);
@@ -172,6 +175,27 @@ class InneraAiRecordDraftService {
     );
   }
 
+  Future<void> confirmHealthEvents(InneraAiRecordDraft draft) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) throw StateError('A signed-in user is required.');
+    await _saveHealthEventDrafts(uid, draft);
+    await save(draft.copyWith(confirmed: true));
+  }
+
+  Future<void> _saveHealthEventDrafts(
+    String uid,
+    InneraAiRecordDraft draft,
+  ) async {
+    final repository = HealthEventRepository();
+    for (final event in buildConfirmedHealthEvents(draft)) {
+      await repository.upsertConfirmedDraft(
+        userId: uid,
+        eventId: event.id,
+        event: event,
+      );
+    }
+  }
+
   InneraAiRecordDraft _fromExistingRecord(
       InneraAiRecordDraft base, Map<String, dynamic> data) {
     final isLegacyTenPoint = (data['moodScale'] as num?)?.toInt() == 10;
@@ -211,6 +235,7 @@ class InneraAiRecordDraftService {
             )
           : null,
       sleep: AiSleepDraft.fromMap(storedSleep),
+      eventDrafts: base.eventDrafts,
       updatedAt: DateTime.now(),
       hasExistingRecord: true,
     );
@@ -259,4 +284,42 @@ class InneraAiRecordDraftService {
     final score = (value as num?)?.toDouble();
     return score != null && score >= 1 && score <= 5 ? score : null;
   }
+}
+
+List<HealthEvent> buildConfirmedHealthEvents(InneraAiRecordDraft draft) {
+  final day = DateTime.parse(draft.dateKey);
+  return draft.eventDrafts.where((item) => item.hasContent).map((item) {
+    final sourceTime = item.eventTime ?? draft.updatedAt;
+    final timestamp = DateTime(
+      day.year,
+      day.month,
+      day.day,
+      sourceTime.hour,
+      sourceTime.minute,
+    );
+    final rawEventId =
+        'ai-${draft.dateKey}-${item.id}'.replaceAll(RegExp(r'[/\\]'), '-');
+    final eventId =
+        rawEventId.length <= 240 ? rawEventId : rawEventId.substring(0, 240);
+    return HealthEvent(
+      id: eventId,
+      timestamp: timestamp,
+      symptoms: item.symptoms
+          .map((name) => HealthEventSymptom(name: name, severity: 3))
+          .toList(),
+      emotions: item.emotions
+          .where((emotion) => emotion.score != null)
+          .map(
+            (emotion) => HealthEventEmotion(
+              name: emotion.normalizedDimensionName ?? emotion.rawText,
+              intensity: emotion.score!,
+            ),
+          )
+          .toList(),
+      stateChanges: item.stateChanges,
+      timePrecision: item.timePrecision.name,
+      context: item.timeContext,
+      note: item.note.isNotEmpty ? item.note : item.rawUserEntries.join('\n'),
+    );
+  }).toList();
 }

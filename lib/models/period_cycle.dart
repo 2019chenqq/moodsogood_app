@@ -22,11 +22,11 @@ class PeriodCycle {
     // 正規化日期 (只比對 yyyy-MM-dd)
     final d = DateTime(date.year, date.month, date.day);
     final s = DateTime(startDate.year, startDate.month, startDate.day);
-    final e = endDate != null
-        ? DateTime(endDate!.year, endDate!.month, endDate!.day)
-        : DateTime.now(); // 若未結束，預設包含到今天
+    final e = endDate == null
+        ? null
+        : DateTime(endDate!.year, endDate!.month, endDate!.day);
 
-    return !d.isBefore(s) && !d.isAfter(e);
+    return !d.isBefore(s) && (e == null || !d.isAfter(e));
   }
 
   Map<String, dynamic> toFirestore() {

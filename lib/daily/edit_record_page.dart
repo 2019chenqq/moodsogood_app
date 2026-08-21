@@ -11,7 +11,6 @@ import '../constants/healing_design_system.dart';
 import '../analytics_service.dart';
 import '../models/daily_record.dart';
 import 'widgets/night_awakening_editor.dart';
-import 'daily_state_dimensions.dart';
 import 'symptom_definitions.dart';
 import 'body_measurement_input.dart';
 import 'sleep_record_service.dart';
@@ -51,10 +50,9 @@ class _EditRecordPageState extends State<EditRecordPage> {
     }
     setState(() => _saving = true);
 
-    // 你要的提示：「開始儲存情緒、症狀、睡眠」
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('開始儲存情緒、症狀、睡眠')),
+        const SnackBar(content: Text('開始儲存每日紀錄')),
       );
     }
 
@@ -571,145 +569,6 @@ class _EditRecordPageState extends State<EditRecordPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // 情緒區塊
-          _sectionHeader('情緒', onAdd: _addEmotion),
-          Container(
-            margin: const EdgeInsets.only(bottom: 18),
-            decoration: HealingDesignSystem.adaptiveCardDecoration(
-              context,
-              bgColor: HealingDesignSystem.adaptiveSurface(context),
-            ),
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-            child: Column(
-              children: [
-                if (emotions.isEmpty)
-                  ListTile(
-                      title: Text('沒有情緒項目',
-                          style: TextStyle(
-                              color: HealingDesignSystem.adaptiveSecondaryText(
-                                  context)))),
-                ...emotions.asMap().entries.map((entry) {
-                  final idx = entry.key;
-                  final m = entry.value;
-                  return ListTile(
-                    title: Text(m['name']?.toString() ?? '',
-                        style: HealingDesignSystem.bodyMedium.copyWith(
-                            color: HealingDesignSystem.adaptivePrimaryText(
-                                context))),
-                    subtitle: Slider(
-                      value: ((m['value'] as num?)?.toDouble() ?? 1).clamp(
-                          1, widget.initData['moodScale'] == 10 ? 10 : 5),
-                      min: 1,
-                      max: widget.initData['moodScale'] == 10 ? 10 : 5,
-                      divisions: widget.initData['moodScale'] == 10 ? 9 : 4,
-                      label: '${m['value'] ?? 1}',
-                      activeColor: HealingDesignSystem.primaryBlue,
-                      inactiveColor: HealingDesignSystem.lineColor,
-                      onChanged: (v) =>
-                          setState(() => emotions[idx]['value'] = v.round()),
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline,
-                          color: HealingDesignSystem.dangerRed),
-                      onPressed: () => setState(() => emotions.removeAt(idx)),
-                    ),
-                  );
-                }),
-              ],
-            ),
-          ),
-
-          _sectionHeader('今日狀態變化'),
-          Container(
-            margin: const EdgeInsets.only(bottom: 18),
-            decoration: HealingDesignSystem.adaptiveCardDecoration(context),
-            child: ExpansionTile(
-              title: const Text('請和平常的自己相比'),
-              subtitle: const Text('3 分代表和平常差不多；未操作不會儲存'),
-              children: kDailyStateDimensions.map((dimension) {
-                final value = stateChanges[dimension.id];
-                return Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(children: [
-                        Expanded(child: Text(dimension.displayName)),
-                        if (value == null)
-                          const Text('尚未填寫')
-                        else
-                          TextButton(
-                            onPressed: () => setState(
-                                () => stateChanges.remove(dimension.id)),
-                            child: const Text('清除'),
-                          ),
-                      ]),
-                      Text(dimension.question),
-                      Slider(
-                        value: (value ?? 3).toDouble(),
-                        min: 1,
-                        max: 5,
-                        divisions: 4,
-                        label: value?.toString() ?? '尚未填寫',
-                        onChanged: (next) => setState(
-                          () => stateChanges[dimension.id] = next.round(),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-
-          // 症狀區塊
-          _sectionHeader('症狀', onAdd: _addSymptom),
-          Container(
-            margin: const EdgeInsets.only(bottom: 18),
-            decoration: HealingDesignSystem.adaptiveCardDecoration(
-              context,
-              bgColor: HealingDesignSystem.adaptiveSurface(context),
-            ),
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-            child: Column(
-              children: [
-                if (symptoms.isEmpty)
-                  ListTile(
-                      title: Text('沒有症狀項目',
-                          style: TextStyle(
-                              color: HealingDesignSystem.adaptiveSecondaryText(
-                                  context)))),
-                ...symptoms.asMap().entries.map((entry) {
-                  final idx = entry.key;
-                  final s = entry.value;
-                  return Dismissible(
-                    key: ValueKey('sym-$idx-$s'),
-                    direction: DismissDirection.endToStart,
-                    background: Container(
-                      decoration: BoxDecoration(
-                        color: HealingDesignSystem.dangerRed,
-                        borderRadius:
-                            BorderRadius.circular(HealingDesignSystem.radiusM),
-                      ),
-                      alignment: Alignment.centerRight,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: const Icon(Icons.delete, color: Colors.white),
-                    ),
-                    onDismissed: (_) => setState(() => symptoms.removeAt(idx)),
-                    child: ListTile(
-                        title: Text(s,
-                            style: HealingDesignSystem.bodyMedium.copyWith(
-                                color: HealingDesignSystem.adaptivePrimaryText(
-                                    context)))),
-                  );
-                }),
-              ],
-            ),
-          ),
-
-          const Divider(height: 32),
-
           _sectionHeader('睡眠'),
           Container(
             margin: const EdgeInsets.only(bottom: 18),
@@ -1049,87 +908,6 @@ class _EditRecordPageState extends State<EditRecordPage> {
         ),
       ),
     );
-  }
-
-  // ====== 互動：新增 / 編輯 ======
-  Future<void> _addEmotion() async {
-    String name = '';
-    double value = 5;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('新增情緒'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              decoration: const InputDecoration(
-                labelText: '名稱',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-              onChanged: (v) => name = v.trim(),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Text('強度 0-10'),
-                Expanded(
-                  child: Slider(
-                    value: value,
-                    min: 0,
-                    max: 10,
-                    divisions: 10,
-                    label: value.round().toString(),
-                    onChanged: (v) => setState(() => value = v),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('加入')),
-        ],
-      ),
-    );
-    if (ok == true && name.isNotEmpty) {
-      setState(() => emotions.add({'name': name, 'value': value.round()}));
-    }
-  }
-
-  Future<void> _addSymptom() async {
-    String s = '';
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('新增症狀'),
-        content: TextField(
-          decoration: const InputDecoration(
-            labelText: '症狀',
-            border: OutlineInputBorder(),
-            isDense: true,
-          ),
-          onChanged: (v) => s = v.trim(),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('加入')),
-        ],
-      ),
-    );
-    if (ok == true && s.isNotEmpty) {
-      setState(() => symptoms.add(s));
-    }
   }
 
   Future<int?> _pickQuality(BuildContext context, int initial) async {

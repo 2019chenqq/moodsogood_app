@@ -146,6 +146,28 @@ class HealthDataEncryptionService {
     });
   }
 
+  /// Atomically creates an encrypted document without replacing existing data.
+  static Future<bool> createEncryptedIfAbsent(
+    DocumentReference<Map<String, dynamic>> reference,
+    Map<String, dynamic> values, {
+    String? policyName,
+  }) async {
+    final key = await _requireKey();
+    final encryption = EncryptionService(key);
+    final collectionName = policyName ?? reference.parent.id;
+    final encoded = _encryptWith(
+      values,
+      encryption,
+      queryFields: _queryFieldsByCollection[collectionName] ?? const {},
+    );
+    return FirebaseFirestore.instance.runTransaction((transaction) async {
+      final snapshot = await transaction.get(reference);
+      if (snapshot.exists) return false;
+      transaction.set(reference, encoded);
+      return true;
+    });
+  }
+
   static Future<void> updateEncrypted(
     DocumentReference<Map<String, dynamic>> reference,
     Map<String, dynamic> values,

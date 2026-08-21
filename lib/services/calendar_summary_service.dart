@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/calendar_day_summary.dart';
 import '../models/daily_health_aggregate.dart';
 import '../models/health_event.dart';
+import '../daily/period_cycle_service.dart';
 import '../utils/health_data_encryption_service.dart';
 import 'daily_health_aggregation_service.dart';
 
@@ -12,11 +13,14 @@ class CalendarSummaryService {
   CalendarSummaryService({
     FirebaseAuth? auth,
     FirebaseFirestore? firestore,
+    PeriodCycleService? periodCycleService,
   })  : _auth = auth ?? FirebaseAuth.instance,
-        _firestore = firestore ?? FirebaseFirestore.instance;
+        _firestore = firestore ?? FirebaseFirestore.instance,
+        _periodCycleService = periodCycleService;
 
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
+  final PeriodCycleService? _periodCycleService;
 
   Future<Map<String, CalendarDaySummary>> loadMonthSummary({
     required DateTime visibleMonth,
@@ -47,6 +51,12 @@ class CalendarSummaryService {
       summaries: summaries,
     );
 
+    final dailyCheckInCount = await _loadDailyCheckIns(
+      uid: uid,
+      range: range,
+      summaries: summaries,
+    );
+
     final diaryCount = await _loadDiary(
       uid: uid,
       range: range,
@@ -64,13 +74,14 @@ class CalendarSummaryService {
       final s = summaries[key]!;
       summaries[key] = s.copyWith(
         periodNote: _periodNote(s),
-        ruleInsights: buildRuleInsights(s),
       );
     }
 
     final daysWithData = summaries.values.where(_hasAnyData).length;
     debugPrint('[CalendarSummaryService] dailyRecords docs: $dailyCount');
     debugPrint('[CalendarSummaryService] healthEvents docs: $quickRecordCount');
+    debugPrint(
+        '[CalendarSummaryService] dailyCheckIns docs: $dailyCheckInCount');
     debugPrint('[CalendarSummaryService] diary docs: $diaryCount');
     debugPrint('[CalendarSummaryService] period docs: $periodCount');
     debugPrint('[CalendarSummaryService] days with data: $daysWithData');
@@ -78,47 +89,14 @@ class CalendarSummaryService {
     return summaries;
   }
 
-  List<String> buildRuleInsights(CalendarDaySummary summary) {
-    final insights = <String>[];
+  // TODO(life-overview-v2): CalendarDaySummary currently has no activity field.
+  // Reuse the canonical activity source/model when it is introduced; do not add
+  // another summary model here.
+  // TODO(life-overview-v2): Quick Record currently contributes record presence
+  // and count. Merge its event details only when the single-day timeline lands.
 
-    if (summary.sleepHours != null &&
-        summary.sleepHours! < 6 &&
-        summary.averageMood != null &&
-        summary.averageMood! <= 5) {
-      insights.add('這一天睡眠時間偏短，且情緒分數較低，可以留意睡眠不足是否和情緒波動同時出現。');
-    }
-
-    if (summary.hasSymptomData &&
-        summary.averageMood != null &&
-        summary.averageMood! <= 5) {
-      insights.add('這一天同時有症狀紀錄與較低的情緒分數，建議回顧是否有壓力事件、身體不適或藥物變化。');
-    }
-
-    if ((summary.isPeriodDay || summary.isPredictedPeriodDay) &&
-        summary.averageMood != null &&
-        summary.averageMood! <= 5) {
-      insights.add('這一天位於生理期或預測生理期附近，且情緒分數偏低，可以把身體週期作為觀察線索，但不需要直接歸因。');
-    }
-
-    if (summary.hasDiary &&
-        summary.averageMood != null &&
-        summary.averageMood! <= 5) {
-      insights.add('這一天有日記與較低的情緒分數，可以查看日記內容，理解當天情緒下降的可能原因。');
-    }
-
-    if (summary.sleepHours != null &&
-        summary.sleepHours! >= 7 &&
-        summary.averageMood != null &&
-        summary.averageMood! >= 7) {
-      insights.add('這一天睡眠時間較充足，情緒分數也較穩定，可以作為日後回顧自身照顧方式的參考。');
-    }
-
-    if (insights.isEmpty) {
-      insights.add('目前沒有明顯重疊訊號，可以先把這一天作為一般紀錄保存。');
-    }
-
-    return insights;
-  }
+  @Deprecated('Rule-based life overview insights are paused as of V1 stage 1.')
+  List<String> buildRuleInsights(CalendarDaySummary summary) => const [];
 
   Future<int> _loadDailyRecords({
     required String uid,
@@ -269,10 +247,6 @@ class CalendarSummaryService {
           _hasCollectionData(data['medicines']) ||
           _hasCollectionData(data['medication']);
 
-      final periodData = _asMap(data['periodData']);
-      final isPeriod =
-          data['isPeriod'] == true || periodData?['isPeriod'] == true;
-
       final hasDailyRecordData =
           hasEmotionData || hasSymptomData || hasSleepData || hasMedicationData;
 
@@ -283,7 +257,6 @@ class CalendarSummaryService {
           hasSymptomData: current.hasSymptomData || hasSymptomData,
           hasSleepData: current.hasSleepData || hasSleepData,
           hasMedicationData: current.hasMedicationData || hasMedicationData,
-          isPeriodDay: current.isPeriodDay || isPeriod,
           averageMood: current.averageMood ?? dayMood,
           emotionNames: _mergeStringLists(current.emotionNames, emotionNames),
           symptomNames: _mergeStringLists(current.symptomNames, symptomNames),
@@ -332,6 +305,41 @@ class CalendarSummaryService {
       return events.length;
     } catch (error) {
       debugPrint('[CalendarSummaryService] healthEvents query skipped: $error');
+      return 0;
+    }
+  }
+
+  Future<int> _loadDailyCheckIns({
+    required String uid,
+    required _DateRange range,
+    required Map<String, CalendarDaySummary> summaries,
+  }) async {
+    try {
+      final endExclusive = range.end.add(const Duration(days: 1));
+      final documents = await HealthDataEncryptionService.getEncrypted(
+        _firestore
+            .collection('users')
+            .doc(uid)
+            .collection('dailyCheckIns')
+            .where(
+              'date',
+              isGreaterThanOrEqualTo: Timestamp.fromDate(range.start),
+            )
+            .where('date', isLessThan: Timestamp.fromDate(endExclusive)),
+      );
+      for (final document in documents) {
+        final date = _toDate(document.data['date']);
+        if (date == null || !_inRange(date, range)) continue;
+        _mergeDay(
+          summaries,
+          date,
+          (current) => current.copyWith(hasDailyCheckIn: true),
+        );
+      }
+      return documents.length;
+    } catch (error) {
+      debugPrint(
+          '[CalendarSummaryService] dailyCheckIns query skipped: $error');
       return 0;
     }
   }
@@ -449,18 +457,13 @@ class CalendarSummaryService {
     var periodDocs = 0;
 
     try {
-      final documents = await HealthDataEncryptionService.getEncrypted(
-        _firestore.collection('users').doc(uid).collection('periodCycles'),
-      );
+      final cycles = await (_periodCycleService ?? PeriodCycleService())
+          .getUnifiedCycles(uid);
+      periodDocs = cycles.length;
 
-      periodDocs = documents.length;
-
-      for (final doc in documents) {
-        final data = doc.data;
-        final start = _toDate(data['startDate']);
-        if (start == null) continue;
-
-        final end = _toDate(data['endDate']) ?? start;
+      for (final cycle in cycles) {
+        final start = cycle.startDate;
+        final end = cycle.endDate ?? range.end;
         cycleStarts.add(_dateOnly(start));
 
         final s = _dateOnly(start);
@@ -468,8 +471,9 @@ class CalendarSummaryService {
         final startDay = s.isBefore(range.start) ? range.start : s;
         final endDay = e.isAfter(range.end) ? range.end : e;
 
-        if (endDay.isBefore(range.start) || startDay.isAfter(range.end))
+        if (endDay.isBefore(range.start) || startDay.isAfter(range.end)) {
           continue;
+        }
 
         for (DateTime d = startDay;
             !d.isAfter(endDay);
@@ -609,6 +613,7 @@ class CalendarSummaryService {
 
   bool _hasAnyData(CalendarDaySummary s) {
     return s.hasDailyRecord ||
+        s.hasDailyCheckIn ||
         s.hasQuickRecord ||
         s.hasDiary ||
         s.hasEmotionData ||

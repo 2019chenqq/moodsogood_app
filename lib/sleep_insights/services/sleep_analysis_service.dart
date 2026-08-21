@@ -180,8 +180,8 @@ class SleepAnalysisService {
             dayRecords.expand((record) => record.sleep.flags).toSet().toList(),
         symptoms: symptoms,
         emotions: emotions,
-        isPeriod: dayRecords.any((record) => record.isPeriod) ||
-            cycles.any((cycle) => cycle.containsDate(date)),
+        isPeriod: cycles.any((cycle) => cycle.containsDate(date)) ||
+            (cycles.isEmpty && dayRecords.any((record) => record.isPeriod)),
         usedEstimatedSleepTime: primary?.estimatedSleepTime != null,
         hasSleepRecord:
             dayRecords.any((record) => _hasSleepContent(record.sleep)),

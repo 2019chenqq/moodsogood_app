@@ -1,6 +1,7 @@
 class CalendarDaySummary {
   final DateTime date;
   final bool hasDailyRecord;
+  final bool hasDailyCheckIn;
   final int quickRecordCount;
   final bool hasDiary;
   final bool hasEmotionData;
@@ -35,6 +36,7 @@ class CalendarDaySummary {
   const CalendarDaySummary({
     required this.date,
     this.hasDailyRecord = false,
+    this.hasDailyCheckIn = false,
     this.quickRecordCount = 0,
     this.hasDiary = false,
     this.hasEmotionData = false,
@@ -67,6 +69,7 @@ class CalendarDaySummary {
   CalendarDaySummary copyWith({
     DateTime? date,
     bool? hasDailyRecord,
+    bool? hasDailyCheckIn,
     int? quickRecordCount,
     bool? hasDiary,
     bool? hasEmotionData,
@@ -103,6 +106,7 @@ class CalendarDaySummary {
     return CalendarDaySummary(
       date: date ?? this.date,
       hasDailyRecord: hasDailyRecord ?? this.hasDailyRecord,
+      hasDailyCheckIn: hasDailyCheckIn ?? this.hasDailyCheckIn,
       quickRecordCount: quickRecordCount ?? this.quickRecordCount,
       hasDiary: hasDiary ?? this.hasDiary,
       hasEmotionData: hasEmotionData ?? this.hasEmotionData,

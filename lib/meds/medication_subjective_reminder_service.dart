@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -40,29 +41,35 @@ class MedicationSubjectiveReminderPlanner {
     required Iterable<MedicationSubjectiveResponse> responses,
     required DateTime now,
   }) {
-    final completed = responses
-        .map(
-          (response) => _completionKey(
-            response.medicationId,
-            response.changeRecordId,
-            response.followUpDay,
-          ),
-        )
-        .toSet();
     final usedIds = <int>{};
     final reminders = <MedicationSubjectiveScheduledReminder>[];
-    final activeCycles = cycles.where((cycle) => cycle.active).toList()
-      ..sort((left, right) {
-        final byDate = left.changeDate.compareTo(right.changeDate);
-        return byDate != 0 ? byDate : left.id.compareTo(right.id);
-      });
+    final grouped = <String, List<MedicationSubjectiveTrackingCycle>>{};
+    for (final cycle in cycles.where((item) => item.active)) {
+      grouped.putIfAbsent(cycle.episodeId, () => []).add(cycle);
+    }
+    if (grouped.isEmpty) return const [];
+    final latest = grouped.values.reduce((left, right) {
+      final leftDate = _latestChangeDate(left);
+      final rightDate = _latestChangeDate(right);
+      return leftDate.isAfter(rightDate) ? left : right;
+    })
+      ..sort((left, right) => left.medicationId.compareTo(right.medicationId));
 
-    for (final cycle in activeCycles) {
+    for (final cycle in latest.take(1)) {
+      final completedDays = responses
+          .where((response) =>
+              cycle.changeRecordIds.contains(response.changeRecordId))
+          .map((response) => response.followUpDay)
+          .toSet();
       for (final entry in cycle.followUpDates.entries) {
         final day = entry.key;
-        if (completed.contains(
-          _completionKey(cycle.medicationId, cycle.changeRecordId, day),
-        )) {
+        if (completedDays.contains(day)) {
+          debugPrint(
+            '[MedicationSubjective] medicationId=${cycle.medicationId} '
+            'changeRecordId=${cycle.changeRecordId} followUpDay=$day '
+            'cycleActive=${cycle.active} responseCompleted=true '
+            'notificationScheduled=false',
+          );
           continue;
         }
         final date = entry.value;
@@ -73,7 +80,17 @@ class MedicationSubjectiveReminderPlanner {
           reminderHour,
           reminderMinute,
         );
-        if (!scheduledAt.isAfter(now)) continue;
+        if (!scheduledAt.isAfter(now)) {
+          debugPrint(
+            '[MedicationSubjective] medicationId=${cycle.medicationId} '
+            'changeRecordId=${cycle.changeRecordId} '
+            'changeDate=${cycle.changeDate.toIso8601String()} '
+            'today=${now.toIso8601String()} followUpDay=$day '
+            'cycleActive=${cycle.active} responseCompleted=false '
+            'notificationScheduled=false reason=timePassed',
+          );
+          continue;
+        }
 
         final payload = MedicationSubjectiveReminderPayload(
           cycleId: cycle.id,
@@ -114,7 +131,7 @@ class MedicationSubjectiveReminderPlanner {
     required String changeRecordId,
     required int followUpDay,
   }) {
-    final key = '$cycleId|$medicationId|$changeRecordId|$followUpDay';
+    final key = '$cycleId|$followUpDay';
     var hash = 0x811c9dc5;
     for (final unit in key.codeUnits) {
       hash ^= unit;
@@ -123,12 +140,12 @@ class MedicationSubjectiveReminderPlanner {
     return _notificationIdBase + (hash % _notificationIdRange);
   }
 
-  static String _completionKey(
-    String medicationId,
-    String changeRecordId,
-    int followUpDay,
+  static DateTime _latestChangeDate(
+    List<MedicationSubjectiveTrackingCycle> cycles,
   ) =>
-      '$medicationId|$changeRecordId|$followUpDay';
+      cycles.map((item) => item.changeDate).reduce(
+            (left, right) => left.isAfter(right) ? left : right,
+          );
 }
 
 class MedicationSubjectiveReminderService {
@@ -179,6 +196,12 @@ class MedicationSubjectiveReminderService {
         payload: reminder.payload,
       );
       if (scheduled) scheduledIds.add(reminder.notificationId.toString());
+      debugPrint(
+        '[MedicationSubjective] medicationId=${reminder.medicationId} '
+        'changeRecordId=${reminder.changeRecordId} '
+        'followUpDay=${reminder.followUpDay} '
+        'notificationScheduled=$scheduled notificationId=${reminder.notificationId}',
+      );
     }
     await preferences.setStringList(_scheduledIdsKey, scheduledIds);
     return scheduledIds.length;

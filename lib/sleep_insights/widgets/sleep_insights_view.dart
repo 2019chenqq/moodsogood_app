@@ -67,19 +67,29 @@ class SleepInsightsView extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _SmallMetric('最短夜眠', _duration(summary.shortestNightMinutes)),
-                  _SmallMetric('最長夜眠', _duration(summary.longestNightMinutes)),
-                  _SmallMetric(
-                    '小睡',
-                    '${summary.napCount} 次／${summary.napDays} 天，'
-                        '平均 ${_duration(summary.averageNapMinutes)}',
-                  ),
-                  _SmallMetric('安眠藥紀錄', '${summary.hypnoticDays} 天'),
-                ],
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Wrap(
+                  alignment: WrapAlignment.start,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _SmallMetric(
+                      '最短夜眠',
+                      _duration(summary.shortestNightMinutes),
+                    ),
+                    _SmallMetric(
+                      '最長夜眠',
+                      _duration(summary.longestNightMinutes),
+                    ),
+                    _SmallMetric(
+                      '小睡',
+                      '${summary.napCount} 次／${summary.napDays} 天，'
+                          '平均 ${_duration(summary.averageNapMinutes)}',
+                    ),
+                    _SmallMetric('安眠藥紀錄', '${summary.hypnoticDays} 天'),
+                  ],
+                ),
               ),
               const SizedBox(height: 10),
               Align(

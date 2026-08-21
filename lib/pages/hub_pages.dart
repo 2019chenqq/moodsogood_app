@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../widgets/main_drawer.dart';
-import '../ai/innera_ai_home_page.dart';
 import '../daily/daily_check_in_page.dart';
 import '../daily/daily_record_history.dart';
 import '../daily/quick_record_home_card.dart';
@@ -13,19 +12,81 @@ import '../models/weekly_record.dart';
 import '../diary/diary_home_page.dart';
 import '../meds/medication_home_page.dart';
 import '../meds/medication_checkin_page.dart';
+import '../meds/medication_subjective_pending_service.dart';
+import '../meds/medication_subjective_reminder_service.dart';
+import '../meds/medication_subjective_response_page.dart';
 import '../community/community_home_page.dart';
 import '../analytics_service.dart';
 import '../constants/healing_design_system.dart';
-import '../settings_page.dart';
-import 'feedback_page.dart';
 import '../follow_up/pages/follow_up_hub_page.dart';
 import '../follow_up/services/follow_up_service.dart';
 import 'life_overview_page.dart';
-import 'profile_page.dart';
 import 'trend_review_hub_page.dart';
 
-class HomeHubPage extends StatelessWidget {
+class HomeHubPage extends StatefulWidget {
   const HomeHubPage({super.key});
+
+  @override
+  State<HomeHubPage> createState() => _HomeHubPageState();
+}
+
+class _HomeHubPageState extends State<HomeHubPage> with WidgetsBindingObserver {
+  final _pendingService = MedicationSubjectivePendingService();
+  List<MedicationSubjectivePendingResponse> _pendingResponses = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refreshSubjectiveTracking();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshSubjectiveTracking();
+    }
+  }
+
+  Future<void> _refreshSubjectiveTracking() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final pending = await _pendingService.load(uid: uid);
+      await MedicationSubjectiveReminderService().syncForCurrentUser(uid: uid);
+      if (mounted) setState(() => _pendingResponses = pending);
+    } catch (error, stackTrace) {
+      debugPrint('Medication subjective pending scan deferred: $error');
+      debugPrint('$stackTrace');
+    }
+  }
+
+  Future<void> _openPendingResponse(
+    MedicationSubjectivePendingResponse pending,
+  ) async {
+    final cycle = pending.cycle;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MedicationSubjectiveResponsePage(
+          medicationId: cycle.medicationId,
+          medicationName:
+              pending.cycles.length == 1 ? cycle.medicationName : '本次用藥調整',
+          changeRecordId: cycle.changeRecordId,
+          changeDate: cycle.changeDate,
+          adjustmentSummary: pending.adjustmentSummary,
+          followUpDay: pending.followUpDay,
+        ),
+      ),
+    );
+    await _refreshSubjectiveTracking();
+  }
 
   void _push(BuildContext context, Widget page) {
     Navigator.push(
@@ -62,6 +123,18 @@ class HomeHubPage extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
+            if (_pendingResponses.isNotEmpty) ...[
+              _RecordEntryCard(
+                icon: Icons.rate_review_outlined,
+                title: '主觀用藥感受待回報',
+                subtitle:
+                    '最近一次用藥調整已滿 ${_pendingResponses.first.calculatedDay} 天，記錄一下這幾天的整體感受',
+                color: const Color(0xFF7DB7D8),
+                onTap: () => _openPendingResponse(_pendingResponses.first),
+                actionLabel: '開始填寫',
+              ),
+              const SizedBox(height: 16),
+            ],
             FutureBuilder<List<FollowUpAppointment>>(
               future: FollowUpService.getAppointments(),
               builder: (context, snapshot) {
@@ -96,57 +169,12 @@ class HomeHubPage extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             _RecordEntryCard(
-              icon: Icons.auto_awesome_rounded,
-              title: '心域 AI',
-              subtitle: '說說現在的狀態，或讓 AI 協助回顧近期紀錄',
-              color: const Color(0xFF7DB7D8),
-              onTap: () => _push(context, const InneraAiHomePage()),
-              actionLabel: '開始對話',
-            ),
-            const SizedBox(height: 12),
-            _RecordEntryCard(
               icon: Icons.calendar_month_outlined,
               title: '生活軌跡',
               subtitle: '從日曆回顧每天的紀錄與生活變化',
               color: const Color(0xFF5C9BD5),
               onTap: () => _push(context, const LifeOverviewPage()),
               actionLabel: '查看軌跡',
-            ),
-            const SizedBox(height: 12),
-            _RecordEntryCard(
-              icon: Icons.medical_information_outlined,
-              title: '回診專區',
-              subtitle: '整理調藥、醫囑、待討論問題與近期趨勢',
-              color: const Color(0xFF26A69A),
-              onTap: () => _push(context, const FollowUpHubPage()),
-              actionLabel: '前往專區',
-            ),
-            const SizedBox(height: 12),
-            _RecordEntryCard(
-              icon: Icons.person_outline_rounded,
-              title: '個人資料',
-              subtitle: '查看與更新個人基本資料',
-              color: const Color(0xFF9575CD),
-              onTap: () => _push(context, const ProfilePage()),
-              actionLabel: '查看資料',
-            ),
-            const SizedBox(height: 12),
-            _RecordEntryCard(
-              icon: Icons.settings_outlined,
-              title: '設定',
-              subtitle: '調整提醒、外觀、安全與其他使用偏好',
-              color: const Color(0xFF78909C),
-              onTap: () => _push(context, const SettingsPage()),
-              actionLabel: '開啟設定',
-            ),
-            const SizedBox(height: 12),
-            _RecordEntryCard(
-              icon: Icons.help_outline_rounded,
-              title: '幫助與回饋',
-              subtitle: '取得使用協助，或告訴我們你的建議',
-              color: const Color(0xFFFFA25B),
-              onTap: () => _push(context, const FeedbackPage()),
-              actionLabel: '取得協助',
             ),
           ],
         ),
@@ -162,13 +190,67 @@ class RecordHubPage extends StatefulWidget {
   State<RecordHubPage> createState() => _RecordHubPageState();
 }
 
-class _RecordHubPageState extends State<RecordHubPage> {
+class _RecordHubPageState extends State<RecordHubPage>
+    with WidgetsBindingObserver {
   Future<WeeklyRecord?>? _weeklyRecordFuture;
+  final _pendingService = MedicationSubjectivePendingService();
+  MedicationSubjectivePendingResponse? _pendingResponse;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _refreshWeeklyRecord();
+    _refreshSubjectiveTracking();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshSubjectiveTracking();
+    }
+  }
+
+  Future<void> _refreshSubjectiveTracking() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final pending = await _pendingService.load(uid: uid);
+      if (mounted) {
+        setState(
+            () => _pendingResponse = pending.isEmpty ? null : pending.first);
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Record hub subjective pending scan deferred: $error');
+      debugPrint('$stackTrace');
+    }
+  }
+
+  Future<void> _openPendingResponse() async {
+    final pending = _pendingResponse;
+    if (pending == null) return;
+    final cycle = pending.cycle;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MedicationSubjectiveResponsePage(
+          medicationId: cycle.medicationId,
+          medicationName:
+              pending.cycles.length == 1 ? cycle.medicationName : '本次用藥調整',
+          changeRecordId: cycle.changeRecordId,
+          changeDate: cycle.changeDate,
+          adjustmentSummary: pending.adjustmentSummary,
+          followUpDay: pending.followUpDay,
+        ),
+      ),
+    );
+    await _refreshSubjectiveTracking();
   }
 
   void _push(BuildContext context, Widget page) {
@@ -241,6 +323,17 @@ class _RecordHubPageState extends State<RecordHubPage> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
+            if (_pendingResponse case final pending?) ...[
+              _RecordEntryCard(
+                icon: Icons.rate_review_outlined,
+                title: '主觀用藥感受待回報',
+                subtitle: '最近一次用藥調整已滿 ${pending.calculatedDay} 天，記錄一下這幾天的整體感受',
+                color: const Color(0xFF7DB7D8),
+                onTap: _openPendingResponse,
+                actionLabel: '開始填寫',
+              ),
+              const SizedBox(height: 12),
+            ],
             const QuickRecordHomeCard(),
             const SizedBox(height: 12),
             _RecordEntryCard(
@@ -457,8 +550,6 @@ class _RecordEntryCard extends StatefulWidget {
 
 class _RecordEntryCardState extends State<_RecordEntryCard>
     with SingleTickerProviderStateMixin {
-  static const double _cardHeight = 120;
-
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
 
@@ -502,8 +593,10 @@ class _RecordEntryCardState extends State<_RecordEntryCard>
       onTapCancel: _onTapCancel,
       child: ScaleTransition(
         scale: _scaleAnimation,
-        child: SizedBox(
-          height: _cardHeight,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            minHeight: 125,
+          ),
           child: Card(
             elevation: 4,
             shadowColor: widget.color.withValues(alpha: 0.4),
@@ -564,6 +657,7 @@ class _RecordEntryCardState extends State<_RecordEntryCard>
                     const SizedBox(width: 16),
                     Expanded(
                       child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [

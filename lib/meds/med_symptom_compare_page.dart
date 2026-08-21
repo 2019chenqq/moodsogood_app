@@ -69,7 +69,8 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage>
       final events = [
         ...persistedEvents,
         ...buildSyntheticAddedEvents(medications, persistedEvents),
-      ]..sort((left, right) => right.date.compareTo(left.date));
+      ]..sort((left, right) =>
+          right.effectiveDateTime.compareTo(left.effectiveDateTime));
       _allEvents = events;
       return mergeMedicationCompareOptions(medications, events);
     } finally {
@@ -348,8 +349,8 @@ class _MedSymptomComparePageState extends State<MedSymptomComparePage>
       _error = null;
     });
     try {
-      final window = MedicationComparisonWindow.dateLevel(
-        adjustmentDate: event.date,
+      final window = MedicationComparisonWindow.timestampLevel(
+        effectiveDateTime: event.effectiveDateTime,
         days: requestedWindow,
       );
       final anchor = window.adjustmentDay;

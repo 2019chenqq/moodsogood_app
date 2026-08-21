@@ -1,6 +1,9 @@
 const crypto = require("crypto");
 
 const SHARE_DURATION_MS = 36 * 60 * 60 * 1000;
+const ENCRYPTION_VERSION = 1;
+const ENCRYPTION_ALGORITHM = "aes-256-gcm";
+const ENCRYPTION_INFO = Buffer.from("moodsogood-follow-up-share-v1", "utf8");
 const ALLOWED_KEYS = new Set([
   "appointmentDate",
   "periodStart",
@@ -47,6 +50,66 @@ function hashToken(token) {
   return crypto.createHash("sha256").update(String(token)).digest("hex");
 }
 
+function encryptSummarySnapshot(summarySnapshot, token) {
+  const salt = crypto.randomBytes(16);
+  const iv = crypto.randomBytes(12);
+  const tokenHash = hashToken(token);
+  const key = crypto.hkdfSync(
+    "sha256",
+    Buffer.from(String(token), "utf8"),
+    salt,
+    ENCRYPTION_INFO,
+    32,
+  );
+  const cipher = crypto.createCipheriv(ENCRYPTION_ALGORITHM, key, iv);
+  cipher.setAAD(Buffer.from(tokenHash, "utf8"));
+  const plaintext = Buffer.from(JSON.stringify(summarySnapshot), "utf8");
+  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  return {
+    version: ENCRYPTION_VERSION,
+    algorithm: ENCRYPTION_ALGORITHM,
+    salt: salt.toString("base64"),
+    iv: iv.toString("base64"),
+    ciphertext: ciphertext.toString("base64"),
+    authTag: cipher.getAuthTag().toString("base64"),
+  };
+}
+
+function decryptSummarySnapshot(encryptedSummary, token) {
+  if (!encryptedSummary ||
+      encryptedSummary.version !== ENCRYPTION_VERSION ||
+      encryptedSummary.algorithm !== ENCRYPTION_ALGORITHM) {
+    throw new Error("unsupported_encryption");
+  }
+  const salt = Buffer.from(String(encryptedSummary.salt || ""), "base64");
+  const iv = Buffer.from(String(encryptedSummary.iv || ""), "base64");
+  const authTag = Buffer.from(String(encryptedSummary.authTag || ""), "base64");
+  const ciphertext = Buffer.from(
+    String(encryptedSummary.ciphertext || ""),
+    "base64",
+  );
+  if (salt.length !== 16 || iv.length !== 12 || authTag.length !== 16 ||
+      ciphertext.length === 0) {
+    throw new Error("invalid_encrypted_summary");
+  }
+  const tokenHash = hashToken(token);
+  const key = crypto.hkdfSync(
+    "sha256",
+    Buffer.from(String(token), "utf8"),
+    salt,
+    ENCRYPTION_INFO,
+    32,
+  );
+  const decipher = crypto.createDecipheriv(ENCRYPTION_ALGORITHM, key, iv);
+  decipher.setAAD(Buffer.from(tokenHash, "utf8"));
+  decipher.setAuthTag(authTag);
+  const plaintext = Buffer.concat([
+    decipher.update(ciphertext),
+    decipher.final(),
+  ]).toString("utf8");
+  return JSON.parse(plaintext);
+}
+
 function sanitizeSummarySnapshot(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("invalid_summary_snapshot");
@@ -89,7 +152,10 @@ function buildShareDocument({ ownerUid, summarySnapshot, now = new Date() }) {
     document: {
       ownerUid,
       tokenHash: hashToken(token),
-      summarySnapshot: sanitizeSummarySnapshot(summarySnapshot),
+      encryptedSummary: encryptSummarySnapshot(
+        sanitizeSummarySnapshot(summarySnapshot),
+        token,
+      ),
       createdAt: now,
       expiresAt,
       revokedAt: null,
@@ -125,14 +191,28 @@ function validateShareDocument({ document, token, now = new Date() }) {
   if (!expiresAt || Number.isNaN(expiresAt.getTime()) || expiresAt <= now) {
     return { ok: false, reason: "expired" };
   }
-  if (!document.summarySnapshot) return { ok: false, reason: "not_found" };
-  return { ok: true, summarySnapshot: document.summarySnapshot, expiresAt };
+  // Legacy shares stored medical summaries as plaintext. They cannot be
+  // migrated because only the recipient URL contains the original token.
+  if (!document.encryptedSummary) {
+    return { ok: false, reason: document.summarySnapshot ? "legacy_plaintext" : "not_found" };
+  }
+  try {
+    return {
+      ok: true,
+      summarySnapshot: decryptSummarySnapshot(document.encryptedSummary, token),
+      expiresAt,
+    };
+  } catch (_) {
+    return { ok: false, reason: "invalid_encrypted_summary" };
+  }
 }
 
 module.exports = {
   SHARE_DURATION_MS,
   authorizeShareRevocation,
   buildShareDocument,
+  decryptSummarySnapshot,
+  encryptSummarySnapshot,
   hashToken,
   sanitizeSummarySnapshot,
   validateShareDocument,

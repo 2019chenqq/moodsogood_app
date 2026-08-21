@@ -259,20 +259,52 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
                 const SizedBox(height: 12),
 
                 _SectionCard(
-                  title: '這次回診日期',
+                  title: '新處方從何時開始？',
                   icon: Icons.event,
-                  child: ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(_fmtYmd(_date)),
-                    subtitle: Text(
-                      '會用這個日期標記「調藥事件」',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: cs.onSurfaceVariant),
-                    ),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: _pickDate,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(_fmtDateTime(_date)),
+                        subtitle: Text(
+                          '新處方會從這個時間起套用',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: cs.onSurfaceVariant),
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: _pickDate,
+                      ),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final slot in docs
+                              .expand((med) =>
+                                  (med['times'] as List?)
+                                      ?.whereType<String>() ??
+                                  const <String>[])
+                              .where((slot) => MedicationReminderService
+                                  .kSlotTimes
+                                  .containsKey(slot))
+                              .toSet())
+                            ActionChip(
+                              label: Text(slot),
+                              onPressed: () => _pickExistingSlot(slot),
+                            ),
+                          ActionChip(
+                            label: const Text('明天開始'),
+                            onPressed: _pickTomorrow,
+                          ),
+                          ActionChip(
+                            label: const Text('自訂日期／時間'),
+                            onPressed: _pickDate,
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
 
@@ -1132,6 +1164,24 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
         ));
   }
 
+  Future<void> _pickExistingSlot(String slot) async {
+    final time = await MedicationReminderService.getSlotTime(slot);
+    if (!mounted) return;
+    final now = DateTime.now();
+    var selected =
+        DateTime(now.year, now.month, now.day, time.hour, time.minute);
+    if (selected.isBefore(now)) {
+      selected = selected.add(const Duration(days: 1));
+    }
+    setState(() => _date = selected);
+  }
+
+  void _pickTomorrow() {
+    final tomorrow = DateTime.now().add(const Duration(days: 1));
+    setState(
+        () => _date = DateTime(tomorrow.year, tomorrow.month, tomorrow.day));
+  }
+
   Future<void> _save(String uid) async {
     if (_saving) return;
 
@@ -1220,6 +1270,7 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
         await MedicationAdjustmentService().recordItems(
           uid: uid,
           effectiveDate: _date,
+          adjustmentDateTime: DateTime.now(),
           source: 'adjustmentRecord',
           note: _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
           items: items,
@@ -1337,6 +1388,10 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
     final d = dt.day.toString().padLeft(2, '0');
     return '$y/$m/$d';
   }
+
+  String _fmtDateTime(DateTime dt) =>
+      '${_fmtYmd(dt)} ${dt.hour.toString().padLeft(2, '0')}:'
+      '${dt.minute.toString().padLeft(2, '0')}';
 
   static InputDecoration _inputDeco(BuildContext context, String hint) {
     return InputDecoration(

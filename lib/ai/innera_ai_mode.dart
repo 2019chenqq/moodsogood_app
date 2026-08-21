@@ -7,32 +7,49 @@ enum InneraAiMode {
   recentReview,
 }
 
+InneraAiMode resolveInneraAiModeIntent({
+  required InneraAiMode activeMode,
+  required String message,
+}) {
+  final text = message.replaceAll(RegExp(r'\s+'), '');
+  final chatIntent = RegExp(
+    r'不想記(了|錄)?|不要記(了|錄)?|先不用記(錄)?|不用幫我記|只是想聊聊|想聊聊就好|我們聊聊就好|先聊聊',
+  );
+  if (chatIntent.hasMatch(text)) return InneraAiMode.emotionalSupport;
+
+  final recordIntent = RegExp(
+    r'幫我記(一下|錄|下來)|我要記錄|我想記(一下|錄)|幫我記錄|這(個|件事)?幫我存起來|幫我存(一下|起來|下來)',
+  );
+  if (recordIntent.hasMatch(text)) return InneraAiMode.dailyRecord;
+  return activeMode;
+}
+
 extension InneraAiModeX on InneraAiMode {
   bool get supportsDailyRecordDraft => this != InneraAiMode.recentReview;
 
   String get title {
     switch (this) {
       case InneraAiMode.dailyRecord:
-        return '今日記錄';
+        return '幫我記錄';
       case InneraAiMode.emotionalSupport:
-        return '我想聊聊';
+        return '陪我聊聊';
       case InneraAiMode.recentReview:
-        return '狀態回顧';
+        return '回顧近況';
       case InneraAiMode.physicalHealth:
-        return '身體不適聊聊';
+        return '身體不舒服';
     }
   }
 
   String get subtitle {
     switch (this) {
       case InneraAiMode.dailyRecord:
-        return '說說今天發生的事，AI 會協助整理情緒、症狀與生活狀態';
+        return '把對話整理成狀態紀錄';
       case InneraAiMode.emotionalSupport:
-        return '整理現在的情緒、想法與困擾';
+        return '自由說說現在的感受與想法';
       case InneraAiMode.physicalHealth:
-        return '對照近期症狀、睡眠及用藥紀錄，整理值得注意的變化';
+        return '記錄身體不適的位置、時間與程度';
       case InneraAiMode.recentReview:
-        return '整理近期情緒、睡眠、症狀與生活模式';
+        return '回顧近期的情緒、睡眠與症狀變化';
     }
   }
 
