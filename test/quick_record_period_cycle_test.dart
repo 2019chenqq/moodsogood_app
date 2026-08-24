@@ -163,6 +163,57 @@ void main() {
       );
     });
 
+    test('cancelling deletes only the active canonical cycle', () async {
+      final store = _MemoryPeriodCycleStore()
+        ..cycles.addAll([
+          PeriodCycle(
+              id: 'past',
+              startDate: DateTime(2026, 7, 1),
+              endDate: DateTime(2026, 7, 5)),
+          PeriodCycle(id: 'active', startDate: DateTime(2026, 8, 21)),
+        ]);
+      final cancelled = await PeriodCycleService(store: store)
+          .cancelActiveCycle('u', DateTime(2026, 8, 23));
+      expect(cancelled, isTrue);
+      expect(store.cycles.map((cycle) => cycle.id), ['past']);
+      expect(store.deletedIds, ['active']);
+    });
+
+    test('cancelling with no canonical active cycle is safe', () async {
+      final store = _MemoryPeriodCycleStore();
+      final cancelled = await PeriodCycleService(store: store)
+          .cancelActiveCycle('u', DateTime(2026, 8, 23));
+      expect(cancelled, isFalse);
+      expect(store.deletedIds, isEmpty);
+    });
+
+    test('calendar cancellation can delete a completed canonical cycle',
+        () async {
+      final store = _MemoryPeriodCycleStore()
+        ..cycles.add(
+          PeriodCycle(
+            id: 'completed',
+            startDate: DateTime(2026, 8, 1),
+            endDate: DateTime(2026, 8, 5),
+          ),
+        );
+
+      final cancelled = await PeriodCycleService(store: store)
+          .cancelCycleForDate('u', DateTime(2026, 8, 3));
+
+      expect(cancelled, isTrue);
+      expect(store.cycles, isEmpty);
+      expect(store.deletedIds, ['completed']);
+    });
+
+    test('legacy fallback cycle does not expose destructive cancellation', () {
+      final legacy = PeriodCycle(
+        id: 'legacy:2026-08-21:2026-08-23',
+        startDate: DateTime(2026, 8, 21),
+      );
+      expect(QuickRecordEditor.canCancelPeriodCycle(legacy), isFalse);
+    });
+
     test('deleting an ordinary QuickRecord cannot mutate PeriodCycle state',
         () {
       final store = _MemoryPeriodCycleStore()
@@ -199,6 +250,50 @@ void main() {
         expect(cycle.containsDate(DateTime(2026, 8, day)), isTrue);
       }
       expect(cycle.containsDate(DateTime(2026, 8, 20)), isFalse);
+    });
+
+    test('open cycle initially displays seven days', () {
+      final cycle = PeriodCycle(
+        id: 'ongoing',
+        startDate: DateTime(2026, 8, 21),
+      );
+
+      expect(
+        cycle.isDisplayedOn(
+          DateTime(2026, 8, 27),
+          asOf: DateTime(2026, 8, 21),
+        ),
+        isTrue,
+      );
+      expect(
+        cycle.isDisplayedOn(
+          DateTime(2026, 8, 28),
+          asOf: DateTime(2026, 8, 21),
+        ),
+        isFalse,
+      );
+    });
+
+    test('open cycle extends one day at a time after day seven', () {
+      final cycle = PeriodCycle(
+        id: 'ongoing',
+        startDate: DateTime(2026, 8, 21),
+      );
+
+      expect(
+        cycle.isDisplayedOn(
+          DateTime(2026, 8, 29),
+          asOf: DateTime(2026, 8, 29),
+        ),
+        isTrue,
+      );
+      expect(
+        cycle.isDisplayedOn(
+          DateTime(2026, 8, 30),
+          asOf: DateTime(2026, 8, 29),
+        ),
+        isFalse,
+      );
     });
 
     test('cycleForDate uses legacy fallback when canonical is empty', () async {
@@ -378,6 +473,45 @@ void main() {
       expect(store.cycles.single.endDate, isNull);
     });
 
+    test('a historical legacy run ends on its last marked period day',
+        () async {
+      final store = _MemoryPeriodCycleStore();
+      final legacy = [
+        _legacy('start', 1, isPeriod: true, startId: 'start'),
+        _legacy('day-2', 2, isPeriod: true, startId: 'start'),
+        _legacy('day-3', 3, isPeriod: true, startId: 'start'),
+        _legacy('day-4', 4, isPeriod: true, startId: 'start'),
+        _legacy('day-5', 5, isPeriod: true, startId: 'start'),
+        _legacy('later-record', 10),
+      ];
+      final result =
+          await _migrationService(store, legacy).migrateLegacyCycles('u');
+      expect(result.created, 1);
+      expect(store.cycles.single.endDate, DateTime(2026, 8, 5));
+    });
+
+    test('rerun safely closes a migration-owned open historical cycle',
+        () async {
+      final store = _MemoryPeriodCycleStore();
+      final legacyStore = _MemoryLegacyStore()
+        ..records.addAll([
+          _legacy('start', 1, isPeriod: true, startId: 'start'),
+          _legacy('day-2', 2, isPeriod: true, startId: 'start'),
+        ]);
+      final service = PeriodCycleService(
+        store: store,
+        legacyStore: legacyStore,
+        migrationWriter: store,
+      );
+      await service.migrateLegacyCycles('u');
+      expect(store.cycles.single.endDate, isNull);
+
+      legacyStore.records.add(_legacy('later-record', 10));
+      final result = await service.migrateLegacyCycles('u');
+      expect(result.updated, 1);
+      expect(store.cycles.single.endDate, DateTime(2026, 8, 2));
+    });
+
     test('incomplete or contradictory legacy data is skipped', () async {
       final store = _MemoryPeriodCycleStore();
       final legacy = [
@@ -454,6 +588,7 @@ class _MemoryPeriodCycleStore
   int writeCount = 0;
   bool failNextCreate = false;
   int statusVersion = 0;
+  final List<String> deletedIds = [];
 
   @override
   Future<String> createCycle(String userId, DateTime startDate) async {
@@ -466,6 +601,13 @@ class _MemoryPeriodCycleStore
   @override
   Future<List<PeriodCycle>> getCycles(String userId) async =>
       List<PeriodCycle>.from(cycles);
+
+  @override
+  Future<void> deleteCycle(String userId, String cycleId) async {
+    cycles.removeWhere((cycle) => cycle.id == cycleId);
+    deletedIds.add(cycleId);
+    writeCount++;
+  }
 
   @override
   Future<bool> createCycleIfAbsent(String userId, PeriodCycle cycle) async {
@@ -481,10 +623,25 @@ class _MemoryPeriodCycleStore
   }
 
   @override
+  Future<bool> closeMigratedCycleIfOpen(
+    String userId,
+    PeriodCycle cycle,
+  ) async {
+    final index = cycles.indexWhere((item) => item.id == cycle.id);
+    if (index < 0 || cycles[index].endDate != null || cycle.endDate == null) {
+      return false;
+    }
+    cycles[index] = cycle;
+    writeCount++;
+    return true;
+  }
+
+  @override
   Future<void> recordMigrationStatus(
     String userId, {
     required int version,
     required int created,
+    required int updated,
     required int skipped,
     required int failed,
   }) async {

@@ -103,4 +103,45 @@ void main() {
     expect(restored.isEncrypted, isTrue);
     expect(restored.encryptionVersion, 1);
   });
+
+  test('up to ten photo attachments persist and restore in one message', () {
+    final images = List.generate(
+      10,
+      (index) => InneraAiImageAttachment(
+        storagePath: 'users/user-1/ai_chat_images/photo-$index.jpg',
+        downloadUrl: 'https://example.com/photo-$index.jpg',
+        contentType: 'image/jpeg',
+      ),
+    );
+    final original = InneraAiMessage(
+      id: 'photos-10',
+      role: InneraAiMessageRole.user,
+      text: '請一起看看這些照片',
+      createdAt: DateTime.parse('2026-08-24T12:00:00+08:00'),
+      images: images,
+    );
+
+    final restored = InneraAiMessage.tryFromMap(original.toMap());
+
+    expect(restored, isNotNull);
+    expect(restored!.allImages, hasLength(10));
+    expect(restored.allImages.last.storagePath, images.last.storagePath);
+  });
+
+  test('legacy single image remains readable through the multi-image API', () {
+    final restored = InneraAiMessage.tryFromMap({
+      'id': 'legacy-photo',
+      'role': 'user',
+      'text': '舊照片',
+      'createdAt': '2026-08-24T12:00:00+08:00',
+      'image': {
+        'storagePath': 'users/user-1/ai_chat_images/legacy.jpg',
+        'downloadUrl': 'https://example.com/legacy.jpg',
+        'contentType': 'image/jpeg',
+      },
+    });
+
+    expect(restored, isNotNull);
+    expect(restored!.allImages, hasLength(1));
+  });
 }

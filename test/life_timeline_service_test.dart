@@ -199,10 +199,10 @@ void main() {
     final activity =
         result.where((item) => item.type == LifeTimelineType.activity).toList();
     expect(activity, hasLength(2));
-    expect(activity[0].summary, '稍微減少');
+    expect(activity[0].summary, '偏低');
     expect(activity[0].hasExplicitTime, isFalse);
     expect(activity[0].metadata?['sourceType'], 'dailyRecord');
-    expect(activity[1].summary, '稍微增加');
+    expect(activity[1].summary, '偏高');
     expect(activity[1].time, DateTime(2026, 8, 12, 9, 20));
     expect(activity[1].metadata?['sourceType'], 'healthEvent');
   });

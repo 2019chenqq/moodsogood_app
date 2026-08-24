@@ -56,8 +56,17 @@ void main() {
     expect(emotional, contains('不得因 draft 缺少能量、食慾、活動量、睡眠、情緒分數、頻率或其他紀錄欄位而補問'));
     expect(physical, contains('目前模式：身體不適聊聊'));
     expect(physical, contains('先確認症狀位置、開始時間、強度及變化'));
+    expect(physical, contains('每一個身體症狀都要原樣整理'));
+    expect(physical, contains('不限預設症狀名稱'));
     expect(review, contains('目前模式：狀態回顧'));
     expect(review, contains('紀錄事實'));
+  });
+
+  test('record and physical modes expose the confirmation card', () {
+    expect(InneraAiMode.dailyRecord.showsRecordDraftCard, isTrue);
+    expect(InneraAiMode.physicalHealth.showsRecordDraftCard, isTrue);
+    expect(InneraAiMode.emotionalSupport.showsRecordDraftCard, isFalse);
+    expect(InneraAiMode.recentReview.showsRecordDraftCard, isFalse);
   });
 
   test('only explicit record intent changes chat to record', () {

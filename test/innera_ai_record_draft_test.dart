@@ -196,8 +196,8 @@ void main() {
         draft.symptoms,
         containsAll(['動力不足', '一直想吃東西', '噁心反胃']),
       );
-      expect(draft.stateChanges['energy_change'], 2);
-      expect(draft.stateChanges['appetite_change'], 4);
+      expect(draft.stateChanges['energy_change'], isNull);
+      expect(draft.stateChanges['appetite_change'], isNull);
       expect(draft.emotions, isEmpty);
     });
 

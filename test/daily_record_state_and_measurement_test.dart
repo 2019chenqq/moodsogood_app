@@ -114,12 +114,12 @@ void main() {
 
   test('AI explicit facts remain separate from emotions', () {
     final draft = InneraAiRecordDraft.empty(DateTime(2026, 8, 3))
-        .mergeExplicitRecordFacts('今天完全沒精神，一直想吃東西，睡前量體重 75.5 公斤，體脂 40%');
+        .mergeExplicitRecordFacts('今天能量 1 分、食慾 4 分，睡前量體重 75.5 公斤，體脂 40%');
 
     expect(draft.emotions, isEmpty);
     expect(draft.stateChanges['energy_change'], 1);
     expect(draft.stateChanges['appetite_change'], 4);
-    expect(draft.symptoms, contains('一直想吃東西'));
+    expect(draft.symptoms, isEmpty);
     expect(draft.bodyMeasurement?.weightKg, 75.5);
     expect(draft.bodyMeasurement?.bodyFatPercent, 40);
     expect(draft.bodyMeasurement?.measurementTiming,
