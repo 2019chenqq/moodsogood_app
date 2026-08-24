@@ -23,7 +23,18 @@ function normalizeSummaryInput({ messages, eventDrafts, detectSafety }) {
         timeContext: item?.timeContext == null ? null : String(item.timeContext).slice(0, 120),
         timePrecision: ["exact", "approximate", "unspecified"].includes(item?.timePrecision) ? item.timePrecision : "unspecified",
         emotionMentions: Array.isArray(item?.emotionMentions) ? item.emotionMentions.slice(0, 20) : [],
-        symptoms: Array.isArray(item?.symptoms) ? item.symptoms.map(String).map((v) => v.trim()).filter(Boolean).slice(0, 20) : [],
+        symptoms: Array.isArray(item?.symptoms)
+          ? item.symptoms.map((symptom) => {
+            const name = String(symptom?.name ?? symptom ?? "").trim();
+            const rawSeverity = Number(symptom?.severity);
+            return name ? {
+              name,
+              severity: Number.isInteger(rawSeverity) && rawSeverity >= 1 && rawSeverity <= 5
+                ? rawSeverity
+                : null,
+            } : null;
+          }).filter(Boolean).slice(0, 20)
+          : [],
         stateChanges: item?.stateChanges && typeof item.stateChanges === "object" ? item.stateChanges : {},
         rawUserEntries: Array.isArray(item?.rawUserEntries) ? item.rawUserEntries.map(String).map((v) => v.trim()).filter(Boolean).slice(0, 20) : [],
         note: String(item?.note || "").trim().slice(0, 1000),

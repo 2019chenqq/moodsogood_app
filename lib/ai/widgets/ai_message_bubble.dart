@@ -95,24 +95,36 @@ class AiMessageBubble extends StatelessWidget {
                                 mainAxisSize: MainAxisSize.min,
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  if (message.image != null) ...[
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(12),
-                                      child: _EncryptedChatImage(
-                                        message.image!,
-                                        width: 240,
-                                        height: 180,
-                                        fit: BoxFit.cover,
-                                        errorBuilder:
-                                            (context, error, stackTrace) =>
-                                                Container(
-                                          width: 240,
-                                          height: 120,
-                                          alignment: Alignment.center,
-                                          color: colorScheme.surfaceContainer,
-                                          child: const Text('照片目前無法顯示'),
-                                        ),
-                                      ),
+                                  if (message.allImages.isNotEmpty) ...[
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 6,
+                                      children: message.allImages.map((image) {
+                                        final multiple =
+                                            message.allImages.length > 1;
+                                        final width = multiple ? 108.0 : 240.0;
+                                        final height = multiple ? 108.0 : 180.0;
+                                        return ClipRRect(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          child: _EncryptedChatImage(
+                                            image,
+                                            width: width,
+                                            height: height,
+                                            fit: BoxFit.cover,
+                                            errorBuilder:
+                                                (context, error, stackTrace) =>
+                                                    Container(
+                                              width: width,
+                                              height: height,
+                                              alignment: Alignment.center,
+                                              color:
+                                                  colorScheme.surfaceContainer,
+                                              child: const Text('照片目前無法顯示'),
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
                                     ),
                                     const SizedBox(height: 10),
                                   ],

@@ -22,7 +22,6 @@ class SymptomPage extends StatelessWidget {
   final ValueChanged<DateTime> onChangePeriodMonth;
   final int periodCycleLength;
   final DateTime? nextExpectedStart;
-  final int? arrivalDeltaDays;
   final bool periodBusy;
   final bool showPeriodCalendar;
 
@@ -41,7 +40,6 @@ class SymptomPage extends StatelessWidget {
     required this.onChangePeriodMonth,
     required this.periodCycleLength,
     required this.nextExpectedStart,
-    required this.arrivalDeltaDays,
     this.periodBusy = false,
     this.showPeriodCalendar = true,
   });
@@ -52,7 +50,7 @@ class SymptomPage extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       children: [
         if (showPeriodCalendar) ...[
-          _PeriodCalendarCard(
+          PeriodCalendarCard(
             markedDays: periodMarkedDays,
             focusedMonth: periodFocusedMonth,
             isTodayPeriod: isPeriod,
@@ -60,7 +58,6 @@ class SymptomPage extends StatelessWidget {
             onChangeMonth: onChangePeriodMonth,
             cycleLength: periodCycleLength,
             nextExpectedStart: nextExpectedStart,
-            arrivalDeltaDays: arrivalDeltaDays,
             busy: periodBusy,
           ),
           const SizedBox(height: 16),
@@ -435,18 +432,20 @@ class SymptomPage extends StatelessWidget {
   }
 }
 
-class _PeriodCalendarCard extends StatefulWidget {
+class PeriodCalendarCard extends StatefulWidget {
   final Set<DateTime> markedDays;
   final DateTime focusedMonth;
   final bool isTodayPeriod;
-  final ValueChanged<DateTime> onTapDate;
+  final ValueChanged<DateTime>? onTapDate;
   final ValueChanged<DateTime> onChangeMonth;
   final int cycleLength;
   final DateTime? nextExpectedStart;
-  final int? arrivalDeltaDays;
   final bool busy;
+  final bool initiallyExpanded;
+  final String? footerText;
 
-  const _PeriodCalendarCard({
+  const PeriodCalendarCard({
+    super.key,
     required this.markedDays,
     required this.focusedMonth,
     required this.isTodayPeriod,
@@ -454,16 +453,23 @@ class _PeriodCalendarCard extends StatefulWidget {
     required this.onChangeMonth,
     required this.cycleLength,
     required this.nextExpectedStart,
-    required this.arrivalDeltaDays,
     required this.busy,
+    this.initiallyExpanded = false,
+    this.footerText = '點已亮的日期可取消。',
   });
 
   @override
-  State<_PeriodCalendarCard> createState() => _PeriodCalendarCardState();
+  State<PeriodCalendarCard> createState() => _PeriodCalendarCardState();
 }
 
-class _PeriodCalendarCardState extends State<_PeriodCalendarCard> {
-  bool _collapsed = true;
+class _PeriodCalendarCardState extends State<PeriodCalendarCard> {
+  late bool _collapsed;
+
+  @override
+  void initState() {
+    super.initState();
+    _collapsed = !widget.initiallyExpanded;
+  }
 
   DateTime _d(DateTime date) => DateTime(date.year, date.month, date.day);
 
@@ -490,17 +496,6 @@ class _PeriodCalendarCardState extends State<_PeriodCalendarCard> {
     String etaText = '請點日期輸入月經第一天，系統會自動點亮後 6 天（共 7 天）';
     if (widget.nextExpectedStart != null) {
       etaText = '預估下次經期：${_dateText(widget.nextExpectedStart!)}';
-    }
-
-    String deltaText = '目前尚無提早/延遲資料';
-    if (widget.arrivalDeltaDays != null) {
-      if (widget.arrivalDeltaDays! > 0) {
-        deltaText = '最近一次：延遲 ${widget.arrivalDeltaDays!} 天';
-      } else if (widget.arrivalDeltaDays! < 0) {
-        deltaText = '最近一次：提早 ${widget.arrivalDeltaDays!.abs()} 天';
-      } else {
-        deltaText = '最近一次：準時來';
-      }
     }
 
     return Container(
@@ -654,7 +649,9 @@ class _PeriodCalendarCardState extends State<_PeriodCalendarCard> {
 
                       return InkWell(
                         borderRadius: BorderRadius.circular(10),
-                        onTap: widget.busy ? null : () => widget.onTapDate(day),
+                        onTap: widget.busy || widget.onTapDate == null
+                            ? null
+                            : () => widget.onTapDate!(day),
                         child: Container(
                           decoration: BoxDecoration(
                             color: bg,
@@ -709,29 +706,16 @@ class _PeriodCalendarCardState extends State<_PeriodCalendarCard> {
                 fontSize: 12,
               ),
             ),
-            const SizedBox(height: 2),
-            Text(
-              deltaText,
-              style: TextStyle(
-                color: widget.arrivalDeltaDays == null
-                    ? colorScheme.onSurface.withValues(alpha: 0.72)
-                    : (widget.arrivalDeltaDays == 0
-                        ? Colors.green.shade600
-                        : (widget.arrivalDeltaDays! > 0
-                            ? Colors.orange.shade700
-                            : Colors.blue.shade700)),
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
+            if (widget.footerText case final footer?) ...[
+              const SizedBox(height: 2),
+              Text(
+                footer,
+                style: TextStyle(
+                  color: colorScheme.onSurface.withValues(alpha: 0.66),
+                  fontSize: 11,
+                ),
               ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              '點已亮的日期可取消。',
-              style: TextStyle(
-                color: colorScheme.onSurface.withValues(alpha: 0.66),
-                fontSize: 11,
-              ),
-            ),
+            ],
           ],
         ),
       ),

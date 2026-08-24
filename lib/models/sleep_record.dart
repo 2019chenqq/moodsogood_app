@@ -79,7 +79,7 @@ class SleepRecord {
       note?.trim().isNotEmpty == true;
 
   Map<String, dynamic> toMap() => {
-        'date': Timestamp.fromDate(DateTime(date.year, date.month, date.day)),
+        'date': Timestamp.fromDate(date),
         'bedTime': _format(bedTime),
         'sleepStart': _format(sleepStart),
         'wakeTime': _format(wakeTime),

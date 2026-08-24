@@ -15,6 +15,7 @@ import 'daily_record_repository.dart';
 import 'sleep_record_service.dart';
 import 'unified_sleep_repository.dart';
 import 'period_cycle_service.dart';
+import 'period_feature_visibility_service.dart';
 import '../models/sleep_record.dart';
 
 // Import refactored modules
@@ -108,30 +109,8 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   Future<void> _loadPeriodVisibilityAndCalendarState() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-
-    var showsPeriodCalendar = false;
-    try {
-      final profile =
-          await FirebaseFirestore.instance.collection('users').doc(uid).get();
-      final healthProfile = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('healthProfile')
-          .doc('current')
-          .get();
-      final healthData = healthProfile.data() == null
-          ? const <String, dynamic>{}
-          : await HealthDataEncryptionService.decryptData(
-              healthProfile.data()!,
-            );
-      final sex = (healthData['sexAssignedAtBirth'] ??
-              profile.data()?['sexAssignedAtBirth'])
-          ?.toString()
-          .trim();
-      showsPeriodCalendar = sex == null || sex.isEmpty || sex == '女性';
-    } catch (e) {
-      debugPrint('讀取生理性別失敗: $e');
-    }
+    final showsPeriodCalendar =
+        await PeriodFeatureVisibilityService().shouldShowForCurrentUser();
 
     if (!mounted) return;
     setState(() {
@@ -176,7 +155,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     for (int i = 1; i < starts.length; i++) {
       final diff =
           _dateOnly(starts[i]).difference(_dateOnly(starts[i - 1])).inDays;
-      if (diff >= 15 && diff <= 60) {
+      if (diff > 0) {
         intervals.add(diff);
       }
     }
@@ -184,7 +163,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
 
     final sum = intervals.fold<int>(0, (acc, v) => acc + v);
     final avg = (sum / intervals.length).round();
-    return avg.clamp(21, 45);
+    return avg;
   }
 
   DateTime? _predictedNextPeriodStart() {
@@ -214,7 +193,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final savedCycle = prefs.getInt('period_cycle_length');
-      if (savedCycle != null && savedCycle >= 21 && savedCycle <= 45) {
+      if (savedCycle != null && savedCycle > 0) {
         _periodCycleLength = savedCycle;
       }
     } catch (_) {}
@@ -223,7 +202,11 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       final cycles = await PeriodCycleService().getUnifiedCycles(uid);
       for (final cycle in cycles) {
         final cycleStart = _dateOnly(cycle.startDate);
-        final cycleEnd = _dateOnly(cycle.endDate ?? endDate);
+        final initialWindowEnd = cycleStart.add(const Duration(days: 6));
+        final today = _dateOnly(DateTime.now());
+        final openDisplayEnd =
+            today.isAfter(initialWindowEnd) ? today : initialWindowEnd;
+        final cycleEnd = _dateOnly(cycle.endDate ?? openDisplayEnd);
         final first = cycleStart.isBefore(startDate) ? startDate : cycleStart;
         final last = cycleEnd.isAfter(endDate) ? endDate : cycleEnd;
         for (var day = first;
@@ -250,7 +233,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
                 configSnap.data()!,
               );
         final cloudCycle = (config?['cycleLength'] as num?)?.toInt();
-        if (cloudCycle != null && cloudCycle >= 21 && cloudCycle <= 45) {
+        if (cloudCycle != null && cloudCycle > 0) {
           _periodCycleLength = cloudCycle;
         }
       } catch (e) {
@@ -1703,7 +1686,6 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         },
         periodCycleLength: _periodCycleLength,
         nextExpectedStart: _predictedNextPeriodStart(),
-        arrivalDeltaDays: _arrivalDeltaDays(),
         periodBusy: _isUpdatingPeriodCalendar,
       )),
       _pageWrapper(SleepPage(

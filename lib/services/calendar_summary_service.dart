@@ -6,7 +6,9 @@ import '../models/calendar_day_summary.dart';
 import '../models/daily_health_aggregate.dart';
 import '../models/health_event.dart';
 import '../daily/period_cycle_service.dart';
+import '../utils/encryption_service.dart';
 import '../utils/health_data_encryption_service.dart';
+import '../utils/secure_storage_service.dart';
 import 'daily_health_aggregation_service.dart';
 
 class CalendarSummaryService {
@@ -410,6 +412,14 @@ class CalendarSummaryService {
       'updatedAt',
     );
 
+    EncryptionService? diaryEncryption;
+    try {
+      final key = await SecureStorageService.getOrRecoverKey();
+      if (key != null) diaryEncryption = EncryptionService(key);
+    } catch (error) {
+      debugPrint('[CalendarSummaryService] diary key unavailable: $error');
+    }
+
     var count = 0;
     for (final doc in docs) {
       final data = doc.data();
@@ -418,8 +428,17 @@ class CalendarSummaryService {
 
       count++;
 
-      final title = _toCleanString(data['title']);
-      final content = _toCleanString(data['content']);
+      final isEncrypted = data['isEncrypted'] == true;
+      final title = decodeDiaryFieldForDisplay(
+        data['title'],
+        isEncrypted: isEncrypted,
+        decrypt: diaryEncryption?.tryDecryptData,
+      );
+      final content = decodeDiaryFieldForDisplay(
+        data['content'],
+        isEncrypted: isEncrypted,
+        decrypt: diaryEncryption?.tryDecryptData,
+      );
       final hasDiaryContent = (title != null && title.isNotEmpty) ||
           (content != null && content.isNotEmpty);
 
@@ -448,6 +467,24 @@ class CalendarSummaryService {
     return count;
   }
 
+  @visibleForTesting
+  static String? decodeDiaryFieldForDisplay(
+    dynamic raw, {
+    required bool isEncrypted,
+    String? Function(String value)? decrypt,
+  }) {
+    final value = _cleanDiaryString(raw);
+    if (value == null || !isEncrypted) return value;
+    if (decrypt == null) return null;
+    return _cleanDiaryString(decrypt(value));
+  }
+
+  static String? _cleanDiaryString(dynamic value) {
+    if (value is! String) return null;
+    final text = value.trim();
+    return text.isEmpty ? null : text;
+  }
+
   Future<int> _loadPeriodData({
     required String uid,
     required _DateRange range,
@@ -463,7 +500,11 @@ class CalendarSummaryService {
 
       for (final cycle in cycles) {
         final start = cycle.startDate;
-        final end = cycle.endDate ?? range.end;
+        final initialWindowEnd = cycle.startDate.add(const Duration(days: 6));
+        final today = _dateOnly(DateTime.now());
+        final openDisplayEnd =
+            today.isAfter(initialWindowEnd) ? today : initialWindowEnd;
+        final end = cycle.endDate ?? openDisplayEnd;
         cycleStarts.add(_dateOnly(start));
 
         final s = _dateOnly(start);
@@ -507,7 +548,7 @@ class CalendarSummaryService {
           ? null
           : await HealthDataEncryptionService.decryptData(config.data()!);
       final value = (configData?['cycleLength'] as num?)?.toInt();
-      if (value != null && value >= 21 && value <= 45) {
+      if (value != null && value > 0) {
         cycleLength = value;
       }
     } catch (e) {
@@ -584,7 +625,7 @@ class CalendarSummaryService {
     final gaps = <int>[];
     for (var i = 1; i < sorted.length; i++) {
       final gap = sorted[i].difference(sorted[i - 1]).inDays;
-      if (gap >= 21 && gap <= 45) {
+      if (gap > 0) {
         gaps.add(gap);
       }
     }

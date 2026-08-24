@@ -168,16 +168,13 @@ class _BodyMeasurementPageState extends State<BodyMeasurementPage> {
       );
       return;
     }
-    final now = DateTime.now();
     final timestamp = _editing?.timestamp ??
         DateTime(
           widget.date.year,
           widget.date.month,
           widget.date.day,
-          now.hour,
-          now.minute,
-          now.second,
-          now.millisecond,
+          widget.date.hour,
+          widget.date.minute,
         );
     setState(() => _saving = true);
     try {

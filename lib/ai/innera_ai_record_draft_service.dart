@@ -155,9 +155,13 @@ class InneraAiRecordDraftService {
       final date = DateTime.parse(draft.dateKey);
       final diaryRepository = DiaryRepository();
       final existingDiary = await diaryRepository.getByDate(date);
+      final nextDiary = diaryContent.trim();
+      final existingContent = existingDiary?.content.trim() ?? '';
       final content = existingDiary == null || replaceDiary
-          ? diaryContent.trim()
-          : '${existingDiary.content.trim()}\n\n$diaryContent'.trim();
+          ? nextDiary
+          : existingContent == nextDiary || existingContent.contains(nextDiary)
+              ? existingContent
+              : '$existingContent\n\n$nextDiary'.trim();
       await diaryRepository.upsert(DiaryEntry(
         date: date,
         title: existingDiary?.title ?? '每日紀錄',
@@ -305,7 +309,10 @@ List<HealthEvent> buildConfirmedHealthEvents(InneraAiRecordDraft draft) {
       id: eventId,
       timestamp: timestamp,
       symptoms: item.symptoms
-          .map((name) => HealthEventSymptom(name: name, severity: 3))
+          .map((name) => HealthEventSymptom(
+                name: name,
+                severity: item.symptomSeverities[name],
+              ))
           .toList(),
       emotions: item.emotions
           .where((emotion) => emotion.score != null)

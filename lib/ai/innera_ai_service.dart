@@ -15,6 +15,43 @@ import 'innera_ai_mode.dart';
 import 'innera_ai_record_draft.dart';
 import 'innera_ai_safety_service.dart';
 
+String inneraAiDisplayText(String reply, String? followUpQuestion) {
+  if (followUpQuestion == null || followUpQuestion.isEmpty) return reply;
+  if (_replyAlreadyAsksFollowUp(reply, followUpQuestion)) return reply;
+  return '$reply\n\n$followUpQuestion';
+}
+
+bool _replyAlreadyAsksFollowUp(String reply, String followUp) {
+  String normalize(String value) =>
+      value.replaceAll(RegExp(r'[\s，。！？；：、,.!?;:]'), '').toLowerCase();
+  final normalizedReply = normalize(reply);
+  final normalizedFollowUp = normalize(followUp);
+  if (normalizedFollowUp.isNotEmpty &&
+      normalizedReply.contains(normalizedFollowUp)) {
+    return true;
+  }
+  if (!RegExp(r'[？?]').hasMatch(reply)) return false;
+  const topics = <String, String>{
+    'time': r'什麼時候|何時|幾點|時間|多久',
+    'severity': r'幾分|程度|強度|嚴重|多痛',
+    'energy': r'能量|精神|精力',
+    'appetite': r'食慾|胃口|想吃',
+    'activity': r'活動量|活動程度|不想動',
+    'sleep': r'睡眠|睡得|入睡|醒來|起床',
+    'feeling': r'感覺|感受|心情|情緒',
+    'cause': r'發生什麼|什麼事情|原因|為什麼',
+  };
+  final replyTopics = {
+    for (final entry in topics.entries)
+      if (RegExp(entry.value).hasMatch(reply)) entry.key,
+  };
+  final followUpTopics = {
+    for (final entry in topics.entries)
+      if (RegExp(entry.value).hasMatch(followUp)) entry.key,
+  };
+  return replyTopics.intersection(followUpTopics).isNotEmpty;
+}
+
 class InneraAiResponse {
   const InneraAiResponse({
     required this.reply,
@@ -42,10 +79,7 @@ class InneraAiResponse {
   final int? inputTokens;
   final int? outputTokens;
 
-  String get displayText {
-    if (followUpQuestion == null || followUpQuestion!.isEmpty) return reply;
-    return '$reply\n\n$followUpQuestion';
-  }
+  String get displayText => inneraAiDisplayText(reply, followUpQuestion);
 }
 
 class InneraAiService {
@@ -115,7 +149,7 @@ class InneraAiService {
     required InneraAiMode mode,
     required List<InneraAiMessage> history,
     required String userMessage,
-    InneraAiTemporaryImage? image,
+    List<InneraAiTemporaryImage> images = const [],
     InneraAiRecordDraft? recordDraft,
   }) async {
     final localSafety = _safetyService.assess(userMessage);
@@ -142,7 +176,7 @@ class InneraAiService {
       mode: mode,
       history: history,
       userMessage: userMessage,
-      image: image,
+      images: images,
       context: contextBundle.data,
       contextSources: contextBundle.sources,
       recordDraft: recordDraft,
@@ -159,7 +193,7 @@ class InneraAiService {
     required String userMessage,
     required Map<String, dynamic> context,
     required List<AiContextSource> contextSources,
-    InneraAiTemporaryImage? image,
+    List<InneraAiTemporaryImage> images = const [],
     InneraAiRecordDraft? recordDraft,
   }) async {
     final localSafety = _safetyService.assess(userMessage);
@@ -175,11 +209,14 @@ class InneraAiService {
       'messages': messages,
       'context': context,
       'contextSources': contextSources.map(_sourcePayload).toList(),
-      if (image != null)
-        'image': {
-          'storagePath': image.storagePath,
-          'contentType': image.contentType,
-        },
+      if (images.isNotEmpty)
+        'images': images
+            .take(10)
+            .map((image) => {
+                  'storagePath': image.storagePath,
+                  'contentType': image.contentType,
+                })
+            .toList(),
       'emotionDimensions': kEmotionDimensions
           .map(
             (dimension) => <String, dynamic>{

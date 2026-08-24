@@ -4,6 +4,7 @@ import '../constants/healing_design_system.dart';
 import '../models/daily_check_in.dart';
 import '../widgets/emotion_slider.dart';
 import 'daily_check_in_service.dart';
+import 'widgets/record_date_time_picker.dart';
 
 class DailyCheckInPage extends StatefulWidget {
   const DailyCheckInPage({super.key, this.date});
@@ -21,15 +22,12 @@ class _DailyCheckInPageState extends State<DailyCheckInPage> {
   bool _noSpecialEvent = false;
   bool _loading = true;
   bool _saving = false;
-
-  DateTime get _date {
-    final value = widget.date ?? DateTime.now();
-    return DateTime(value.year, value.month, value.day);
-  }
+  late DateTime _date;
 
   @override
   void initState() {
     super.initState();
+    _date = widget.date ?? DateTime.now();
     _load();
   }
 
@@ -38,6 +36,7 @@ class _DailyCheckInPageState extends State<DailyCheckInPage> {
       final checkIn = await _service.getForDate(_date);
       if (!mounted) return;
       setState(() {
+        if (checkIn != null) _date = checkIn.date;
         _overallMood = checkIn?.overallMood ?? 3;
         _healthStatus = checkIn?.healthStatus ?? 3;
         _noSpecialEvent = checkIn?.noSpecialEvent ?? false;
@@ -50,6 +49,17 @@ class _DailyCheckInPageState extends State<DailyCheckInPage> {
         SnackBar(content: Text('無法載入今日 Check-in：$error')),
       );
     }
+  }
+
+  Future<void> _changeDateTime(DateTime value) async {
+    final dayChanged = value.year != _date.year ||
+        value.month != _date.month ||
+        value.day != _date.day;
+    setState(() {
+      _date = value;
+      if (dayChanged) _loading = true;
+    });
+    if (dayChanged) await _load();
   }
 
   Future<void> _save() async {
@@ -69,7 +79,7 @@ class _DailyCheckInPageState extends State<DailyCheckInPage> {
       ));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('今日 Check-in 已儲存')),
+        const SnackBar(content: Text('每日 Check-in 已儲存')),
       );
       Navigator.of(context).pop(true);
     } catch (error) {
@@ -91,6 +101,11 @@ class _DailyCheckInPageState extends State<DailyCheckInPage> {
               child: ListView(
                 padding: const EdgeInsets.all(HealingDesignSystem.paddingL),
                 children: [
+                  RecordDateTimePicker(
+                    value: _date,
+                    onChanged: _changeDateTime,
+                  ),
+                  const SizedBox(height: 12),
                   _ScoreCard(
                     title: '整體情緒',
                     value: _overallMood,

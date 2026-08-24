@@ -75,6 +75,7 @@ class InneraAiMessage {
     this.isError = false,
     this.canRetry = false,
     this.image,
+    this.images = const [],
   });
 
   final String id;
@@ -87,9 +88,23 @@ class InneraAiMessage {
   final bool isError;
   final bool canRetry;
   final InneraAiImageAttachment? image;
+  final List<InneraAiImageAttachment> images;
+
+  List<InneraAiImageAttachment> get allImages {
+    final result = <InneraAiImageAttachment>[];
+    for (final attachment in [if (image != null) image!, ...images]) {
+      if (attachment.isValid &&
+          !result.any((item) => item.storagePath == attachment.storagePath)) {
+        result.add(attachment);
+      }
+    }
+    return result.take(10).toList(growable: false);
+  }
 
   bool get canPersist =>
-      !isLoading && !isError && (text.trim().isNotEmpty || image != null);
+      !isLoading &&
+      !isError &&
+      (text.trim().isNotEmpty || allImages.isNotEmpty);
 
   Map<String, dynamic> toMap() => {
         'id': id,
@@ -99,6 +114,8 @@ class InneraAiMessage {
         'sources': sources.map((source) => source.toMap()).toList(),
         'safetyLevel': safetyLevel.name,
         if (image != null) 'image': image!.toMap(),
+        if (allImages.isNotEmpty)
+          'images': allImages.map((item) => item.toMap()).toList(),
       };
 
   static InneraAiMessage? tryFromMap(Map<String, dynamic> map) {
@@ -112,8 +129,16 @@ class InneraAiMessage {
             Map<String, dynamic>.from(imageMap),
           )
         : null;
+    final images = (map['images'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => InneraAiImageAttachment.fromMap(
+              Map<String, dynamic>.from(item),
+            ))
+        .where((item) => item.isValid)
+        .take(10)
+        .toList(growable: false);
     if (id.isEmpty ||
-        (text.isEmpty && image?.isValid != true) ||
+        (text.isEmpty && image?.isValid != true && images.isEmpty) ||
         createdAt == null) {
       return null;
     }
@@ -142,6 +167,7 @@ class InneraAiMessage {
         orElse: () => AiSafetyLevel.normal,
       ),
       image: image?.isValid == true ? image : null,
+      images: images,
     );
   }
 
@@ -153,6 +179,7 @@ class InneraAiMessage {
     bool? isError,
     bool? canRetry,
     InneraAiImageAttachment? image,
+    List<InneraAiImageAttachment>? images,
   }) {
     return InneraAiMessage(
       id: id,
@@ -165,6 +192,7 @@ class InneraAiMessage {
       isError: isError ?? this.isError,
       canRetry: canRetry ?? this.canRetry,
       image: image ?? this.image,
+      images: images ?? this.images,
     );
   }
 }

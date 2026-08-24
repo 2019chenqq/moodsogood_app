@@ -657,7 +657,7 @@ class _RecordDetailScreenState extends State<RecordDetailScreen> {
               ],
 
               if (record.stateChanges.isNotEmpty) ...[
-                _sectionHeader(context, '今日狀態變化'),
+                _sectionHeader(context, '今日狀態程度'),
                 Container(
                   margin: const EdgeInsets.only(bottom: 18),
                   decoration:

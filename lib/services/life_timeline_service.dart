@@ -282,7 +282,9 @@ class LifeTimelineService {
           (event.context ?? '').trim().isNotEmpty ||
           (event.note ?? '').trim().isNotEmpty;
       final details = <String>[
-        ...event.symptoms.map((item) => '${item.name} ${item.severity}'),
+        ...event.symptoms.map((item) => item.severity == null
+            ? item.name
+            : '${item.name} ${item.severity}'),
         ...event.emotions.map((item) => '${item.name} ${item.intensity}'),
         ...event.stateChanges.entries
             .where((item) => item.key != 'activity_change')
