@@ -1119,10 +1119,15 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
         (_selectedRangeDays == null
             ? DateTime(2000)
             : end.subtract(Duration(days: _selectedRangeDays! - 1)));
+    final queryStart = _selectedRangeDays == null && _selectedDateRange == null
+        ? start
+        : start.subtract(
+            Duration(days: end.difference(start).inDays + 1),
+          );
     return FutureBuilder<List<UnifiedSleepRecord>>(
       future: UnifiedSleepRepository().getByDateRange(
         userId: uid,
-        start: start,
+        start: queryStart,
         end: end,
       ),
       builder: (context, snapshot) {

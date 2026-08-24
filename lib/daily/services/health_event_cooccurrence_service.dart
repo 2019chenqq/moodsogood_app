@@ -81,9 +81,13 @@ class HealthEventCooccurrenceService {
         ..sort((a, b) => b.coOccurrenceCount.compareTo(a.coOccurrenceCount)),
       symptomEventCounts: symptomCounts.map((k, v) => MapEntry(k, v.count)),
       emotionEventCounts: emotionCounts.map((k, v) => MapEntry(k, v.count)),
-      symptomAvgSeverity: symptomCounts.map((k, v) => MapEntry(k, v.average())),
+      symptomAvgSeverity: Map.fromEntries(
+        symptomCounts.entries
+            .where((entry) => entry.value.average() != null)
+            .map((entry) => MapEntry(entry.key, entry.value.average()!)),
+      ),
       emotionAvgIntensity:
-          emotionCounts.map((k, v) => MapEntry(k, v.average())),
+          emotionCounts.map((k, v) => MapEntry(k, v.average()!)),
     );
   }
 
@@ -159,15 +163,18 @@ class _ItemStats {
   _ItemStats();
 
   int count = 0;
+  int scoredCount = 0;
   int valueSum = 0;
 
-  void add({required int value}) {
+  void add({required int? value}) {
     count++;
+    if (value == null) return;
+    scoredCount++;
     valueSum += value;
   }
 
-  double average() {
-    if (count == 0) return 0;
-    return valueSum / count;
+  double? average() {
+    if (scoredCount == 0) return null;
+    return valueSum / scoredCount;
   }
 }

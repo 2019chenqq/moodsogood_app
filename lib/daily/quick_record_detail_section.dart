@@ -35,7 +35,7 @@ class QuickRecordDetailSection extends StatelessWidget {
       if (event.emotions.isNotEmpty)
         '情緒：${event.emotions.map((item) => '${item.name} ${item.intensity}').join('、')}',
       if (event.symptoms.isNotEmpty)
-        '症狀：${event.symptoms.map((item) => '${item.name} ${item.severity}').join('、')}',
+        '症狀：${event.symptoms.map((item) => item.severity == null ? item.name : '${item.name} ${item.severity}').join('、')}',
       if (stateLabels.isNotEmpty) '狀態：${stateLabels.join('、')}',
       if (event.context?.trim().isNotEmpty == true)
         '情境：${event.context!.trim()}',

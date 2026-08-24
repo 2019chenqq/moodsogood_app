@@ -69,9 +69,9 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
   final _focusNode = FocusNode();
   bool _isSending = false;
   String? _lastFailedInput;
-  InneraAiImageAttachment? _lastFailedImage;
-  Uint8List? _pendingImageBytes;
-  String? _pendingImageName;
+  List<InneraAiImageAttachment> _lastFailedImages = const [];
+  final List<Uint8List> _pendingImageBytes = [];
+  final List<String> _pendingImageNames = [];
   AiSafetyLevel _activeSafetyLevel = AiSafetyLevel.normal;
   bool _hasLoggedTaskStart = false;
   final _draftService = InneraAiRecordDraftService();
@@ -205,16 +205,29 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     final oldPaths = <String>[];
     final newPaths = <String>[];
     for (final message in messages) {
-      final image = message.image;
-      if (image == null || image.isEncrypted) {
+      final images = message.allImages;
+      if (images.isEmpty || images.every((image) => image.isEncrypted)) {
         migrated.add(message);
         continue;
       }
       try {
-        final encrypted = await _imageService.migrateLegacyAttachment(image);
-        migrated.add(message.copyWith(image: encrypted));
-        oldPaths.add(image.storagePath);
-        newPaths.add(encrypted.storagePath);
+        final encryptedImages = <InneraAiImageAttachment>[];
+        for (final image in images) {
+          final encrypted = image.isEncrypted
+              ? image
+              : await _imageService.migrateLegacyAttachment(image);
+          encryptedImages.add(encrypted);
+          if (!image.isEncrypted) {
+            oldPaths.add(image.storagePath);
+            newPaths.add(encrypted.storagePath);
+          }
+        }
+        migrated.add(
+          message.copyWith(
+            image: message.image == null ? null : encryptedImages.first,
+            images: encryptedImages,
+          ),
+        );
       } catch (error, stackTrace) {
         debugPrint('InneraAiChatPage legacy image migration failed: $error');
         debugPrintStack(stackTrace: stackTrace);
@@ -293,8 +306,8 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     if (confirmed != true || !mounted) return;
     setState(() => _loadingDraft = true);
     final imagePaths = _messages
-        .map((message) => message.image?.storagePath)
-        .whereType<String>()
+        .expand((message) => message.allImages)
+        .map((image) => image.storagePath)
         .toList();
     try {
       await _conversationService.resetToday(
@@ -311,9 +324,9 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
           ..add(_welcomeMessage());
         _recordDraft = freshDraft;
         _lastFailedInput = null;
-        _lastFailedImage = null;
-        _pendingImageBytes = null;
-        _pendingImageName = null;
+        _lastFailedImages = const [];
+        _pendingImageBytes.clear();
+        _pendingImageNames.clear();
         _activeSafetyLevel = AiSafetyLevel.normal;
         _controller.clear();
         _loadingDraft = false;
@@ -360,22 +373,43 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     );
     if (source == null || !mounted) return;
     try {
-      final picked = await _imagePicker.pickImage(
-        source: source,
-        maxWidth: 1600,
-        maxHeight: 1600,
-        imageQuality: 82,
-      );
-      if (picked == null) return;
-      final bytes = await picked.readAsBytes();
-      if (bytes.isEmpty ||
-          bytes.length > InneraAiChatImageService.maxImageBytes) {
-        throw const InneraAiChatImageException('照片大小必須小於 5 MB。');
+      final remaining = 10 - _pendingImageBytes.length;
+      if (remaining <= 0) {
+        throw const InneraAiChatImageException('每次最多選擇 10 張照片。');
+      }
+      final picked = source == ImageSource.gallery
+          ? await _imagePicker.pickMultiImage(
+              maxWidth: 1600,
+              maxHeight: 1600,
+              imageQuality: 82,
+              limit: remaining,
+            )
+          : [
+              if (await _imagePicker.pickImage(
+                source: ImageSource.camera,
+                maxWidth: 1600,
+                maxHeight: 1600,
+                imageQuality: 82,
+              )
+                  case final photo?)
+                photo,
+            ];
+      if (picked.isEmpty) return;
+      final newBytes = <Uint8List>[];
+      final newNames = <String>[];
+      for (final photo in picked.take(remaining)) {
+        final bytes = await photo.readAsBytes();
+        if (bytes.isEmpty ||
+            bytes.length > InneraAiChatImageService.maxImageBytes) {
+          throw const InneraAiChatImageException('每張照片大小必須小於 5 MB。');
+        }
+        newBytes.add(bytes);
+        newNames.add(photo.name);
       }
       if (!mounted) return;
       setState(() {
-        _pendingImageBytes = bytes;
-        _pendingImageName = picked.name;
+        _pendingImageBytes.addAll(newBytes);
+        _pendingImageNames.addAll(newNames);
       });
     } catch (error) {
       if (!mounted) return;
@@ -393,12 +427,16 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
 
   Future<void> _send({
     String? overrideText,
-    InneraAiImageAttachment? overrideImage,
+    List<InneraAiImageAttachment> overrideImages = const [],
   }) async {
     final enteredText = (overrideText ?? _controller.text).trim();
-    final pendingBytes = overrideText == null ? _pendingImageBytes : null;
-    final pendingName = overrideText == null ? _pendingImageName : null;
-    final hasImage = overrideImage != null || pendingBytes != null;
+    final pendingBytes = overrideText == null
+        ? List<Uint8List>.of(_pendingImageBytes)
+        : const <Uint8List>[];
+    final pendingNames = overrideText == null
+        ? List<String>.of(_pendingImageNames)
+        : const <String>[];
+    final hasImage = overrideImages.isNotEmpty || pendingBytes.isNotEmpty;
     if ((enteredText.isEmpty && !hasImage) ||
         enteredText.length > _maxInputLength ||
         _isSending) {
@@ -420,39 +458,40 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     setState(() {
       _isSending = true;
       _lastFailedInput = null;
-      _lastFailedImage = null;
+      _lastFailedImages = const [];
       if (overrideText == null) {
         _controller.clear();
-        _pendingImageBytes = null;
-        _pendingImageName = null;
+        _pendingImageBytes.clear();
+        _pendingImageNames.clear();
       }
     });
 
-    InneraAiImageAttachment? image = overrideImage;
-    InneraAiTemporaryImage? temporaryImage;
-    var createdPermanentImage = false;
+    final images = <InneraAiImageAttachment>[...overrideImages];
+    final temporaryImages = <InneraAiTemporaryImage>[];
+    final createdPermanentPaths = <String>[];
     try {
-      if (image == null && pendingBytes != null) {
-        image = await _imageService.uploadEncryptedPermanent(
-          bytes: pendingBytes,
-          fileName: pendingName ?? 'photo.jpg',
+      for (var index = 0; index < pendingBytes.length; index++) {
+        final image = await _imageService.uploadEncryptedPermanent(
+          bytes: pendingBytes[index],
+          fileName: pendingNames[index],
         );
-        createdPermanentImage = true;
+        images.add(image);
+        createdPermanentPaths.add(image.storagePath);
       }
-      if (image != null) {
-        temporaryImage = pendingBytes != null
+      for (var index = 0; index < images.length; index++) {
+        temporaryImages.add(index < pendingBytes.length
             ? await _imageService.uploadTemporaryForAi(
-                bytes: pendingBytes,
-                fileName: pendingName ?? 'photo.jpg',
+                bytes: pendingBytes[index],
+                fileName: pendingNames[index],
               )
-            : await _imageService.prepareTemporaryForAi(image);
+            : await _imageService.prepareTemporaryForAi(images[index]));
       }
     } catch (error, stackTrace) {
       debugPrint('InneraAiChatPage image upload failed: $error');
       debugPrintStack(stackTrace: stackTrace);
-      if (createdPermanentImage && image != null) {
+      if (createdPermanentPaths.isNotEmpty) {
         try {
-          await _imageService.deleteAll([image.storagePath]);
+          await _imageService.deleteAll(createdPermanentPaths);
         } catch (cleanupError, cleanupStackTrace) {
           debugPrint(
             'InneraAiChatPage permanent image rollback failed: $cleanupError',
@@ -463,8 +502,12 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
       if (!mounted) return;
       setState(() {
         _isSending = false;
-        _pendingImageBytes = pendingBytes;
-        _pendingImageName = pendingName;
+        _pendingImageBytes
+          ..clear()
+          ..addAll(pendingBytes);
+        _pendingImageNames
+          ..clear()
+          ..addAll(pendingNames);
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -486,7 +529,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
           role: InneraAiMessageRole.user,
           text: text,
           createdAt: DateTime.now(),
-          image: image,
+          images: images,
         ),
       );
       _messages.add(
@@ -514,7 +557,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
             mode: _mode,
             history: _messages,
             userMessage: text,
-            image: temporaryImage,
+            images: temporaryImages,
             recordDraft: _mode.supportsDailyRecordDraft ? _recordDraft : null,
           )
           .timeout(const Duration(seconds: 70));
@@ -590,7 +633,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
           error,
           functionName: AiCallableEndpoints.chat,
         ),
-        image: image,
+        images: images,
       );
     } catch (error, stackTrace) {
       if (!_hasLoggedTaskStart) {
@@ -607,11 +650,13 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
       );
       debugPrint('InneraAiChatPage send failed: $error');
       debugPrintStack(stackTrace: stackTrace);
-      _showSendError(text, _messageForError(error), image: image);
+      _showSendError(text, _messageForError(error), images: images);
     } finally {
-      if (temporaryImage != null) {
+      if (temporaryImages.isNotEmpty) {
         try {
-          await _imageService.deleteAll([temporaryImage.storagePath]);
+          await _imageService.deleteAll(
+            temporaryImages.map((image) => image.storagePath),
+          );
         } catch (cleanupError, cleanupStackTrace) {
           debugPrint(
             'InneraAiChatPage temporary image cleanup failed: $cleanupError',
@@ -630,13 +675,13 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
   void _showSendError(
     String text,
     String message, {
-    InneraAiImageAttachment? image,
+    List<InneraAiImageAttachment> images = const [],
   }) {
     if (!mounted) return;
     setState(() {
       _messages.removeWhere((message) => message.isLoading);
       _lastFailedInput = text;
-      _lastFailedImage = image;
+      _lastFailedImages = images;
       _messages.add(
         InneraAiMessage(
           id: 'err-${DateTime.now().microsecondsSinceEpoch}',
@@ -688,9 +733,10 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
         debugPrintStack(stackTrace: stackTrace);
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('目前無法整理事件文字，原對話與草稿均已保留。')),
+          const SnackBar(
+            content: Text('AI 事件整理暫時無法使用，已載入原草稿，你仍可確認或修改。'),
+          ),
         );
-        return;
       } finally {
         if (mounted) setState(() => _isSending = false);
       }
@@ -736,6 +782,214 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                             event.timeLabel,
                             style: Theme.of(context).textTheme.titleSmall,
                           ),
+                          if (event.emotions.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              '情緒',
+                              style: Theme.of(context).textTheme.labelLarge,
+                            ),
+                            ...event.emotions.map(
+                              (emotion) => Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: DropdownButton<String>(
+                                        isExpanded: true,
+                                        value: emotion.normalizedDimensionId,
+                                        hint: Text(
+                                          emotion.rawText.isEmpty
+                                              ? '選擇情緒'
+                                              : emotion.rawText,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        items: kEmotionDimensions
+                                            .map(
+                                              (dimension) => DropdownMenuItem(
+                                                value: dimension.id,
+                                                child: Text(
+                                                  dimension.displayName,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            )
+                                            .toList(),
+                                        onChanged: (value) {
+                                          final dimension =
+                                              kEmotionDimensionsById[value];
+                                          if (dimension == null) return;
+                                          final oldKey = emotion.dedupeKey;
+                                          setSheetState(() {
+                                            workingDraft = workingDraft
+                                                .withEventEmotionDimension(
+                                              event.id,
+                                              oldKey,
+                                              dimension,
+                                            );
+                                          });
+                                        },
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    DropdownButton<int>(
+                                      value: emotion.score,
+                                      hint: const Text('待補分數'),
+                                      items: List.generate(
+                                        5,
+                                        (index) => DropdownMenuItem(
+                                          value: index + 1,
+                                          child: Text('${index + 1} / 5'),
+                                        ),
+                                      ),
+                                      onChanged: (value) {
+                                        if (value == null) return;
+                                        setSheetState(() {
+                                          workingDraft = workingDraft
+                                              .withEventEmotionScore(
+                                            event.id,
+                                            emotion.dedupeKey,
+                                            value,
+                                          );
+                                        });
+                                      },
+                                    ),
+                                    IconButton(
+                                      tooltip: '不寫入此情緒',
+                                      visualDensity: VisualDensity.compact,
+                                      icon: const Icon(Icons.close_rounded),
+                                      onPressed: () => setSheetState(() {
+                                        workingDraft =
+                                            workingDraft.withoutEventEmotion(
+                                          event.id,
+                                          emotion.dedupeKey,
+                                        );
+                                      }),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                          if (event.symptoms.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              '症狀',
+                              style: Theme.of(context).textTheme.labelLarge,
+                            ),
+                            ...event.symptoms.map((symptom) {
+                              final severity = event.symptomSeverities[symptom];
+                              return Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      symptom,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  DropdownButton<int>(
+                                    value: severity,
+                                    hint: const Text('待補分數'),
+                                    items: List.generate(
+                                      5,
+                                      (index) => DropdownMenuItem(
+                                        value: index + 1,
+                                        child: Text('${index + 1} / 5'),
+                                      ),
+                                    ),
+                                    onChanged: (value) => setSheetState(() {
+                                      workingDraft =
+                                          workingDraft.withEventSymptomSeverity(
+                                        event.id,
+                                        symptom,
+                                        value,
+                                      );
+                                    }),
+                                  ),
+                                  IconButton(
+                                    tooltip: severity == null
+                                        ? '$symptom尚無分數'
+                                        : '清除$symptom分數',
+                                    visualDensity: VisualDensity.compact,
+                                    icon: const Icon(Icons.close_rounded),
+                                    onPressed: severity == null
+                                        ? null
+                                        : () => setSheetState(() {
+                                              workingDraft = workingDraft
+                                                  .withEventSymptomSeverity(
+                                                event.id,
+                                                symptom,
+                                                null,
+                                              );
+                                            }),
+                                  ),
+                                ],
+                              );
+                            }),
+                          ],
+                          if (event.stateChanges.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              '狀態變化',
+                              style: Theme.of(context).textTheme.labelLarge,
+                            ),
+                            ...kDailyStateDimensions
+                                .where(
+                              (dimension) =>
+                                  event.stateChanges.containsKey(dimension.id),
+                            )
+                                .map((dimension) {
+                              final value = event.stateChanges[dimension.id]!;
+                              return Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      dimension.displayName,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  DropdownButton<int>(
+                                    value: value,
+                                    items: List.generate(
+                                      5,
+                                      (index) => DropdownMenuItem(
+                                        value: index + 1,
+                                        child: Text('${index + 1} / 5'),
+                                      ),
+                                    ),
+                                    onChanged: (next) {
+                                      if (next == null) return;
+                                      setSheetState(() {
+                                        workingDraft =
+                                            workingDraft.withEventStateChange(
+                                          event.id,
+                                          dimension.id,
+                                          next,
+                                        );
+                                      });
+                                    },
+                                  ),
+                                  IconButton(
+                                    tooltip: '清除${dimension.displayName}',
+                                    visualDensity: VisualDensity.compact,
+                                    icon: const Icon(Icons.close_rounded),
+                                    onPressed: () => setSheetState(() {
+                                      workingDraft =
+                                          workingDraft.withEventStateChange(
+                                        event.id,
+                                        dimension.id,
+                                        null,
+                                      );
+                                    }),
+                                  ),
+                                ],
+                              );
+                            }),
+                          ],
                           const SizedBox(height: 4),
                           TextFormField(
                             key: ValueKey('event-summary-${event.id}'),
@@ -755,150 +1009,154 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                   ),
                 ),
               ],
-              const SizedBox(height: 16),
-              Text('情緒', style: Theme.of(context).textTheme.titleSmall),
-              if (workingDraft.overallMood != null)
-                Text('整體情緒：${workingDraft.overallMood} / 5'),
-              if (workingDraft.emotions.isEmpty &&
-                  workingDraft.overallMood == null)
-                const Text('尚未補充'),
-              ...workingDraft.emotions.map(
-                (item) => Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  item.timeContext == null
-                                      ? item.rawText
-                                      : '${item.rawText}（${item.timeContext}）',
-                                ),
-                                if (item.normalizedDimensionName != null)
+              if (workingDraft.eventDrafts.isEmpty) ...[
+                const SizedBox(height: 16),
+                Text('情緒', style: Theme.of(context).textTheme.titleSmall),
+                if (workingDraft.overallMood != null)
+                  Text('整體情緒：${workingDraft.overallMood} / 5'),
+                if (workingDraft.emotions.isEmpty &&
+                    workingDraft.overallMood == null)
+                  const Text('尚未補充'),
+                ...workingDraft.emotions.map(
+                  (item) => Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
                                   Text(
-                                    '最接近：${item.normalizedDimensionName}',
-                                    style:
-                                        Theme.of(context).textTheme.bodySmall,
+                                    item.timeContext == null
+                                        ? item.rawText
+                                        : '${item.rawText}（${item.timeContext}）',
                                   ),
-                              ],
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: () => setSheetState(() {
-                              workingDraft =
-                                  workingDraft.withoutEmotion(item.dedupeKey);
-                            }),
-                            icon: const Icon(Icons.close_rounded),
-                            tooltip: '不寫入此情緒',
-                          ),
-                        ],
-                      ),
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 4,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          DropdownButton<String>(
-                            value: item.normalizedDimensionId,
-                            hint: const Text('選擇情緒'),
-                            items: kEmotionDimensions
-                                .map(
-                                  (dimension) => DropdownMenuItem(
-                                    value: dimension.id,
-                                    child: Text(dimension.displayName),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (value) {
-                              final dimension = kEmotionDimensionsById[value];
-                              if (dimension == null) return;
-                              final oldKey = item.dedupeKey;
-                              setSheetState(() {
-                                workingDraft =
-                                    workingDraft.withEmotionDimension(
-                                  oldKey,
-                                  dimension,
-                                );
-                              });
-                            },
-                          ),
-                          DropdownButton<int>(
-                            value: item.score,
-                            hint: const Text('待補分數'),
-                            items: List.generate(
-                              5,
-                              (index) => DropdownMenuItem(
-                                value: index + 1,
-                                child: Text('${index + 1} / 5'),
+                                  if (item.normalizedDimensionName != null)
+                                    Text(
+                                      '最接近：${item.normalizedDimensionName}',
+                                      style:
+                                          Theme.of(context).textTheme.bodySmall,
+                                    ),
+                                ],
                               ),
                             ),
-                            onChanged: (value) {
-                              if (value == null) return;
-                              setSheetState(() {
-                                workingDraft = workingDraft.withEmotionScore(
-                                  item.dedupeKey,
-                                  value,
-                                );
-                              });
-                            },
-                          ),
-                        ],
-                      ),
-                      if (item.evidence?.isNotEmpty == true)
-                        Text(
-                          '依據：${item.evidence}',
-                          style: Theme.of(context).textTheme.bodySmall,
+                            IconButton(
+                              onPressed: () => setSheetState(() {
+                                workingDraft =
+                                    workingDraft.withoutEmotion(item.dedupeKey);
+                              }),
+                              icon: const Icon(Icons.close_rounded),
+                              tooltip: '不寫入此情緒',
+                            ),
+                          ],
                         ),
-                    ],
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            DropdownButton<String>(
+                              value: item.normalizedDimensionId,
+                              hint: const Text('選擇情緒'),
+                              items: kEmotionDimensions
+                                  .map(
+                                    (dimension) => DropdownMenuItem(
+                                      value: dimension.id,
+                                      child: Text(dimension.displayName),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (value) {
+                                final dimension = kEmotionDimensionsById[value];
+                                if (dimension == null) return;
+                                final oldKey = item.dedupeKey;
+                                setSheetState(() {
+                                  workingDraft =
+                                      workingDraft.withEmotionDimension(
+                                    oldKey,
+                                    dimension,
+                                  );
+                                });
+                              },
+                            ),
+                            DropdownButton<int>(
+                              value: item.score,
+                              hint: const Text('待補分數'),
+                              items: List.generate(
+                                5,
+                                (index) => DropdownMenuItem(
+                                  value: index + 1,
+                                  child: Text('${index + 1} / 5'),
+                                ),
+                              ),
+                              onChanged: (value) {
+                                if (value == null) return;
+                                setSheetState(() {
+                                  workingDraft = workingDraft.withEmotionScore(
+                                    item.dedupeKey,
+                                    value,
+                                  );
+                                });
+                              },
+                            ),
+                          ],
+                        ),
+                        if (item.evidence?.isNotEmpty == true)
+                          Text(
+                            '依據：${item.evidence}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 14),
-              Text('症狀', style: Theme.of(context).textTheme.titleSmall),
-              Text(workingDraft.symptoms.isEmpty
-                  ? '尚未補充'
-                  : workingDraft.symptoms.join('、')),
-              const SizedBox(height: 14),
-              Text('狀態變化', style: Theme.of(context).textTheme.titleSmall),
-              ...kDailyStateDimensions.map((dimension) {
-                final value = workingDraft.stateChanges[dimension.id];
-                return Row(
-                  children: [
-                    Expanded(child: Text(dimension.displayName)),
-                    DropdownButton<int>(
-                      value: value,
-                      hint: const Text('尚未填寫'),
-                      items: List.generate(
-                        5,
-                        (index) => DropdownMenuItem(
-                          value: index + 1,
-                          child: Text(
-                            '${index + 1}｜${dailyStateValueLabel(dimension, index + 1)}',
+                const SizedBox(height: 14),
+                Text('症狀', style: Theme.of(context).textTheme.titleSmall),
+                Text(workingDraft.symptoms.isEmpty
+                    ? '尚未補充'
+                    : workingDraft.symptoms.join('、')),
+                const SizedBox(height: 14),
+                Text('狀態變化', style: Theme.of(context).textTheme.titleSmall),
+                ...kDailyStateDimensions.map((dimension) {
+                  final value = workingDraft.stateChanges[dimension.id];
+                  return Row(
+                    children: [
+                      Expanded(child: Text(dimension.displayName)),
+                      DropdownButton<int>(
+                        value: value,
+                        hint: const Text('尚未填寫'),
+                        items: List.generate(
+                          5,
+                          (index) => DropdownMenuItem(
+                            value: index + 1,
+                            child: Text(
+                              '${index + 1}｜${dailyStateValueLabel(dimension, index + 1)}',
+                            ),
                           ),
                         ),
-                      ),
-                      onChanged: (next) => setSheetState(() {
-                        workingDraft =
-                            workingDraft.withStateChange(dimension.id, next);
-                      }),
-                    ),
-                    if (value != null)
-                      IconButton(
-                        tooltip: '清除${dimension.displayName}',
-                        icon: const Icon(Icons.close_rounded),
-                        onPressed: () => setSheetState(() {
+                        onChanged: (next) => setSheetState(() {
                           workingDraft =
-                              workingDraft.withStateChange(dimension.id, null);
+                              workingDraft.withStateChange(dimension.id, next);
                         }),
                       ),
-                  ],
-                );
-              }),
+                      if (value != null)
+                        IconButton(
+                          tooltip: '清除${dimension.displayName}',
+                          icon: const Icon(Icons.close_rounded),
+                          onPressed: () => setSheetState(() {
+                            workingDraft = workingDraft.withStateChange(
+                              dimension.id,
+                              null,
+                            );
+                          }),
+                        ),
+                    ],
+                  );
+                }),
+              ],
               const SizedBox(height: 14),
               Text('身體組成', style: Theme.of(context).textTheme.titleSmall),
               Row(
@@ -993,45 +1251,50 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: DropdownButtonFormField<MeasurementTiming>(
-                      initialValue:
-                          workingDraft.bodyMeasurement?.measurementTiming,
-                      decoration: const InputDecoration(labelText: '測量時機'),
-                      items: MeasurementTiming.values
-                          .map(
-                            (timing) => DropdownMenuItem(
-                              value: timing,
-                              child: Text(timing.displayName),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (timing) {
-                        final current = workingDraft.bodyMeasurement ??
-                            const BodyMeasurement();
-                        setSheetState(() {
-                          workingDraft = workingDraft.withBodyMeasurement(
-                            BodyMeasurement(
-                              weightKg: current.weightKg,
-                              bodyFatPercent: current.bodyFatPercent,
-                              waistCm: current.waistCm,
-                              measuredAt: current.measuredAt,
-                              measurementTiming: timing,
-                              customMeasurementTime:
-                                  timing == MeasurementTiming.other
-                                      ? current.customMeasurementTime
-                                      : null,
-                            ),
-                          );
-                        });
-                      },
+                  if (_hasBodyMeasurementValues(workingDraft) &&
+                      workingDraft.bodyMeasurement?.measurementTiming !=
+                          null) ...[
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: DropdownButtonFormField<MeasurementTiming>(
+                        initialValue:
+                            workingDraft.bodyMeasurement?.measurementTiming,
+                        decoration: const InputDecoration(labelText: '測量時機'),
+                        items: MeasurementTiming.values
+                            .map(
+                              (timing) => DropdownMenuItem(
+                                value: timing,
+                                child: Text(timing.displayName),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (timing) {
+                          final current = workingDraft.bodyMeasurement ??
+                              const BodyMeasurement();
+                          setSheetState(() {
+                            workingDraft = workingDraft.withBodyMeasurement(
+                              BodyMeasurement(
+                                weightKg: current.weightKg,
+                                bodyFatPercent: current.bodyFatPercent,
+                                waistCm: current.waistCm,
+                                measuredAt: current.measuredAt,
+                                measurementTiming: timing,
+                                customMeasurementTime:
+                                    timing == MeasurementTiming.other
+                                        ? current.customMeasurementTime
+                                        : null,
+                              ),
+                            );
+                          });
+                        },
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
-              if (workingDraft.bodyMeasurement?.measurementTiming ==
-                  MeasurementTiming.other) ...[
+              if (_hasBodyMeasurementValues(workingDraft) &&
+                  workingDraft.bodyMeasurement?.measurementTiming ==
+                      MeasurementTiming.other) ...[
                 const SizedBox(height: 10),
                 TextFormField(
                   key: const ValueKey('draft-custom-measurement-time'),
@@ -1076,16 +1339,13 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                   ? '尚未補充'
                   : workingDraft.rawUserEntries.join('\n\n')),
               const SizedBox(height: 14),
-              Text('AI 整理', style: Theme.of(context).textTheme.titleSmall),
+              Text('日記草稿', style: Theme.of(context).textTheme.titleSmall),
               Text(workingDraft.diaryText.isEmpty
                   ? '尚未補充'
                   : workingDraft.diaryText),
               const SizedBox(height: 24),
               FilledButton(
-                onPressed: workingDraft.emotions.any(
-                          (item) =>
-                              !item.hasValidDimension || item.score == null,
-                        ) ||
+                onPressed: _hasInvalidConfirmableEmotion(workingDraft) ||
                         bodyInputValidity.values.any((valid) => !valid) ||
                         workingDraft.bodyMeasurement?.isValid == false
                     ? null
@@ -1096,9 +1356,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                       : '確認並建立 ${workingDraft.eventDrafts.length} 筆事件紀錄',
                 ),
               ),
-              if (workingDraft.emotions.any(
-                (item) => !item.hasValidDimension || item.score == null,
-              ))
+              if (_hasInvalidConfirmableEmotion(workingDraft))
                 const Padding(
                   padding: EdgeInsets.only(top: 8),
                   child: Text('請為辨識到的情緒選擇正式維度與 1～5 分，或移除不需寫入的項目。'),
@@ -1117,7 +1375,11 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
       if (confirmedDraft.eventDrafts.isEmpty) {
         await _draftService.save(confirmedDraft);
       } else {
-        await _draftService.confirmHealthEvents(confirmedDraft);
+        await _draftService.confirmAndMerge(
+          draft: confirmedDraft,
+          diaryContent: confirmedDraft.diaryText,
+          replaceDiary: false,
+        );
       }
       if (!mounted) return;
       setState(() => _recordDraft = confirmedDraft.copyWith(
@@ -1339,6 +1601,22 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     );
   }
 
+  bool _hasInvalidConfirmableEmotion(InneraAiRecordDraft draft) {
+    final emotions = draft.eventDrafts.isEmpty
+        ? draft.emotions
+        : draft.eventDrafts.expand((event) => event.emotions);
+    return emotions.any(
+      (item) => !item.hasValidDimension || item.score == null,
+    );
+  }
+
+  bool _hasBodyMeasurementValues(InneraAiRecordDraft draft) {
+    final measurement = draft.bodyMeasurement;
+    return measurement?.weightKg != null ||
+        measurement?.bodyFatPercent != null ||
+        measurement?.waistCm != null;
+  }
+
   String _sleepPreview(InneraAiRecordDraft draft) {
     final sleep = draft.sleep;
     final details = <String>[];
@@ -1501,7 +1779,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                   _scrollToBottom();
                 },
               ),
-              if (_mode == InneraAiMode.dailyRecord &&
+              if (_mode.showsRecordDraftCard &&
                   !_loadingDraft &&
                   _recordDraft != null)
                 AiRecordDraftCard(
@@ -1530,7 +1808,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                               });
                               _send(
                                 overrideText: _lastFailedInput,
-                                overrideImage: _lastFailedImage,
+                                overrideImages: _lastFailedImages,
                               );
                             },
                     );
@@ -1546,10 +1824,10 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                 maxLength: _maxInputLength,
                 onSend: () => _send(),
                 onPickImage: _showImageSourcePicker,
-                onRemoveImage: () {
+                onRemoveImage: (index) {
                   setState(() {
-                    _pendingImageBytes = null;
-                    _pendingImageName = null;
+                    _pendingImageBytes.removeAt(index);
+                    _pendingImageNames.removeAt(index);
                   });
                 },
               ),
@@ -1613,11 +1891,11 @@ class _InputBar extends StatelessWidget {
   final FocusNode focusNode;
   final InneraAiMode mode;
   final bool isSending;
-  final Uint8List? pendingImageBytes;
+  final List<Uint8List> pendingImageBytes;
   final int maxLength;
   final VoidCallback onSend;
   final VoidCallback onPickImage;
-  final VoidCallback onRemoveImage;
+  final ValueChanged<int> onRemoveImage;
 
   @override
   Widget build(BuildContext context) {
@@ -1637,80 +1915,102 @@ class _InputBar extends StatelessWidget {
           12,
           10 + MediaQuery.viewPaddingOf(context).bottom,
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            IconButton(
-              onPressed: isSending ? null : onPickImage,
-              icon: const Icon(Icons.add_photo_alternate_outlined),
-              tooltip: '加入照片',
-            ),
-            if (pendingImageBytes != null) ...[
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: Image.memory(
-                      pendingImageBytes!,
-                      width: 52,
-                      height: 52,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                  Positioned(
-                    top: -10,
-                    right: -10,
-                    child: IconButton.filled(
-                      visualDensity: VisualDensity.compact,
-                      onPressed: isSending ? null : onRemoveImage,
-                      icon: const Icon(Icons.close_rounded, size: 16),
-                      tooltip: '移除照片',
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 8),
-            ],
-            Expanded(
-              child: TextField(
-                controller: controller,
-                focusNode: focusNode,
-                enabled: !isSending,
-                minLines: 1,
-                maxLines: 5,
-                maxLength: maxLength,
-                textInputAction: TextInputAction.newline,
-                decoration: InputDecoration(
-                  hintText: mode.inputHint,
-                  counterText: '',
-                  filled: true,
-                  fillColor: HealingDesignSystem.adaptiveFill(context),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(18),
-                    borderSide: BorderSide.none,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 12,
+            if (pendingImageBytes.isNotEmpty) ...[
+              SizedBox(
+                height: 66,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: pendingImageBytes.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) => Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Image.memory(
+                          pendingImageBytes[index],
+                          width: 58,
+                          height: 58,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        child: IconButton.filled(
+                          visualDensity: VisualDensity.compact,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 28,
+                            height: 28,
+                          ),
+                          padding: EdgeInsets.zero,
+                          onPressed:
+                              isSending ? null : () => onRemoveImage(index),
+                          icon: const Icon(Icons.close_rounded, size: 16),
+                          tooltip: '移除照片',
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            ValueListenableBuilder<TextEditingValue>(
-              valueListenable: controller,
-              builder: (context, value, child) {
-                final canSend = (value.text.trim().isNotEmpty ||
-                        pendingImageBytes != null) &&
-                    value.text.trim().length <= maxLength &&
-                    !isSending;
-                return IconButton.filled(
-                  onPressed: canSend ? onSend : null,
-                  icon: const Icon(Icons.send_rounded),
-                  tooltip: '送出',
-                );
-              },
+              const SizedBox(height: 6),
+            ],
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                IconButton(
+                  onPressed: isSending || pendingImageBytes.length >= 10
+                      ? null
+                      : onPickImage,
+                  icon: const Icon(Icons.add_photo_alternate_outlined),
+                  tooltip: pendingImageBytes.length >= 10
+                      ? '每次最多 10 張照片'
+                      : '加入照片（最多 10 張）',
+                ),
+                Expanded(
+                  child: TextField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    enabled: !isSending,
+                    minLines: 1,
+                    maxLines: 5,
+                    maxLength: maxLength,
+                    textInputAction: TextInputAction.newline,
+                    decoration: InputDecoration(
+                      hintText: mode.inputHint,
+                      counterText: '',
+                      filled: true,
+                      fillColor: HealingDesignSystem.adaptiveFill(context),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: controller,
+                  builder: (context, value, child) {
+                    final canSend = (value.text.trim().isNotEmpty ||
+                            pendingImageBytes.isNotEmpty) &&
+                        value.text.trim().length <= maxLength &&
+                        !isSending;
+                    return IconButton.filled(
+                      onPressed: canSend ? onSend : null,
+                      icon: const Icon(Icons.send_rounded),
+                      tooltip: '送出',
+                    );
+                  },
+                ),
+              ],
             ),
           ],
         ),

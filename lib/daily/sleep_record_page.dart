@@ -7,6 +7,7 @@ import '../models/sleep_record.dart';
 import 'daily_record_helpers.dart';
 import 'sleep_record_service.dart';
 import 'widgets/night_awakening_editor.dart';
+import 'widgets/record_date_time_picker.dart';
 import 'widgets/sleep_page.dart';
 
 /// Standalone sleep entry backed only by SleepRecord.
@@ -33,6 +34,7 @@ class _SleepRecordPageState extends State<SleepRecordPage> {
   bool _tookSleepMedication = false;
   bool _loading = true;
   bool _saving = false;
+  DateTime _recordedAt = DateTime.now();
 
   @override
   void initState() {
@@ -56,14 +58,29 @@ class _SleepRecordPageState extends State<SleepRecordPage> {
     try {
       final record = await SleepRecordService().get(
         userId: uid,
-        date: DateTime.now(),
+        date: _recordedAt,
       );
       if (!mounted) return;
       if (record == null) {
-        setState(() => _loading = false);
+        setState(() {
+          _bedTime = null;
+          _sleepStart = null;
+          _wakeTime = null;
+          _activityWakeTime = null;
+          _quality = null;
+          _note = '';
+          _flags.clear();
+          _nightAwakenings.clear();
+          _naps.clear();
+          _tookSleepMedication = false;
+          _medicationNameController.clear();
+          _medicationDoseController.clear();
+          _loading = false;
+        });
         return;
       }
       setState(() {
+        _recordedAt = record.date;
         _bedTime = record.bedTime;
         _sleepStart = record.sleepStart;
         _wakeTime = record.wakeTime;
@@ -92,6 +109,17 @@ class _SleepRecordPageState extends State<SleepRecordPage> {
         );
       }
     }
+  }
+
+  Future<void> _changeDateTime(DateTime value) async {
+    final dayChanged = value.year != _recordedAt.year ||
+        value.month != _recordedAt.month ||
+        value.day != _recordedAt.day;
+    setState(() {
+      _recordedAt = value;
+      if (dayChanged) _loading = true;
+    });
+    if (dayChanged) await _load();
   }
 
   Iterable<SleepFlag> _parseFlags(List<String> names) sync* {
@@ -129,7 +157,7 @@ class _SleepRecordPageState extends State<SleepRecordPage> {
       return;
     }
     final record = SleepRecord(
-      date: DateTime.now(),
+      date: _recordedAt,
       bedTime: _bedTime,
       sleepStart: _sleepStart,
       wakeTime: _wakeTime,
@@ -246,6 +274,13 @@ class _SleepRecordPageState extends State<SleepRecordPage> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: RecordDateTimePicker(
+                    value: _recordedAt,
+                    onChanged: _changeDateTime,
+                  ),
+                ),
                 Expanded(
                   child: SleepPage(
                     sleepTime: _bedTime,

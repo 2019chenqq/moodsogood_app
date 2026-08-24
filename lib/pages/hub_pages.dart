@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../widgets/main_drawer.dart';
 import '../daily/daily_check_in_page.dart';
 import '../daily/daily_record_history.dart';
+import '../daily/period_calendar_page.dart';
+import '../daily/period_feature_visibility_service.dart';
 import '../daily/quick_record_home_card.dart';
 import '../daily/body_measurement_record_page.dart';
 import '../daily/sleep_record_page.dart';
@@ -195,6 +197,7 @@ class _RecordHubPageState extends State<RecordHubPage>
   Future<WeeklyRecord?>? _weeklyRecordFuture;
   final _pendingService = MedicationSubjectivePendingService();
   MedicationSubjectivePendingResponse? _pendingResponse;
+  bool _showsPeriodFeatures = false;
 
   @override
   void initState() {
@@ -202,6 +205,7 @@ class _RecordHubPageState extends State<RecordHubPage>
     WidgetsBinding.instance.addObserver(this);
     _refreshWeeklyRecord();
     _refreshSubjectiveTracking();
+    _refreshPeriodFeatureVisibility();
   }
 
   @override
@@ -214,7 +218,14 @@ class _RecordHubPageState extends State<RecordHubPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _refreshSubjectiveTracking();
+      _refreshPeriodFeatureVisibility();
     }
+  }
+
+  Future<void> _refreshPeriodFeatureVisibility() async {
+    final visible =
+        await PeriodFeatureVisibilityService().shouldShowForCurrentUser();
+    if (mounted) setState(() => _showsPeriodFeatures = visible);
   }
 
   Future<void> _refreshSubjectiveTracking() async {
@@ -410,6 +421,20 @@ class _RecordHubPageState extends State<RecordHubPage>
               actionLabel: '查看趨勢',
             ),
             const SizedBox(height: 12),
+            if (_showsPeriodFeatures) ...[
+              _RecordEntryCard(
+                icon: Icons.water_drop_outlined,
+                title: '生理期月曆',
+                subtitle: '查看月經日期、平均週期與下次預估',
+                color: const Color(0xFFE78EAA),
+                onTap: () => _push(
+                  context,
+                  const PeriodCalendarPage(),
+                ),
+                actionLabel: '查看月曆',
+              ),
+              const SizedBox(height: 12),
+            ],
             _RecordEntryCard(
               icon: Icons.medication_outlined,
               title: '藥物紀錄',

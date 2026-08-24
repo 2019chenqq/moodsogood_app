@@ -393,6 +393,7 @@ class InneraAiRecordDraft {
   final List<InneraAiHealthEventDraft> eventDrafts;
   final List<String> rawUserEntries;
   final String diaryText;
+  String get diaryTextDraft => diaryText;
   final List<String> missingFields;
   final DateTime updatedAt;
   final bool confirmed;
@@ -455,16 +456,18 @@ class InneraAiRecordDraft {
       bodyMeasurement: _bodyMeasurement(map['bodyMeasurement']),
       sleep: AiSleepDraft.fromMap(_map(map['sleep'])),
       events: eventSet.toList(),
-      eventDrafts: (map['eventDrafts'] as List?)
-              ?.whereType<Map>()
-              .map((item) => InneraAiHealthEventDraft.fromMap(
-                    Map<String, dynamic>.from(item),
-                  ))
-              .where((item) => item.id.isNotEmpty && item.hasContent)
-              .toList() ??
-          const [],
+      eventDrafts: mergeEquivalentHealthEventDrafts(
+        (map['eventDrafts'] as List?)
+                ?.whereType<Map>()
+                .map((item) => InneraAiHealthEventDraft.fromMap(
+                      Map<String, dynamic>.from(item),
+                    ))
+                .where((item) => item.id.isNotEmpty && item.hasContent) ??
+            const <InneraAiHealthEventDraft>[],
+      ),
       rawUserEntries: _strings(map['rawUserEntries']),
-      diaryText: (map['diaryText'] ?? '').toString().trim(),
+      diaryText:
+          (map['diaryText'] ?? map['diaryTextDraft'] ?? '').toString().trim(),
       missingFields: _strings(map['missingFields'])
           .where(
             (field) => !excludedEmotionTerms.any(field.contains),
@@ -563,7 +566,7 @@ class InneraAiRecordDraft {
       ),
       sleep: sleep.merge(parsed.sleep),
       events: {...events, ...parsed.events}.toList(),
-      eventDrafts: eventDraftMap.values.toList(),
+      eventDrafts: mergeEquivalentHealthEventDrafts(eventDraftMap.values),
       rawUserEntries: entries,
       diaryText: parsed.diaryText.isNotEmpty ? parsed.diaryText : diaryText,
       missingFields:
@@ -891,6 +894,98 @@ class InneraAiRecordDraft {
         hasExistingRecord: hasExistingRecord,
       );
 
+  InneraAiRecordDraft withEventSymptomSeverity(
+    String eventId,
+    String symptom,
+    int? severity,
+  ) =>
+      InneraAiRecordDraft(
+        dateKey: dateKey,
+        overallMood: overallMood,
+        emotions: emotions,
+        symptoms: symptoms,
+        stateChanges: stateChanges,
+        bodyMeasurement: bodyMeasurement,
+        sleep: sleep,
+        events: events,
+        eventDrafts: eventDrafts
+            .map(
+              (item) => item.id == eventId
+                  ? item.withSymptomSeverity(symptom, severity)
+                  : item,
+            )
+            .toList(),
+        rawUserEntries: rawUserEntries,
+        diaryText: diaryText,
+        missingFields: missingFields,
+        updatedAt: DateTime.now(),
+        confirmed: false,
+        hasExistingRecord: hasExistingRecord,
+      );
+
+  InneraAiRecordDraft withEventEmotionScore(
+    String eventId,
+    String emotionKey,
+    int score,
+  ) =>
+      _withUpdatedEvent(
+        eventId,
+        (event) => event.withEmotionScore(emotionKey, score),
+      );
+
+  InneraAiRecordDraft withEventEmotionDimension(
+    String eventId,
+    String emotionKey,
+    EmotionDimensionDefinition dimension,
+  ) =>
+      _withUpdatedEvent(
+        eventId,
+        (event) => event.withEmotionDimension(emotionKey, dimension),
+      );
+
+  InneraAiRecordDraft withoutEventEmotion(
+    String eventId,
+    String emotionKey,
+  ) =>
+      _withUpdatedEvent(
+        eventId,
+        (event) => event.withoutEmotion(emotionKey),
+      );
+
+  InneraAiRecordDraft withEventStateChange(
+    String eventId,
+    String stateId,
+    int? value,
+  ) =>
+      _withUpdatedEvent(
+        eventId,
+        (event) => event.withStateChange(stateId, value),
+      );
+
+  InneraAiRecordDraft _withUpdatedEvent(
+    String eventId,
+    InneraAiHealthEventDraft Function(InneraAiHealthEventDraft) update,
+  ) =>
+      InneraAiRecordDraft(
+        dateKey: dateKey,
+        overallMood: overallMood,
+        emotions: emotions,
+        symptoms: symptoms,
+        stateChanges: stateChanges,
+        bodyMeasurement: bodyMeasurement,
+        sleep: sleep,
+        events: events,
+        eventDrafts: eventDrafts
+            .map((item) => item.id == eventId ? update(item) : item)
+            .toList(),
+        rawUserEntries: rawUserEntries,
+        diaryText: diaryText,
+        missingFields: missingFields,
+        updatedAt: DateTime.now(),
+        confirmed: false,
+        hasExistingRecord: hasExistingRecord,
+      );
+
   InneraAiRecordDraft _copyWithRecordFields({
     Map<String, int>? stateChanges,
     BodyMeasurement? bodyMeasurement,
@@ -1025,30 +1120,19 @@ class InneraAiRecordDraft {
 
   static Map<String, int> _explicitStateChanges(String text) {
     final result = <String, int>{};
-    if (RegExp(r'和平常差不多').hasMatch(text)) {
-      for (final dimension in kDailyStateDimensions) {
-        if (text.contains(dimension.displayName.replaceAll('變化', ''))) {
-          result[dimension.id] = 3;
-        }
-      }
-    }
-    if (RegExp(r'完全沒精神|精神很差|沒有力氣').hasMatch(text)) {
-      result['energy_change'] = 1;
-    } else if (RegExp(r'完全沒有動力|沒有動力|動力不足|提不起勁').hasMatch(text)) {
-      result['energy_change'] = 2;
-    } else if (RegExp(r'很有精神|精神很好|精力充沛').hasMatch(text)) {
-      result['energy_change'] = 4;
-    }
-    if (RegExp(r'完全沒胃口|吃不下|食慾降低').hasMatch(text)) {
-      result['appetite_change'] = 2;
-    } else if (RegExp(r'一直想吃|看到什麼都想吃|食慾變大|食慾增加').hasMatch(text)) {
-      result['appetite_change'] = 4;
-    }
-    if (RegExp(r'整天躺著|不想動|活動變少').hasMatch(text)) {
-      result['activity_change'] = 2;
-    } else if (RegExp(r'停不下來|活動變多|做了很多事情').hasMatch(text) &&
-        RegExp(r'和平常|比平常|變多|增加').hasMatch(text)) {
-      result['activity_change'] = 4;
+    const terms = <String, String>{
+      'energy_change': r'能量|精神|精力',
+      'appetite_change': r'食慾|胃口',
+      'activity_change': r'活動量|活動程度',
+    };
+    for (final entry in terms.entries) {
+      final match = RegExp('(?:${entry.value})[^，、。！？\\n]{0,12}([1-5１-５])\\s*分')
+          .firstMatch(text);
+      final raw = match?.group(1);
+      if (raw == null) continue;
+      const fullWidth = '１２３４５';
+      final score = int.tryParse(raw) ?? fullWidth.indexOf(raw) + 1;
+      if (score >= 1 && score <= 5) result[entry.key] = score;
     }
     return result;
   }

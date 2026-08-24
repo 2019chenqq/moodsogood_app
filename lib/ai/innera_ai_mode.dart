@@ -27,6 +27,9 @@ InneraAiMode resolveInneraAiModeIntent({
 extension InneraAiModeX on InneraAiMode {
   bool get supportsDailyRecordDraft => this != InneraAiMode.recentReview;
 
+  bool get showsRecordDraftCard =>
+      this == InneraAiMode.dailyRecord || this == InneraAiMode.physicalHealth;
+
   String get title {
     switch (this) {
       case InneraAiMode.dailyRecord:

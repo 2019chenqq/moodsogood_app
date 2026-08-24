@@ -294,6 +294,7 @@ class _MetricSelector extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: ChoiceChip(
+                showCheckmark: false,
                 avatar: Icon(
                   metric.icon,
                   size: 18,

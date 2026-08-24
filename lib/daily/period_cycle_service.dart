@@ -7,6 +7,7 @@ import '../utils/health_data_encryption_service.dart';
 abstract class PeriodCycleStore {
   Future<List<PeriodCycle>> getCycles(String userId);
   Future<String> createCycle(String userId, DateTime startDate);
+  Future<void> deleteCycle(String userId, String cycleId);
   Future<void> updateCycle(
     String userId,
     PeriodCycle cycle, {
@@ -22,10 +23,15 @@ abstract class LegacyPeriodRecordStore {
 
 abstract class PeriodCycleMigrationWriter {
   Future<bool> createCycleIfAbsent(String userId, PeriodCycle cycle);
+  Future<bool> closeMigratedCycleIfOpen(
+    String userId,
+    PeriodCycle cycle,
+  );
   Future<void> recordMigrationStatus(
     String userId, {
     required int version,
     required int created,
+    required int updated,
     required int skipped,
     required int failed,
   });
@@ -132,6 +138,10 @@ class FirestorePeriodCycleStore
   }
 
   @override
+  Future<void> deleteCycle(String userId, String cycleId) =>
+      _cycles(userId).doc(cycleId).delete();
+
+  @override
   Future<bool> createCycleIfAbsent(
     String userId,
     PeriodCycle cycle,
@@ -142,10 +152,34 @@ class FirestorePeriodCycleStore
       );
 
   @override
+  Future<bool> closeMigratedCycleIfOpen(
+    String userId,
+    PeriodCycle cycle,
+  ) async {
+    if (!cycle.id.startsWith('legacy-v1-') || cycle.endDate == null) {
+      return false;
+    }
+    final reference = _cycles(userId).doc(cycle.id);
+    final snapshot = await reference.get();
+    if (!snapshot.exists || snapshot.data() == null) return false;
+    final currentData = await HealthDataEncryptionService.decryptData(
+      snapshot.data()!,
+    );
+    final current = PeriodCycle.fromData(cycle.id, currentData);
+    if (current.endDate != null ||
+        _day(current.startDate) != _day(cycle.startDate)) {
+      return false;
+    }
+    await updateCycle(userId, current, endDate: cycle.endDate);
+    return true;
+  }
+
+  @override
   Future<void> recordMigrationStatus(
     String userId, {
     required int version,
     required int created,
+    required int updated,
     required int skipped,
     required int failed,
   }) =>
@@ -153,6 +187,7 @@ class FirestorePeriodCycleStore
         'periodCycleMigrationVersion': version,
         'periodCycleMigrationUpdatedAt': FieldValue.serverTimestamp(),
         'periodCycleMigrationCreated': created,
+        'periodCycleMigrationUpdated': updated,
         'periodCycleMigrationSkipped': skipped,
         'periodCycleMigrationFailed': failed,
       }, SetOptions(merge: true));
@@ -189,11 +224,13 @@ enum PeriodQuickActionResult {
 class PeriodCycleMigrationResult {
   const PeriodCycleMigrationResult({
     required this.created,
+    required this.updated,
     required this.skipped,
     required this.failed,
   });
 
   final int created;
+  final int updated;
   final int skipped;
   final int failed;
 }
@@ -318,6 +355,7 @@ class PeriodCycleService {
     final legacyRecords = await legacyStore.getRecords(userId);
     final candidates = legacyRecordsToMigrationCycles(legacyRecords);
     var created = 0;
+    var updated = 0;
     final referencedStarts = legacyRecords
         .map((record) => record.periodStartId)
         .whereType<String>()
@@ -327,6 +365,28 @@ class PeriodCycleService {
     final known = <PeriodCycle>[...existing];
 
     for (final candidate in candidates) {
+      final sameDocument =
+          known.where((cycle) => cycle.id == candidate.id).firstOrNull;
+      if (sameDocument != null &&
+          sameDocument.endDate == null &&
+          candidate.endDate != null) {
+        try {
+          if (await writer.closeMigratedCycleIfOpen(userId, candidate)) {
+            updated++;
+            known
+              ..remove(sameDocument)
+              ..add(candidate);
+          } else {
+            skipped++;
+          }
+        } catch (error) {
+          failed++;
+          debugPrint(
+            '[PeriodCycleMigration] Failed to close ${candidate.id}: $error',
+          );
+        }
+        continue;
+      }
       if (known.any((cycle) => _overlaps(cycle, candidate))) {
         skipped++;
         continue;
@@ -352,6 +412,7 @@ class PeriodCycleService {
         userId,
         version: periodCycleMigrationVersion,
         created: created,
+        updated: updated,
         skipped: skipped,
         failed: failed,
       );
@@ -360,6 +421,7 @@ class PeriodCycleService {
     }
     return PeriodCycleMigrationResult(
       created: created,
+      updated: updated,
       skipped: skipped,
       failed: failed,
     );
@@ -413,6 +475,22 @@ class PeriodCycleService {
           debugPrint('[PeriodCycleMigration] Skip ambiguous open $startId');
           continue;
         }
+        final markedDays = sorted
+            .where((record) => record.isPeriod)
+            .map((record) => _day(record.date))
+            .toSet();
+        var lastMarkedDay = _day(start.date);
+        while (markedDays.contains(
+          lastMarkedDay.add(const Duration(days: 1)),
+        )) {
+          lastMarkedDay = lastMarkedDay.add(const Duration(days: 1));
+        }
+        final hasLaterLegacyRecord = sorted.any(
+          (record) => _day(record.date).isAfter(lastMarkedDay),
+        );
+        if (hasLaterLegacyRecord) {
+          endDate = lastMarkedDay;
+        }
       }
 
       cycles.add(PeriodCycle(
@@ -432,6 +510,28 @@ class PeriodCycleService {
       if (_contains(cycle, day)) return cycle;
     }
     return null;
+  }
+
+  /// Cancels the canonical open cycle that is active on [date].
+  /// Legacy fallback records are intentionally never deleted here.
+  Future<bool> cancelActiveCycle(String userId, DateTime date) async {
+    final day = _day(date);
+    final cycles = await _store.getCycles(userId);
+    final active = _activeCycle(cycles, day);
+    if (active == null) return false;
+    await _store.deleteCycle(userId, active.id);
+    return true;
+  }
+
+  /// Deletes the canonical cycle covering [date], whether completed or open.
+  /// In-memory legacy fallback cycles are never mutated or deleted.
+  Future<bool> cancelCycleForDate(String userId, DateTime date) async {
+    final day = _day(date);
+    final cycles = await _store.getCycles(userId);
+    final covering = _coveringCycle(cycles, day);
+    if (covering == null) return false;
+    await _store.deleteCycle(userId, covering.id);
+    return true;
   }
 
   Future<PeriodQuickActionResult> apply({

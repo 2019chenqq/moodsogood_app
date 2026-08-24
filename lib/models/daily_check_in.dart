@@ -18,7 +18,7 @@ class DailyCheckIn {
   final DateTime? updatedAt;
 
   Map<String, dynamic> toData() => {
-        'date': Timestamp.fromDate(DateTime(date.year, date.month, date.day)),
+        'date': Timestamp.fromDate(date),
         'overallMood': overallMood,
         'healthStatus': healthStatus,
         'noSpecialEvent': noSpecialEvent,

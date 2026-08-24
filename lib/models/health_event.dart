@@ -121,25 +121,29 @@ class HealthEvent {
 /// 症狀：name + severity(1~5)。
 class HealthEventSymptom {
   final String name;
-  final int severity;
+  final int? severity;
 
-  const HealthEventSymptom({required this.name, required this.severity});
+  const HealthEventSymptom({required this.name, this.severity});
 
-  Map<String, dynamic> toMap() => {'name': name, 'severity': severity};
+  Map<String, dynamic> toMap() => {
+        'name': name,
+        if (severity != null) 'severity': severity,
+      };
 
   factory HealthEventSymptom.fromMap(Map<String, dynamic> map) {
     final severity = (map['severity'] as num?)?.toInt();
     return HealthEventSymptom(
       name: (map['name'] ?? '').toString(),
       severity:
-          severity != null && severity >= 1 && severity <= 5 ? severity : 3,
+          severity != null && severity >= 1 && severity <= 5 ? severity : null,
     );
   }
 
-  HealthEventSymptom copyWith({String? name, int? severity}) =>
+  HealthEventSymptom copyWith(
+          {String? name, int? severity, bool clearSeverity = false}) =>
       HealthEventSymptom(
         name: name ?? this.name,
-        severity: severity ?? this.severity,
+        severity: clearSeverity ? null : (severity ?? this.severity),
       );
 }
 

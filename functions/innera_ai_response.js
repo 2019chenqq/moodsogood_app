@@ -8,6 +8,50 @@ function stripMarkdownFence(text) {
     .trim();
 }
 
+function isEmotionalSupportQuestion(sentence) {
+  const value = String(sentence || "").trim();
+  if (!value) return false;
+  if (/[？?]/.test(value)) return true;
+
+  const withoutClosingPunctuation = value.replace(/[。！!…]+$/u, "").trim();
+  if (/嗎$/u.test(withoutClosingPunctuation)) return true;
+  return /(?:什麼|怎麼|為什麼|哪(?:一|個|些|裡|邊)?|如何|是否|有沒有|能不能|可不可以|要不要|願不願意|還是)[^。！？?]*呢$/u
+    .test(withoutClosingPunctuation);
+}
+
+function splitEmotionalSupportSentences(reply) {
+  return String(reply || "")
+    .match(/[^。！？?\n]+[。！？?]+|[^。！？?\n]+(?=\n|$)/gu) || [];
+}
+
+function joinEmotionalSupportSentences(sentences) {
+  return sentences
+    .map((sentence) => sentence.trim())
+    .filter(Boolean)
+    .join("")
+    .trim();
+}
+
+function sanitizeEmotionalSupportQuestions(reply, followUpQuestion) {
+  const originalReply = String(reply || "");
+  const sentences = splitEmotionalSupportSentences(reply);
+  if (!sentences.some(isEmotionalSupportQuestion)) return originalReply;
+  const hasFollowUpQuestion = String(followUpQuestion || "").trim().length > 0;
+  let keptQuestion = false;
+
+  return joinEmotionalSupportSentences(sentences.filter((sentence) => {
+    if (!isEmotionalSupportQuestion(sentence)) return true;
+    if (hasFollowUpQuestion || keptQuestion) return false;
+    keptQuestion = true;
+    return true;
+  }));
+}
+
+function sanitizeInneraModeQuestions(mode, reply, followUpQuestion) {
+  if (mode !== "emotionalSupport") return String(reply || "");
+  return sanitizeEmotionalSupportQuestions(reply, followUpQuestion);
+}
+
 function parseInneraChatCompletion(completion) {
   const choice = completion?.choices?.[0];
   const rawText = String(choice?.message?.content || "").trim();
@@ -337,4 +381,6 @@ module.exports = {
   parseFollowUpQuestionsCompletion,
   parseFollowUpSummaryCompletion,
   parseInneraChatCompletion,
+  sanitizeEmotionalSupportQuestions,
+  sanitizeInneraModeQuestions,
 };

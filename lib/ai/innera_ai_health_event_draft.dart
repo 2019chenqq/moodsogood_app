@@ -1,3 +1,4 @@
+import '../daily/emotion_dimensions.dart';
 import 'innera_ai_record_draft.dart';
 
 enum AiEventTimePrecision { exact, approximate, unspecified }
@@ -10,6 +11,7 @@ class InneraAiHealthEventDraft {
     this.timePrecision = AiEventTimePrecision.unspecified,
     this.emotions = const [],
     this.symptoms = const [],
+    this.symptomSeverities = const {},
     this.stateChanges = const {},
     this.rawUserEntries = const [],
     this.note = '',
@@ -21,6 +23,7 @@ class InneraAiHealthEventDraft {
   final AiEventTimePrecision timePrecision;
   final List<AiEmotionDraft> emotions;
   final List<String> symptoms;
+  final Map<String, int> symptomSeverities;
   final Map<String, int> stateChanges;
   final List<String> rawUserEntries;
   final String note;
@@ -32,12 +35,14 @@ class InneraAiHealthEventDraft {
       note.trim().isNotEmpty;
 
   String get timeLabel {
+    final time = eventTime;
+    if (time != null) {
+      return '${time.hour.toString().padLeft(2, '0')}:'
+          '${time.minute.toString().padLeft(2, '0')}';
+    }
     final context = timeContext?.trim();
     if (context?.isNotEmpty == true) return context!;
-    final time = eventTime;
-    if (time == null) return '時間待確認';
-    return '${time.hour.toString().padLeft(2, '0')}:'
-        '${time.minute.toString().padLeft(2, '0')}';
+    return '時間待確認';
   }
 
   factory InneraAiHealthEventDraft.fromMap(Map<String, dynamic> map) {
@@ -60,6 +65,7 @@ class InneraAiHealthEventDraft {
               .toList() ??
           const [],
       symptoms: _strings(map['symptoms']),
+      symptomSeverities: _symptomSeverities(map['symptoms']),
       stateChanges: _stateChanges(map['stateChanges']),
       rawUserEntries: _strings(map['rawUserEntries']),
       note: (map['note'] ?? '').toString().trim(),
@@ -72,7 +78,12 @@ class InneraAiHealthEventDraft {
         'timeContext': timeContext,
         'timePrecision': timePrecision.name,
         'emotionMentions': emotions.map((item) => item.toMap()).toList(),
-        'symptoms': symptoms,
+        'symptoms': symptoms
+            .map((name) => {
+                  'name': name,
+                  'severity': symptomSeverities[name],
+                })
+            .toList(),
         'stateChanges': stateChanges,
         'rawUserEntries': rawUserEntries,
         'note': note,
@@ -90,12 +101,18 @@ class InneraAiHealthEventDraft {
     return InneraAiHealthEventDraft(
       id: id,
       eventTime: patch.eventTime ?? eventTime,
-      timeContext: patch.timeContext ?? timeContext,
+      timeContext: patch.eventTime != null
+          ? patch.timeContext
+          : patch.timeContext ?? timeContext,
       timePrecision: patch.timePrecision == AiEventTimePrecision.unspecified
           ? timePrecision
           : patch.timePrecision,
       emotions: emotionMap.values.toList(),
       symptoms: {...symptoms, ...patch.symptoms}.toList(),
+      symptomSeverities: {
+        ...symptomSeverities,
+        ...patch.symptomSeverities,
+      },
       stateChanges: {...stateChanges, ...patch.stateChanges},
       rawUserEntries: {
         ...rawUserEntries,
@@ -112,9 +129,108 @@ class InneraAiHealthEventDraft {
         timePrecision: timePrecision,
         emotions: emotions,
         symptoms: symptoms,
+        symptomSeverities: symptomSeverities,
         stateChanges: stateChanges,
         rawUserEntries: rawUserEntries,
         note: note ?? this.note,
+      );
+
+  InneraAiHealthEventDraft withSymptomSeverity(
+    String symptom,
+    int? severity,
+  ) {
+    if (!symptoms.contains(symptom)) return this;
+    final updated = <String, int>{...symptomSeverities};
+    if (severity == null) {
+      updated.remove(symptom);
+    } else {
+      updated[symptom] = severity.clamp(1, 5);
+    }
+    return InneraAiHealthEventDraft(
+      id: id,
+      eventTime: eventTime,
+      timeContext: timeContext,
+      timePrecision: timePrecision,
+      emotions: emotions,
+      symptoms: symptoms,
+      symptomSeverities: updated,
+      stateChanges: stateChanges,
+      rawUserEntries: rawUserEntries,
+      note: note,
+    );
+  }
+
+  InneraAiHealthEventDraft withEmotionScore(String key, int score) =>
+      _copyWithEmotions(
+        emotions
+            .map(
+              (item) => item.dedupeKey == key
+                  ? item.copyWith(score: score.clamp(1, 5))
+                  : item,
+            )
+            .toList(),
+      );
+
+  InneraAiHealthEventDraft withEmotionDimension(
+    String key,
+    EmotionDimensionDefinition dimension,
+  ) =>
+      _copyWithEmotions(
+        emotions
+            .map(
+              (item) => item.dedupeKey == key
+                  ? item.copyWith(dimension: dimension)
+                  : item,
+            )
+            .toList(),
+      );
+
+  InneraAiHealthEventDraft withoutEmotion(String key) => _copyWithEmotions(
+        emotions.where((item) => item.dedupeKey != key).toList(),
+      );
+
+  InneraAiHealthEventDraft withStateChange(String id, int? value) {
+    if (!const {
+      'energy_change',
+      'appetite_change',
+      'activity_change',
+    }.contains(id)) {
+      return this;
+    }
+    final updated = <String, int>{...stateChanges};
+    if (value == null) {
+      updated.remove(id);
+    } else {
+      updated[id] = value.clamp(1, 5);
+    }
+    return InneraAiHealthEventDraft(
+      id: this.id,
+      eventTime: eventTime,
+      timeContext: timeContext,
+      timePrecision: timePrecision,
+      emotions: emotions,
+      symptoms: symptoms,
+      symptomSeverities: symptomSeverities,
+      stateChanges: updated,
+      rawUserEntries: rawUserEntries,
+      note: note,
+    );
+  }
+
+  InneraAiHealthEventDraft _copyWithEmotions(
+    List<AiEmotionDraft> updatedEmotions,
+  ) =>
+      InneraAiHealthEventDraft(
+        id: id,
+        eventTime: eventTime,
+        timeContext: timeContext,
+        timePrecision: timePrecision,
+        emotions: updatedEmotions,
+        symptoms: symptoms,
+        symptomSeverities: symptomSeverities,
+        stateChanges: stateChanges,
+        rawUserEntries: rawUserEntries,
+        note: note,
       );
 
   static String? _text(dynamic value) {
@@ -141,6 +257,54 @@ class InneraAiHealthEventDraft {
     }
     return result;
   }
+
+  static Map<String, int> _symptomSeverities(dynamic value) {
+    if (value is! List) return const {};
+    final result = <String, int>{};
+    for (final item in value.whereType<Map>()) {
+      final name = item['name']?.toString().trim() ?? '';
+      final severity = (item['severity'] as num?)?.toInt();
+      if (name.isNotEmpty &&
+          severity != null &&
+          severity >= 1 &&
+          severity <= 5) {
+        result[name] = severity;
+      }
+    }
+    return result;
+  }
+}
+
+List<InneraAiHealthEventDraft> mergeEquivalentHealthEventDrafts(
+  Iterable<InneraAiHealthEventDraft> drafts,
+) {
+  final result = <InneraAiHealthEventDraft>[];
+  for (final draft in drafts) {
+    final index = result.indexWhere(
+      (existing) =>
+          existing.id == draft.id || _isSameEventMinute(existing, draft),
+    );
+    if (index < 0) {
+      result.add(draft);
+    } else {
+      result[index] = result[index].merge(draft);
+    }
+  }
+  return result;
+}
+
+bool _isSameEventMinute(
+  InneraAiHealthEventDraft left,
+  InneraAiHealthEventDraft right,
+) {
+  final leftTime = left.eventTime;
+  final rightTime = right.eventTime;
+  if (leftTime == null || rightTime == null) return false;
+  return leftTime.year == rightTime.year &&
+      leftTime.month == rightTime.month &&
+      leftTime.day == rightTime.day &&
+      leftTime.hour == rightTime.hour &&
+      leftTime.minute == rightTime.minute;
 }
 
 List<InneraAiHealthEventDraft> mergeExplicitHealthEventDrafts({
@@ -162,11 +326,32 @@ List<InneraAiHealthEventDraft> mergeExplicitHealthEventDrafts({
     if (_isPreviousNightSleepClause(clause)) continue;
     final time = _eventTimeFromClause(clause, messageTime);
     final symptoms = _symptomsFromClause(clause);
-    final hasEventContent = symptoms.isNotEmpty || _hasStateDescription(clause);
+    final stateChanges = _stateChangesFromClause(clause);
+    final standaloneSeverity = _explicitSeverityFromClause(clause);
+    if (symptoms.isEmpty &&
+        stateChanges.isEmpty &&
+        standaloneSeverity != null &&
+        activeId != null) {
+      final active = drafts[activeId];
+      if (active != null && active.symptoms.isNotEmpty) {
+        final patch = InneraAiHealthEventDraft(
+          id: activeId,
+          symptomSeverities: {
+            for (final symptom in active.symptoms) symptom: standaloneSeverity,
+          },
+          rawUserEntries: [clause],
+        );
+        drafts[activeId] = active.merge(patch);
+      }
+      continue;
+    }
+    final hasEventContent = symptoms.isNotEmpty ||
+        stateChanges.isNotEmpty ||
+        _hasStateDescription(clause);
     if (!hasEventContent) continue;
 
     if (time != null) {
-      activeId = time.id;
+      activeId = _matchingEventId(drafts.values, time) ?? time.id;
     } else if (RegExp(r'那時候|當時|那個時候').hasMatch(clause)) {
       activeId ??= existing.isEmpty ? null : existing.last.id;
     }
@@ -178,18 +363,22 @@ List<InneraAiHealthEventDraft> mergeExplicitHealthEventDrafts({
       timeContext: time?.context,
       timePrecision: time?.precision ?? AiEventTimePrecision.unspecified,
       symptoms: symptoms,
+      symptomSeverities: _symptomSeveritiesFromClause(clause, symptoms),
+      stateChanges: stateChanges,
       rawUserEntries: [clause],
       note: clause,
     );
     drafts[activeId] = drafts[activeId]?.merge(patch) ?? patch;
   }
-  return drafts.values.where((item) => item.hasContent).toList();
+  return mergeEquivalentHealthEventDrafts(
+    drafts.values.where((item) => item.hasContent),
+  );
 }
 
 ({
   String id,
   DateTime? eventTime,
-  String context,
+  String? context,
   AiEventTimePrecision precision,
 })? _eventTimeFromClause(String clause, DateTime messageTime) {
   final clock = RegExp(
@@ -248,12 +437,85 @@ List<InneraAiHealthEventDraft> mergeExplicitHealthEventDrafts({
   };
   for (final rule in contextRules.entries) {
     if (!clause.contains(rule.key)) continue;
+    if (rule.value == '現在' || rule.value == '剛剛') {
+      final eventTime = DateTime(
+        messageTime.year,
+        messageTime.month,
+        messageTime.day,
+        messageTime.hour,
+        messageTime.minute,
+      );
+      return (
+        id: 'time-${messageTime.hour.toString().padLeft(2, '0')}'
+            '${messageTime.minute.toString().padLeft(2, '0')}',
+        eventTime: eventTime,
+        context: null,
+        precision: AiEventTimePrecision.approximate,
+      );
+    }
     return (
       id: 'context-${rule.value}',
       eventTime: null,
       context: rule.value,
       precision: AiEventTimePrecision.approximate,
     );
+  }
+  return null;
+}
+
+String? _matchingEventId(
+  Iterable<InneraAiHealthEventDraft> drafts,
+  ({
+    String id,
+    DateTime? eventTime,
+    String? context,
+    AiEventTimePrecision precision,
+  }) time,
+) {
+  for (final draft in drafts.toList().reversed) {
+    final draftTime = draft.eventTime;
+    final nextTime = time.eventTime;
+    if (draftTime != null &&
+        nextTime != null &&
+        draftTime.year == nextTime.year &&
+        draftTime.month == nextTime.month &&
+        draftTime.day == nextTime.day &&
+        draftTime.hour == nextTime.hour &&
+        draftTime.minute == nextTime.minute) {
+      return draft.id;
+    }
+  }
+  final nextPeriod = _timePeriod(time.context);
+  if (nextPeriod != null && time.eventTime != null) {
+    for (final draft in drafts.toList().reversed) {
+      if (draft.eventTime == null &&
+          _timePeriod(draft.timeContext) == nextPeriod) {
+        return draft.id;
+      }
+    }
+  }
+  if (time.context != null) return null;
+  for (final draft in drafts.toList().reversed) {
+    final context = draft.timeContext?.trim().toLowerCase();
+    if (draft.id.toLowerCase() == 'now' ||
+        context == 'now' ||
+        context == '現在' ||
+        context == '剛剛') {
+      return draft.id;
+    }
+  }
+  return null;
+}
+
+String? _timePeriod(String? value) {
+  final text = value?.trim().toLowerCase() ?? '';
+  if (text.contains('早上') || text.contains('早晨') || text == 'morning') {
+    return 'morning';
+  }
+  if (text.contains('中午') || text == 'noon') return 'noon';
+  if (text.contains('下午') || text == 'afternoon') return 'afternoon';
+  if (text.contains('晚上') || text == 'evening' || text == 'night') {
+    return 'evening';
   }
   return null;
 }
@@ -309,4 +571,53 @@ List<String> _symptomsFromClause(String clause) {
     for (final rule in rules.entries)
       if (RegExp(rule.value).hasMatch(clause)) rule.key,
   ];
+}
+
+Map<String, int> _symptomSeveritiesFromClause(
+  String clause,
+  List<String> symptoms,
+) {
+  if (symptoms.isEmpty) return const {};
+  final severity = _explicitSeverityFromClause(clause);
+  if (severity == null) return const {};
+  return {for (final symptom in symptoms) symptom: severity};
+}
+
+Map<String, int> _stateChangesFromClause(String clause) {
+  const terms = <String, String>{
+    'energy_change': r'能量|精神|精力|體力',
+    'appetite_change': r'食慾|胃口',
+    'activity_change': r'活動量|活動程度',
+  };
+  final result = <String, int>{};
+  for (final entry in terms.entries) {
+    final match = RegExp(
+      '(?:${entry.value})[^，、。！？\\n]{0,12}([1-5１-５一二三四五兩])\\s*分',
+    ).firstMatch(clause);
+    final score = _scoreFromText(match?.group(1));
+    if (score != null) result[entry.key] = score;
+  }
+  return result;
+}
+
+int? _explicitSeverityFromClause(String clause) {
+  final match = RegExp(r'([1-5１-５])\s*分').firstMatch(clause);
+  return _scoreFromText(match?.group(1));
+}
+
+int? _scoreFromText(String? raw) {
+  if (raw == null) return null;
+  const fullWidth = '１２３４５';
+  const chinese = <String, int>{
+    '一': 1,
+    '二': 2,
+    '兩': 2,
+    '三': 3,
+    '四': 4,
+    '五': 5,
+  };
+  final score = int.tryParse(raw) ??
+      chinese[raw] ??
+      (fullWidth.contains(raw) ? fullWidth.indexOf(raw) + 1 : -1);
+  return score >= 1 && score <= 5 ? score : null;
 }

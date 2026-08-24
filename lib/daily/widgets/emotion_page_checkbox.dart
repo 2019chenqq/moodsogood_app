@@ -9,7 +9,7 @@ import '../daily_state_dimensions.dart';
 export '../emotion_dimensions.dart';
 
 /// 每日情緒與狀態：正式情緒採 1～5 分強度；每日狀態則獨立記錄
-/// 與平常相比的 1～5 分變化，兩者不共用資料或提示邏輯。
+/// 能量、食慾與活動量使用當下程度 1～5，兩者不共用資料或提示邏輯。
 class EmotionPageCheckbox extends StatefulWidget {
   const EmotionPageCheckbox({
     super.key,
@@ -167,12 +167,12 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
         initiallyExpanded: _isStateExpanded,
         onExpansionChanged: (value) => setState(() => _isStateExpanded = value),
         title: Text(
-          '今天的狀態變化',
+          '今天的狀態程度',
           style: HealingDesignSystem.titleMedium.copyWith(
             color: HealingDesignSystem.adaptivePrimaryText(context),
           ),
         ),
-        subtitle: const Text('選填・請和平常的自己相比'),
+        subtitle: const Text('選填・1 非常低，5 非常高'),
         childrenPadding: const EdgeInsets.fromLTRB(
           HealingDesignSystem.paddingL,
           0,
@@ -181,7 +181,7 @@ class _EmotionPageCheckboxState extends State<EmotionPageCheckbox> {
         ),
         children: [
           Text(
-            '請和平常的自己相比。3 分代表和平常差不多，越靠左代表降低，越靠右代表增加。',
+            '請記錄當下程度：1 非常低、2 偏低、3 中等、4 偏高、5 非常高。沒有明確程度時可以不填。',
             style: HealingDesignSystem.bodySmall.copyWith(
               color: HealingDesignSystem.adaptiveSecondaryText(context),
             ),

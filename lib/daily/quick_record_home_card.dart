@@ -12,7 +12,9 @@ List<String> healthEventTimelineSummary(HealthEvent event) => <String>[
       if (event.emotions.isNotEmpty)
         '${event.emotions.first.name} ${event.emotions.first.intensity}/5',
       if (event.symptoms.isNotEmpty)
-        '${event.symptoms.first.name} ${event.symptoms.first.severity}/5',
+        event.symptoms.first.severity == null
+            ? event.symptoms.first.name
+            : '${event.symptoms.first.name} ${event.symptoms.first.severity}/5',
       ...event.stateChanges.entries.take(2).map((entry) {
         final dimension = kDailyStateDimensionsById[entry.key];
         return dimension == null

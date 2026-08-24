@@ -2,10 +2,19 @@ import 'package:flutter/material.dart';
 
 import '../constants/healing_design_system.dart';
 import 'widgets/body_measurement_page.dart';
+import 'widgets/record_date_time_picker.dart';
 
 /// Standalone entry backed by BodyMeasurementRecord, not DailyRecord.
-class BodyMeasurementRecordPage extends StatelessWidget {
+class BodyMeasurementRecordPage extends StatefulWidget {
   const BodyMeasurementRecordPage({super.key});
+
+  @override
+  State<BodyMeasurementRecordPage> createState() =>
+      _BodyMeasurementRecordPageState();
+}
+
+class _BodyMeasurementRecordPageState extends State<BodyMeasurementRecordPage> {
+  DateTime _recordedAt = DateTime.now();
 
   @override
   Widget build(BuildContext context) {
@@ -18,10 +27,23 @@ class BodyMeasurementRecordPage extends StatelessWidget {
         elevation: 0,
         surfaceTintColor: Colors.transparent,
       ),
-      body: BodyMeasurementPage(
-        value: null,
-        onChanged: (_) {},
-        date: DateTime.now(),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: RecordDateTimePicker(
+              value: _recordedAt,
+              onChanged: (value) => setState(() => _recordedAt = value),
+            ),
+          ),
+          Expanded(
+            child: BodyMeasurementPage(
+              value: null,
+              onChanged: (_) {},
+              date: _recordedAt,
+            ),
+          ),
+        ],
       ),
     );
   }

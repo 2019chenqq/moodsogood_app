@@ -29,6 +29,28 @@ class PeriodCycle {
     return !d.isBefore(s) && (e == null || !d.isAfter(e));
   }
 
+  /// Calendar presentation range for an open cycle.
+  ///
+  /// An open cycle initially shows seven days. After that window has passed,
+  /// it grows only through [asOf], one day at a time, until an end is recorded.
+  bool isDisplayedOn(DateTime date, {DateTime? asOf}) {
+    final d = DateTime(date.year, date.month, date.day);
+    final s = DateTime(startDate.year, startDate.month, startDate.day);
+    final recordedEnd = endDate == null
+        ? null
+        : DateTime(endDate!.year, endDate!.month, endDate!.day);
+    if (recordedEnd != null) {
+      return !d.isBefore(s) && !d.isAfter(recordedEnd);
+    }
+
+    final reference = asOf ?? DateTime.now();
+    final today = DateTime(reference.year, reference.month, reference.day);
+    final initialWindowEnd = s.add(const Duration(days: 6));
+    final displayEnd =
+        today.isAfter(initialWindowEnd) ? today : initialWindowEnd;
+    return !d.isBefore(s) && !d.isAfter(displayEnd);
+  }
+
   Map<String, dynamic> toFirestore() {
     return {
       'startDate': Timestamp.fromDate(startDate),

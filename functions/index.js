@@ -3,13 +3,30 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const OpenAI = require("openai");
-const INNERA_UNIFIED_PROMPT = require("./innera_unified_prompt");
-const { inneraModePrompt, sanitizeModeFollowUp } = require("./innera_mode_prompt");
+const { buildInneraPrompt, sanitizeModeFollowUp } = require("./innera_mode_prompt");
+const {
+  createEmotionalSupportApiResponse,
+  selectInneraChatResponseSchema,
+} = require("./innera_emotional_support");
+const {
+  createPhysicalHealthApiResponse,
+  createPhysicalHealthChatSchema,
+} = require("./innera_physical_health");
+const { buildInneraSafeHistory } = require("./innera_history");
+const { buildInneraContextPayload } = require("./innera_request_payload");
+const {
+  buildInneraLatencyLog,
+  createInneraLatencyState,
+  elapsedSince,
+} = require("./innera_latency");
 const crypto = require("crypto");
 const { buildSleepTimeStats } = require("./sleep_review_stats");
 const { buildEmotionStats } = require("./emotion_review_stats");
 const { detectInneraSelfHarm } = require("./innera_safety");
-const { normalizeInneraEventDrafts } = require("./innera_event_drafts");
+const {
+  normalizeInneraEventDrafts,
+  sanitizeExplicitStateChangePatch,
+} = require("./innera_event_drafts");
 const {
   alignEventSummaries,
   normalizeSummaryInput,
@@ -34,6 +51,7 @@ const {
 const {
   isFollowUpQuestionRequest,
   parseFollowUpQuestionsCompletion,
+  sanitizeInneraModeQuestions,
 } = require("./innera_ai_response");
 
 // 初始化 Admin SDK (擁有繞過 Security Rules 的最高權限)
@@ -44,7 +62,7 @@ const lastFmApiKey = defineSecret("LASTFM_API_KEY");
 const spotifyClientId = defineSecret("SPOTIFY_CLIENT_ID");
 const spotifyClientSecret = defineSecret("SPOTIFY_CLIENT_SECRET");
 const DEFAULT_AI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
-const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v12-chat-response-depth";
+const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v18-physical-health-small-schema";
 const DIARY_EXTRACTION_PROMPT_VERSION = "diary_extraction_v1";
 const EVENT_SUMMARY_PROMPT_VERSION = "innera-event-summary-v1";
 
@@ -700,6 +718,7 @@ const inneraChatSchema = {
           "eventTime",
           "timeContext",
           "timePrecision",
+          "emotionMentions",
           "symptoms",
           "stateChanges",
           "rawUserEntries",
@@ -713,10 +732,33 @@ const inneraChatSchema = {
             type: "string",
             enum: ["exact", "approximate", "unspecified"],
           },
+          emotionMentions: {
+            type: "array",
+            maxItems: 20,
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["rawText", "normalizedDimensionId", "normalizedDimensionName", "value"],
+              properties: {
+                rawText: { type: "string" },
+                normalizedDimensionId: nullableStringSchema,
+                normalizedDimensionName: nullableStringSchema,
+                value: nullableScoreSchema,
+              },
+            },
+          },
           symptoms: {
             type: "array",
             maxItems: 20,
-            items: { type: "string" },
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["name", "severity"],
+              properties: {
+                name: { type: "string" },
+                severity: nullableScoreSchema,
+              },
+            },
           },
           stateChanges: {
             type: "object",
@@ -749,6 +791,9 @@ const inneraChatSchema = {
     requiresFixedSafetyUi: { type: "boolean" },
   },
 };
+const physicalHealthChatSchema = createPhysicalHealthChatSchema(
+  inneraChatSchema.properties.eventDrafts,
+);
 const followUpQuestionsSchema = {
   type: "object",
   additionalProperties: false,
@@ -1561,9 +1606,13 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
     return dimensionByTerm.get(requestedName) || dimensionByTerm.get(rawText) || null;
   };
   const stateIds = ["energy_change", "appetite_change", "activity_change"];
+  const rawStateChanges = sanitizeExplicitStateChangePatch(
+    raw.stateChanges,
+    latestMessage,
+  );
   const stateChanges = {};
   for (const id of stateIds) {
-    const next = validScore(raw.stateChanges?.[id]);
+    const next = validScore(rawStateChanges[id]);
     const old = validScore(existing.stateChanges?.[id]);
     if (next != null || old != null) stateChanges[id] = next ?? old;
   }
@@ -1582,7 +1631,15 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
     ? existing.bodyMeasurement
     : {};
   const timingValues = new Set(["afterWaking", "afterBreakfast", "afterLunch", "afterDinner", "beforeSleep", "other"]);
-  const requestedTiming = nextBody.measurementTiming ?? oldBody.measurementTiming;
+  const measurementTimingTerms = "(?:起床(?:後)?|早餐後|午餐後|晚餐後|吃飯後|飯後|睡前|運動後)";
+  const measurementTerms = "(?:量|測|體重|體脂|腰圍)";
+  const measurementTimingWasExplicit = new RegExp(
+    `${measurementTimingTerms}[^，。！？；\\n]{0,12}${measurementTerms}|` +
+    `${measurementTerms}[^，。！？；\\n]{0,12}${measurementTimingTerms}`,
+  ).test(safeText(latestMessage, 4000));
+  const requestedTiming = measurementTimingWasExplicit
+    ? nextBody.measurementTiming ?? oldBody.measurementTiming
+    : oldBody.measurementTiming;
   let measurementTiming = timingValues.has(requestedTiming) ? requestedTiming : null;
   const customMeasurementTime = measurementTiming === "other"
     ? safeText(nextBody.customMeasurementTime, 100) ||
@@ -1593,12 +1650,20 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
   if (measurementTiming === "other" && !customMeasurementTime) {
     measurementTiming = null;
   }
+  const weightKg = validMeasurement(nextBody.weightKg, 20, 300) ?? validMeasurement(oldBody.weightKg, 20, 300);
+  const bodyFatPercent = validMeasurement(nextBody.bodyFatPercent, 1, 70) ?? validMeasurement(oldBody.bodyFatPercent, 1, 70);
+  const waistCm = validMeasurement(nextBody.waistCm, 30, 250) ?? validMeasurement(oldBody.waistCm, 30, 250);
+  const hasBodyMeasurementValue = weightKg != null || bodyFatPercent != null || waistCm != null;
+  if (!hasBodyMeasurementValue) measurementTiming = null;
   const bodyMeasurement = {
-    weightKg: validMeasurement(nextBody.weightKg, 20, 300) ?? validMeasurement(oldBody.weightKg, 20, 300),
-    bodyFatPercent: validMeasurement(nextBody.bodyFatPercent, 1, 70) ?? validMeasurement(oldBody.bodyFatPercent, 1, 70),
-    waistCm: validMeasurement(nextBody.waistCm, 30, 250) ?? validMeasurement(oldBody.waistCm, 30, 250),
+    weightKg,
+    bodyFatPercent,
+    waistCm,
     measurementTiming,
-    customMeasurementTime: measurementTiming === "other" ? customMeasurementTime : null,
+    customMeasurementTime:
+      hasBodyMeasurementValue && measurementTiming === "other"
+        ? customMeasurementTime
+        : null,
   };
   const otherSubjectPattern = /(爸爸|爸媽|媽媽|母親|父親|弟弟|妹妹|哥哥|姊姊|姐姐|家人|朋友|同事|同學|老師|醫師|醫生|護理師|伴侶|男友|女友|先生|太太|孩子|兒子|女兒|對方|他們|她們|他|她)/;
   const explicitUserPattern = /(我(?:自己|本人|也|還|真的|其實|現在|今天|當下|開始|感到|感覺|覺得|變得|很|好|超|有點|有些|有一點|心裡|心情)?|讓我|害我|使我|令我|我的)/;
@@ -1907,7 +1972,8 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
       [...excludedEmotionEvents],
       12,
     ),
-    diaryText: safeText(raw.diaryText, 8000) || safeText(existing.diaryText, 8000),
+    diaryText: safeText(raw.diaryText ?? raw.diaryTextDraft, 8000) ||
+      safeText(existing.diaryText ?? existing.diaryTextDraft, 8000),
     missingFields: mergeNames([], [
       ...(Array.isArray(raw.missingFields)
         ? raw.missingFields.filter((field) =>
@@ -2562,6 +2628,21 @@ exports.summarizeInneraHealthEvents = onCall(
 exports.generateInneraAiChat = onCall(
   { secrets: [openAiApiKey], enforceAppCheck: true },
   async (request) => {
+    const latencyState = createInneraLatencyState();
+    let latencyLogged = false;
+    let latencyMode = String(request.data?.mode || "emotionalSupport").trim();
+    let completion;
+    const logLatency = (status) => {
+      if (latencyLogged) return;
+      latencyLogged = true;
+      console.log("Innera AI latency", buildInneraLatencyLog({
+        state: latencyState,
+        mode: latencyMode,
+        completion,
+        promptVersion: INNERA_AI_PROMPT_VERSION,
+        status,
+      }));
+    };
     console.log("generateInneraAiChat invoked", {
       mode: request.data?.mode,
       authenticated: Boolean(request.auth),
@@ -2572,6 +2653,7 @@ exports.generateInneraAiChat = onCall(
 
     const data = request.data || {};
     const mode = String(data.mode || "emotionalSupport").trim();
+    latencyMode = mode;
     const supportsDailyRecordDraft = mode !== "recentReview";
     // Follow-up summaries include a structured output contract and can be
     // substantially longer than ordinary chat messages. Truncating them at
@@ -2579,10 +2661,15 @@ exports.generateInneraAiChat = onCall(
     // cause the model to return an empty reply.
     const messageLimit = mode === "recentReview" ? 16000 : 2000;
     const message = String(data.message || "").trim().slice(0, messageLimit);
-    const requestedImage =
-      data.image && typeof data.image === "object" ? data.image : null;
-    let image = null;
-    if (requestedImage) {
+    const requestedImages = Array.isArray(data.images)
+      ? data.images
+      : data.image && typeof data.image === "object"
+        ? [data.image]
+        : [];
+    if (requestedImages.length > 10) {
+      throw new HttpsError("invalid-argument", "AI chat accepts at most 10 images");
+    }
+    const images = requestedImages.map((requestedImage) => {
       const storagePath = String(requestedImage.storagePath || "").trim();
       const contentType = String(requestedImage.contentType || "").trim();
       const expectedPrefix = `ai_chat_temp/${request.auth.uid}/`;
@@ -2598,8 +2685,8 @@ exports.generateInneraAiChat = onCall(
       ) {
         throw new HttpsError("invalid-argument", "Invalid AI chat image");
       }
-      image = { storagePath, contentType };
-    }
+      return { storagePath, contentType };
+    });
     const context =
       data.context && typeof data.context === "object" ? { ...data.context } : {};
     const history = Array.isArray(data.messages) ? data.messages : [];
@@ -2679,6 +2766,7 @@ exports.generateInneraAiChat = onCall(
     );
     const hasMedicalUrgency = medicalUrgencyPhrases.some((phrase) => message.includes(phrase));
     if (safetySignal.detected || hasImminentDanger || hasMedicalUrgency) {
+      logLatency("safety_bypass");
       return {
         reply: "",
         followUpQuestion: null,
@@ -2699,7 +2787,16 @@ exports.generateInneraAiChat = onCall(
     const usageFeature =
       mode === "recentReview" ? "recent_review" : "innera_chat";
     const followUpQuestionRequest = isFollowUpQuestionRequest(mode, message);
-    await requireAiCapacity(request.auth.uid, usageFeature);
+    const rateLimitStartedAt = Date.now();
+    try {
+      await requireAiCapacity(request.auth.uid, usageFeature);
+    } catch (error) {
+      latencyState.rateLimitMs = elapsedSince(rateLimitStartedAt);
+      logLatency("rate_limit_failed");
+      throw error;
+    }
+    latencyState.rateLimitMs = elapsedSince(rateLimitStartedAt);
+    const preparationStartedAt = Date.now();
     const usageTracker = createAiUsageTracker({
       db,
       admin,
@@ -2711,9 +2808,22 @@ exports.generateInneraAiChat = onCall(
       quotedPoints: AI_QUOTED_POINTS[usageFeature],
       metadata: { mode },
     });
-    await usageTracker.start();
-    let completion;
+    try {
+      await usageTracker.start();
+    } catch (error) {
+      latencyState.preparationMs = elapsedSince(preparationStartedAt);
+      logLatency("usage_start_failed");
+      throw error;
+    }
 
+    const succeedUsageAndLog = async () => {
+      const usageWriteStartedAt = Date.now();
+      await usageTracker.succeed(completion);
+      latencyState.usageWriteMs += elapsedSince(usageWriteStartedAt);
+      logLatency("succeeded");
+    };
+
+    let parseNormalizeStartedAt = null;
     try {
       const apiKey = openAiApiKey.value();
       if (!apiKey) {
@@ -2721,61 +2831,59 @@ exports.generateInneraAiChat = onCall(
       }
 
       let currentUserContent = message;
-      if (image) {
-        const file = admin.storage().bucket().file(image.storagePath);
-        const [metadata] = await file.getMetadata();
-        const storedContentType = String(metadata.contentType || "");
-        const storedSize = Number(metadata.size || 0);
-        if (
-          storedContentType !== image.contentType ||
-          storedSize <= 0 ||
-          storedSize > 5 * 1024 * 1024 ||
-          metadata.metadata?.purpose !== "innera-ai-chat-temporary"
-        ) {
-          throw new HttpsError("invalid-argument", "Invalid stored AI chat image");
-        }
-        const [imageBytes] = await file.download();
-        try {
-          await file.delete();
-        } catch (cleanupError) {
-          console.warn("Temporary AI chat image cleanup failed", {
-            uid: request.auth.uid,
-            storagePath: image.storagePath,
-            error: cleanupError?.message || String(cleanupError),
-          });
-        }
-        currentUserContent = [
-          { type: "text", text: message },
-          {
+      if (images.length) {
+        const imageContents = [];
+        for (const image of images) {
+          const file = admin.storage().bucket().file(image.storagePath);
+          const [metadata] = await file.getMetadata();
+          const storedContentType = String(metadata.contentType || "");
+          const storedSize = Number(metadata.size || 0);
+          if (
+            storedContentType !== image.contentType ||
+            storedSize <= 0 ||
+            storedSize > 5 * 1024 * 1024 ||
+            metadata.metadata?.purpose !== "innera-ai-chat-temporary"
+          ) {
+            throw new HttpsError("invalid-argument", "Invalid stored AI chat image");
+          }
+          const [imageBytes] = await file.download();
+          try {
+            await file.delete();
+          } catch (cleanupError) {
+            console.warn("Temporary AI chat image cleanup failed", {
+              uid: request.auth.uid,
+              storagePath: image.storagePath,
+              error: cleanupError?.message || String(cleanupError),
+            });
+          }
+          imageContents.push({
             type: "image_url",
             image_url: {
               url: `data:${image.contentType};base64,${imageBytes.toString("base64")}`,
               detail: "low",
             },
-          },
-        ];
+          });
+        }
+        currentUserContent = [{ type: "text", text: message }, ...imageContents];
       }
 
-      const normalizedHistory = history
-        .map((item) => {
-          const role = item && item.role === "user" ? "user" : "assistant";
-          const content = String((item && item.content) || "").trim().slice(0, 1600);
-          if (!content) return null;
-          return { role, content };
-        })
-        .filter(Boolean);
-      const safeHistory = [];
-      let historyCharacters = 0;
-      for (const item of normalizedHistory.slice(-60).reverse()) {
-        if (safeHistory.length > 0 && historyCharacters + item.content.length > 48000) {
-          break;
-        }
-        safeHistory.unshift(item);
-        historyCharacters += item.content.length;
-      }
+      const { safeHistory, historyCharacters } = buildInneraSafeHistory(
+        history,
+        mode,
+      );
+      console.log("generateInneraAiChat history prepared", {
+        mode,
+        safeHistoryLength: safeHistory.length,
+        historyCharacters,
+      });
+      latencyState.safeHistoryCount = safeHistory.length;
+      latencyState.historyCharacters = historyCharacters;
 
       const client = new OpenAI({ apiKey });
-      completion = await client.chat.completions.create({
+      latencyState.preparationMs = elapsedSince(preparationStartedAt);
+      const openAiStartedAt = Date.now();
+      try {
+        completion = await client.chat.completions.create({
         model: DEFAULT_AI_MODEL,
         temperature: 0.55,
         response_format: {
@@ -2783,31 +2891,35 @@ exports.generateInneraAiChat = onCall(
           json_schema: {
             name: followUpQuestionRequest
               ? "follow_up_questions_response"
-              : "innera_chat_response",
+              : mode === "emotionalSupport"
+                ? "innera_emotional_support_response"
+                : mode === "physicalHealth"
+                  ? "innera_physical_health_response"
+                : "innera_chat_response",
             strict: true,
-            schema: followUpQuestionRequest
-              ? followUpQuestionsSchema
-              : inneraChatSchema,
+            schema: selectInneraChatResponseSchema({
+              mode,
+              followUpQuestionRequest,
+              followUpQuestionsSchema,
+              inneraChatSchema,
+              physicalHealthChatSchema,
+            }),
           },
         },
         messages: [
           {
             role: "system",
-            content: `${INNERA_UNIFIED_PROMPT}\n\n${inneraModePrompt(mode)}`,
+            content: buildInneraPrompt(mode),
           },
           {
             role: "user",
-            content: JSON.stringify({
+            content: JSON.stringify(buildInneraContextPayload({
               mode,
               context,
               contextSources,
-              ...(supportsDailyRecordDraft
-                ? {
-                    recordDraft: existingRecordDraft,
-                    emotionDimensions,
-                  }
-                : {}),
-            }),
+              recordDraft: existingRecordDraft,
+              emotionDimensions,
+            })),
           },
           ...safeHistory,
           {
@@ -2815,14 +2927,20 @@ exports.generateInneraAiChat = onCall(
             content: currentUserContent,
           },
         ],
-      });
+        });
+      } finally {
+        latencyState.openAiMs = elapsedSince(openAiStartedAt);
+      }
+
+      parseNormalizeStartedAt = Date.now();
 
       if (followUpQuestionRequest) {
         const questionResult = parseFollowUpQuestionsCompletion(completion);
         if (!questionResult.parsed) {
           throw new Error(questionResult.failure || "Invalid follow-up questions response");
         }
-        await usageTracker.succeed(completion);
+        latencyState.parseNormalizeMs = elapsedSince(parseNormalizeStartedAt);
+        await succeedUsageAndLog();
         return {
           ...questionResult.parsed,
           sources: [],
@@ -2867,6 +2985,41 @@ exports.generateInneraAiChat = onCall(
         throw new Error("Missing AI reply");
       }
 
+      if (mode === "emotionalSupport" && !followUpQuestionRequest) {
+        const followUpQuestion = sanitizeModeFollowUp(
+          mode,
+          rawFollowUpQuestion,
+        );
+        const result = createEmotionalSupportApiResponse({
+          reply: sanitizeInneraModeQuestions(mode, reply, followUpQuestion),
+          followUpQuestion,
+          model: DEFAULT_AI_MODEL,
+          promptVersion: INNERA_AI_PROMPT_VERSION,
+          completion,
+        });
+        latencyState.parseNormalizeMs = elapsedSince(parseNormalizeStartedAt);
+        await succeedUsageAndLog();
+        return result;
+      }
+
+      if (mode === "physicalHealth") {
+        const normalizedEventDrafts = normalizeInneraEventDrafts(
+          images.length ? existingRecordDraft.eventDrafts : parsed.eventDrafts,
+          existingRecordDraft.eventDrafts,
+        );
+        const result = createPhysicalHealthApiResponse({
+          reply,
+          followUpQuestion: rawFollowUpQuestion,
+          eventDrafts: normalizedEventDrafts,
+          model: DEFAULT_AI_MODEL,
+          promptVersion: INNERA_AI_PROMPT_VERSION,
+          completion,
+        });
+        latencyState.parseNormalizeMs = elapsedSince(parseNormalizeStartedAt);
+        await succeedUsageAndLog();
+        return result;
+      }
+
       const normalizedRecordDraft = supportsDailyRecordDraft
         ? normalizeInneraRecordDraft(
             image ? existingRecordDraft : parsed.recordDraft,
@@ -2908,10 +3061,20 @@ exports.generateInneraAiChat = onCall(
         inputTokens: completion.usage?.prompt_tokens ?? null,
         outputTokens: completion.usage?.completion_tokens ?? null,
       };
-      await usageTracker.succeed(completion);
+      latencyState.parseNormalizeMs = elapsedSince(parseNormalizeStartedAt);
+      await succeedUsageAndLog();
       return result;
     } catch (error) {
+      if (latencyState.preparationMs === 0) {
+        latencyState.preparationMs = elapsedSince(preparationStartedAt);
+      }
+      if (parseNormalizeStartedAt != null && latencyState.parseNormalizeMs === 0) {
+        latencyState.parseNormalizeMs = elapsedSince(parseNormalizeStartedAt);
+      }
+      const usageWriteStartedAt = Date.now();
       await usageTracker.fail(error, completion);
+      latencyState.usageWriteMs += elapsedSince(usageWriteStartedAt);
+      logLatency("failed");
       console.error("generateInneraAiChat failed", {
         name: error?.name,
         message: error?.message,

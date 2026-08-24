@@ -42,8 +42,8 @@ class _QuickRecordHistoryPageState extends State<QuickRecordHistoryPage> {
     final newFuture = _load();
     if (!mounted) return;
     setState(() {
-  _future = newFuture;
-  });
+      _future = newFuture;
+    });
   }
 
   Future<void> _pickRange() async {
@@ -281,7 +281,7 @@ class _EventTile extends StatelessWidget {
       if (event.emotions.isNotEmpty)
         '情緒：${event.emotions.map((e) => '${e.name}(${e.intensity})').join('、')}',
       if (event.symptoms.isNotEmpty)
-        '症狀：${event.symptoms.map((s) => '${s.name}(${s.severity})').join('、')}',
+        '症狀：${event.symptoms.map((s) => s.severity == null ? s.name : '${s.name}(${s.severity})').join('、')}',
       if (event.context != null && event.context!.trim().isNotEmpty)
         '情境：${event.context!.trim()}',
     ];

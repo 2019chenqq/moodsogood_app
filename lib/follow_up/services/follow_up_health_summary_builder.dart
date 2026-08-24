@@ -3,7 +3,6 @@ import '../../models/daily_check_in.dart';
 import '../../models/daily_health_aggregate.dart';
 import '../../models/daily_record.dart';
 import '../../models/health_event.dart';
-import '../../models/unified_health_data.dart';
 import '../../repositories/unified_health_data_repository.dart';
 import '../../services/daily_health_aggregation_service.dart';
 import '../../services/cooccurrence_cluster_service.dart';
@@ -192,9 +191,9 @@ class FollowUpHealthSummaryBuilder {
     final ranked = List<HealthEvent>.from(events)
       ..sort((a, b) {
         final aScore = a.symptoms.length * 10 +
-            a.symptoms.fold<int>(0, (sum, item) => sum + item.severity);
+            a.symptoms.fold<int>(0, (sum, item) => sum + (item.severity ?? 0));
         final bScore = b.symptoms.length * 10 +
-            b.symptoms.fold<int>(0, (sum, item) => sum + item.severity);
+            b.symptoms.fold<int>(0, (sum, item) => sum + (item.severity ?? 0));
         final score = bScore.compareTo(aScore);
         return score != 0 ? score : b.timestamp.compareTo(a.timestamp);
       });
