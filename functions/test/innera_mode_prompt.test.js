@@ -31,8 +31,20 @@ test("builds only core plus the active mode", () => {
   assert.doesNotMatch(emotional, /sleepTimeStats/);
 
   const review = buildInneraPrompt("recentReview");
-  assert.match(review, /sleepTimeStats/);
-  assert.match(review, /emotionStats/);
+  assert.match(review, /recentReviewSummary.*數值與事實的主要依據/);
+  assert.match(review, /不得自行重新計算統計/);
+  assert.match(review, /recordedDays、validNightSleepDays.*usableBedtimeDays/);
+  assert.match(review, /不得把 usableBedtimeDays 稱為有效睡眠紀錄/);
+  assert.match(review, /只包含本題命中的 domain/);
+  assert.match(review, /不得把未提供的 domain 解讀為沒有紀錄/);
+  assert.match(review, /sleepTimeStats、emotionStats/);
+  assert.match(review, /不得建立今天的 recordDraft 或 eventDrafts/);
+  assert.match(review, /不得把.*相關性寫成因果/);
+  assert.match(review, /資料不足時明確說明限制/);
+  assert.match(review, /不得捏造、補齊或外推不存在的歷史/);
+  assert.match(review, /dosePerUnit.*pillCount/);
+  assert.match(review, /逐項條列 recentReviewSummary\.medications/);
+  assert.match(review, /recentReviewSummary\.medicationChanges/);
   assert.doesNotMatch(review, /bodyMeasurement 只有/);
   assert.doesNotMatch(review, /activeMode: physicalHealth/);
 });
@@ -42,6 +54,11 @@ test("physical health mode extracts arbitrary symptoms into confirmable events",
   assert.match(prompt, /每一個身體症狀/);
   assert.match(prompt, /不限預設症狀名稱/);
   assert.match(prompt, /不同時間.*不同 eventDraft/);
+  assert.match(prompt, /傳送時間只是系統 metadata/);
+  assert.match(prompt, /不得只因.*相差一至數分鐘.*新 eventDraft/);
+  assert.match(prompt, /沿用原 id、eventTime、timeContext、timePrecision/);
+  assert.match(prompt, /『又』本身不代表新事件/);
+  assert.match(prompt, /過了半小時.*另一波/);
   assert.match(prompt, /確認後才正式儲存 HealthEvent/);
 });
 

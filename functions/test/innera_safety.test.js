@@ -2,7 +2,10 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { detectInneraSelfHarm } = require("../innera_safety");
+const {
+  createInneraSafetyResponse,
+  detectInneraSelfHarm,
+} = require("../innera_safety");
 
 const cases = [
   ["我今天真的不想活了", true, "concern"],
@@ -30,6 +33,48 @@ test("marks immediate self-harm language urgent", () => {
   const result = detectInneraSelfHarm("我現在就想傷害自己");
   assert.equal(result.detected, true);
   assert.equal(result.level, "urgent");
+});
+
+const pendingDraft = {
+  dateKey: "2026-08-24",
+  eventDrafts: [
+    { id: "fatigue", symptoms: [{ name: "疲倦", severity: null }] },
+    { id: "nausea", symptoms: [{ name: "噁心反胃", severity: null }] },
+  ],
+};
+
+test("medical urgency response preserves existing pending drafts", () => {
+  const response = createInneraSafetyResponse({
+    existingRecordDraft: pendingDraft,
+    safetyLevel: "medicalUrgency",
+  });
+  assert.equal(response.requiresFixedSafetyUi, true);
+  assert.equal(response.safetyLevel, "medicalUrgency");
+  assert.equal(response.recordDraft, pendingDraft);
+  assert.equal(response.eventDrafts, pendingDraft.eventDrafts);
+  assert.equal(response.eventDrafts.length, 2);
+});
+
+test("safety response without an existing draft creates no fake data", () => {
+  const response = createInneraSafetyResponse({
+    existingRecordDraft: {},
+    safetyLevel: "medicalUrgency",
+  });
+  assert.equal(response.recordDraft, null);
+  assert.deepEqual(response.eventDrafts, []);
+});
+
+test("self-harm safety levels preserve existing pending drafts", () => {
+  for (const safetyLevel of ["possibleSelfHarm", "imminentDanger"]) {
+    const response = createInneraSafetyResponse({
+      existingRecordDraft: pendingDraft,
+      safetyLevel,
+    });
+    assert.equal(response.requiresFixedSafetyUi, true);
+    assert.equal(response.safetyLevel, safetyLevel);
+    assert.equal(response.recordDraft, pendingDraft);
+    assert.equal(response.eventDrafts, pendingDraft.eventDrafts);
+  }
 });
 
 test("does not let one negated occurrence hide a later direct statement", () => {

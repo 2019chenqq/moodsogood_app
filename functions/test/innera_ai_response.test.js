@@ -3,8 +3,10 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  createRecentReviewApiResponse,
   createFollowUpSummaryFallbackResponse,
   createNoFollowUpQuestionsResponse,
+  formatRecentReviewMedicationList,
   isFollowUpQuestionRequest,
   isFollowUpSummaryRequest,
   mergeCompletionUsage,
@@ -13,7 +15,133 @@ const {
   parseFollowUpQuestionsCompletion,
   parseFollowUpSummaryCompletion,
   parseInneraChatCompletion,
+  recentReviewChatSchema,
 } = require("../innera_ai_response");
+
+test("recent review medication lists preserve per-unit dose and pill count", () => {
+  const context = {
+    activeMedications: [
+      {
+        name: "樂命達",
+        dosePerUnit: 50,
+        pillCount: 1,
+        dose: 50,
+        unit: "mg",
+        times: ["睡前"],
+      },
+      {
+        name: "安保思樂錠",
+        dosePerUnit: 50,
+        pillCount: 2,
+        dose: 100,
+        unit: "mg",
+        times: ["睡前"],
+      },
+      {
+        name: "克癇平",
+        dosePerUnit: 0.5,
+        pillCount: 0.5,
+        dose: 0.25,
+        unit: "mg",
+        times: ["需要時"],
+      },
+    ],
+  };
+  assert.equal(
+    formatRecentReviewMedicationList(
+      "把我現在正在用的藥都列出來",
+      context,
+      "fallback",
+    ),
+    [
+      "目前使用中的藥物：",
+      "",
+      "• 樂命達：50 mg × 1 顆，睡前",
+      "• 安保思樂錠：50 mg × 2 顆，睡前",
+      "• 克癇平：0.5 mg × 0.5 顆，需要時",
+    ].join("\n"),
+  );
+});
+
+test("recent review medication list falls back to total dose for legacy data", () => {
+  assert.equal(
+    formatRecentReviewMedicationList(
+      "我目前有哪些藥？",
+      {
+        activeMedications: [{
+          name: "舊藥物",
+          dose: 12.5,
+          unit: "mg",
+          times: [],
+        }],
+      },
+      "fallback",
+    ),
+    "目前使用中的藥物：\n\n• 舊藥物：12.5 mg",
+  );
+});
+
+test("recent review medication list reads V2 summary medications", () => {
+  assert.equal(
+    formatRecentReviewMedicationList(
+      "我目前有哪些藥？",
+      {
+        recentReviewSummary: {
+          medications: [{
+            name: "摘要藥物",
+            dosePerUnit: 25,
+            pillCount: 2,
+            unit: "mg",
+            times: ["睡前"],
+          }],
+        },
+      },
+      "fallback",
+    ),
+    "目前使用中的藥物：\n\n• 摘要藥物：25 mg × 2 顆，睡前",
+  );
+});
+
+test("recent review medication formatter leaves unrelated replies unchanged", () => {
+  assert.equal(
+    formatRecentReviewMedicationList(
+      "最近睡眠如何？",
+      { activeMedications: [{ name: "藥物 A" }] },
+      "原本的睡眠回顧",
+    ),
+    "原本的睡眠回顧",
+  );
+});
+
+test("recent review schema contains only reply and followUpQuestion", () => {
+  assert.equal(recentReviewChatSchema.type, "object");
+  assert.equal(recentReviewChatSchema.additionalProperties, false);
+  assert.deepEqual(recentReviewChatSchema.required, ["reply", "followUpQuestion"]);
+  assert.deepEqual(Object.keys(recentReviewChatSchema.properties), [
+    "reply",
+    "followUpQuestion",
+  ]);
+});
+
+test("recent review keeps the existing outer API response contract", () => {
+  const contextSources = [{ label: "最近紀錄", dateRange: "近 7 天", count: 3 }];
+  const response = createRecentReviewApiResponse({
+    reply: "目前三筆資料顯示的睡眠時間不同，資料仍有限，還不能判斷長期趨勢。",
+    followUpQuestion: null,
+    contextSources,
+    model: "test-model",
+    promptVersion: "test-version",
+    completion: { usage: { prompt_tokens: 180, completion_tokens: 28 } },
+  });
+  assert.equal(response.recordDraft, null);
+  assert.deepEqual(response.eventDrafts, []);
+  assert.equal(response.sources, contextSources);
+  assert.deepEqual(response.suggestedActions, []);
+  assert.equal(response.safetyLevel, "normal");
+  assert.equal(response.requiresFixedSafetyUi, false);
+  assert.equal(response.inputTokens, 180);
+  assert.equal(response.outputTokens, 28);
+});
 
 test("parseInneraChatCompletion returns a non-empty structured reply", () => {
   const result = parseInneraChatCompletion({

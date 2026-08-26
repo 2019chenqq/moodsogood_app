@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:moodsogood_app/daily/quick_record_detail_section.dart';
 import 'package:moodsogood_app/daily/record_detail_screen.dart';
+import 'package:moodsogood_app/daily/daily_record_history.dart';
+import 'package:moodsogood_app/daily/unified_sleep_repository.dart';
 import 'package:moodsogood_app/models/calendar_day_summary.dart';
 import 'package:moodsogood_app/models/daily_check_in.dart';
 import 'package:moodsogood_app/models/daily_record.dart';
 import 'package:moodsogood_app/models/health_event.dart';
+import 'package:moodsogood_app/models/period_cycle.dart';
+import 'package:moodsogood_app/models/sleep_record.dart';
 import 'package:moodsogood_app/services/calendar_summary_service.dart';
 import 'package:moodsogood_app/services/daily_health_aggregation_service.dart';
 
@@ -54,6 +58,38 @@ void main() {
     expect(result, hasLength(1));
     expect(result.single.hasDailyCheckIn, isTrue);
     expect(result.single.recorded, isTrue);
+  });
+
+  test('SleepRecord-only date remains a history aggregate', () {
+    final date = DateTime(2026, 8, 25);
+    final historyRecords = UnifiedSleepRepository.overlayForInsights(
+      dailyRecords: const [],
+      sleepRecords: [
+        UnifiedSleepRecord(
+          record: SleepRecord(date: date, quality: 4),
+          source: SleepRecordSource.sleepRecord,
+        ),
+      ],
+    );
+    final result = aggregation.aggregateRange(dailyRecords: historyRecords);
+
+    expect(result, hasLength(1));
+    expect(result.single.dateKey, '2026-08-25');
+    expect(result.single.dailyRecords.single.sleep.quality, 4);
+  });
+
+  test('period history label includes the cycle day without DailyRecord', () {
+    final label = periodHistoryLabel(
+      DateTime(2026, 8, 25),
+      [
+        PeriodCycle(
+          id: 'cycle',
+          startDate: DateTime(2026, 8, 22),
+        ),
+      ],
+    );
+
+    expect(label, '生理期 Day 4');
   });
 
   test('legacy detail sections only retain actual emotion and symptom data',

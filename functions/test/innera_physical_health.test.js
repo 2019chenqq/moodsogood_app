@@ -102,6 +102,93 @@ test("unknown headache severity remains null and mode forbids diagnosis", () => 
   assert.match(inneraModePrompt("physicalHealth"), /不得因症狀推測情緒/);
 });
 
+const physicalEvent = (symptoms = []) => ({
+  id: "current",
+  eventTime: "2026-08-24T16:15:00.000Z",
+  timeContext: "現在",
+  timePrecision: "approximate",
+  emotionMentions: [],
+  symptoms,
+  stateChanges: {},
+  rawUserEntries: [],
+  note: "身體不適",
+});
+
+test("physical health restores a hand tremor omitted by the model without a duplicate event", () => {
+  const result = normalizeInneraEventDrafts(
+    [physicalEvent([{ name: "心悸", severity: null }])],
+    [],
+    { mode: "physicalHealth", latestMessage: "剛剛有心悸，現在又有點手抖" },
+  );
+  assert.equal(result.length, 1);
+  assert.deepEqual(result[0].symptoms, [
+    { name: "心悸", severity: null },
+    { name: "手抖", severity: null },
+  ]);
+});
+
+test("physical health restores multiple omitted symptoms with null severity", () => {
+  const result = normalizeInneraEventDrafts(
+    [physicalEvent([])],
+    [],
+    { mode: "physicalHealth", latestMessage: "現在頭痛，而且有點反胃" },
+  );
+  assert.deepEqual(result[0].symptoms, [
+    { name: "頭痛", severity: null },
+    { name: "噁心反胃", severity: null },
+  ]);
+});
+
+test("physical health does not copy an already captured symptom into another event", () => {
+  const morning = {
+    ...physicalEvent([{ name: "頭痛", severity: null }]),
+    id: "morning",
+    eventTime: "2026-08-24T08:00:00.000Z",
+    timeContext: "早上",
+  };
+  const now = {
+    ...physicalEvent([{ name: "噁心反胃", severity: null }]),
+    id: "now",
+  };
+  const result = normalizeInneraEventDrafts([morning, now], [], {
+    mode: "physicalHealth",
+    latestMessage: "早上頭痛，現在有點反胃",
+  });
+  assert.equal(result.length, 2);
+  assert.deepEqual(result[0].symptoms, [{ name: "頭痛", severity: null }]);
+  assert.deepEqual(result[1].symptoms, [{ name: "噁心反胃", severity: null }]);
+});
+
+test("physical health binds each explicit score only to its symptom", () => {
+  const result = normalizeInneraEventDrafts(
+    [physicalEvent([{ name: "手抖", severity: null }])],
+    [],
+    { mode: "physicalHealth", latestMessage: "手抖4分，心悸2分" },
+  );
+  assert.deepEqual(result[0].symptoms, [
+    { name: "手抖", severity: 4 },
+    { name: "心悸", severity: 2 },
+  ]);
+});
+
+test("physical health does not infer symptoms from emotion-only text", () => {
+  const result = normalizeInneraEventDrafts(
+    [physicalEvent([{ name: "心悸", severity: null }])],
+    [],
+    { mode: "physicalHealth", latestMessage: "我覺得很害怕" },
+  );
+  assert.deepEqual(result[0].symptoms, [{ name: "心悸", severity: null }]);
+});
+
+test("symptom completeness guard is disabled for other modes", () => {
+  const result = normalizeInneraEventDrafts(
+    [physicalEvent([{ name: "心悸", severity: null }])],
+    [],
+    { mode: "dailyRecord", latestMessage: "現在又有點手抖" },
+  );
+  assert.deepEqual(result[0].symptoms, [{ name: "心悸", severity: null }]);
+});
+
 test("medical urgency still bypasses the general OpenAI flow", () => {
   const source = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
   const urgencyCheck = source.indexOf("const hasMedicalUrgency");

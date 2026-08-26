@@ -143,4 +143,71 @@ void main() {
     expect(schedules.map((item) => item.slot), ['早上', '晚上']);
     expect(schedules.every((item) => item.dose == 10), isTrue);
   });
+
+  test('interval schedule only creates targets on days counted from start date',
+      () {
+    final intervalMedication = {
+      ...medication,
+      'scheduleType': 'intervalDays',
+      'scheduleIntervalDays': 3,
+      'startDate': DateTime(2026, 8, 1),
+    };
+
+    expect(
+      MedicationCheckinScheduleResolver.resolve(
+        medication: intervalMedication,
+        adjustmentRecords: const [],
+        selectedDate: DateTime(2026, 8, 4),
+      ),
+      isNotEmpty,
+    );
+    expect(
+      MedicationCheckinScheduleResolver.resolve(
+        medication: intervalMedication,
+        adjustmentRecords: const [],
+        selectedDate: DateTime(2026, 8, 5),
+      ),
+      isEmpty,
+    );
+  });
+
+  test('weekday schedule creates targets only on selected weekdays', () {
+    final weeklyMedication = {
+      ...medication,
+      'scheduleType': 'weekdays',
+      'weekdays': [DateTime.monday, DateTime.thursday],
+    };
+
+    expect(
+      MedicationCheckinScheduleResolver.resolve(
+        medication: weeklyMedication,
+        adjustmentRecords: const [],
+        selectedDate: DateTime(2026, 8, 24),
+      ),
+      isNotEmpty,
+    );
+    expect(
+      MedicationCheckinScheduleResolver.resolve(
+        medication: weeklyMedication,
+        adjustmentRecords: const [],
+        selectedDate: DateTime(2026, 8, 25),
+      ),
+      isEmpty,
+    );
+  });
+
+  test('as-needed slot remains available outside a scheduled day', () {
+    final mixedMedication = {
+      ...medication,
+      'times': ['中午', '需要時'],
+      'scheduleType': 'weekdays',
+      'weekdays': [DateTime.monday],
+    };
+    final schedules = MedicationCheckinScheduleResolver.resolve(
+      medication: mixedMedication,
+      adjustmentRecords: const [],
+      selectedDate: DateTime(2026, 8, 25),
+    );
+    expect(schedules.map((item) => item.slot), ['需要時']);
+  });
 }

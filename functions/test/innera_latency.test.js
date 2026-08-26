@@ -4,9 +4,94 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   buildInneraLatencyLog,
+  buildRecentReviewContextSizeLog,
   createInneraLatencyState,
   elapsedSince,
 } = require("../innera_latency");
+
+test("recent review context breakdown measures sizes without exposing values", () => {
+  const context = {
+    sleepTimeStats: {
+      validSleepTimeDays: 2,
+      bedtimeEvidence: [{ date: "private-date", sleepTime: "private-time" }],
+    },
+    emotionStats: {
+      emotions: [{ name: "private-emotion", occurrenceDays: 2 }],
+    },
+    dailyRecordStats: { recordedDays: 2 },
+    recentDiaries: [{ summary: "private-diary" }],
+    activeMedications: [{ name: "private-medication" }],
+    customAggregate: { value: "private-other" },
+  };
+  const contextSources = [{ label: "private-source", count: 2 }];
+  const before = JSON.stringify(context);
+  const queries = [
+    "最近睡眠有什麼變化？",
+    "最近最常出現什麼情緒？",
+    "最近有沒有明顯的變化？",
+  ];
+  const logs = queries.map(() => buildRecentReviewContextSizeLog({
+    context,
+    contextSources,
+    safeHistoryCount: 8,
+    historyCharacters: 557,
+    completion: { usage: { prompt_tokens: 8057 } },
+    usedV2Summary: true,
+    usedLegacyFallback: false,
+    selectedDomains: ["sleep"],
+    usedDomainFallback: false,
+    fullSummary: context,
+  }));
+
+  assert.equal(JSON.stringify(context), before);
+  assert.equal(logs.length, 3);
+  for (const log of logs) {
+    assert.equal(log.totalContextCharacters, JSON.stringify(context).length);
+    assert.equal(
+      log.contextSourcesCharacters,
+      JSON.stringify(contextSources).length,
+    );
+    assert.equal(
+      log.sleepTimeStatsCharacters,
+      JSON.stringify(context.sleepTimeStats).length,
+    );
+    assert.equal(
+      log.emotionStatsCharacters,
+      JSON.stringify(context.emotionStats).length,
+    );
+    assert.equal(log.recentDailyRecordsCharacters, JSON.stringify(null).length);
+    assert.equal(log.contextSourceCount, 1);
+    assert.equal(log.emotionStatsItemCount, 1);
+    assert.equal(log.sleepEvidenceCount, 1);
+    assert.equal(log.safeHistoryCount, 8);
+    assert.equal(log.historyCharacters, 557);
+    assert.equal(log.inputTokens, 8057);
+    assert.equal(log.finalContextCharacters, JSON.stringify(context).length);
+    assert.equal(log.recentReviewSummaryCharacters, JSON.stringify(null).length);
+    assert.equal(log.usedV2Summary, true);
+    assert.equal(log.usedLegacyFallback, false);
+    assert.deepEqual(log.selectedDomains, ["sleep"]);
+    assert.equal(log.domainCount, 1);
+    assert.equal(
+      log.selectedSummaryCharacters,
+      JSON.stringify(null).length,
+    );
+    assert.equal(log.fullSummaryCharacters, JSON.stringify(context).length);
+    assert.equal(log.usedDomainFallback, false);
+    const serializedLog = JSON.stringify(log);
+    for (const privateValue of [
+      "private-date",
+      "private-time",
+      "private-emotion",
+      "private-diary",
+      "private-medication",
+      "private-other",
+      "private-source",
+    ]) {
+      assert.equal(serializedLog.includes(privateValue), false);
+    }
+  }
+});
 
 test("latency log contains only timing and request metadata", () => {
   const state = createInneraLatencyState(1000);

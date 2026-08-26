@@ -70,27 +70,50 @@ test("other modes and special follow-up requests keep their existing schemas", (
   const fullSchema = { name: "full" };
   const followUpSchema = { name: "follow-up" };
   const physicalHealthSchema = { name: "physical-health" };
-  for (const mode of ["dailyRecord", "recentReview"]) {
-    assert.equal(selectInneraChatResponseSchema({
-      mode,
-      followUpQuestionRequest: false,
-      followUpQuestionsSchema: followUpSchema,
-      inneraChatSchema: fullSchema,
-      physicalHealthChatSchema: physicalHealthSchema,
-    }), fullSchema);
-  }
+  const recentReviewSchema = { name: "recent-review" };
+  assert.equal(selectInneraChatResponseSchema({
+    mode: "dailyRecord",
+    followUpQuestionRequest: false,
+    followUpQuestionsSchema: followUpSchema,
+    inneraChatSchema: fullSchema,
+    physicalHealthChatSchema: physicalHealthSchema,
+    recentReviewChatSchema: recentReviewSchema,
+    specialRecentReviewRequest: false,
+  }), fullSchema);
   assert.equal(selectInneraChatResponseSchema({
     mode: "physicalHealth",
     followUpQuestionRequest: false,
     followUpQuestionsSchema: followUpSchema,
     inneraChatSchema: fullSchema,
     physicalHealthChatSchema: physicalHealthSchema,
+    recentReviewChatSchema: recentReviewSchema,
+    specialRecentReviewRequest: false,
   }), physicalHealthSchema);
+  assert.equal(selectInneraChatResponseSchema({
+    mode: "recentReview",
+    followUpQuestionRequest: false,
+    followUpQuestionsSchema: followUpSchema,
+    inneraChatSchema: fullSchema,
+    physicalHealthChatSchema: physicalHealthSchema,
+    recentReviewChatSchema: recentReviewSchema,
+    specialRecentReviewRequest: false,
+  }), recentReviewSchema);
   assert.equal(selectInneraChatResponseSchema({
     mode: "recentReview",
     followUpQuestionRequest: true,
     followUpQuestionsSchema: followUpSchema,
     inneraChatSchema: fullSchema,
     physicalHealthChatSchema: physicalHealthSchema,
+    recentReviewChatSchema: recentReviewSchema,
+    specialRecentReviewRequest: true,
   }), followUpSchema);
+  assert.equal(selectInneraChatResponseSchema({
+    mode: "recentReview",
+    followUpQuestionRequest: false,
+    followUpQuestionsSchema: followUpSchema,
+    inneraChatSchema: fullSchema,
+    physicalHealthChatSchema: physicalHealthSchema,
+    recentReviewChatSchema: recentReviewSchema,
+    specialRecentReviewRequest: true,
+  }), fullSchema);
 });
