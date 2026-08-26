@@ -551,8 +551,16 @@ class InneraAiRecordDraft {
     final eventDraftMap = <String, InneraAiHealthEventDraft>{
       for (final item in eventDrafts) item.id: item,
     };
+    final allowsEventTimeCorrection = rawUserEntry != null &&
+        RegExp(
+          r'(?:剛剛那筆|剛才那筆|前面那筆|上一筆|前一筆|那筆)[^，。！？]{0,24}(?:其實|不是|改成|應該是)|(?:時間|時段)[^，。！？]{0,12}(?:說錯|修正|改成)',
+        ).hasMatch(rawUserEntry);
     for (final item in parsed.eventDrafts) {
-      eventDraftMap[item.id] = eventDraftMap[item.id]?.merge(item) ?? item;
+      eventDraftMap[item.id] = eventDraftMap[item.id]?.merge(
+            item,
+            allowEventTimeUpdate: allowsEventTimeCorrection,
+          ) ??
+          item;
     }
     return InneraAiRecordDraft(
       dateKey: dateKey,

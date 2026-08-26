@@ -2,17 +2,57 @@
 
 function normalizeInneraEventDrafts(rawDrafts, existingDrafts, options = {}) {
   const result = new Map();
-  const upsert = (value, allowPhysicalContinuation = false) => {
+  const isPhysicalHealth = options.mode === "physicalHealth";
+  const latestMessage = String(options.latestMessage || "");
+  const upsert = (value, fromModel = false) => {
     const normalized = normalizeEventDraft(value);
-    if (!normalized) return;
+    if (!normalized) return null;
+    const values = [...result.values()];
+    const sameId = result.get(normalized.id);
+    const correctionTarget = isPhysicalHealth && fromModel &&
+        explicitEventTimeCorrection.test(latestMessage)
+      ? sameId || findExplicitCorrectionTarget(values, latestMessage)
+      : null;
+    if (correctionTarget) {
+      const patch = { ...normalized, id: correctionTarget.id };
+      result.set(
+        correctionTarget.id,
+        mergeEventDraft(correctionTarget, patch, { allowEventTimeUpdate: true }),
+      );
+      return { key: correctionTarget.id, priority: 5 };
+    }
+    if (sameId) {
+      if (isPhysicalHealth && fromModel &&
+          shouldForkReusedPhysicalId(sameId, normalized, latestMessage)) {
+        const forked = {
+          ...normalized,
+          id: stablePhysicalEventId(normalized, result),
+        };
+        const existingFork = result.get(forked.id);
+        result.set(
+          forked.id,
+          existingFork
+            ? mergeEventDraft(existingFork, forked)
+            : forked,
+        );
+        return { key: forked.id, priority: 5 };
+      }
+      result.set(
+        sameId.id,
+        mergeEventDraft(sameId, normalized, {
+          allowEventTimeUpdate: !isPhysicalHealth,
+        }),
+      );
+      return { key: sameId.id, priority: 1 };
+    }
     const exactEquivalent = [...result.values()].find(
-      (item) => sameEventTime(item, normalized),
+      (item) => sameEventMinute(item, normalized),
     );
-    const physicalEquivalent = !exactEquivalent && allowPhysicalContinuation
+    const physicalEquivalent = !exactEquivalent && isPhysicalHealth && fromModel
       ? findPhysicalHealthEquivalent(
           [...result.values()],
           normalized,
-          options.latestMessage,
+          latestMessage,
         )
       : null;
     const equivalent = exactEquivalent || physicalEquivalent;
@@ -30,27 +70,31 @@ function normalizeInneraEventDrafts(rawDrafts, existingDrafts, options = {}) {
       key,
       previous ? mergeEventDraft(previous, patch) : normalized,
     );
+    return {
+      key,
+      priority: physicalEquivalent
+        ? 4
+        : isPhysicalHealth && fromModel &&
+            explicitClockOrDayPart.test(latestMessage) &&
+            normalized.timePrecision === "exact"
+          ? 3
+          : 2,
+    };
   };
   for (const item of Array.isArray(existingDrafts) ? existingDrafts : []) {
     upsert(item);
   }
   let latestPhysicalTargetKey = null;
+  let latestPhysicalTargetPriority = 0;
   for (const item of Array.isArray(rawDrafts) ? rawDrafts : []) {
-    upsert(item, options.mode === "physicalHealth");
-    if (options.mode === "physicalHealth") {
-      const normalized = normalizeEventDraft(item);
-      if (!normalized) continue;
-      const target = [...result.values()].find(
-        (candidate) => sameEventTime(candidate, normalized),
-      ) || findPhysicalHealthEquivalent(
-        [...result.values()],
-        normalized,
-        options.latestMessage,
-      );
-      latestPhysicalTargetKey = target?.id || normalized.id;
+    const target = upsert(item, true);
+    if (isPhysicalHealth && target &&
+        target.priority > latestPhysicalTargetPriority) {
+      latestPhysicalTargetKey = target.key;
+      latestPhysicalTargetPriority = target.priority;
     }
   }
-  if (options.mode === "physicalHealth" && latestPhysicalTargetKey) {
+  if (isPhysicalHealth && latestPhysicalTargetKey) {
     const target = result.get(latestPhysicalTargetKey);
     if (target) {
       result.set(
@@ -123,7 +167,10 @@ function ensurePhysicalSymptomCompleteness(event, latestMessage, allEvents) {
 const PHYSICAL_CONTINUATION_WINDOW_MS = 5 * 60 * 1000;
 const explicitClockOrDayPart = /(?:早上|上午|中午|下午|傍晚|晚上|凌晨)(?:[零〇一二兩三四五六七八九十\d]{1,3}點(?:半|[零〇一二兩三四五六七八九十\d]{1,2}分?)?)?|(?:[01]?\d|2[0-3])[:：][0-5]\d|[零〇一二兩三四五六七八九十\d]{1,3}點(?:半|[零〇一二兩三四五六七八九十\d]{1,2}分?)/u;
 const explicitNewPhysicalEvent = /後來(?:又)?(?:發作|出現)|隔了?(?:一陣子|一段時間)|過了[^，。！？]{0,12}(?:又|再|出現|發作)|又一波|另一波|再次發作|又出現一次|重新發作/u;
-const explicitPhysicalContinuation = /剛剛那個|剛才那個|剛剛的|剛才的|前面那個|上一筆|同一筆|補充(?:一下)?/u;
+const explicitPriorPhysicalEventReference = /剛剛那個|剛才那個|剛剛的|剛才的|前面那個|上一筆|同一筆|補充(?:一下)?/u;
+const explicitPhysicalContinuation = /剛剛那個|剛才那個|剛剛的|剛才的|前面那個|上一筆|同一筆|補充(?:一下)?|^(?:而且|還有|也|另外)|^剛(?:剛|才)(?:也|還|又)?/u;
+const explicitEventTimeCorrection = /(?:剛剛那筆|剛才那筆|前面那筆|上一筆|前一筆|那筆)[^，。！？]{0,24}(?:其實|不是|改成|應該是)|(?:時間|時段)[^，。！？]{0,12}(?:說錯|修正|改成)/u;
+const currentPhysicalReference = /剛剛|剛才|現在/u;
 
 function currentishTimeContext(value) {
   return /^(?:now|current|現在|剛剛|剛才)$/iu.test(String(value || "").trim());
@@ -159,9 +206,12 @@ function findPhysicalHealthEquivalent(existingEvents, patch, latestMessage) {
     return null;
   }
 
-  const eventsByRecency = [...existingEvents].reverse();
+  const eventsByRecency = physicalEventsByRecency(existingEvents);
   if (explicitPhysicalContinuation.test(message) && !explicitClockOrDayPart.test(message)) {
-    return eventsByRecency[0] || null;
+    if (explicitPriorPhysicalEventReference.test(message)) {
+      return eventsByRecency[0] || null;
+    }
+    return findActivePhysicalEvent(eventsByRecency) || null;
   }
   if (explicitClockOrDayPart.test(message) || patch.timePrecision === "exact") {
     return null;
@@ -181,8 +231,54 @@ function findPhysicalHealthEquivalent(existingEvents, patch, latestMessage) {
   }) || null;
 }
 
-function sameEventTime(left, right) {
-  if (left.id === right.id) return true;
+function physicalEventsByRecency(events) {
+  return [...events].sort((left, right) => {
+    const leftTime = validEventDate(left.eventTime)?.valueOf() || 0;
+    const rightTime = validEventDate(right.eventTime)?.valueOf() || 0;
+    return rightTime - leftTime;
+  });
+}
+
+function findActivePhysicalEvent(events) {
+  return physicalEventsByRecency(events).find((event) =>
+    currentishTimeContext(event.timeContext) ||
+    event.timePrecision === "approximate"
+  ) || null;
+}
+
+function findExplicitCorrectionTarget(events, latestMessage) {
+  if (!explicitEventTimeCorrection.test(String(latestMessage || ""))) return null;
+  return [...events].reverse()[0] || null;
+}
+
+function shouldForkReusedPhysicalId(previous, patch, latestMessage) {
+  const previousTime = validEventDate(previous.eventTime);
+  const patchTime = validEventDate(patch.eventTime);
+  if (!previousTime || !patchTime || sameEventMinute(previous, patch)) {
+    return false;
+  }
+  const message = String(latestMessage || "");
+  if (explicitClockOrDayPart.test(message)) return true;
+  return currentPhysicalReference.test(message) &&
+    !currentishTimeContext(previous.timeContext) &&
+    Math.abs(previousTime.valueOf() - patchTime.valueOf()) >
+      PHYSICAL_CONTINUATION_WINDOW_MS;
+}
+
+function stablePhysicalEventId(event, result) {
+  const eventTime = validEventDate(event.eventTime);
+  const base = eventTime
+    ? `physical-${eventTime.valueOf()}`
+    : `${event.id}-separate`;
+  if (!result.has(base)) return base;
+  const existing = result.get(base);
+  if (existing && sameEventMinute(existing, event)) return base;
+  let suffix = 2;
+  while (result.has(`${base}-${suffix}`)) suffix += 1;
+  return `${base}-${suffix}`;
+}
+
+function sameEventMinute(left, right) {
   if (!left.eventTime || !right.eventTime) return false;
   const leftTime = new Date(left.eventTime);
   const rightTime = new Date(right.eventTime);
@@ -278,7 +374,7 @@ function normalizeEventDraft(value) {
   };
 }
 
-function mergeEventDraft(previous, patch) {
+function mergeEventDraft(previous, patch, options = {}) {
   const emotionMap = new Map(previous.emotionMentions.map((item) => [
     item.normalizedDimensionId || `raw:${item.rawText}`,
     item,
@@ -302,11 +398,19 @@ function mergeEventDraft(previous, patch) {
   }
   return {
     id: previous.id,
-    eventTime: patch.eventTime || previous.eventTime,
-    timeContext: patch.timeContext || previous.timeContext,
-    timePrecision: patch.timePrecision === "unspecified"
-      ? previous.timePrecision
-      : patch.timePrecision,
+    eventTime: options.allowEventTimeUpdate
+      ? patch.eventTime || previous.eventTime
+      : previous.eventTime || patch.eventTime,
+    timeContext: options.allowEventTimeUpdate
+      ? patch.timeContext || previous.timeContext
+      : previous.timeContext || patch.timeContext,
+    timePrecision: options.allowEventTimeUpdate
+      ? patch.timePrecision === "unspecified"
+        ? previous.timePrecision
+        : patch.timePrecision
+      : previous.timePrecision === "unspecified"
+        ? patch.timePrecision
+        : previous.timePrecision,
     emotionMentions: [...emotionMap.values()],
     symptoms: [...symptomMap.values()],
     stateChanges: { ...previous.stateChanges, ...patch.stateChanges },

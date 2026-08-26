@@ -354,18 +354,18 @@ class InneraAiContextService {
               endDate: _asDate(item['endDate']),
             );
           }).whereType<PeriodCycle>();
-          data['recentReviewSummary'] = const RecentReviewSummaryBuilder()
-              .build(
-                startDate: start,
-                endDate: today,
-                dailyRecords: reviewDailyRecords,
-                healthEvents: reviewHealthEvents,
-                dailyCheckIns: reviewDailyCheckIns,
-                activeMedications: activeMedications,
-                medicationAdjustments: medicationAdjustments,
-                periodCycles: periodCycles,
-              )
-              .toJson();
+          final reviewSummary = const RecentReviewSummaryBuilder().build(
+            startDate: start,
+            endDate: today,
+            dailyRecords: reviewDailyRecords,
+            healthEvents: reviewHealthEvents,
+            dailyCheckIns: reviewDailyCheckIns,
+            activeMedications: activeMedications,
+            medicationAdjustments: medicationAdjustments,
+            periodCycles: periodCycles,
+          );
+          data['recentReviewSummary'] = reviewSummary.toJson();
+          data['recentReviewEvidence'] = reviewSummary.evidenceToJson();
         } catch (error, stack) {
           debugPrint(
             'InneraAiContextService recentReviewSummary failed: $error',

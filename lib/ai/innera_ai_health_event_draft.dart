@@ -89,7 +89,10 @@ class InneraAiHealthEventDraft {
         'note': note,
       };
 
-  InneraAiHealthEventDraft merge(InneraAiHealthEventDraft patch) {
+  InneraAiHealthEventDraft merge(
+    InneraAiHealthEventDraft patch, {
+    bool allowEventTimeUpdate = false,
+  }) {
     final emotionMap = <String, AiEmotionDraft>{
       for (final item in emotions) item.dedupeKey: item,
     };
@@ -100,13 +103,19 @@ class InneraAiHealthEventDraft {
     }
     return InneraAiHealthEventDraft(
       id: id,
-      eventTime: patch.eventTime ?? eventTime,
-      timeContext: patch.eventTime != null
-          ? patch.timeContext
-          : patch.timeContext ?? timeContext,
-      timePrecision: patch.timePrecision == AiEventTimePrecision.unspecified
-          ? timePrecision
-          : patch.timePrecision,
+      eventTime: allowEventTimeUpdate
+          ? patch.eventTime ?? eventTime
+          : eventTime ?? patch.eventTime,
+      timeContext: allowEventTimeUpdate
+          ? patch.timeContext ?? timeContext
+          : timeContext ?? patch.timeContext,
+      timePrecision: allowEventTimeUpdate
+          ? patch.timePrecision == AiEventTimePrecision.unspecified
+              ? timePrecision
+              : patch.timePrecision
+          : timePrecision == AiEventTimePrecision.unspecified
+              ? patch.timePrecision
+              : timePrecision,
       emotions: emotionMap.values.toList(),
       symptoms: {...symptoms, ...patch.symptoms}.toList(),
       symptomSeverities: {
@@ -325,6 +334,8 @@ List<InneraAiHealthEventDraft> mergeExplicitHealthEventDrafts({
   for (final clause in clauses) {
     if (_isPreviousNightSleepClause(clause)) continue;
     final time = _eventTimeFromClause(clause, messageTime);
+    final explicitlyCorrectsTime =
+        _explicitEventTimeCorrection.hasMatch(clause);
     final symptoms = _symptomsFromClause(clause);
     final stateChanges = _stateChangesFromClause(clause);
     final standaloneSeverity = _explicitSeverityFromClause(clause);
@@ -345,13 +356,37 @@ List<InneraAiHealthEventDraft> mergeExplicitHealthEventDrafts({
       }
       continue;
     }
+    if (explicitlyCorrectsTime && time != null && activeId != null) {
+      final active = drafts[activeId];
+      if (active != null) {
+        drafts[activeId] = active.merge(
+          InneraAiHealthEventDraft(
+            id: activeId,
+            eventTime: time.eventTime,
+            timeContext: time.context,
+            timePrecision: time.precision,
+            symptoms: symptoms,
+            symptomSeverities: _symptomSeveritiesFromClause(clause, symptoms),
+            stateChanges: stateChanges,
+            rawUserEntries: [clause],
+            note: clause,
+          ),
+          allowEventTimeUpdate: true,
+        );
+      }
+      continue;
+    }
     final hasEventContent = symptoms.isNotEmpty ||
         stateChanges.isNotEmpty ||
         _hasStateDescription(clause);
     if (!hasEventContent) continue;
 
     if (time != null) {
-      activeId = _matchingEventId(drafts.values, time) ?? time.id;
+      if (explicitlyCorrectsTime) {
+        activeId ??= existing.isEmpty ? null : existing.last.id;
+      } else {
+        activeId = _matchingEventId(drafts.values, time) ?? time.id;
+      }
     } else if (RegExp(r'那時候|當時|那個時候').hasMatch(clause)) {
       activeId ??= existing.isEmpty ? null : existing.last.id;
     }
@@ -368,12 +403,20 @@ List<InneraAiHealthEventDraft> mergeExplicitHealthEventDrafts({
       rawUserEntries: [clause],
       note: clause,
     );
-    drafts[activeId] = drafts[activeId]?.merge(patch) ?? patch;
+    drafts[activeId] = drafts[activeId]?.merge(
+          patch,
+          allowEventTimeUpdate: explicitlyCorrectsTime,
+        ) ??
+        patch;
   }
   return mergeEquivalentHealthEventDrafts(
     drafts.values.where((item) => item.hasContent),
   );
 }
+
+final _explicitEventTimeCorrection = RegExp(
+  r'(?:剛剛那筆|剛才那筆|前面那筆|上一筆|前一筆|那筆)[^，。！？]{0,24}(?:其實|不是|改成|應該是)|(?:時間|時段)[^，。！？]{0,12}(?:說錯|修正|改成)',
+);
 
 ({
   String id,
