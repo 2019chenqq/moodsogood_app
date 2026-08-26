@@ -63,10 +63,28 @@ class _HistoryData {
   const _HistoryData({
     required this.dailyRecords,
     required this.aggregates,
+    required this.dailyRecordDateKeys,
+    required this.sleepDateKeys,
   });
 
   final List<DailyRecord> dailyRecords;
   final List<DailyHealthAggregate> aggregates;
+  final Set<String> dailyRecordDateKeys;
+  final Set<String> sleepDateKeys;
+}
+
+String? periodHistoryLabel(DateTime date, Iterable<PeriodCycle> cycles) {
+  final day = DateTime(date.year, date.month, date.day);
+  for (final cycle in cycles.toList().reversed) {
+    if (!cycle.containsDate(day)) continue;
+    final start = DateTime(
+      cycle.startDate.year,
+      cycle.startDate.month,
+      cycle.startDate.day,
+    );
+    return '生理期 Day ${day.difference(start).inDays + 1}';
+  }
+  return null;
 }
 
 class DailyRecordHistory extends StatefulWidget {
@@ -94,13 +112,6 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
   int _refreshCounter = 0;
   Future<WeeklyRecord?>? _currentWeeklyRecordFuture;
   String? _weeklyRecordUserId;
-
-  String? _periodLabel(DailyRecord r, List<PeriodCycle> cycles) {
-    if (cycles.any((cycle) => cycle.containsDate(r.date))) {
-      return '生理期';
-    }
-    return null;
-  }
 
   @override
   void initState() {
@@ -363,7 +374,12 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
           }
 
           final historyData = snapshot.data ??
-              const _HistoryData(dailyRecords: [], aggregates: []);
+              const _HistoryData(
+                dailyRecords: [],
+                aggregates: [],
+                dailyRecordDateKeys: {},
+                sleepDateKeys: {},
+              );
           final dailyRecords = historyData.dailyRecords;
           dailyRecords.sort((a, b) => a.date.compareTo(b.date));
 
@@ -396,7 +412,14 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
                     cycles,
                     isPro,
                   ),
-                _ => _buildListPage(listAggregates, cycles, isPro, uid),
+                _ => _buildListPage(
+                    listAggregates,
+                    cycles,
+                    historyData.dailyRecordDateKeys,
+                    historyData.sleepDateKeys,
+                    isPro,
+                    uid,
+                  ),
               };
             },
           );
@@ -412,6 +435,7 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
     final records = await _loadAllRecords(uid);
     List<HealthEvent> events = const [];
     List<DailyCheckIn> checkIns = const [];
+    List<UnifiedSleepRecord> sleepRecords = const [];
     final today = _dateOnly(DateTime.now());
     try {
       events = await HealthEventRepository().getByDateRange(
@@ -430,12 +454,34 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
     } catch (error) {
       debugPrint('DailyCheckIn history load failed: $error');
     }
-    final aggregates = const DailyHealthAggregationService().aggregateRange(
+    try {
+      sleepRecords = await UnifiedSleepRepository().getByDateRange(
+        userId: uid,
+        start: DateTime(2020, 1, 1),
+        end: today,
+      );
+    } catch (error) {
+      debugPrint('SleepRecord history load failed: $error');
+    }
+    final dailyRecordDateKeys =
+        records.map((record) => DateHelper.toId(record.date)).toSet();
+    final sleepDateKeys =
+        sleepRecords.map((item) => DateHelper.toId(item.record.date)).toSet();
+    final historyRecords = UnifiedSleepRepository.overlayForInsights(
       dailyRecords: records,
+      sleepRecords: sleepRecords,
+    );
+    final aggregates = const DailyHealthAggregationService().aggregateRange(
+      dailyRecords: historyRecords,
       healthEvents: events,
       dailyCheckIns: checkIns,
     );
-    return _HistoryData(dailyRecords: records, aggregates: aggregates);
+    return _HistoryData(
+      dailyRecords: records,
+      aggregates: aggregates,
+      dailyRecordDateKeys: dailyRecordDateKeys,
+      sleepDateKeys: sleepDateKeys,
+    );
   }
 
   Future<List<DailyRecord>> _loadAllRecords(String uid) async {
@@ -767,6 +813,8 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
   Widget _buildListPage(
     List<DailyHealthAggregate> aggregates,
     List<PeriodCycle> cycles,
+    Set<String> dailyRecordDateKeys,
+    Set<String> sleepDateKeys,
     bool isPro,
     String uid,
   ) {
@@ -860,7 +908,11 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
                               ? null
                               : aggregate.dailyRecords.first;
                           final periodText =
-                              r == null ? null : _periodLabel(r, cycles);
+                              periodHistoryLabel(aggregate.date, cycles);
+                          final hasDailyRecord =
+                              dailyRecordDateKeys.contains(aggregate.dateKey);
+                          final hasSleepRecord =
+                              sleepDateKeys.contains(aggregate.dateKey);
                           final nightMinutes =
                               r == null ? null : _nightSleepMinutes(r.sleep);
                           final sleepText = nightMinutes != null
@@ -939,7 +991,14 @@ class _DailyRecordHistoryState extends State<DailyRecordHistory> {
                                               ),
                                               const SizedBox(height: 3),
                                               Text(
-                                                r == null ? '僅有快速記錄' : '有每日紀錄',
+                                                [
+                                                  if (hasDailyRecord) '每日紀錄',
+                                                  if (aggregate.hasDailyCheckIn)
+                                                    '每日 Check-in',
+                                                  if (hasSleepRecord) '睡眠紀錄',
+                                                  if (aggregate.eventCount > 0)
+                                                    '快速記錄',
+                                                ].join('・'),
                                                 key: Key(
                                                   'daily-record-status-${aggregate.dateKey}',
                                                 ),

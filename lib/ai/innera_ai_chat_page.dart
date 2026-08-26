@@ -562,11 +562,16 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
           )
           .timeout(const Duration(seconds: 70));
       if (!mounted) return;
-      InneraAiRecordDraft? nextDraftWithFallback;
+      // Fixed safety UI must not replace an existing pending draft with null.
+      InneraAiRecordDraft? nextDraftWithFallback = _recordDraft;
       if (_mode.supportsDailyRecordDraft && !response.requiresFixedSafetyUi) {
-        final recordDraftPatch = response.recordDraft == null
+        Map<String, dynamic>? recordDraftPatch = response.recordDraft == null
             ? null
             : Map<String, dynamic>.from(response.recordDraft!);
+        if (response.eventDrafts.isNotEmpty) {
+          recordDraftPatch ??= <String, dynamic>{};
+          recordDraftPatch['eventDrafts'] = response.eventDrafts;
+        }
         if (_mentionsPreviousDaySleep(text)) {
           // A message about yesterday must not overwrite today's sleep record.
           recordDraftPatch?.remove('sleep');
@@ -632,6 +637,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
         aiCallableErrorMessage(
           error,
           functionName: AiCallableEndpoints.chat,
+          isSignedIn: FirebaseAuth.instance.currentUser != null,
         ),
         images: images,
       );
@@ -1761,58 +1767,59 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
         body: SafeArea(
           child: Column(
             children: [
-              AiSafetyNotice(
-                level: _activeSafetyLevel,
-                onTemporarilySafe: () {
-                  setState(() {
-                    _messages.add(
-                      InneraAiMessage(
-                        id: 'safe-${DateTime.now().microsecondsSinceEpoch}',
-                        role: InneraAiMessageRole.assistant,
-                        text: InneraAiSafetyService.temporarilySafeReply,
-                        createdAt: DateTime.now(),
-                        safetyLevel: AiSafetyLevel.possibleSelfHarm,
-                      ),
-                    );
-                  });
-                  unawaited(_persistConversation());
-                  _scrollToBottom();
-                },
-              ),
-              if (_mode.showsRecordDraftCard &&
-                  !_loadingDraft &&
-                  _recordDraft != null)
-                AiRecordDraftCard(
-                  draft: _recordDraft!,
-                  onPreview: _showDraftPreview,
-                  onExtractDiary: _extractDiaryDraft,
-                  isExtractingDiary: _isExtractingDiary,
-                ),
               Expanded(
-                child: ListView.builder(
+                child: ListView(
                   controller: _scrollController,
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   keyboardDismissBehavior:
                       ScrollViewKeyboardDismissBehavior.onDrag,
-                  itemCount: _messages.length,
-                  itemBuilder: (context, index) {
-                    final message = _messages[index];
-                    return AiMessageBubble(
-                      message: message,
-                      userPhotoUrl: FirebaseAuth.instance.currentUser?.photoURL,
-                      onRetry: _lastFailedInput == null
-                          ? null
-                          : () {
-                              setState(() {
-                                _messages.removeWhere((item) => item.isError);
-                              });
-                              _send(
-                                overrideText: _lastFailedInput,
-                                overrideImages: _lastFailedImages,
-                              );
-                            },
-                    );
-                  },
+                  children: [
+                    AiSafetyNotice(
+                      level: _activeSafetyLevel,
+                      onTemporarilySafe: () {
+                        setState(() {
+                          _messages.add(
+                            InneraAiMessage(
+                              id: 'safe-${DateTime.now().microsecondsSinceEpoch}',
+                              role: InneraAiMessageRole.assistant,
+                              text: InneraAiSafetyService.temporarilySafeReply,
+                              createdAt: DateTime.now(),
+                              safetyLevel: AiSafetyLevel.possibleSelfHarm,
+                            ),
+                          );
+                        });
+                        unawaited(_persistConversation());
+                        _scrollToBottom();
+                      },
+                    ),
+                    if (_mode.showsRecordDraftCard &&
+                        !_loadingDraft &&
+                        _recordDraft != null)
+                      AiRecordDraftCard(
+                        draft: _recordDraft!,
+                        onPreview: _showDraftPreview,
+                        onExtractDiary: _extractDiaryDraft,
+                        isExtractingDiary: _isExtractingDiary,
+                      ),
+                    ..._messages.map(
+                      (message) => AiMessageBubble(
+                        message: message,
+                        userPhotoUrl:
+                            FirebaseAuth.instance.currentUser?.photoURL,
+                        onRetry: _lastFailedInput == null
+                            ? null
+                            : () {
+                                setState(() {
+                                  _messages.removeWhere((item) => item.isError);
+                                });
+                                _send(
+                                  overrideText: _lastFailedInput,
+                                  overrideImages: _lastFailedImages,
+                                );
+                              },
+                      ),
+                    ),
+                  ],
                 ),
               ),
               _InputBar(

@@ -34,7 +34,19 @@ class MedicationChangeDetector {
             !_sameNumber(before['intakeMl'], after['intakeMl']) ||
             !_sameText(oldUnit, newUnit);
     final scheduleChanged = !_sameStrings(oldTimes, newTimes) ||
-        !_sameNumber(before['intervalDays'], after['intervalDays']);
+        !_sameNumber(before['intervalDays'], after['intervalDays']) ||
+        !_sameText(
+          _nullableText(before['scheduleType']) ?? 'daily',
+          _nullableText(after['scheduleType']) ?? 'daily',
+        ) ||
+        !_sameNumber(
+          before['scheduleIntervalDays'],
+          after['scheduleIntervalDays'],
+        ) ||
+        !_sameStrings(
+          _strings(before['weekdays']),
+          _strings(after['weekdays']),
+        );
     final oldActive = _bool(before['isActive'], fallback: true);
     final newActive = _bool(after['isActive'], fallback: true);
 
@@ -50,6 +62,12 @@ class MedicationChangeDetector {
           'newPillCount': _number(after['pillCount']),
           'oldTimes': oldTimes,
           'newTimes': newTimes,
+          'oldScheduleType': before['scheduleType'] ?? 'daily',
+          'newScheduleType': after['scheduleType'] ?? 'daily',
+          'oldScheduleIntervalDays': before['scheduleIntervalDays'],
+          'newScheduleIntervalDays': after['scheduleIntervalDays'],
+          'oldWeekdays': before['weekdays'] ?? const <int>[],
+          'newWeekdays': after['weekdays'] ?? const <int>[],
           'oldUnit': oldUnit,
           'newUnit': newUnit,
           'unit': newUnit ?? oldUnit,
@@ -89,6 +107,12 @@ class MedicationChangeDetector {
       'newPillCount': _number(medication['pillCount']),
       'oldTimes': const <String>[],
       'newTimes': _strings(medication['times']),
+      'oldScheduleType': null,
+      'newScheduleType': medication['scheduleType'] ?? 'daily',
+      'oldScheduleIntervalDays': null,
+      'newScheduleIntervalDays': medication['scheduleIntervalDays'],
+      'oldWeekdays': const <int>[],
+      'newWeekdays': medication['weekdays'] ?? const <int>[],
       'oldUnit': null,
       'newUnit': _nullableText(medication['unit']),
       'unit': _nullableText(medication['unit']),

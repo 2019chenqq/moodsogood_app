@@ -113,9 +113,12 @@ class AiDiaryDraftService {
     var draft = AiDiaryDraft.fromMap(data);
 
     // Metaphors stored by the app must come from the reviewed local library.
+    final metaphorPreference = await _loadEmotionMetaphorPreference();
     final map = _jsonSafe(draft.toMap());
     map['emotionMetaphorSuggestions'] = EmotionMetaphorLibrary.recommend(
       draft.emotionAnalysis,
+      limit: 20,
+      preference: metaphorPreference,
       variationSeed: '${draft.createdAt.toIso8601String()}|'
           '${originalUserContent(messages)}',
     ).map((item) => item.toMap()).toList();
@@ -252,6 +255,21 @@ class AiDiaryDraftService {
     );
     await _diaryRepository.upsert(entry);
 
+    final metaphorWasApplied = confirmation.includedFields.contains(
+          'metaphor',
+        ) &&
+        ((current?.metaphor ?? '').trim().isEmpty ||
+            confirmation.mergeChoices['metaphor'] !=
+                DiaryFieldMerge.keepExisting);
+    if (metaphorWasApplied) {
+      final selectedMetaphor = EmotionMetaphorLibrary.findByText(
+        confirmation.values['metaphor'] ?? '',
+      );
+      if (selectedMetaphor != null) {
+        await _recordEmotionMetaphorSelection(selectedMetaphor);
+      }
+    }
+
     final accepted = confirmation.includedFields.toList()..sort();
     final rejected = {
       'title',
@@ -283,6 +301,87 @@ class AiDiaryDraftService {
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
+  Future<EmotionMetaphorPreference> _loadEmotionMetaphorPreference() async {
+    try {
+      final snapshot = await _emotionMetaphorPreferenceRef().get();
+      final data = snapshot.data();
+      if (data == null) return const EmotionMetaphorPreference();
+      final rawCounts = data['categoryCounts'];
+      final categoryCounts = rawCounts is Map
+          ? rawCounts.map(
+              (key, value) => MapEntry(
+                key.toString(),
+                value is num ? value.toInt() : 0,
+              ),
+            )
+          : const <String, int>{};
+      final recentSelectedIds = (data['recentSelectedIds'] as List?)
+              ?.map((value) => value.toString())
+              .where((value) => value.isNotEmpty)
+              .toList() ??
+          const <String>[];
+      return EmotionMetaphorPreference(
+        categoryCounts: categoryCounts,
+        recentSelectedIds: recentSelectedIds,
+      );
+    } catch (_) {
+      return const EmotionMetaphorPreference();
+    }
+  }
+
+  Future<void> _recordEmotionMetaphorSelection(
+    EmotionMetaphor metaphor,
+  ) async {
+    try {
+      final ref = _emotionMetaphorPreferenceRef();
+      await _firestore.runTransaction((transaction) async {
+        final snapshot = await transaction.get(ref);
+        final data = snapshot.data() ?? const <String, dynamic>{};
+        final rawCounts = data['categoryCounts'];
+        final categoryCounts = rawCounts is Map
+            ? Map<String, dynamic>.from(rawCounts)
+            : <String, dynamic>{};
+        final currentCount = categoryCounts[metaphor.category];
+        categoryCounts[metaphor.category] =
+            (currentCount is num ? currentCount.toInt() : 0) + 1;
+
+        final rawSelections = data['recentSelections'];
+        final recentSelections = rawSelections is List
+            ? rawSelections
+                .whereType<Map>()
+                .map((value) => Map<String, dynamic>.from(value))
+                .toList()
+            : <Map<String, dynamic>>[];
+        recentSelections.add({
+          'metaphorId': metaphor.id,
+          'category': metaphor.category,
+          'emotionTags': metaphor.emotionTags,
+          'selectedAt': Timestamp.now(),
+        });
+        final cappedSelections = recentSelections.length > 20
+            ? recentSelections.sublist(recentSelections.length - 20)
+            : recentSelections;
+        final recentSelectedIds = cappedSelections
+            .map((value) => value['metaphorId']?.toString() ?? '')
+            .where((value) => value.isNotEmpty)
+            .toList();
+
+        transaction.set(
+          ref,
+          {
+            'categoryCounts': categoryCounts,
+            'recentSelectedIds': recentSelectedIds,
+            'recentSelections': cappedSelections,
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+      });
+    } catch (_) {
+      // Preference tracking is optional and must never block diary saving.
+    }
+  }
+
   DocumentReference<Map<String, dynamic>> _draftRef(String id) {
     final uid = _auth.currentUser?.uid;
     if (uid == null) throw StateError('A signed-in user is required.');
@@ -291,6 +390,16 @@ class AiDiaryDraftService {
         .doc(uid)
         .collection('aiDiaryDrafts')
         .doc(id);
+  }
+
+  DocumentReference<Map<String, dynamic>> _emotionMetaphorPreferenceRef() {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) throw StateError('A signed-in user is required.');
+    return _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('preferences')
+        .doc('emotionMetaphor');
   }
 
   static Map<String, dynamic> _jsonSafe(Map<String, dynamic> source) {

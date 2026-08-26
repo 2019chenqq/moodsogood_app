@@ -22,6 +22,16 @@ class EmotionMetaphor {
   final bool isReviewed;
 }
 
+class EmotionMetaphorPreference {
+  const EmotionMetaphorPreference({
+    this.categoryCounts = const {},
+    this.recentSelectedIds = const [],
+  });
+
+  final Map<String, int> categoryCounts;
+  final List<String> recentSelectedIds;
+}
+
 class EmotionMetaphorLibrary {
   static const items = <EmotionMetaphor>[
     EmotionMetaphor(
@@ -330,17 +340,347 @@ class EmotionMetaphorLibrary {
       intensity: 2,
       category: '溫度',
     ),
+    EmotionMetaphor(
+      id: 'object_phone_many_notifications',
+      text: '像手機只剩一點電，通知卻還一直跳出來',
+      emotionTags: ['焦慮', '疲憊', '壓力'],
+      energyLevel: 2,
+      valence: 1,
+      intensity: 4,
+      category: '日常物品',
+    ),
+    EmotionMetaphor(
+      id: 'action_waiting_tired',
+      text: '已經很累了，心裡卻還惦記著即將發生的事',
+      emotionTags: ['焦慮', '疲憊', '期待'],
+      energyLevel: 2,
+      valence: 3,
+      intensity: 3,
+      category: '直接感受',
+    ),
+    EmotionMetaphor(
+      id: 'transport_bus_arrival_board',
+      text: '像盯著公車動態，期待它快來，又怕自己錯過',
+      emotionTags: ['焦慮', '期待', '不安'],
+      energyLevel: 4,
+      valence: 3,
+      intensity: 4,
+      category: '交通',
+    ),
+    EmotionMetaphor(
+      id: 'light_stage_before_show',
+      text: '像上場前亮起的燈，緊張得心跳加快，也忍不住期待',
+      emotionTags: ['焦慮', '期待', '興奮'],
+      energyLevel: 5,
+      valence: 4,
+      intensity: 5,
+      category: '光線',
+    ),
+    EmotionMetaphor(
+      id: 'road_gps_recalculating',
+      text: '像導航一直重新規劃路線，走著走著又不確定方向',
+      emotionTags: ['焦慮', '迷惘', '不確定'],
+      energyLevel: 3,
+      valence: 2,
+      intensity: 4,
+      category: '道路',
+    ),
+    EmotionMetaphor(
+      id: 'weather_fog_rushing',
+      text: '像趕路時遇上濃霧，越想快點抵達，越看不清前面',
+      emotionTags: ['焦慮', '迷惘', '焦急'],
+      energyLevel: 4,
+      valence: 1,
+      intensity: 5,
+      category: '天氣',
+    ),
+    EmotionMetaphor(
+      id: 'object_remote_no_battery',
+      text: '像按了很多次遙控器，畫面還是沒有反應',
+      emotionTags: ['低落', '無力', '挫折'],
+      energyLevel: 1,
+      valence: 1,
+      intensity: 3,
+      category: '日常物品',
+    ),
+    EmotionMetaphor(
+      id: 'action_sitting_after_tasks',
+      text: '事情堆在眼前，自己卻只想坐著，連開始都很費力',
+      emotionTags: ['低落', '無力', '壓力'],
+      energyLevel: 1,
+      valence: 1,
+      intensity: 5,
+      category: '直接感受',
+    ),
+    EmotionMetaphor(
+      id: 'space_lit_empty_room',
+      text: '像房間的燈都開著，卻沒有一個可以說話的人',
+      emotionTags: ['低落', '孤單', '空虛'],
+      energyLevel: 1,
+      valence: 1,
+      intensity: 4,
+      category: '空間',
+    ),
+    EmotionMetaphor(
+      id: 'sound_message_no_reply',
+      text: '像訊息送出去很久，四周只剩安靜',
+      emotionTags: ['孤單', '失落', '低落'],
+      energyLevel: 2,
+      valence: 1,
+      intensity: 3,
+      category: '聲音',
+    ),
+    EmotionMetaphor(
+      id: 'temperature_hot_cold_words',
+      text: '像一股熱氣堵在胸口，說出口的話卻冷冷的',
+      emotionTags: ['生氣', '委屈', '難過'],
+      energyLevel: 4,
+      valence: 1,
+      intensity: 5,
+      category: '溫度',
+    ),
+    EmotionMetaphor(
+      id: 'animal_cat_tail_stepped',
+      text: '像被踩到尾巴的貓，又痛又氣，還不知道怎麼說',
+      emotionTags: ['生氣', '委屈', '無奈'],
+      energyLevel: 4,
+      valence: 1,
+      intensity: 4,
+      category: '動物',
+    ),
+    EmotionMetaphor(
+      id: 'object_engine_no_stop',
+      text: '像引擎一直轉著，卻找不到可以停下來的地方',
+      emotionTags: ['生氣', '壓力', '煩躁'],
+      energyLevel: 5,
+      valence: 1,
+      intensity: 5,
+      category: '機械',
+    ),
+    EmotionMetaphor(
+      id: 'sound_alarm_wont_stop',
+      text: '像鬧鐘一直響，耐心被一聲一聲磨掉',
+      emotionTags: ['生氣', '壓力', '不耐煩'],
+      energyLevel: 5,
+      valence: 1,
+      intensity: 4,
+      category: '聲音',
+    ),
+    EmotionMetaphor(
+      id: 'object_backpack_keep_walking',
+      text: '像背著很重的包，還得繼續往前走',
+      emotionTags: ['疲憊', '撐著', '壓力'],
+      energyLevel: 2,
+      valence: 2,
+      intensity: 5,
+      category: '重量',
+    ),
+    EmotionMetaphor(
+      id: 'action_last_stair',
+      text: '像爬到最後幾階樓梯，腿很痠，還是不想停在這裡',
+      emotionTags: ['疲憊', '撐著', '堅持'],
+      energyLevel: 3,
+      valence: 3,
+      intensity: 4,
+      category: '行動',
+    ),
+    EmotionMetaphor(
+      id: 'weather_cool_evening_rest',
+      text: '像忙了一天後吹到晚風，累，但終於可以慢下來',
+      emotionTags: ['疲憊', '平靜', '放鬆'],
+      energyLevel: 1,
+      valence: 4,
+      intensity: 2,
+      category: '天氣',
+    ),
+    EmotionMetaphor(
+      id: 'texture_clean_sheets',
+      text: '像洗完澡躺進乾淨被窩，身體沉沉的，心安靜了',
+      emotionTags: ['疲憊', '平靜', '安心'],
+      energyLevel: 1,
+      valence: 5,
+      intensity: 2,
+      category: '觸感',
+    ),
+    EmotionMetaphor(
+      id: 'sound_favorite_song_loud',
+      text: '像最喜歡的歌一響，就忍不住跟著節拍動起來',
+      emotionTags: ['開心', '興奮', '活力'],
+      energyLevel: 5,
+      valence: 5,
+      intensity: 5,
+      category: '音樂',
+    ),
+    EmotionMetaphor(
+      id: 'animal_dog_door_greeting',
+      text: '像狗狗聽見熟悉的人回來，開心得在門口轉圈',
+      emotionTags: ['開心', '興奮', '期待'],
+      energyLevel: 5,
+      valence: 5,
+      intensity: 4,
+      category: '動物',
+    ),
+    EmotionMetaphor(
+      id: 'object_checked_task_list',
+      text: '像待辦清單終於一項一項打完勾，踏實又痛快',
+      emotionTags: ['開心', '成就感', '滿足'],
+      energyLevel: 4,
+      valence: 5,
+      intensity: 4,
+      category: '日常物品',
+    ),
+    EmotionMetaphor(
+      id: 'action_finish_line_smile',
+      text: '像抵達自己設定的終點，喘著氣也還是很想笑',
+      emotionTags: ['開心', '成就感', '疲憊'],
+      energyLevel: 4,
+      valence: 5,
+      intensity: 5,
+      category: '行動',
+    ),
+    EmotionMetaphor(
+      id: 'light_night_home',
+      text: '像晚歸時看見家裡留著的燈，知道有人在等',
+      emotionTags: ['平靜', '安心', '被支持'],
+      energyLevel: 1,
+      valence: 5,
+      intensity: 3,
+      category: '光線',
+    ),
+    EmotionMetaphor(
+      id: 'temperature_sun_warmed_wall',
+      text: '像靠著曬過太陽的牆，溫度剛好，什麼都不用急',
+      emotionTags: ['平靜', '安心', '溫暖'],
+      energyLevel: 2,
+      valence: 5,
+      intensity: 2,
+      category: '溫度',
+    ),
+    EmotionMetaphor(
+      id: 'object_browser_many_tabs',
+      text: '像腦袋開了太多分頁，一直關不完',
+      emotionTags: ['混亂', '分心', '壓力'],
+      energyLevel: 4,
+      valence: 2,
+      intensity: 4,
+      category: '數位生活',
+    ),
+    EmotionMetaphor(
+      id: 'space_room_many_conversations',
+      text: '像同一個房間裡有好幾段對話，想專心卻一直被拉走',
+      emotionTags: ['混亂', '分心', '煩躁'],
+      energyLevel: 4,
+      valence: 2,
+      intensity: 3,
+      category: '空間',
+    ),
+    EmotionMetaphor(
+      id: 'object_blocked_printer',
+      text: '像趕時間時印表機偏偏卡紙，越急越做不下去',
+      emotionTags: ['壓力', '挫折', '焦急'],
+      energyLevel: 5,
+      valence: 1,
+      intensity: 5,
+      category: '日常物品',
+    ),
+    EmotionMetaphor(
+      id: 'action_pushing_stuck_door',
+      text: '像用力推一扇卡住的門，花了力氣卻只動了一點點',
+      emotionTags: ['壓力', '挫折', '無力'],
+      energyLevel: 3,
+      valence: 1,
+      intensity: 4,
+      category: '行動',
+    ),
+    EmotionMetaphor(
+      id: 'light_dawn_after_shift',
+      text: '像熬過漫長一夜後看見天亮，累得睜不開眼，還是有點期待',
+      emotionTags: ['希望', '疲憊', '期待'],
+      energyLevel: 2,
+      valence: 4,
+      intensity: 4,
+      category: '晨光',
+    ),
+    EmotionMetaphor(
+      id: 'plant_dry_soil_sprout',
+      text: '像乾土裡冒出一點嫩芽，力氣不多，仍想試著長大',
+      emotionTags: ['希望', '疲憊', '堅持'],
+      energyLevel: 2,
+      valence: 4,
+      intensity: 3,
+      category: '植物',
+    ),
+    EmotionMetaphor(
+      id: 'weather_sun_with_dark_cloud',
+      text: '像一邊出太陽、一邊飄著烏雲，心情很難只用一個詞說完',
+      emotionTags: ['開心', '低落', '複雜', '矛盾'],
+      energyLevel: 3,
+      valence: 3,
+      intensity: 3,
+      category: '天氣',
+    ),
+    EmotionMetaphor(
+      id: 'transport_departure_platform',
+      text: '像車要進站了，既想趕快出發，又捨不得離開',
+      emotionTags: ['期待', '不捨', '焦慮', '複雜'],
+      energyLevel: 4,
+      valence: 3,
+      intensity: 4,
+      category: '交通',
+    ),
+    EmotionMetaphor(
+      id: 'texture_warm_coat_tight',
+      text: '像一件很暖卻有點緊的外套，被照顧著，也有些不自在',
+      emotionTags: ['溫暖', '壓力', '矛盾'],
+      energyLevel: 2,
+      valence: 3,
+      intensity: 3,
+      category: '觸感',
+    ),
+    EmotionMetaphor(
+      id: 'sound_laugh_with_sigh',
+      text: '像笑聲後面跟著一口嘆氣，開心是真的，累也是真的',
+      emotionTags: ['開心', '疲憊', '複雜'],
+      energyLevel: 3,
+      valence: 3,
+      intensity: 3,
+      category: '聲音',
+    ),
+    EmotionMetaphor(
+      id: 'animal_bird_open_cage',
+      text: '像籠門打開後還停在原地的鳥，想飛，也有點怕',
+      emotionTags: ['希望', '害怕', '猶豫', '期待'],
+      energyLevel: 3,
+      valence: 3,
+      intensity: 4,
+      category: '動物',
+    ),
+    EmotionMetaphor(
+      id: 'temperature_cold_hands_warm_drink',
+      text: '像冷著手接過一杯熱飲，難受還在，但有一點被接住了',
+      emotionTags: ['低落', '溫暖', '被支持', '希望'],
+      energyLevel: 1,
+      valence: 3,
+      intensity: 3,
+      category: '溫度',
+    ),
   ];
 
   static List<DiaryDraftSuggestion> recommend(
     DiaryEmotionAnalysis profile, {
     int limit = 5,
     String variationSeed = '',
+    EmotionMetaphorPreference preference = const EmotionMetaphorPreference(),
   }) {
+    final primaryEmotion = profile.primaryEmotion.trim();
+    final secondaryEmotions = profile.secondaryEmotions
+        .map((emotion) => emotion.trim())
+        .where((emotion) => emotion.isNotEmpty && emotion != primaryEmotion)
+        .toSet();
     final tags = {
-      profile.primaryEmotion,
-      ...profile.secondaryEmotions,
-    }.where((item) => item.isNotEmpty).toSet();
+      if (primaryEmotion.isNotEmpty) primaryEmotion,
+      ...secondaryEmotions,
+    };
     final ranked = items.where((item) => item.isReviewed).map((item) {
       final matchedTags = item.emotionTags
           .where(
@@ -349,28 +689,57 @@ class EmotionMetaphorLibrary {
             ),
           )
           .toList();
-      final tagScore = item.emotionTags.fold<int>(
-        0,
-        (total, itemTag) =>
-            total +
-            tags.fold<int>(
+      final primaryAffinity = primaryEmotion.isEmpty
+          ? 0
+          : item.emotionTags.fold<int>(
               0,
-              (best, profileTag) {
-                final affinity = _tagAffinity(profileTag, itemTag);
+              (best, itemTag) {
+                final affinity = _tagAffinity(primaryEmotion, itemTag);
                 return affinity > best ? affinity : best;
               },
-            ),
-      );
-      final distance = (item.energyLevel - profile.energy).abs() +
-          (item.valence - profile.valence).abs() +
-          (item.intensity - profile.intensity).abs();
+            );
+      final primaryScore = switch (primaryAffinity) {
+        3 => 24,
+        2 => 16,
+        1 => 10,
+        _ => 0,
+      };
+      final secondaryScore = secondaryEmotions.fold<int>(0, (total, emotion) {
+        final affinity = item.emotionTags.fold<int>(
+          0,
+          (best, itemTag) {
+            final candidate = _tagAffinity(emotion, itemTag);
+            return candidate > best ? candidate : best;
+          },
+        );
+        return total +
+            switch (affinity) {
+              3 => 12,
+              2 => 8,
+              1 => 4,
+              _ => 0,
+            };
+      });
+      final distancePenalty = (item.energyLevel - profile.energy).abs() * 2 +
+          (item.valence - profile.valence).abs() * 2 +
+          (item.intensity - profile.intensity).abs() * 3;
+      final categoryCount = preference.categoryCounts[item.category] ?? 0;
+      final preferenceScore = categoryCount >= 3
+          ? 2
+          : categoryCount > 0
+              ? 1
+              : 0;
+      final repetitionPenalty =
+          preference.recentSelectedIds.contains(item.id) ? 1 : 0;
       final tieBreaker = _stableHash('$variationSeed|${item.id}');
       return (
         item: item,
         matchedTags: matchedTags,
-        // A small seed-based offset varies near-equal choices without letting
-        // it outweigh a direct emotion-tag match.
-        score: tagScore * 4 - distance + tieBreaker % 3,
+        score: primaryScore +
+            secondaryScore -
+            distancePenalty +
+            preferenceScore -
+            repetitionPenalty,
         tieBreaker: tieBreaker,
       );
     }).toList()
@@ -384,8 +753,17 @@ class EmotionMetaphorLibrary {
       int score,
       int tieBreaker
     })>[];
+    if (limit <= 0 || ranked.isEmpty) return const [];
+
+    // Category diversity may reorder only candidates that are already very
+    // close to the best match. It never pulls a clearly lower-scoring item
+    // ahead of the ranked remainder.
+    final highScoreFloor = ranked.first.score - 4;
+    final highScorePool = ranked
+        .where((entry) => entry.score >= highScoreFloor)
+        .toList(growable: false);
     final categories = <String>{};
-    for (final entry in ranked) {
+    for (final entry in highScorePool) {
       if (selected.length >= limit) break;
       if (categories.add(entry.item.category)) selected.add(entry);
     }
@@ -406,6 +784,14 @@ class EmotionMetaphorLibrary {
                       '${entry.item.category}意象，並參考活力與強度',
             ))
         .toList();
+  }
+
+  static EmotionMetaphor? findByText(String text) {
+    final normalized = text.trim();
+    for (final item in items) {
+      if (item.text == normalized) return item;
+    }
+    return null;
   }
 
   static int _tagAffinity(String left, String right) {

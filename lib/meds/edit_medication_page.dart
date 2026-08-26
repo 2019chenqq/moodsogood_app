@@ -12,6 +12,15 @@ import '../analytics_service.dart';
 
 const double kMaxDose = 50000;
 const int kDoseSliderDivisions = 5000;
+const Map<int, String> kMedicationWeekdays = {
+  1: '一',
+  2: '二',
+  3: '三',
+  4: '四',
+  5: '五',
+  6: '六',
+  7: '日',
+};
 
 class EditMedicationPage extends StatefulWidget {
   final String docId;
@@ -42,6 +51,9 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
   String _unit = 'mg';
   String _medType = 'tablet'; // tablet / injection / drops
   int _intervalDays = 28; // 長效針用：每幾天一次（例如 28、30）
+  String _scheduleType = 'daily';
+  int _scheduleIntervalDays = 2;
+  final Set<int> _scheduleWeekdays = {};
   double _dropMg = 10.0;
   double _dropMlBase = 1.0;
   double _intakeMl = 1.0;
@@ -129,6 +141,17 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
             const <String>[];
 // ✅ 藥物形式：口服 / 長效針
     _medType = (d['type'] as String?) ?? 'tablet';
+    _scheduleType = (d['scheduleType'] as String?) ?? 'daily';
+    final scheduleInterval = d['scheduleIntervalDays'];
+    if (scheduleInterval is num && scheduleInterval >= 2) {
+      _scheduleIntervalDays = scheduleInterval.toInt().clamp(2, 30).toInt();
+    }
+    _scheduleWeekdays.addAll(
+      (d['weekdays'] as List? ?? const [])
+          .whereType<num>()
+          .map((value) => value.toInt())
+          .where((value) => value >= 1 && value <= 7),
+    );
 // ✅ 注射間隔（天）
     final iv = d['intervalDays'];
     if (iv is int)
@@ -633,6 +656,63 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
 
               if (_medType != 'injection') ...[
                 _SectionCard(
+                  title: '服藥頻率',
+                  icon: Icons.event_repeat_outlined,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      DropdownButtonFormField<String>(
+                        value: _scheduleType,
+                        decoration: const InputDecoration(labelText: '頻率'),
+                        items: const [
+                          DropdownMenuItem(value: 'daily', child: Text('每日')),
+                          DropdownMenuItem(
+                              value: 'intervalDays', child: Text('每隔幾天')),
+                          DropdownMenuItem(
+                              value: 'weekdays', child: Text('每週指定日')),
+                        ],
+                        onChanged: (value) =>
+                            setState(() => _scheduleType = value ?? 'daily'),
+                      ),
+                      if (_scheduleType == 'intervalDays') ...[
+                        const SizedBox(height: 12),
+                        Text('每 $_scheduleIntervalDays 天服用一次'),
+                        Slider(
+                          min: 2,
+                          max: 30,
+                          divisions: 28,
+                          value: _scheduleIntervalDays.toDouble(),
+                          label: '$_scheduleIntervalDays 天',
+                          onChanged: (value) => setState(
+                            () => _scheduleIntervalDays = value.round(),
+                          ),
+                        ),
+                        const Text('以開始日期作為第一次服用日。'),
+                      ],
+                      if (_scheduleType == 'weekdays') ...[
+                        const SizedBox(height: 12),
+                        const Text('服用星期'),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          children: kMedicationWeekdays.entries.map((entry) {
+                            return FilterChip(
+                              label: Text(entry.value),
+                              selected: _scheduleWeekdays.contains(entry.key),
+                              onSelected: (selected) => setState(() {
+                                selected
+                                    ? _scheduleWeekdays.add(entry.key)
+                                    : _scheduleWeekdays.remove(entry.key);
+                              }),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _SectionCard(
                   title: '服用時間',
                   icon: Icons.schedule,
                   child: Wrap(
@@ -880,6 +960,15 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
+    if (_medType != 'injection' &&
+        _scheduleType == 'weekdays' &&
+        _scheduleWeekdays.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('請至少選擇一個服用星期')),
+      );
+      return;
+    }
+
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
       ScaffoldMessenger.of(context)
@@ -951,6 +1040,12 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
         'packageUnit': _packageUnit,
         'ingredientLines': _ingredientLines,
         'intervalDays': _medType == 'injection' ? _intervalDays : null,
+        'scheduleType': _medType == 'injection' ? 'daily' : _scheduleType,
+        'scheduleIntervalDays':
+            _scheduleType == 'intervalDays' ? _scheduleIntervalDays : null,
+        'weekdays': _scheduleType == 'weekdays'
+            ? (_scheduleWeekdays.toList()..sort())
+            : <int>[],
         'times': times,
         'purposes': purposes,
         'note': _noteCtrl.text.trim(),

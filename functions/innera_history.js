@@ -1,12 +1,16 @@
 "use strict";
 
-function inneraHistoryLimits(mode) {
-  return mode === "emotionalSupport"
-    ? { messageLimit: 8, characterLimit: 10000 }
-    : { messageLimit: 60, characterLimit: 48000 };
+function inneraHistoryLimits(mode, { isSpecialRecentReview = false } = {}) {
+  if (mode === "emotionalSupport") {
+    return { messageLimit: 8, characterLimit: 10000 };
+  }
+  if (mode === "recentReview" && !isSpecialRecentReview) {
+    return { messageLimit: 8, characterLimit: 8000 };
+  }
+  return { messageLimit: 60, characterLimit: 48000 };
 }
 
-function buildInneraSafeHistory(history, mode) {
+function buildInneraSafeHistory(history, mode, options = {}) {
   const normalizedHistory = (Array.isArray(history) ? history : [])
     .map((item) => {
       const role = item && item.role === "user" ? "user" : "assistant";
@@ -14,7 +18,7 @@ function buildInneraSafeHistory(history, mode) {
       return content ? { role, content } : null;
     })
     .filter(Boolean);
-  const { messageLimit, characterLimit } = inneraHistoryLimits(mode);
+  const { messageLimit, characterLimit } = inneraHistoryLimits(mode, options);
   const safeHistory = [];
   let historyCharacters = 0;
   for (const item of normalizedHistory.slice(-messageLimit).reverse()) {

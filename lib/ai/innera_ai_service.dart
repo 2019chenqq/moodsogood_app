@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:cloud_functions/cloud_functions.dart';
-import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
@@ -59,6 +58,7 @@ class InneraAiResponse {
     required this.sources,
     required this.suggestedActions,
     required this.recordDraft,
+    required this.eventDrafts,
     required this.safetyLevel,
     required this.requiresFixedSafetyUi,
     required this.model,
@@ -72,6 +72,7 @@ class InneraAiResponse {
   final List<AiContextSource> sources;
   final List<String> suggestedActions;
   final Map<String, dynamic>? recordDraft;
+  final List<Map<String, dynamic>> eventDrafts;
   final AiSafetyLevel safetyLevel;
   final bool requiresFixedSafetyUi;
   final String? model;
@@ -95,6 +96,11 @@ class InneraAiService {
   final InneraAiContextService _contextService;
   final InneraAiSafetyService _safetyService;
   final FirebaseFunctions _functions;
+
+  // Share one forced Auth refresh across concurrent AI calls. Firebase App
+  // Check manages its own token lifecycle; forcing an App Check refresh here
+  // can be rate-limited and turn one authentication failure into a retry loop.
+  static Future<void>? _authRefreshInFlight;
 
   Future<InneraAiRecordDraft> summarizeHealthEvents({
     required List<InneraAiMessage> messages,
@@ -250,6 +256,8 @@ class InneraAiService {
       rethrow;
     } on TimeoutException {
       throw const InneraAiException('AI 回應逾時，請稍後再試；目前草稿已保留。');
+    } on InneraAiException {
+      rethrow;
     } catch (error, stackTrace) {
       debugPrint('InneraAiService generate failed: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -269,18 +277,37 @@ class InneraAiService {
         rethrow;
       }
 
-      // A callable may report unauthenticated for either an expired Auth token
-      // or a rejected App Check token. Refresh both once before surfacing the
-      // error; retrying is safe because authentication is rejected before the
-      // AI handler performs work.
+      // Refresh Auth once. App Check tokens are refreshed automatically by the
+      // Firebase SDK; forcing one here can fail with "Too many attempts".
       try {
-        await FirebaseAuth.instance.currentUser!.getIdToken(true);
-        await FirebaseAppCheck.instance.getToken(true);
+        await _refreshAuthToken();
       } catch (refreshError, stackTrace) {
-        debugPrint('AI callable token refresh failed: $refreshError');
+        debugPrint('AI callable Auth token refresh failed: $refreshError');
         debugPrintStack(stackTrace: stackTrace);
+        throw const InneraAiException(
+          '登入驗證暫時無法更新，請稍候再試；若持續發生再重新登入。',
+        );
       }
       return callable.call(payload);
+    }
+  }
+
+  Future<void> _refreshAuthToken() async {
+    final activeRefresh = _authRefreshInFlight;
+    if (activeRefresh != null) return activeRefresh;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw StateError('No signed-in Firebase user');
+    }
+    final refresh = user.getIdToken(true).then<void>((_) {});
+    _authRefreshInFlight = refresh;
+    try {
+      await refresh;
+    } finally {
+      if (identical(_authRefreshInFlight, refresh)) {
+        _authRefreshInFlight = null;
+      }
     }
   }
 
@@ -341,6 +368,7 @@ class InneraAiService {
       sources: _parseSources(data['sources'], fallbackSources),
       suggestedActions: _stringList(data['suggestedActions']),
       recordDraft: _asOptionalMap(data['recordDraft']),
+      eventDrafts: _mapList(data['eventDrafts']),
       safetyLevel: _parseSafetyLevel(data['safetyLevel']),
       requiresFixedSafetyUi: requiresFixedSafetyUi,
       model: _optionalText(data['model']),
@@ -363,6 +391,7 @@ class InneraAiService {
       sources: const <AiContextSource>[],
       suggestedActions: const <String>[],
       recordDraft: null,
+      eventDrafts: const <Map<String, dynamic>>[],
       safetyLevel: level,
       requiresFixedSafetyUi: true,
       model: null,
@@ -417,6 +446,13 @@ class InneraAiService {
 
   Map<String, dynamic>? _asOptionalMap(dynamic value) =>
       value is Map ? Map<String, dynamic>.from(value) : null;
+
+  List<Map<String, dynamic>> _mapList(dynamic value) => value is List
+      ? value
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList()
+      : const <Map<String, dynamic>>[];
 
   String? _optionalText(dynamic value) {
     final text = value?.toString().trim() ?? '';
