@@ -48,8 +48,90 @@ function buildInneraLatencyLog({
   };
 }
 
+function buildRecentReviewContextSizeLog({
+  context,
+  contextSources,
+  safeHistoryCount,
+  historyCharacters,
+  completion,
+  usedV2Summary = false,
+  usedLegacyFallback = false,
+  selectedDomains = [],
+  usedDomainFallback = false,
+  fullSummary,
+}) {
+  const requestContext = context && typeof context === "object" ? context : {};
+  const sources = Array.isArray(contextSources) ? contextSources : [];
+  const jsonCharacters = (value) => JSON.stringify(value ?? null).length;
+  const measuredKeys = [
+    "sleepTimeStats",
+    "emotionStats",
+    "recentDailyRecords",
+    "dailyRecordStats",
+    "dailyHealthAggregateSummary",
+    "recentQuickRecordExamples",
+    "recentDiaries",
+    "activeMedications",
+    "recentMedicationAdjustments",
+    "recentPeriodCycles",
+    "recentReviewSummary",
+  ];
+  const otherContext = Object.fromEntries(
+    Object.entries(requestContext).filter(([key]) => !measuredKeys.includes(key)),
+  );
+  const recentDailyRecords = requestContext.recentDailyRecords;
+  const emotions = requestContext.emotionStats?.emotions;
+  const sleepEvidence = requestContext.sleepTimeStats?.bedtimeEvidence;
+  return {
+    totalContextCharacters: jsonCharacters(requestContext),
+    contextSourcesCharacters: jsonCharacters(sources),
+    sleepTimeStatsCharacters: jsonCharacters(requestContext.sleepTimeStats),
+    emotionStatsCharacters: jsonCharacters(requestContext.emotionStats),
+    recentDailyRecordsCharacters: jsonCharacters(recentDailyRecords),
+    dailyRecordStatsCharacters: jsonCharacters(requestContext.dailyRecordStats),
+    dailyHealthAggregateSummaryCharacters: jsonCharacters(
+      requestContext.dailyHealthAggregateSummary,
+    ),
+    recentQuickRecordExamplesCharacters: jsonCharacters(
+      requestContext.recentQuickRecordExamples,
+    ),
+    recentDiariesCharacters: jsonCharacters(requestContext.recentDiaries),
+    activeMedicationsCharacters: jsonCharacters(requestContext.activeMedications),
+    recentMedicationAdjustmentsCharacters: jsonCharacters(
+      requestContext.recentMedicationAdjustments,
+    ),
+    recentPeriodCyclesCharacters: jsonCharacters(requestContext.recentPeriodCycles),
+    recentReviewSummaryCharacters: jsonCharacters(
+      requestContext.recentReviewSummary,
+    ),
+    finalContextCharacters: jsonCharacters(requestContext),
+    usedV2Summary: Boolean(usedV2Summary),
+    usedLegacyFallback: Boolean(usedLegacyFallback),
+    selectedDomains: Array.isArray(selectedDomains)
+      ? selectedDomains.map((domain) => String(domain))
+      : [],
+    domainCount: Array.isArray(selectedDomains) ? selectedDomains.length : 0,
+    selectedSummaryCharacters: jsonCharacters(
+      requestContext.recentReviewSummary,
+    ),
+    fullSummaryCharacters: jsonCharacters(fullSummary),
+    usedDomainFallback: Boolean(usedDomainFallback),
+    otherContextCharacters: jsonCharacters(otherContext),
+    recentDailyRecordCount: Array.isArray(recentDailyRecords)
+      ? recentDailyRecords.length
+      : 0,
+    contextSourceCount: sources.length,
+    emotionStatsItemCount: Array.isArray(emotions) ? emotions.length : 0,
+    sleepEvidenceCount: Array.isArray(sleepEvidence) ? sleepEvidence.length : 0,
+    safeHistoryCount: Math.max(0, Number(safeHistoryCount) || 0),
+    historyCharacters: Math.max(0, Number(historyCharacters) || 0),
+    inputTokens: completion?.usage?.prompt_tokens ?? null,
+  };
+}
+
 module.exports = {
   buildInneraLatencyLog,
+  buildRecentReviewContextSizeLog,
   createInneraLatencyState,
   elapsedSince,
 };

@@ -41,10 +41,15 @@ function selectInneraChatResponseSchema({
   followUpQuestionsSchema,
   inneraChatSchema,
   physicalHealthChatSchema,
+  recentReviewChatSchema,
+  specialRecentReviewRequest,
 }) {
   if (followUpQuestionRequest) return followUpQuestionsSchema;
   if (mode === "emotionalSupport") return emotionalSupportChatSchema;
   if (mode === "physicalHealth") return physicalHealthChatSchema;
+  if (mode === "recentReview" && !specialRecentReviewRequest) {
+    return recentReviewChatSchema;
+  }
   return inneraChatSchema;
 }
 

@@ -213,12 +213,22 @@ class SleepAnalysisService {
         .map((point) => point.sleepStartTime)
         .whereType<TimeOfDay>()
         .map(_nightClockMinutes)
-        .toList();
+        .toList()
+      ..sort();
     final wakes = points
         .map((point) => point.wakeTime)
         .whereType<TimeOfDay>()
         .map(_clockMinutes)
         .toList();
+    final sleepFlagCounts = <String, int>{};
+    for (final point in points) {
+      for (final flag in point.flags.toSet()) {
+        final normalized = flag.trim();
+        if (normalized.isNotEmpty) {
+          sleepFlagCounts[normalized] = (sleepFlagCounts[normalized] ?? 0) + 1;
+        }
+      }
+    }
 
     return SleepPeriodSummary(
       periodDays: math.max(0, periodDays),
@@ -239,6 +249,21 @@ class SleepAnalysisService {
               napCount,
       averageBedtimeMinutes: bedtimes.isEmpty ? null : _average(bedtimes),
       averageWakeMinutes: wakes.isEmpty ? null : _average(wakes),
+      explicitBedtimeDays: points
+          .where((point) =>
+              point.sleepStartTime != null && !point.usedEstimatedSleepTime)
+          .length,
+      estimatedBedtimeDays: points
+          .where((point) =>
+              point.sleepStartTime != null && point.usedEstimatedSleepTime)
+          .length,
+      usableBedtimeDays: bedtimes.length,
+      typicalBedtime: _bedtimeFromMinutes(_median(bedtimes)),
+      earliestBedtime:
+          _bedtimeFromMinutes(bedtimes.isEmpty ? null : bedtimes.first),
+      latestBedtime:
+          _bedtimeFromMinutes(bedtimes.isEmpty ? null : bedtimes.last),
+      sleepFlagCounts: Map.unmodifiable(sleepFlagCounts),
     );
   }
 
@@ -633,6 +658,20 @@ class SleepAnalysisService {
   double _nightClockMinutes(TimeOfDay time) {
     final minutes = _clockMinutes(time);
     return minutes < 12 * 60 ? minutes + 24 * 60 : minutes;
+  }
+
+  double? _median(List<double> values) {
+    if (values.isEmpty) return null;
+    final middle = values.length ~/ 2;
+    return values.length.isOdd
+        ? values[middle]
+        : (values[middle - 1] + values[middle]) / 2;
+  }
+
+  TimeOfDay? _bedtimeFromMinutes(double? adjustedMinutes) {
+    if (adjustedMinutes == null || !adjustedMinutes.isFinite) return null;
+    final rounded = adjustedMinutes.round() % (24 * 60);
+    return TimeOfDay(hour: rounded ~/ 60, minute: rounded % 60);
   }
 
   List<double> _unwrap(List<double> values) {

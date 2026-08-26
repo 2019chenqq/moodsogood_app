@@ -292,6 +292,59 @@ class NotificationHelper {
     }
   }
 
+  /// 每週指定星期與時間重複通知；[weekday] 使用 DateTime.monday～sunday。
+  Future<void> scheduleWeeklyNotification({
+    required int id,
+    required String title,
+    required String body,
+    required int weekday,
+    required TimeOfDay time,
+    String? payload,
+  }) async {
+    await init();
+    if (!await _ensurePermissions()) return;
+    final now = tz.TZDateTime.now(tz.local);
+    var scheduled = tz.TZDateTime(
+      tz.local,
+      now.year,
+      now.month,
+      now.day,
+      time.hour,
+      time.minute,
+    );
+    while (scheduled.weekday != weekday || !scheduled.isAfter(now)) {
+      scheduled = scheduled.add(const Duration(days: 1));
+    }
+    await _notificationsPlugin.zonedSchedule(
+      id,
+      title,
+      body,
+      scheduled,
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channelId,
+          _channelName,
+          channelDescription: _channelDescription,
+          importance: Importance.max,
+          priority: Priority.high,
+          enableVibration: true,
+          enableLights: true,
+          playSound: true,
+        ),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      ),
+      androidScheduleMode: _exactAlarmAllowed
+          ? AndroidScheduleMode.exactAllowWhileIdle
+          : AndroidScheduleMode.inexactAllowWhileIdle,
+      matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+      payload: payload ?? _dailyRecordPayload,
+    );
+  }
+
   /// 测试：5秒后跳出通知
   Future<void> scheduleTestNotificationIn5Seconds({String? payload}) async {
     await init();

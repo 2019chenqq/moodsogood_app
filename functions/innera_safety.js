@@ -148,7 +148,31 @@ function detectInneraSelfHarm(text) {
   };
 }
 
+function createInneraSafetyResponse({ existingRecordDraft, safetyLevel }) {
+  const recordDraft = existingRecordDraft &&
+    typeof existingRecordDraft === "object" &&
+    !Array.isArray(existingRecordDraft) &&
+    Object.keys(existingRecordDraft).length > 0
+    ? existingRecordDraft
+    : null;
+  const eventDrafts = Array.isArray(recordDraft?.eventDrafts)
+    ? recordDraft.eventDrafts
+    : [];
+  return {
+    reply: "",
+    followUpQuestion: null,
+    sources: [],
+    suggestedActions: [],
+    recordDraft,
+    eventDrafts,
+    safetyLevel,
+    requiresFixedSafetyUi: true,
+    model: null,
+  };
+}
+
 module.exports = {
+  createInneraSafetyResponse,
   detectInneraSelfHarm,
   normalizeSafetyText,
   safetyKeywords,

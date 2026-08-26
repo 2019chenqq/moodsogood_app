@@ -1,5 +1,75 @@
 "use strict";
 
+const recentReviewChatSchema = Object.freeze({
+  type: "object",
+  additionalProperties: false,
+  required: ["reply", "followUpQuestion"],
+  properties: {
+    reply: { type: "string" },
+    followUpQuestion: {
+      anyOf: [{ type: "string" }, { type: "null" }],
+    },
+  },
+});
+
+function createRecentReviewApiResponse({
+  reply,
+  followUpQuestion,
+  contextSources,
+  model,
+  promptVersion,
+  completion,
+}) {
+  return {
+    reply,
+    followUpQuestion,
+    sources: contextSources,
+    suggestedActions: [],
+    recordDraft: null,
+    eventDrafts: [],
+    safetyLevel: "normal",
+    requiresFixedSafetyUi: false,
+    model,
+    promptVersion,
+    inputTokens: completion?.usage?.prompt_tokens ?? null,
+    outputTokens: completion?.usage?.completion_tokens ?? null,
+  };
+}
+
+function formatRecentReviewMedicationList(message, context, fallbackReply) {
+  const question = String(message || "").replace(/\s+/g, "");
+  const asksForMedicationList = /(?:目前|現在|正在).{0,8}(?:有哪些|吃什麼|用什麼|使用什麼).{0,4}藥|(?:把|列出).{0,8}(?:現在|目前|正在).{0,8}藥|把.{0,8}藥.{0,8}列出/u
+    .test(question);
+  if (!asksForMedicationList) return String(fallbackReply || "");
+  const summaryMedications = context?.recentReviewSummary?.medications;
+  const medications = Array.isArray(summaryMedications)
+    ? summaryMedications
+    : Array.isArray(context?.activeMedications)
+      ? context.activeMedications
+      : [];
+  if (medications.length === 0) return String(fallbackReply || "");
+
+  const present = (value) => value != null && String(value).trim() !== "";
+  const lines = medications.map((medication) => {
+    const name = String(medication?.name || "").trim() || "未命名藥物";
+    const unit = present(medication?.unit)
+      ? ` ${String(medication.unit).trim()}`
+      : "";
+    let dosage = "";
+    if (present(medication?.dosePerUnit) && present(medication?.pillCount)) {
+      dosage = `${medication.dosePerUnit}${unit} × ${medication.pillCount} 顆`;
+    } else if (present(medication?.dose)) {
+      dosage = `${medication.dose}${unit}`;
+    }
+    const times = (Array.isArray(medication?.times) ? medication.times : [])
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+    const details = [dosage, times.join("、")].filter(Boolean).join("，");
+    return `• ${name}${details ? `：${details}` : ""}`;
+  });
+  return `目前使用中的藥物：\n\n${lines.join("\n")}`;
+}
+
 function stripMarkdownFence(text) {
   return String(text || "")
     .trim()
@@ -371,16 +441,19 @@ function mergeCompletionUsage(completions) {
 }
 
 module.exports = {
+  createRecentReviewApiResponse,
   createFollowUpSummaryFallbackResponse,
   createNoFollowUpQuestionsResponse,
   isFollowUpQuestionRequest,
   isFollowUpSummaryRequest,
+  formatRecentReviewMedicationList,
   mergeCompletionUsage,
   normalizeFollowUpSummaryReply,
   normalizeFollowUpQuestionsReply,
   parseFollowUpQuestionsCompletion,
   parseFollowUpSummaryCompletion,
   parseInneraChatCompletion,
+  recentReviewChatSchema,
   sanitizeEmotionalSupportQuestions,
   sanitizeInneraModeQuestions,
 };

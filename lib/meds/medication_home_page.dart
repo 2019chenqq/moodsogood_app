@@ -23,6 +23,27 @@ const List<String> kTimeOrder = [
   '未設定',
 ];
 
+String _weekdayScheduleLabel(dynamic raw) {
+  const labels = <int, String>{
+    1: '一',
+    2: '二',
+    3: '三',
+    4: '四',
+    5: '五',
+    6: '六',
+    7: '日',
+  };
+  final days = raw is Iterable
+      ? raw
+          .map((value) => value is num ? value.toInt() : int.tryParse('$value'))
+          .whereType<int>()
+          .where(labels.containsKey)
+          .map((value) => labels[value])
+          .join('、')
+      : '';
+  return days.isEmpty ? '每週' : '每週$days';
+}
+
 DateTime _startOfDay(DateTime d) => DateTime(d.year, d.month, d.day);
 
 int _dateOnlyDiffDays(DateTime from, DateTime to) {
@@ -310,6 +331,9 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
           'unit': data['unit'],
           'type': data['type'],
           'intervalDays': data['intervalDays'],
+          'scheduleType': data['scheduleType'] ?? 'daily',
+          'scheduleIntervalDays': data['scheduleIntervalDays'],
+          'weekdays': (data['weekdays'] as List?)?.cast<num>() ?? <num>[],
           'times': (data['times'] as List?)?.cast<String>() ?? <String>[],
           'purposes': (data['purposes'] as List?)?.cast<String>() ?? <String>[],
           'note': data['note'],
@@ -873,6 +897,12 @@ class _MedicationCard extends StatelessWidget {
 
     final times = (data['times'] as List?)?.whereType<String>().toList() ??
         const <String>[];
+    final scheduleType = (data['scheduleType'] ?? 'daily').toString();
+    final scheduleLabel = switch (scheduleType) {
+      'intervalDays' => '每 ${data['scheduleIntervalDays'] ?? 2} 天',
+      'weekdays' => _weekdayScheduleLabel(data['weekdays']),
+      _ => '每日',
+    };
     final purposes =
         (data['purposes'] as List?)?.whereType<String>().toList() ??
             const <String>[];
@@ -977,7 +1007,10 @@ class _MedicationCard extends StatelessWidget {
                           alignment: WrapAlignment.spaceBetween,
                           spacing: 6,
                           runSpacing: 6,
-                          children: times.map((t) => _Chip(text: t)).toList(),
+                          children: [
+                            _Chip(text: scheduleLabel),
+                            ...times.map((t) => _Chip(text: t)),
+                          ],
                         ),
                       ],
                       if (purposes.isNotEmpty) ...[

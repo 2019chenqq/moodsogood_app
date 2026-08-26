@@ -6,16 +6,20 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
 import '../diary/diary_repository.dart';
+import '../meds/med_symptom_compare_models.dart';
 import '../meds/medication_local_db.dart';
 import '../models/daily_check_in.dart';
 import '../models/daily_record.dart';
 import '../models/health_event.dart';
+import '../models/period_cycle.dart';
 import '../services/daily_health_aggregation_service.dart';
 import '../daily/period_cycle_service.dart';
+import '../daily/unified_sleep_repository.dart';
 import '../utils/health_data_encryption_service.dart';
 import 'innera_ai_message.dart';
 import 'innera_ai_mode.dart';
 import 'innera_ai_quick_record_context_builder.dart';
+import 'recent_review_summary.dart';
 
 class InneraAiContextBundle {
   const InneraAiContextBundle({
@@ -37,15 +41,18 @@ class InneraAiContextService {
     FirebaseAuth? auth,
     DiaryRepository? diaryRepository,
     MedicationLocalDB? medicationDb,
+    UnifiedSleepRepository? sleepRepository,
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
         _auth = auth ?? FirebaseAuth.instance,
         _diaryRepository = diaryRepository ?? DiaryRepository(),
-        _medicationDb = medicationDb ?? MedicationLocalDB();
+        _medicationDb = medicationDb ?? MedicationLocalDB(),
+        _sleepRepository = sleepRepository ?? UnifiedSleepRepository();
 
   final FirebaseFirestore _firestore;
   final FirebaseAuth _auth;
   final DiaryRepository _diaryRepository;
   final MedicationLocalDB _medicationDb;
+  final UnifiedSleepRepository _sleepRepository;
 
   Future<InneraAiContextBundle> buildContext({
     required InneraAiMode mode,
@@ -67,6 +74,9 @@ class InneraAiContextService {
     };
     final sources = <AiContextSource>[];
     final failures = <String>[];
+    var reviewDailyRecords = const <DailyRecord>[];
+    var reviewHealthEvents = const <HealthEvent>[];
+    var reviewDailyCheckIns = const <DailyCheckIn>[];
 
     Future<void> guard(String label, Future<void> Function() action) async {
       try {
@@ -226,6 +236,7 @@ class InneraAiContextService {
           data,
           sources,
           failures,
+          mode: mode,
         );
         await _loadPeriodContext(uid, start, today, data, sources, failures);
         await _loadRelatedDiaries(start, today, data, sources, failures);
@@ -250,6 +261,24 @@ class InneraAiContextService {
                     record,
                   ))
               .toList();
+          try {
+            final sleepRecords = await _sleepRepository.getByDateRange(
+              userId: uid,
+              start: start,
+              end: today,
+            );
+            reviewDailyRecords = UnifiedSleepRepository.overlayForInsights(
+              dailyRecords: dailyRecords,
+              sleepRecords: sleepRecords,
+            );
+          } catch (error, stack) {
+            debugPrint('InneraAiContextService sleepRecords failed: $error');
+            debugPrint('$stack');
+            failures.add('sleepRecords');
+            reviewDailyRecords = dailyRecords;
+          }
+          reviewHealthEvents = events;
+          reviewDailyCheckIns = checkIns;
           final aggregates =
               const DailyHealthAggregationService().aggregateRange(
             dailyRecords: dailyRecords,
@@ -300,9 +329,50 @@ class InneraAiContextService {
           data,
           sources,
           failures,
+          mode: mode,
         );
         await _loadPeriodContext(uid, start, today, data, sources, failures);
         await _loadRecentDiaries(start, today, data, sources, failures);
+        try {
+          final activeMedications =
+              (data['activeMedications'] as List? ?? const [])
+                  .whereType<Map>()
+                  .map((item) => Map<String, dynamic>.from(item));
+          final medicationAdjustments =
+              (data['recentMedicationAdjustments'] as List? ?? const [])
+                  .whereType<Map>()
+                  .map((item) => Map<String, dynamic>.from(item));
+          final periodCycles = (data['recentPeriodCycles'] as List? ?? const [])
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .map((item) {
+            final cycleStart = _asDate(item['startDate']);
+            if (cycleStart == null) return null;
+            return PeriodCycle(
+              id: '',
+              startDate: cycleStart,
+              endDate: _asDate(item['endDate']),
+            );
+          }).whereType<PeriodCycle>();
+          data['recentReviewSummary'] = const RecentReviewSummaryBuilder()
+              .build(
+                startDate: start,
+                endDate: today,
+                dailyRecords: reviewDailyRecords,
+                healthEvents: reviewHealthEvents,
+                dailyCheckIns: reviewDailyCheckIns,
+                activeMedications: activeMedications,
+                medicationAdjustments: medicationAdjustments,
+                periodCycles: periodCycles,
+              )
+              .toJson();
+        } catch (error, stack) {
+          debugPrint(
+            'InneraAiContextService recentReviewSummary failed: $error',
+          );
+          debugPrint('$stack');
+          failures.add('recentReviewSummary');
+        }
         break;
     }
 
@@ -320,13 +390,18 @@ class InneraAiContextService {
     DateTime today,
     Map<String, dynamic> data,
     List<AiContextSource> sources,
-    List<String> failures,
-  ) async {
+    List<String> failures, {
+    required InneraAiMode mode,
+  }) async {
     try {
       final meds = await _medicationDb.getMedicationsForDisplay(uid);
       final activeMeds = meds
           .where((med) => med['isActive'] != false)
-          .map(_compactMedication)
+          .map(
+            mode == InneraAiMode.recentReview
+                ? compactMedicationForRecentReview
+                : _compactMedication,
+          )
           .toList();
       data['activeMedications'] = activeMeds;
       if (activeMeds.isNotEmpty) {
@@ -347,7 +422,11 @@ class InneraAiContextService {
                     !_dateOnly(date).isBefore(start) &&
                     !date.isAfter(today);
               })
-              .map(_compactAdjustment)
+              .map(
+                mode == InneraAiMode.recentReview
+                    ? compactAdjustmentForRecentReview
+                    : _compactAdjustment,
+              )
               .toList();
       data['recentMedicationAdjustments'] = adjustments;
       if (adjustments.isNotEmpty) {
@@ -672,6 +751,58 @@ class InneraAiContextService {
       'purposes': _stringList(med['purposes']).take(8).toList(),
       'startDate': _formatNullableDate(_asDate(med['startDate'])),
       'lastChangeAt': _formatNullableDate(_asDate(med['lastChangeAt'])),
+    };
+  }
+
+  @visibleForTesting
+  static Map<String, dynamic> compactMedicationForRecentReview(
+    Map<String, dynamic> med,
+  ) {
+    final lastChangeAt = med['lastChangeAt'];
+    return {
+      'name': _recentReviewMedicationName(med),
+      'dosePerUnit': med['dosePerUnit'],
+      'pillCount': med['pillCount'],
+      'dose': med['dose'],
+      'unit': med['unit'],
+      'times': med['times'] is Iterable
+          ? (med['times'] as Iterable).map((item) => item.toString()).toList()
+          : const <String>[],
+      'type': med['type'],
+      if (lastChangeAt != null && lastChangeAt.toString().trim().isNotEmpty)
+        'lastChangeAt': lastChangeAt,
+    };
+  }
+
+  static String _recentReviewMedicationName(Map<String, dynamic> med) {
+    final value =
+        (med['name'] ?? med['nameZh'] ?? med['nameEn'] ?? '').toString().trim();
+    return value.length <= 80 ? value : value.substring(0, 80);
+  }
+
+  @visibleForTesting
+  static Map<String, dynamic> compactAdjustmentForRecentReview(
+    Map<String, dynamic> adjustment,
+  ) {
+    final events = MedicationAdjustmentEvent.fromRecord(adjustment);
+    final fallbackDate = adjustment['date']?.toString().trim() ?? '';
+    final date = events.isNotEmpty ? events.first.dateLabel : fallbackDate;
+    final note = adjustment['note']?.toString().trim() ?? '';
+    return {
+      if (date.isNotEmpty) 'date': date,
+      'items': events
+          .map(
+            (event) => <String, dynamic>{
+              'name': event.medName,
+              'type': event.type,
+              'changeSummary': MedicationAdjustmentFormatter.shortSummary(
+                event,
+              ),
+            },
+          )
+          .toList(),
+      if (note.isNotEmpty)
+        'note': note.length <= 80 ? note : note.substring(0, 80),
     };
   }
 

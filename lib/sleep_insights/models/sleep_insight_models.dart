@@ -76,6 +76,13 @@ class SleepPeriodSummary {
     required this.averageNapMinutes,
     required this.averageBedtimeMinutes,
     required this.averageWakeMinutes,
+    this.explicitBedtimeDays = 0,
+    this.estimatedBedtimeDays = 0,
+    this.usableBedtimeDays = 0,
+    this.typicalBedtime,
+    this.earliestBedtime,
+    this.latestBedtime,
+    this.sleepFlagCounts = const {},
   });
 
   final int periodDays;
@@ -93,6 +100,13 @@ class SleepPeriodSummary {
   final double? averageNapMinutes;
   final double? averageBedtimeMinutes;
   final double? averageWakeMinutes;
+  final int explicitBedtimeDays;
+  final int estimatedBedtimeDays;
+  final int usableBedtimeDays;
+  final TimeOfDay? typicalBedtime;
+  final TimeOfDay? earliestBedtime;
+  final TimeOfDay? latestBedtime;
+  final Map<String, int> sleepFlagCounts;
 
   double get completionRate => periodDays == 0 ? 0 : recordDays / periodDays;
 }

@@ -52,6 +52,8 @@ class _AiDiaryDraftSheetState extends State<AiDiaryDraftSheet> {
   String? _selectedSongId;
   bool _useOriginalContent = true;
   bool _searchingSongs = false;
+  int _metaphorPage = 0;
+  bool _writingMetaphor = false;
 
   @override
   void initState() {
@@ -201,6 +203,9 @@ class _AiDiaryDraftSheetState extends State<AiDiaryDraftSheet> {
   }) {
     final existing = _existingValue(key);
     final enabled = _included[key] ?? false;
+    final displayedSuggestions = key == 'metaphor'
+        ? _metaphorSuggestionsForPage(suggestions)
+        : suggestions;
     return Card(
       color: HealingDesignSystem.adaptiveSurface(context),
       margin: const EdgeInsets.only(bottom: 12),
@@ -222,16 +227,20 @@ class _AiDiaryDraftSheetState extends State<AiDiaryDraftSheet> {
                   : key == 'metaphor'
                       ? const Text('這是依今天對話提供的意象，可自行修改或不選')
                       : null,
-              secondary: IconButton(
-                onPressed: () => Navigator.pop(context, 'regenerate:$key'),
-                icon: const Icon(Icons.refresh_rounded),
-                tooltip: '只重新產生此欄位',
-              ),
+              secondary: key == 'metaphor'
+                  ? null
+                  : IconButton(
+                      onPressed: () =>
+                          Navigator.pop(context, 'regenerate:$key'),
+                      icon: const Icon(Icons.refresh_rounded),
+                      tooltip: '只重新產生此欄位',
+                    ),
               onChanged: (value) =>
                   setState(() => _included[key] = value == true),
             ),
-            if (_multiSelectFields.contains(key) && suggestions.isNotEmpty)
-              ...suggestions.map(
+            if (_multiSelectFields.contains(key) &&
+                displayedSuggestions.isNotEmpty)
+              ...displayedSuggestions.map(
                 (item) => CheckboxListTile(
                   contentPadding: EdgeInsets.zero,
                   dense: true,
@@ -253,8 +262,9 @@ class _AiDiaryDraftSheetState extends State<AiDiaryDraftSheet> {
                           }),
                 ),
               )
-            else if (suggestions.length > 1)
-              ...suggestions.map(
+            else if (displayedSuggestions.length > 1 ||
+                (key == 'metaphor' && displayedSuggestions.isNotEmpty))
+              ...displayedSuggestions.map(
                 (item) => ListTile(
                   contentPadding: EdgeInsets.zero,
                   dense: true,
@@ -267,26 +277,57 @@ class _AiDiaryDraftSheetState extends State<AiDiaryDraftSheet> {
                   subtitle: _source(item),
                   onTap: !enabled
                       ? null
-                      : () => setState(
-                            () => _controllers[key]!.text = item.value,
-                          ),
+                      : () => setState(() {
+                            _controllers[key]!.text = item.value;
+                            if (key == 'metaphor') _writingMetaphor = false;
+                          }),
                 ),
               )
-            else if (suggestions.isNotEmpty)
+            else if (displayedSuggestions.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: _source(suggestions.first),
+                child: _source(displayedSuggestions.first),
               ),
-            TextField(
-              controller: _controllers[key],
-              enabled: enabled,
-              minLines: 1,
-              maxLines: maxLines,
-              decoration: const InputDecoration(
-                labelText: '可在儲存前修改',
-                border: OutlineInputBorder(),
+            if (key == 'metaphor') ...[
+              Row(
+                children: [
+                  TextButton.icon(
+                    onPressed: enabled && suggestions.length > 5
+                        ? () => setState(() {
+                              final pageCount = (suggestions.length / 5).ceil();
+                              _metaphorPage = (_metaphorPage + 1) % pageCount;
+                              _writingMetaphor = false;
+                            })
+                        : null,
+                    icon: const Icon(Icons.swap_horiz_rounded),
+                    label: const Text('換一批'),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton.icon(
+                    onPressed: !enabled
+                        ? null
+                        : () => setState(() {
+                              _writingMetaphor = true;
+                              _controllers[key]!.clear();
+                            }),
+                    icon: const Icon(Icons.edit_outlined),
+                    label: const Text('自己寫'),
+                  ),
+                ],
               ),
-            ),
+            ],
+            if (key != 'metaphor' || _writingMetaphor)
+              TextField(
+                controller: _controllers[key],
+                enabled: enabled,
+                autofocus: key == 'metaphor' && _writingMetaphor,
+                minLines: 1,
+                maxLines: maxLines,
+                decoration: InputDecoration(
+                  labelText: key == 'metaphor' ? '我的情緒像' : '可在儲存前修改',
+                  border: const OutlineInputBorder(),
+                ),
+              ),
             if (existing.isNotEmpty) ...[
               const SizedBox(height: 10),
               Text('今日已有內容：$existing',
@@ -720,6 +761,17 @@ class _AiDiaryDraftSheetState extends State<AiDiaryDraftSheet> {
 
   static String _first(List<DiaryDraftSuggestion> values) =>
       values.isEmpty ? '' : values.first.value;
+
+  List<DiaryDraftSuggestion> _metaphorSuggestionsForPage(
+    List<DiaryDraftSuggestion> suggestions,
+  ) {
+    if (suggestions.isEmpty) return const [];
+    final pageCount = (suggestions.length / 5).ceil();
+    final page = _metaphorPage % pageCount;
+    final start = page * 5;
+    final end = start + 5 < suggestions.length ? start + 5 : suggestions.length;
+    return suggestions.sublist(start, end);
+  }
 
   static String _all(List<DiaryDraftSuggestion> values) =>
       AiDiaryDraftService.combineSuggestionValues(values);

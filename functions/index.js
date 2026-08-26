@@ -15,14 +15,21 @@ const {
 const { buildInneraSafeHistory } = require("./innera_history");
 const { buildInneraContextPayload } = require("./innera_request_payload");
 const {
+  selectRecentReviewDomains,
+} = require("./innera_recent_review_domains");
+const {
   buildInneraLatencyLog,
+  buildRecentReviewContextSizeLog,
   createInneraLatencyState,
   elapsedSince,
 } = require("./innera_latency");
 const crypto = require("crypto");
 const { buildSleepTimeStats } = require("./sleep_review_stats");
 const { buildEmotionStats } = require("./emotion_review_stats");
-const { detectInneraSelfHarm } = require("./innera_safety");
+const {
+  createInneraSafetyResponse,
+  detectInneraSelfHarm,
+} = require("./innera_safety");
 const {
   normalizeInneraEventDrafts,
   sanitizeExplicitStateChangePatch,
@@ -49,8 +56,12 @@ const {
   validateShareDocument,
 } = require("./follow_up_share");
 const {
+  createRecentReviewApiResponse,
+  formatRecentReviewMedicationList,
   isFollowUpQuestionRequest,
+  isFollowUpSummaryRequest,
   parseFollowUpQuestionsCompletion,
+  recentReviewChatSchema,
   sanitizeInneraModeQuestions,
 } = require("./innera_ai_response");
 
@@ -62,7 +73,7 @@ const lastFmApiKey = defineSecret("LASTFM_API_KEY");
 const spotifyClientId = defineSecret("SPOTIFY_CLIENT_ID");
 const spotifyClientSecret = defineSecret("SPOTIFY_CLIENT_SECRET");
 const DEFAULT_AI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
-const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v18-physical-health-small-schema";
+const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v25-review-domain-selection";
 const DIARY_EXTRACTION_PROMPT_VERSION = "diary_extraction_v1";
 const EVENT_SUMMARY_PROMPT_VERSION = "innera-event-summary-v1";
 
@@ -2767,26 +2778,27 @@ exports.generateInneraAiChat = onCall(
     const hasMedicalUrgency = medicalUrgencyPhrases.some((phrase) => message.includes(phrase));
     if (safetySignal.detected || hasImminentDanger || hasMedicalUrgency) {
       logLatency("safety_bypass");
-      return {
-        reply: "",
-        followUpQuestion: null,
-        sources: [],
-        suggestedActions: [],
-        recordDraft: null,
-        eventDrafts: [],
+      return createInneraSafetyResponse({
+        existingRecordDraft,
         safetyLevel: hasMedicalUrgency
           ? "medicalUrgency"
           : safetySignal.level === "concern"
             ? "possibleSelfHarm"
             : "imminentDanger",
-        requiresFixedSafetyUi: true,
-        model: null,
-      };
+      });
     }
 
     const usageFeature =
       mode === "recentReview" ? "recent_review" : "innera_chat";
     const followUpQuestionRequest = isFollowUpQuestionRequest(mode, message);
+    const followUpSummaryRequest = isFollowUpSummaryRequest(mode, message);
+    const specialRecentReviewRequest = followUpQuestionRequest ||
+      followUpSummaryRequest;
+    const recentReviewRequestType = followUpQuestionRequest
+      ? "follow_up_questions"
+      : followUpSummaryRequest
+        ? "follow_up_summary"
+        : "general_review";
     const rateLimitStartedAt = Date.now();
     try {
       await requireAiCapacity(request.auth.uid, usageFeature);
@@ -2820,10 +2832,22 @@ exports.generateInneraAiChat = onCall(
       const usageWriteStartedAt = Date.now();
       await usageTracker.succeed(completion);
       latencyState.usageWriteMs += elapsedSince(usageWriteStartedAt);
+      if (mode === "recentReview") {
+        console.log("Innera recentReview context size", {
+          mode,
+          requestType: recentReviewRequestType,
+          ...recentReviewContextTelemetry,
+          inputTokens: completion?.usage?.prompt_tokens ?? null,
+          outputTokens: completion?.usage?.completion_tokens ?? null,
+          openAiMs: latencyState.openAiMs,
+          totalMs: elapsedSince(latencyState.startedAt),
+        });
+      }
       logLatency("succeeded");
     };
 
     let parseNormalizeStartedAt = null;
+    let recentReviewContextTelemetry = {};
     try {
       const apiKey = openAiApiKey.value();
       if (!apiKey) {
@@ -2870,6 +2894,7 @@ exports.generateInneraAiChat = onCall(
       const { safeHistory, historyCharacters } = buildInneraSafeHistory(
         history,
         mode,
+        { isSpecialRecentReview: specialRecentReviewRequest },
       );
       console.log("generateInneraAiChat history prepared", {
         mode,
@@ -2880,6 +2905,36 @@ exports.generateInneraAiChat = onCall(
       latencyState.historyCharacters = historyCharacters;
 
       const client = new OpenAI({ apiKey });
+      const recentReviewDomainSelection =
+        mode === "recentReview" && !specialRecentReviewRequest
+          ? selectRecentReviewDomains(message)
+          : null;
+      const contextPayload = buildInneraContextPayload({
+        mode,
+        context,
+        contextSources,
+        recordDraft: existingRecordDraft,
+        emotionDimensions,
+        specialRecentReviewRequest,
+        recentReviewDomainSelection,
+      });
+      recentReviewContextTelemetry = buildRecentReviewContextSizeLog({
+        context: contextPayload.context,
+        contextSources,
+        safeHistoryCount: safeHistory.length,
+        historyCharacters,
+        usedV2Summary:
+          recentReviewRequestType === "general_review" &&
+          Boolean(contextPayload.context?.recentReviewSummary),
+        usedLegacyFallback:
+          recentReviewRequestType === "general_review" &&
+          !contextPayload.context?.recentReviewSummary,
+        selectedDomains:
+          recentReviewDomainSelection?.selectedDomains || [],
+        usedDomainFallback:
+          recentReviewDomainSelection?.usedDomainFallback || false,
+        fullSummary: context?.recentReviewSummary,
+      });
       latencyState.preparationMs = elapsedSince(preparationStartedAt);
       const openAiStartedAt = Date.now();
       try {
@@ -2895,6 +2950,8 @@ exports.generateInneraAiChat = onCall(
                 ? "innera_emotional_support_response"
                 : mode === "physicalHealth"
                   ? "innera_physical_health_response"
+                  : mode === "recentReview" && !specialRecentReviewRequest
+                    ? "innera_recent_review_response"
                 : "innera_chat_response",
             strict: true,
             schema: selectInneraChatResponseSchema({
@@ -2903,6 +2960,8 @@ exports.generateInneraAiChat = onCall(
               followUpQuestionsSchema,
               inneraChatSchema,
               physicalHealthChatSchema,
+              recentReviewChatSchema,
+              specialRecentReviewRequest,
             }),
           },
         },
@@ -2913,13 +2972,7 @@ exports.generateInneraAiChat = onCall(
           },
           {
             role: "user",
-            content: JSON.stringify(buildInneraContextPayload({
-              mode,
-              context,
-              contextSources,
-              recordDraft: existingRecordDraft,
-              emotionDimensions,
-            })),
+            content: JSON.stringify(contextPayload),
           },
           ...safeHistory,
           {
@@ -3006,11 +3059,26 @@ exports.generateInneraAiChat = onCall(
         const normalizedEventDrafts = normalizeInneraEventDrafts(
           images.length ? existingRecordDraft.eventDrafts : parsed.eventDrafts,
           existingRecordDraft.eventDrafts,
+          { mode, latestMessage: message },
         );
         const result = createPhysicalHealthApiResponse({
           reply,
           followUpQuestion: rawFollowUpQuestion,
           eventDrafts: normalizedEventDrafts,
+          model: DEFAULT_AI_MODEL,
+          promptVersion: INNERA_AI_PROMPT_VERSION,
+          completion,
+        });
+        latencyState.parseNormalizeMs = elapsedSince(parseNormalizeStartedAt);
+        await succeedUsageAndLog();
+        return result;
+      }
+
+      if (mode === "recentReview" && !specialRecentReviewRequest) {
+        const result = createRecentReviewApiResponse({
+          reply: formatRecentReviewMedicationList(message, context, reply),
+          followUpQuestion: rawFollowUpQuestion,
+          contextSources,
           model: DEFAULT_AI_MODEL,
           promptVersion: INNERA_AI_PROMPT_VERSION,
           completion,
