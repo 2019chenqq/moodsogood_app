@@ -32,6 +32,9 @@ test("builds only core plus the active mode", () => {
 
   const review = buildInneraPrompt("recentReview");
   assert.match(review, /recentReviewSummary.*數值與事實的主要依據/);
+  assert.match(review, /averageNightSleepHours/);
+  assert.match(review, /recentReviewEvidence.*只能用來列舉/);
+  assert.match(review, /不得因最多 5 筆 evidence/);
   assert.match(review, /不得自行重新計算統計/);
   assert.match(review, /recordedDays、validNightSleepDays.*usableBedtimeDays/);
   assert.match(review, /不得把 usableBedtimeDays 稱為有效睡眠紀錄/);

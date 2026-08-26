@@ -123,10 +123,14 @@ test("general recent review V2 applies the supplied domain selection", () => {
     emotions: [{ name: "焦慮" }],
     symptoms: [{ name: "頭痛" }],
   };
+  const evidence = {
+    sleep: [{ date: "2026-08-25", nightSleepHours: 8 }],
+    emotion: [{ date: "2026-08-24", name: "焦慮", intensity: 4 }],
+  };
   const payload = buildInneraContextPayload({
     mode: "recentReview",
     ...shared,
-    context: { recentReviewSummary: summary },
+    context: { recentReviewSummary: summary, recentReviewEvidence: evidence },
     specialRecentReviewRequest: false,
     recentReviewDomainSelection: {
       selectedDomains: ["sleep"],
@@ -136,6 +140,9 @@ test("general recent review V2 applies the supplied domain selection", () => {
   assert.deepEqual(payload.context.recentReviewSummary, {
     period: summary.period,
     sleep: summary.sleep,
+  });
+  assert.deepEqual(payload.context.recentReviewEvidence, {
+    sleep: evidence.sleep,
   });
 });
 
@@ -159,6 +166,7 @@ test("special recent review removes V2 summary and retains the legacy context", 
     locale: "zh-TW",
     recentDailyRecords: [{ date: "2026-08-23" }],
     recentReviewSummary: { period: { lookbackDays: 30 } },
+    recentReviewEvidence: { sleep: [{ date: "2026-08-23" }] },
   };
   const payload = buildInneraContextPayload({
     mode: "recentReview",

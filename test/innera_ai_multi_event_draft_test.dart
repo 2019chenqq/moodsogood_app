@@ -240,4 +240,60 @@ void main() {
     expect(drafts.single.stateChanges['energy_change'], 2);
     expect(drafts.single.symptomSeverities['疲倦'], 4);
   });
+
+  test('same-id response cannot overwrite an established event time', () {
+    final original = InneraAiHealthEventDraft(
+      id: 'stable',
+      eventTime: DateTime(2026, 8, 24, 15, 15),
+      timeContext: '現在',
+      symptoms: const ['心悸'],
+    );
+    final modelPatch = InneraAiHealthEventDraft(
+      id: 'stable',
+      eventTime: DateTime(2026, 8, 24, 8),
+      timeContext: '早上8點',
+      timePrecision: AiEventTimePrecision.exact,
+      symptoms: const ['心悸'],
+    );
+
+    final merged = original.merge(modelPatch);
+
+    expect(merged.id, 'stable');
+    expect(merged.eventTime, DateTime(2026, 8, 24, 15, 15));
+    expect(merged.timeContext, '現在');
+  });
+
+  test('explicit correction updates only the active event without a duplicate',
+      () {
+    final unrelated = InneraAiHealthEventDraft(
+      id: 'morning',
+      eventTime: DateTime(2026, 8, 24, 8),
+      timeContext: '早上8點',
+      timePrecision: AiEventTimePrecision.exact,
+      symptoms: const ['頭痛'],
+    );
+    final target = InneraAiHealthEventDraft(
+      id: 'latest',
+      eventTime: DateTime(2026, 8, 24, 15),
+      timeContext: '下午3點',
+      timePrecision: AiEventTimePrecision.exact,
+      symptoms: const ['心悸'],
+    );
+
+    final drafts = apply(
+      [unrelated, target],
+      '剛剛那筆其實是下午2點，不是3點。',
+      DateTime(2026, 8, 24, 15, 20),
+    );
+
+    expect(drafts, hasLength(2));
+    expect(
+      drafts.firstWhere((item) => item.id == 'latest').eventTime,
+      DateTime(2026, 8, 24, 14),
+    );
+    expect(
+      drafts.firstWhere((item) => item.id == 'morning').eventTime,
+      DateTime(2026, 8, 24, 8),
+    );
+  });
 }

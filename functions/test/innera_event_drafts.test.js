@@ -193,3 +193,145 @@ test("daily record does not use physical health proximity merging", () => {
   });
   assert.equal(result.length, 2);
 });
+
+test("physical health continuity keeps one stable active event without duplicate propagation", () => {
+  const at1515 = {
+    ...event("active", "現在", [{ name: "心悸", severity: null }]),
+    eventTime: "2026-08-24T15:15:00.000Z",
+  };
+  const withTremor = normalizeInneraEventDrafts([
+    {
+      ...event("model-tremor", "現在", [{ name: "手抖", severity: null }]),
+      eventTime: "2026-08-24T15:16:00.000Z",
+    },
+  ], [at1515], {
+    mode: "physicalHealth",
+    latestMessage: "而且有點手抖",
+  });
+  const withNausea = normalizeInneraEventDrafts([
+    withTremor[0],
+    {
+      ...event("duplicate-nausea", "剛剛", [{ name: "噁心反胃", severity: null }]),
+      eventTime: "2026-08-24T15:17:00.000Z",
+    },
+  ], withTremor, {
+    mode: "physicalHealth",
+    latestMessage: "剛剛也有點噁心",
+  });
+
+  assert.equal(withNausea.length, 1);
+  assert.equal(withNausea[0].id, "active");
+  assert.equal(withNausea[0].eventTime, at1515.eventTime);
+  assert.deepEqual(withNausea[0].symptoms.map((item) => item.name), [
+    "心悸", "手抖", "噁心反胃",
+  ]);
+});
+
+test("reused id with a different explicit time creates a new event", () => {
+  const active = {
+    ...event("active", "現在", ["心悸", "手抖", "噁心反胃"]),
+    eventTime: "2026-08-24T15:15:00.000Z",
+  };
+  const result = normalizeInneraEventDrafts([
+    {
+      ...event("active", "早上8點", [{ name: "心悸", severity: 3 }]),
+      eventTime: "2026-08-24T08:00:00.000Z",
+      timePrecision: "exact",
+    },
+  ], [active], {
+    mode: "physicalHealth",
+    latestMessage: "早上8點心悸，程度3分",
+  });
+
+  assert.equal(result.length, 2);
+  assert.equal(result[0].id, "active");
+  assert.equal(result[0].eventTime, active.eventTime);
+  assert.deepEqual(result[0].symptoms.map((item) => item.name), [
+    "心悸", "手抖", "噁心反胃",
+  ]);
+  const morning = result.find((item) => item.id !== "active");
+  assert.equal(morning.eventTime, "2026-08-24T08:00:00.000Z");
+  assert.deepEqual(morning.symptoms, [{ name: "心悸", severity: 3 }]);
+});
+
+test("current-time symptom never moves into a historical exact event", () => {
+  const current = {
+    ...event("current", "現在", ["手抖"]),
+    eventTime: "2026-08-24T15:15:00.000Z",
+  };
+  const morning = {
+    ...event("morning", "早上8點", [{ name: "心悸", severity: 3 }]),
+    eventTime: "2026-08-24T08:00:00.000Z",
+    timePrecision: "exact",
+  };
+  const result = normalizeInneraEventDrafts([
+    {
+      ...event("morning", "剛剛", ["頭痛"]),
+      eventTime: "2026-08-24T15:18:00.000Z",
+    },
+  ], [current, morning], {
+    mode: "physicalHealth",
+    latestMessage: "剛剛頭痛",
+  });
+
+  assert.equal(result.find((item) => item.id === "morning").eventTime, morning.eventTime);
+  assert.equal(
+    result.find((item) => item.id === "morning").symptoms.some((item) => item.name === "頭痛"),
+    false,
+  );
+  assert.equal(result.some((item) =>
+    item.id !== "morning" && item.symptoms.some((symptom) => symptom.name === "頭痛")
+  ), true);
+});
+
+test("same symptom at explicit morning and afternoon times stays separate", () => {
+  const morning = {
+    ...event("palpitation", "早上8點", ["心悸"]),
+    eventTime: "2026-08-24T08:00:00.000Z",
+    timePrecision: "exact",
+  };
+  const result = normalizeInneraEventDrafts([
+    {
+      ...event("palpitation", "下午2點", ["心悸"]),
+      eventTime: "2026-08-24T14:00:00.000Z",
+      timePrecision: "exact",
+    },
+  ], [morning], {
+    mode: "physicalHealth",
+    latestMessage: "下午2點又心悸",
+  });
+
+  assert.equal(result.length, 2);
+  assert.deepEqual(result.map((item) => item.eventTime), [
+    "2026-08-24T08:00:00.000Z",
+    "2026-08-24T14:00:00.000Z",
+  ]);
+});
+
+test("explicit correction may update only its targeted event time", () => {
+  const corrected = {
+    ...event("latest", "下午3點", ["心悸"]),
+    eventTime: "2026-08-24T15:00:00.000Z",
+    timePrecision: "exact",
+  };
+  const unrelated = {
+    ...event("morning", "早上8點", ["頭痛"]),
+    eventTime: "2026-08-24T08:00:00.000Z",
+    timePrecision: "exact",
+  };
+  const result = normalizeInneraEventDrafts([
+    {
+      ...event("latest", "下午2點", ["心悸"]),
+      eventTime: "2026-08-24T14:00:00.000Z",
+      timePrecision: "exact",
+    },
+  ], [unrelated, corrected], {
+    mode: "physicalHealth",
+    latestMessage: "剛剛那筆其實是下午2點，不是3點",
+  });
+
+  assert.equal(result.find((item) => item.id === "latest").eventTime,
+    "2026-08-24T14:00:00.000Z");
+  assert.equal(result.find((item) => item.id === "morning").eventTime,
+    unrelated.eventTime);
+});

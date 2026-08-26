@@ -21,6 +21,10 @@ test("recent review context breakdown measures sizes without exposing values", (
     dailyRecordStats: { recordedDays: 2 },
     recentDiaries: [{ summary: "private-diary" }],
     activeMedications: [{ name: "private-medication" }],
+    recentReviewEvidence: {
+      sleep: [{ date: "private-evidence-date" }],
+      emotion: [{ date: "private-evidence-date-2" }],
+    },
     customAggregate: { value: "private-other" },
   };
   const contextSources = [{ label: "private-source", count: 2 }];
@@ -68,6 +72,11 @@ test("recent review context breakdown measures sizes without exposing values", (
     assert.equal(log.inputTokens, 8057);
     assert.equal(log.finalContextCharacters, JSON.stringify(context).length);
     assert.equal(log.recentReviewSummaryCharacters, JSON.stringify(null).length);
+    assert.equal(
+      log.evidenceCharacters,
+      JSON.stringify(context.recentReviewEvidence).length,
+    );
+    assert.equal(log.evidenceCount, 2);
     assert.equal(log.usedV2Summary, true);
     assert.equal(log.usedLegacyFallback, false);
     assert.deepEqual(log.selectedDomains, ["sleep"]);
@@ -87,6 +96,8 @@ test("recent review context breakdown measures sizes without exposing values", (
       "private-medication",
       "private-other",
       "private-source",
+      "private-evidence-date",
+      "private-evidence-date-2",
     ]) {
       assert.equal(serializedLog.includes(privateValue), false);
     }

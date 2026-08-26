@@ -4,6 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   selectRecentReviewDomains,
+  selectRecentReviewEvidence,
   selectRecentReviewSummary,
 } = require("../innera_recent_review_domains");
 
@@ -70,5 +71,29 @@ test("overall and uncertain messages retain the complete summary", () => {
   assert.equal(
     selectRecentReviewSummary(full, selectRecentReviewDomains("最近怎麼樣？")),
     full,
+  );
+});
+
+test("evidence follows the selected domains without changing its values", () => {
+  const evidence = {
+    sleep: [{ date: "2026-08-25" }],
+    emotion: [{ date: "2026-08-24", name: "焦慮", intensity: 4 }],
+    symptom: [{ dateTime: "2026-08-23 15:00", name: "心悸" }],
+    medication: [{ date: "2026-08-20", name: "藥物 A" }],
+    period: [{ startDate: "2026-08-01", endDate: null }],
+  };
+  assert.deepEqual(
+    selectRecentReviewEvidence(
+      evidence,
+      selectRecentReviewDomains("睡眠和情緒如何？"),
+    ),
+    { sleep: evidence.sleep, emotion: evidence.emotion },
+  );
+  assert.equal(
+    selectRecentReviewEvidence(
+      evidence,
+      selectRecentReviewDomains("最近整體如何？"),
+    ),
+    evidence,
   );
 });

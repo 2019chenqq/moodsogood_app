@@ -54,22 +54,42 @@ void main() {
     expect(summary.sleep.validNightSleepDays, 30);
     expect(summary.sleep.averageNightSleepMinutes, 470);
     expect(summary.sleep.averageAllDaySleepMinutes, 476);
+    expect(summary.sleep.averageNightSleepHours, 7.8);
+    expect(summary.sleep.averageAllDaySleepHours, 7.9);
     expect(summary.sleep.sleepQualityRecordedDays, 15);
     expect(summary.sleep.averageSleepQuality, 3);
     expect(summary.sleep.napCount, 6);
     expect(summary.sleep.napDays, 6);
     expect(summary.sleep.averageNapMinutes, 30);
+    expect(summary.sleep.averageNapHours, 0.5);
     expect(summary.sleep.sleepFlagCounts, {'insufficient': 3});
     expect(summary.sleep.explicitBedtimeDays, 20);
     expect(summary.sleep.estimatedBedtimeDays, 10);
     expect(summary.sleep.usableBedtimeDays, 30);
     expect(summary.sleep.typicalBedtime, '23:00');
+    expect(summary.sleep.toJson(), isNot(contains('averageNightSleepMinutes')));
+    expect(summary.sleep.toJson(), isNot(contains('averageNapMinutes')));
     expect(summary.states.toJson(), {
       'energy': 3,
       'appetite': 4,
       'activity': 2,
     });
     expect(summary.size.totalCharacters, greaterThan(0));
+    expect(summary.evidence['sleep'], hasLength(5));
+    expect(
+      summary.evidence['sleep']!.every(
+        (item) => item.keys.every(
+          (key) => const {
+            'date',
+            'bedtime',
+            'nightSleepHours',
+            'sleepQuality',
+            'flags',
+          }.contains(key),
+        ),
+      ),
+      isTrue,
+    );
 
     final canonical = const SleepAnalysisService().analyze(
       records: records,
@@ -96,6 +116,50 @@ void main() {
     );
     expect(summary.sleep.napCount, canonical.summary.napCount);
     expect(summary.sleep.napDays, canonical.summary.napDays);
+  });
+
+  test('converts sleep duration minutes to one-decimal hours', () {
+    final summary = builder.build(
+      startDate: DateTime(2026, 8, 1),
+      endDate: DateTime(2026, 8, 1),
+      dailyRecords: [
+        DailyRecord(
+          id: 'duration-hours',
+          date: DateTime(2026, 8, 1),
+          sleep: const SleepData(
+            sleepTime: TimeOfDay(hour: 21, minute: 18),
+            finalWakeTime: TimeOfDay(hour: 7, minute: 0),
+            naps: [
+              NapItem(
+                start: TimeOfDay(hour: 13, minute: 0),
+                end: TimeOfDay(hour: 14, minute: 18),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    expect(summary.sleep.averageNightSleepMinutes, 582);
+    expect(summary.sleep.averageNightSleepHours, 9.7);
+    expect(summary.sleep.averageNapMinutes, 78);
+    expect(summary.sleep.averageNapHours, 1.3);
+    expect(summary.sleep.shortestNightSleepHours, 9.7);
+    expect(summary.sleep.longestNightSleepHours, 9.7);
+  });
+
+  test('keeps missing sleep durations null when converting to hours', () {
+    final summary = builder.build(
+      startDate: DateTime(2026, 8, 1),
+      endDate: DateTime(2026, 8, 1),
+      dailyRecords: const [],
+    );
+
+    expect(summary.sleep.averageNightSleepHours, isNull);
+    expect(summary.sleep.averageAllDaySleepHours, isNull);
+    expect(summary.sleep.averageNapHours, isNull);
+    expect(summary.sleep.shortestNightSleepHours, isNull);
+    expect(summary.sleep.longestNightSleepHours, isNull);
   });
 
   test('missing sleep dates do not become valid bedtime days', () {
@@ -204,6 +268,16 @@ void main() {
     expect(headache.occurrenceDays, 2);
     expect(headache.averageIntensity, 4);
     expect(headache.maxIntensity, 4);
+    expect(summary.evidence['emotion'], hasLength(3));
+    expect(summary.evidence['emotion']!.first['intensity'], 5);
+    expect(summary.evidence['symptom'], hasLength(3));
+    expect(summary.evidence['symptom']!.first, {
+      'dateTime': '2026-08-02 15:00',
+      'name': '頭痛',
+      'severity': 4,
+    });
+    expect(summary.evidence['emotion']!.length, lessThanOrEqualTo(5));
+    expect(summary.evidence['symptom']!.length, lessThanOrEqualTo(5));
   });
 
   test('keeps all active medications with only review fields', () {
@@ -319,6 +393,13 @@ void main() {
         'changeSummary': '已施打',
       },
     ]);
+    expect(summary.evidence['medication'], hasLength(5));
+    expect(summary.evidence['medication']!.first, {
+      'date': '2026/08/21',
+      'name': '藥物 D',
+      'type': 'added',
+      'changeSummary': '25 mg × 1 顆',
+    });
   });
 
   test('empty periods and legacy missing fields do not crash', () {
@@ -387,6 +468,9 @@ void main() {
     );
 
     expect(summary.periodCycles, [
+      {'startDate': '2026-08-05', 'endDate': '2026-08-09'},
+    ]);
+    expect(summary.evidence['period'], [
       {'startDate': '2026-08-05', 'endDate': '2026-08-09'},
     ]);
   });
