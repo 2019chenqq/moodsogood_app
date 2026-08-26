@@ -1,6 +1,9 @@
 "use strict";
 
-const { selectRecentReviewSummary } = require("./innera_recent_review_domains");
+const {
+  selectRecentReviewEvidence,
+  selectRecentReviewSummary,
+} = require("./innera_recent_review_domains");
 
 const adjustmentTypeLabels = {
   added: "新增藥物",
@@ -111,12 +114,21 @@ function generalRecentReviewContext(context, domainSelection) {
         source.recentReviewSummary,
         domainSelection,
       ),
+      ...(source.recentReviewEvidence && {
+        recentReviewEvidence: selectRecentReviewEvidence(
+          source.recentReviewEvidence,
+          domainSelection,
+        ),
+      }),
     };
   }
   return {
     ...Object.fromEntries(
       Object.entries(source).filter(
-        ([key]) => key !== "recentDailyRecords" && key !== "recentReviewSummary",
+        ([key]) =>
+          key !== "recentDailyRecords" &&
+          key !== "recentReviewSummary" &&
+          key !== "recentReviewEvidence",
       ),
     ),
     ...(Object.hasOwn(source, "recentMedicationAdjustments")
@@ -144,7 +156,8 @@ function buildInneraContextPayload({
     ? specialRecentReviewRequest
       ? Object.fromEntries(
           Object.entries(context || {}).filter(
-            ([key]) => key !== "recentReviewSummary",
+            ([key]) =>
+              key !== "recentReviewSummary" && key !== "recentReviewEvidence",
           ),
         )
       : generalRecentReviewContext(context, recentReviewDomainSelection)

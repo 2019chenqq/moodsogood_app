@@ -23,6 +23,7 @@ class RecentReviewSummary {
     required this.medications,
     required this.medicationChanges,
     required this.periodCycles,
+    required this.evidence,
   });
 
   final RecentReviewPeriodSummary period;
@@ -33,6 +34,7 @@ class RecentReviewSummary {
   final List<Map<String, dynamic>> medications;
   final List<Map<String, dynamic>> medicationChanges;
   final List<Map<String, dynamic>> periodCycles;
+  final Map<String, List<Map<String, dynamic>>> evidence;
 
   Map<String, dynamic> toJson() => {
         'period': period.toJson(),
@@ -44,6 +46,8 @@ class RecentReviewSummary {
         'medicationChanges': medicationChanges,
         'periodCycles': periodCycles,
       };
+
+  Map<String, dynamic> evidenceToJson() => evidence;
 
   RecentReviewSummarySize get size => RecentReviewSummarySize.fromSummary(this);
 }
@@ -75,6 +79,8 @@ class RecentReviewSleepSummary {
     required this.validNightSleepDays,
     required this.averageNightSleepMinutes,
     required this.averageAllDaySleepMinutes,
+    required this.shortestNightSleepMinutes,
+    required this.longestNightSleepMinutes,
     required this.sleepQualityRecordedDays,
     required this.averageSleepQuality,
     required this.napCount,
@@ -93,6 +99,8 @@ class RecentReviewSleepSummary {
   final int validNightSleepDays;
   final double? averageNightSleepMinutes;
   final double? averageAllDaySleepMinutes;
+  final int? shortestNightSleepMinutes;
+  final int? longestNightSleepMinutes;
   final int sleepQualityRecordedDays;
   final double? averageSleepQuality;
   final int napCount;
@@ -106,16 +114,28 @@ class RecentReviewSleepSummary {
   final String? earliestBedtime;
   final String? latestBedtime;
 
+  double? get averageNightSleepHours =>
+      _minutesToHours(averageNightSleepMinutes);
+  double? get averageAllDaySleepHours =>
+      _minutesToHours(averageAllDaySleepMinutes);
+  double? get averageNapHours => _minutesToHours(averageNapMinutes);
+  double? get shortestNightSleepHours =>
+      _minutesToHours(shortestNightSleepMinutes);
+  double? get longestNightSleepHours =>
+      _minutesToHours(longestNightSleepMinutes);
+
   Map<String, dynamic> toJson() => {
         'recordedDays': recordedDays,
         'validNightSleepDays': validNightSleepDays,
-        'averageNightSleepMinutes': averageNightSleepMinutes,
-        'averageAllDaySleepMinutes': averageAllDaySleepMinutes,
+        'averageNightSleepHours': averageNightSleepHours,
+        'averageAllDaySleepHours': averageAllDaySleepHours,
+        'shortestNightSleepHours': shortestNightSleepHours,
+        'longestNightSleepHours': longestNightSleepHours,
         'sleepQualityRecordedDays': sleepQualityRecordedDays,
         'averageSleepQuality': averageSleepQuality,
         'napCount': napCount,
         'napDays': napDays,
-        'averageNapMinutes': averageNapMinutes,
+        'averageNapHours': averageNapHours,
         'sleepFlagCounts': sleepFlagCounts,
         'explicitBedtimeDays': explicitBedtimeDays,
         'estimatedBedtimeDays': estimatedBedtimeDays,
@@ -125,6 +145,9 @@ class RecentReviewSleepSummary {
         'latestBedtime': latestBedtime,
       };
 }
+
+double? _minutesToHours(num? minutes) =>
+    minutes == null ? null : (minutes / 6).round() / 10;
 
 class RecentReviewMetricSummary {
   const RecentReviewMetricSummary({
@@ -251,6 +274,27 @@ class RecentReviewSummaryBuilder {
       start: start,
       endExclusive: end.add(const Duration(days: 1)),
     );
+    final cycles = periodCycles.toList();
+    final sleepAnalysis = const SleepAnalysisService().analyze(
+      records: records,
+      endDate: end,
+      startDate: start,
+      period: SleepInsightPeriod.thirtyDays,
+      periodCycles: cycles,
+    );
+    final medicationChanges =
+        medicationAdjustments.expand(_medicationChanges).toList();
+    final recentPeriodCycles = cycles
+        .where((cycle) =>
+            !cycle.startDate.isAfter(end) &&
+            (cycle.endDate == null || !cycle.endDate!.isBefore(start)))
+        .map(
+          (cycle) => {
+            'startDate': _date(cycle.startDate),
+            'endDate': cycle.endDate == null ? null : _date(cycle.endDate!),
+          },
+        )
+        .toList();
 
     final summary = RecentReviewSummary(
       period: RecentReviewPeriodSummary(
@@ -259,7 +303,7 @@ class RecentReviewSummaryBuilder {
         lookbackDays: end.difference(start).inDays + 1,
         recordedDays: aggregationService.recordedDayCount(aggregates),
       ),
-      sleep: _sleep(records, start, end, periodCycles.toList()),
+      sleep: _sleep(sleepAnalysis.summary),
       emotions: _emotions(aggregates),
       symptoms: aggregationService
           .allSymptomStatistics(aggregates)
@@ -278,43 +322,29 @@ class RecentReviewSummaryBuilder {
         activity: _stateAverage(aggregates, 'activity_change'),
       ),
       medications: activeMedications.map(_medication).toList(),
-      medicationChanges:
-          medicationAdjustments.expand(_medicationChanges).toList(),
-      periodCycles: periodCycles
-          .where((cycle) =>
-              !cycle.startDate.isAfter(end) &&
-              (cycle.endDate == null || !cycle.endDate!.isBefore(start)))
-          .map(
-            (cycle) => {
-              'startDate': _date(cycle.startDate),
-              'endDate': cycle.endDate == null ? null : _date(cycle.endDate!),
-            },
-          )
-          .toList(),
+      medicationChanges: medicationChanges,
+      periodCycles: recentPeriodCycles,
+      evidence: {
+        'sleep': _sleepEvidence(sleepAnalysis.points),
+        'emotion': _emotionEvidence(records, events),
+        'symptom': _symptomEvidence(records, events),
+        'medication': _recentMaps(medicationChanges, dateKey: 'date'),
+        'period': _recentMaps(recentPeriodCycles, dateKey: 'startDate'),
+      },
     );
     debugPrint('RecentReviewSummary size ${summary.size.toJson()}');
+    debugPrint('RecentReviewEvidence size ${_evidenceSize(summary.evidence)}');
     return summary;
   }
 
-  static RecentReviewSleepSummary _sleep(
-    List<DailyRecord> records,
-    DateTime start,
-    DateTime end,
-    List<PeriodCycle> periodCycles,
-  ) {
-    final canonical = const SleepAnalysisService().analyze(
-      records: records,
-      endDate: end,
-      startDate: start,
-      period: SleepInsightPeriod.thirtyDays,
-      periodCycles: periodCycles,
-    );
-    final sleep = canonical.summary;
+  static RecentReviewSleepSummary _sleep(SleepPeriodSummary sleep) {
     return RecentReviewSleepSummary(
       recordedDays: sleep.recordDays,
       validNightSleepDays: sleep.validNightDays,
       averageNightSleepMinutes: _oneDecimal(sleep.averageNightMinutes),
       averageAllDaySleepMinutes: _oneDecimal(sleep.averageTotalMinutes),
+      shortestNightSleepMinutes: sleep.shortestNightMinutes,
+      longestNightSleepMinutes: sleep.longestNightMinutes,
       sleepQualityRecordedDays: sleep.qualityDays,
       averageSleepQuality: _oneDecimal(sleep.averageQuality),
       napCount: sleep.napCount,
@@ -329,6 +359,126 @@ class RecentReviewSummaryBuilder {
       latestBedtime: _formatTime(sleep.latestBedtime),
     );
   }
+
+  static List<Map<String, dynamic>> _sleepEvidence(
+    List<SleepTrendPoint> points,
+  ) {
+    final candidates = points.where((point) => point.hasSleepRecord).toList()
+      ..sort((left, right) {
+        int score(SleepTrendPoint point) =>
+            (point.flags.isNotEmpty ? 2 : 0) +
+            (point.nightMinutes != null ? 1 : 0) +
+            (point.quality != null ? 1 : 0);
+        final representative = score(right).compareTo(score(left));
+        return representative != 0
+            ? representative
+            : right.date.compareTo(left.date);
+      });
+    return candidates.take(5).map((point) {
+      final bedtime = _formatTime(point.sleepStartTime);
+      return <String, dynamic>{
+        'date': _date(point.date),
+        if (bedtime != null) 'bedtime': bedtime,
+        if (point.nightMinutes != null)
+          'nightSleepHours': _minutesToHours(point.nightMinutes),
+        if (point.quality != null) 'sleepQuality': point.quality,
+        if (point.flags.isNotEmpty) 'flags': point.flags,
+      };
+    }).toList();
+  }
+
+  static List<Map<String, dynamic>> _emotionEvidence(
+    List<DailyRecord> records,
+    List<HealthEvent> events,
+  ) {
+    final candidates = <_MetricEvidenceCandidate>[
+      for (final record in records)
+        for (final emotion in record.emotions)
+          if (emotion.name.trim().isNotEmpty && emotion.value != null)
+            _MetricEvidenceCandidate(
+              at: record.date,
+              name: emotion.name.trim(),
+              value: emotion.value,
+            ),
+      for (final event in events)
+        for (final emotion in event.emotions)
+          if (emotion.name.trim().isNotEmpty)
+            _MetricEvidenceCandidate(
+              at: event.timestamp,
+              name: emotion.name.trim(),
+              value: emotion.intensity,
+            ),
+    ];
+    return _selectMetricEvidence(candidates, valueKey: 'intensity');
+  }
+
+  static List<Map<String, dynamic>> _symptomEvidence(
+    List<DailyRecord> records,
+    List<HealthEvent> events,
+  ) {
+    final candidates = <_MetricEvidenceCandidate>[
+      for (final record in records)
+        for (final symptom in record.symptoms)
+          if (symptom.trim().isNotEmpty)
+            _MetricEvidenceCandidate(at: record.date, name: symptom.trim()),
+      for (final event in events)
+        for (final symptom in event.symptoms)
+          if (symptom.name.trim().isNotEmpty)
+            _MetricEvidenceCandidate(
+              at: event.timestamp,
+              name: symptom.name.trim(),
+              value: symptom.severity,
+              includeTime: true,
+            ),
+    ];
+    return _selectMetricEvidence(candidates, valueKey: 'severity');
+  }
+
+  static List<Map<String, dynamic>> _selectMetricEvidence(
+    List<_MetricEvidenceCandidate> candidates, {
+    required String valueKey,
+  }) {
+    candidates.sort((left, right) {
+      final intensity = (right.value ?? 0).compareTo(left.value ?? 0);
+      return intensity != 0 ? intensity : right.at.compareTo(left.at);
+    });
+    final seen = <String>{};
+    final selected = <Map<String, dynamic>>[];
+    for (final item in candidates) {
+      final key = '${_date(item.at)}\u0000${item.name}';
+      if (!seen.add(key)) continue;
+      selected.add({
+        item.includeTime ? 'dateTime' : 'date':
+            item.includeTime ? _dateTime(item.at) : _date(item.at),
+        'name': item.name,
+        if (item.value != null) valueKey: item.value,
+      });
+      if (selected.length == 5) break;
+    }
+    return selected;
+  }
+
+  static List<Map<String, dynamic>> _recentMaps(
+    List<Map<String, dynamic>> values, {
+    required String dateKey,
+  }) {
+    final result = values.map(Map<String, dynamic>.from).toList()
+      ..sort((left, right) =>
+          right[dateKey].toString().compareTo(left[dateKey].toString()));
+    return result.take(5).toList();
+  }
+
+  static Map<String, int> _evidenceSize(
+    Map<String, List<Map<String, dynamic>>> evidence,
+  ) =>
+      {
+        'totalCharacters': jsonEncode(evidence).length,
+        'sleepCount': evidence['sleep']?.length ?? 0,
+        'emotionCount': evidence['emotion']?.length ?? 0,
+        'symptomCount': evidence['symptom']?.length ?? 0,
+        'medicationCount': evidence['medication']?.length ?? 0,
+        'periodCount': evidence['period']?.length ?? 0,
+      };
 
   static List<RecentReviewMetricSummary> _emotions(
     List<DailyHealthAggregate> aggregates,
@@ -460,4 +610,22 @@ class RecentReviewSummaryBuilder {
       '${value.year.toString().padLeft(4, '0')}-'
       '${value.month.toString().padLeft(2, '0')}-'
       '${value.day.toString().padLeft(2, '0')}';
+
+  static String _dateTime(DateTime value) => '${_date(value)} '
+      '${value.hour.toString().padLeft(2, '0')}:'
+      '${value.minute.toString().padLeft(2, '0')}';
+}
+
+class _MetricEvidenceCandidate {
+  const _MetricEvidenceCandidate({
+    required this.at,
+    required this.name,
+    this.value,
+    this.includeTime = false,
+  });
+
+  final DateTime at;
+  final String name;
+  final int? value;
+  final bool includeTime;
 }

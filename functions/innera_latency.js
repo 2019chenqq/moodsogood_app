@@ -75,6 +75,7 @@ function buildRecentReviewContextSizeLog({
     "recentMedicationAdjustments",
     "recentPeriodCycles",
     "recentReviewSummary",
+    "recentReviewEvidence",
   ];
   const otherContext = Object.fromEntries(
     Object.entries(requestContext).filter(([key]) => !measuredKeys.includes(key)),
@@ -82,6 +83,13 @@ function buildRecentReviewContextSizeLog({
   const recentDailyRecords = requestContext.recentDailyRecords;
   const emotions = requestContext.emotionStats?.emotions;
   const sleepEvidence = requestContext.sleepTimeStats?.bedtimeEvidence;
+  const reviewEvidence = requestContext.recentReviewEvidence;
+  const evidenceCount = reviewEvidence && typeof reviewEvidence === "object"
+    ? Object.values(reviewEvidence).reduce(
+        (total, items) => total + (Array.isArray(items) ? items.length : 0),
+        0,
+      )
+    : 0;
   return {
     totalContextCharacters: jsonCharacters(requestContext),
     contextSourcesCharacters: jsonCharacters(sources),
@@ -104,6 +112,9 @@ function buildRecentReviewContextSizeLog({
     recentReviewSummaryCharacters: jsonCharacters(
       requestContext.recentReviewSummary,
     ),
+    summaryCharacters: jsonCharacters(requestContext.recentReviewSummary),
+    evidenceCharacters: jsonCharacters(reviewEvidence),
+    evidenceCount,
     finalContextCharacters: jsonCharacters(requestContext),
     usedV2Summary: Boolean(usedV2Summary),
     usedLegacyFallback: Boolean(usedLegacyFallback),

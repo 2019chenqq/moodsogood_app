@@ -54,7 +54,21 @@ function selectRecentReviewSummary(summary, selection) {
   return selected;
 }
 
+function selectRecentReviewEvidence(evidence, selection) {
+  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) {
+    return evidence;
+  }
+  const domains = selection?.selectedDomains || ["overall"];
+  if (domains.includes("overall")) return evidence;
+  const selected = {};
+  for (const domain of domains) {
+    if (Object.hasOwn(evidence, domain)) selected[domain] = evidence[domain];
+  }
+  return selected;
+}
+
 module.exports = {
   selectRecentReviewDomains,
+  selectRecentReviewEvidence,
   selectRecentReviewSummary,
 };
