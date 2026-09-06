@@ -49,10 +49,12 @@ test("Firestore and Storage rules enforce private and server-only boundaries", {
       "community_rooms",
       "community_room_requests",
       "server_entitlements",
+      "followUpSummaryFeedback",
       "ai_usage_events",
       "ai_usage_daily",
       "ai_rate_limits",
       "ai_global_rate_limits",
+      "innera_free_quota",
     ]) {
       await assertFails(setDoc(
         doc(alice.firestore(), `${collection}/attempt`),

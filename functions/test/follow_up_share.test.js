@@ -7,8 +7,17 @@ const {
   authorizeShareRevocation,
   buildShareDocument,
   hashToken,
+  isValidShareToken,
   validateShareDocument,
 } = require("../follow_up_share");
+
+test("public share tokens accept only the generated fixed-length format", () => {
+  const share = buildShareDocument({ ownerUid: "owner", summarySnapshot: {} });
+  assert.equal(isValidShareToken(share.token), true);
+  assert.equal(isValidShareToken(""), false);
+  assert.equal(isValidShareToken("../invalid"), false);
+  assert.equal(isValidShareToken(`${share.token}extra`), false);
+});
 
 const now = new Date("2026-08-05T06:00:00.000Z");
 
