@@ -296,4 +296,186 @@ void main() {
       DateTime(2026, 8, 24, 8),
     );
   });
+
+  test(
+      'physical continuation reuses backend-handled event with null time context',
+      () {
+    final existing = InneraAiHealthEventDraft(
+      id: 'active-event',
+      eventTime: DateTime(2026, 8, 26, 16, 1),
+      symptoms: const ['心悸', '手抖', '噁心反胃'],
+    );
+
+    final drafts = mergeExplicitHealthEventDrafts(
+      existing: [existing],
+      text: '剛剛也有點噁心',
+      messageTime: DateTime(2026, 8, 26, 16, 2),
+      allowPhysicalContinuation: true,
+    );
+
+    expect(drafts, hasLength(1));
+    expect(drafts.single.id, 'active-event');
+    expect(drafts.single.eventTime, DateTime(2026, 8, 26, 16, 1));
+    expect(drafts.single.symptoms, ['心悸', '手抖', '噁心反胃']);
+  });
+
+  test('physical explicit new time does not reuse the active event', () {
+    final existing = InneraAiHealthEventDraft(
+      id: 'active-event',
+      eventTime: DateTime(2026, 8, 26, 16, 1),
+      symptoms: const ['心悸'],
+    );
+
+    final drafts = mergeExplicitHealthEventDrafts(
+      existing: [existing],
+      text: '下午2點又心悸',
+      messageTime: DateTime(2026, 8, 26, 16, 2),
+      allowPhysicalContinuation: true,
+    );
+
+    expect(drafts, hasLength(2));
+    expect(
+      drafts.firstWhere((item) => item.id == 'active-event').eventTime,
+      DateTime(2026, 8, 26, 16, 1),
+    );
+    expect(
+      drafts.where((item) => item.eventTime == DateTime(2026, 8, 26, 14)),
+      hasLength(1),
+    );
+  });
+
+  test('physical conjunction without a new time updates the active event', () {
+    final existing = InneraAiHealthEventDraft(
+      id: 'active-event',
+      eventTime: DateTime(2026, 8, 26, 16, 1),
+      symptoms: const ['心悸'],
+    );
+
+    final drafts = mergeExplicitHealthEventDrafts(
+      existing: [existing],
+      text: '而且頭痛',
+      messageTime: DateTime(2026, 8, 26, 16, 2),
+      allowPhysicalContinuation: true,
+    );
+
+    expect(drafts, hasLength(1));
+    expect(drafts.single.id, 'active-event');
+    expect(drafts.single.symptoms, ['心悸', '頭痛']);
+  });
+
+  test('physical fallback canonicalizes aliases without duplicate symptoms',
+      () {
+    final existing = InneraAiHealthEventDraft(
+      id: 'active-event',
+      eventTime: DateTime(2026, 8, 26, 17, 30),
+      symptoms: const ['噁心'],
+      rawUserEntries: const ['我有點噁心'],
+    );
+
+    final drafts = mergeExplicitHealthEventDrafts(
+      existing: [existing],
+      text: '還是有點反胃',
+      messageTime: DateTime(2026, 8, 26, 17, 31),
+      allowPhysicalContinuation: true,
+    );
+
+    expect(drafts, hasLength(1));
+    expect(drafts.single.symptoms, ['噁心反胃']);
+  });
+
+  test('physical fallback keeps explicit symptoms and per-symptom severity',
+      () {
+    final drafts = mergeExplicitHealthEventDrafts(
+      existing: const [],
+      text: '心悸4分，手抖，胃有點痛，還有點反胃',
+      messageTime: DateTime(2026, 8, 26, 17, 30),
+      allowPhysicalContinuation: true,
+    );
+
+    expect(drafts, hasLength(1));
+    expect(
+      drafts.single.symptoms,
+      containsAll(['心悸', '手抖', '胃痛', '噁心反胃']),
+    );
+    expect(drafts.single.symptomSeverities, {'心悸': 4});
+  });
+
+  test('physical fallback carries one symptom into an explicit recurrence', () {
+    final existing = InneraAiHealthEventDraft(
+      id: 'recent',
+      eventTime: DateTime(2026, 8, 26, 17, 30),
+      symptoms: const ['頭痛'],
+      rawUserEntries: const ['剛剛頭痛'],
+    );
+
+    final drafts = mergeExplicitHealthEventDrafts(
+      existing: [existing],
+      text: '晚上9點又痛了一次',
+      messageTime: DateTime(2026, 8, 26, 18),
+      allowPhysicalContinuation: true,
+    );
+
+    expect(drafts, hasLength(2));
+    expect(drafts.firstWhere((item) => item.id == 'recent').symptoms, ['頭痛']);
+    expect(
+      drafts
+          .firstWhere((item) => item.eventTime == DateTime(2026, 8, 26, 21))
+          .symptoms,
+      ['頭痛'],
+    );
+  });
+
+  test('physical fallback does not guess an ambiguous recurrence symptom', () {
+    final existing = InneraAiHealthEventDraft(
+      id: 'recent',
+      eventTime: DateTime(2026, 8, 26, 17, 30),
+      symptoms: const ['頭痛', '心悸'],
+      rawUserEntries: const ['剛剛頭痛又心悸'],
+    );
+
+    final drafts = mergeExplicitHealthEventDrafts(
+      existing: [existing],
+      text: '晚上9點又不舒服',
+      messageTime: DateTime(2026, 8, 26, 18),
+      allowPhysicalContinuation: true,
+    );
+
+    expect(drafts, hasLength(2));
+    expect(
+      drafts.firstWhere((item) => item.id == 'recent').symptoms,
+      ['頭痛', '心悸'],
+    );
+    expect(
+      drafts
+          .firstWhere((item) => item.eventTime == DateTime(2026, 8, 26, 21))
+          .symptoms,
+      isEmpty,
+    );
+  });
+
+  test('physical fallback creates the explicit 08:00 sleepiness event', () {
+    final existing = InneraAiHealthEventDraft(
+      id: 'current',
+      eventTime: DateTime(2026, 8, 29, 9, 13),
+      symptoms: const ['心悸', '手抖', '噁心反胃'],
+    );
+
+    final drafts = mergeExplicitHealthEventDrafts(
+      existing: [existing],
+      text: '早上8點嗜睡3分',
+      messageTime: DateTime(2026, 8, 29, 9, 14),
+      allowPhysicalContinuation: true,
+    );
+
+    expect(drafts, hasLength(2));
+    final current = drafts.firstWhere((item) => item.id == 'current');
+    expect(current.eventTime, DateTime(2026, 8, 29, 9, 13));
+    expect(current.symptoms, ['心悸', '手抖', '噁心反胃']);
+    expect(current.symptomSeverities, isEmpty);
+    final morning = drafts.firstWhere(
+      (item) => item.eventTime == DateTime(2026, 8, 29, 8),
+    );
+    expect(morning.symptoms, ['白天嗜睡']);
+    expect(morning.symptomSeverities, {'白天嗜睡': 3});
+  });
 }

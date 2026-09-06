@@ -34,6 +34,51 @@ void main() {
         entries.map((entry) => entry.record['id']), ['afternoon', 'morning']);
     expect(entries.map((entry) => entry.dateLabel).toSet(), {'2026/08/07'});
   });
+
+  test('adds an inferred timeline entry for a medication missing history', () {
+    final entries = buildMedicationAdjustmentHistory(
+      [_record('existing', DateTime(2026, 8, 7, 9))],
+      medications: [
+        {
+          'id': 'med-1',
+          'name': '已有紀錄的藥',
+          'startDate': '2026-08-07',
+        },
+        {
+          'id': 'med-2',
+          'name': '驅異樂',
+          'startDate': '2026-07-20',
+          'dose': 10,
+          'unit': 'mg',
+        },
+      ],
+    );
+
+    final inferred =
+        entries.singleWhere((entry) => entry.events.first.isInferred);
+    expect(inferred.events.first.medDocId, 'med-2');
+    expect(inferred.events.first.medName, '驅異樂');
+    expect(inferred.events.first.type, 'added');
+    expect(inferred.dateLabel, '2026/07/20');
+    expect(inferred.record['inferred'], isTrue);
+  });
+
+  test('does not infer an added event when that medication has any history',
+      () {
+    final entries = buildMedicationAdjustmentHistory(
+      [_record('existing', DateTime(2026, 8, 7, 9))],
+      medications: [
+        {
+          'id': 'med-1',
+          'name': '測試藥物',
+          'startDate': '2026-07-20',
+        },
+      ],
+    );
+
+    expect(entries, hasLength(1));
+    expect(entries.single.events.single.isInferred, isFalse);
+  });
 }
 
 Map<String, dynamic> _record(String id, DateTime date) => {

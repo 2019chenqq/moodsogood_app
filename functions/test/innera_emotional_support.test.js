@@ -69,6 +69,7 @@ test("short emotional messages retain non-form conversational constraints", () =
 test("other modes and special follow-up requests keep their existing schemas", () => {
   const fullSchema = { name: "full" };
   const followUpSchema = { name: "follow-up" };
+  const followUpSummarySchema = { name: "follow-up-summary" };
   const physicalHealthSchema = { name: "physical-health" };
   const recentReviewSchema = { name: "recent-review" };
   assert.equal(selectInneraChatResponseSchema({
@@ -110,10 +111,12 @@ test("other modes and special follow-up requests keep their existing schemas", (
   assert.equal(selectInneraChatResponseSchema({
     mode: "recentReview",
     followUpQuestionRequest: false,
+    followUpSummaryRequest: true,
     followUpQuestionsSchema: followUpSchema,
+    followUpSummarySchema,
     inneraChatSchema: fullSchema,
     physicalHealthChatSchema: physicalHealthSchema,
     recentReviewChatSchema: recentReviewSchema,
     specialRecentReviewRequest: true,
-  }), fullSchema);
+  }), followUpSummarySchema);
 });

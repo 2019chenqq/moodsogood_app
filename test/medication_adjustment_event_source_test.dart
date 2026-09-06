@@ -38,7 +38,7 @@ void main() {
       expect(events, isEmpty);
     });
 
-    test('劑量與時段同時改變沿用 doseChanged 並保存時段', () {
+    test('劑量與時段同時改變會分別保存兩種調整', () {
       final events = MedicationChangeDetector.detect(
         medDocId: 'med-2',
         before: {
@@ -55,10 +55,13 @@ void main() {
         },
       );
 
-      expect(events, hasLength(1));
-      expect(events.single['type'], 'doseChanged');
-      expect(events.single['oldTimes'], ['早上']);
-      expect(events.single['newTimes'], ['晚上']);
+      expect(events, hasLength(2));
+      expect(events.map((event) => event['type']), [
+        'doseChanged',
+        'scheduleChanged',
+      ]);
+      expect(events.last['oldTimes'], ['早上']);
+      expect(events.last['newTimes'], ['晚上']);
       expect(events.every((event) => event['medDocId'] == 'med-2'), isTrue);
     });
 

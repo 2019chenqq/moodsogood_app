@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const {
   DEFAULT_LIMITS,
   evaluateAiRateLimit,
+  evaluateGlobalAiRateLimit,
 } = require("../ai_rate_limit");
 
 test("allows requests and increments both fixed windows", () => {
@@ -62,4 +63,24 @@ test("rejects requests over a custom hourly ceiling", () => {
   assert.equal(rejected.limitType, "hour");
   assert.ok(rejected.retryAfterSeconds >= 1);
   assert.ok(rejected.retryAfterSeconds <= 3600);
+});
+
+test("rejects requests over the daily user ceiling", () => {
+  const now = Date.UTC(2026, 6, 30, 10, 15, 20);
+  const rejected = evaluateAiRateLimit({
+    day: { key: Math.floor(now / 86400000), count: 3 },
+  }, now, { perMinute: 10, perHour: 10, perDay: 3 });
+
+  assert.equal(rejected.allowed, false);
+  assert.equal(rejected.limitType, "day");
+});
+
+test("global limiter applies its own burst and daily ceilings", () => {
+  const now = Date.UTC(2026, 6, 30, 10, 15, 20);
+  const rejected = evaluateGlobalAiRateLimit({
+    minute: { key: Math.floor(now / 60000), count: 2 },
+  }, now, { perMinute: 2, perDay: 100 });
+
+  assert.equal(rejected.allowed, false);
+  assert.equal(rejected.limitType, "minute");
 });

@@ -234,7 +234,11 @@ test("reused id with a different explicit time creates a new event", () => {
   };
   const result = normalizeInneraEventDrafts([
     {
-      ...event("active", "早上8點", [{ name: "心悸", severity: 3 }]),
+      ...event("active", "早上8點", [
+        { name: "心悸", severity: 3 },
+        { name: "手抖", severity: 3 },
+        { name: "噁心反胃", severity: 3 },
+      ]),
       eventTime: "2026-08-24T08:00:00.000Z",
       timePrecision: "exact",
     },
@@ -334,4 +338,109 @@ test("explicit correction may update only its targeted event time", () => {
     "2026-08-24T14:00:00.000Z");
   assert.equal(result.find((item) => item.id === "morning").eventTime,
     unrelated.eventTime);
+});
+
+test("physical health canonicalizes symptom aliases within one event", () => {
+  const existing = {
+    ...event("active", null, [{ name: "噁心", severity: null }]),
+    eventTime: "2026-08-26T17:30:00.000Z",
+    rawUserEntries: ["我有點噁心"],
+  };
+  const result = normalizeInneraEventDrafts([
+    {
+      ...event("active", null, [{ name: "反胃", severity: null }]),
+      eventTime: "2026-08-26T17:30:00.000Z",
+      rawUserEntries: ["還是有點反胃"],
+    },
+  ], [existing], {
+    mode: "physicalHealth",
+    latestMessage: "還是有點反胃",
+  });
+
+  assert.equal(result.length, 1);
+  assert.deepEqual(result[0].symptoms, [
+    { name: "噁心反胃", severity: null },
+  ]);
+});
+
+test("physical health completeness restores every explicit symptom", () => {
+  const result = normalizeInneraEventDrafts([
+    event("now", "現在", [{ name: "心悸", severity: null }]),
+  ], [], {
+    mode: "physicalHealth",
+    latestMessage: "我現在心悸、手抖，胃有點痛，還有點反胃",
+  });
+
+  assert.deepEqual(result[0].symptoms, [
+    { name: "心悸", severity: null },
+    { name: "手抖", severity: null },
+    { name: "噁心反胃", severity: null },
+    { name: "胃痛", severity: null },
+  ]);
+});
+
+test("physical health binds an explicit score only to its symptom", () => {
+  const result = normalizeInneraEventDrafts([
+    event("now", "現在", [{ name: "心悸", severity: 4 }]),
+  ], [], {
+    mode: "physicalHealth",
+    latestMessage: "心悸4分，手抖，胃有點痛",
+  });
+  const severities = Object.fromEntries(
+    result[0].symptoms.map((item) => [item.name, item.severity]),
+  );
+
+  assert.deepEqual(severities, {
+    "心悸": 4,
+    "手抖": null,
+    "胃痛": null,
+  });
+});
+
+test("explicit recurrence inherits one unambiguous prior symptom", () => {
+  const prior = {
+    ...event("recent", "剛剛", [{ name: "頭痛", severity: null }]),
+    eventTime: "2026-08-26T17:30:00.000Z",
+    rawUserEntries: ["剛剛頭痛"],
+  };
+  const result = normalizeInneraEventDrafts([
+    {
+      ...event("night", "晚上9點", []),
+      eventTime: "2026-08-26T21:00:00.000Z",
+      timePrecision: "exact",
+      note: "晚上9點又痛了一次",
+    },
+  ], [prior], {
+    mode: "physicalHealth",
+    latestMessage: "晚上9點又痛了一次",
+  });
+
+  assert.equal(result.length, 2);
+  assert.deepEqual(result[0].symptoms, prior.symptoms);
+  assert.deepEqual(result[1].symptoms, [
+    { name: "頭痛", severity: null },
+  ]);
+});
+
+test("ambiguous recurrence does not inherit multiple prior symptoms", () => {
+  const prior = {
+    ...event("recent", "剛剛", ["頭痛", "心悸"]),
+    eventTime: "2026-08-26T17:30:00.000Z",
+    rawUserEntries: ["剛剛頭痛又心悸"],
+  };
+  const result = normalizeInneraEventDrafts([
+    {
+      ...event("night", "晚上9點", []),
+      eventTime: "2026-08-26T21:00:00.000Z",
+      timePrecision: "exact",
+      note: "晚上9點又不舒服",
+    },
+  ], [prior], {
+    mode: "physicalHealth",
+    latestMessage: "晚上9點又不舒服",
+  });
+  const night = result.find((item) => item.id === "night");
+
+  assert.deepEqual(night.symptoms, []);
+  assert.deepEqual(result[0].symptoms.map((item) => item.name), ["頭痛", "心悸"]);
 });

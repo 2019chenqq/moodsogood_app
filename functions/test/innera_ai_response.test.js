@@ -223,49 +223,58 @@ test("follow-up summary requests can safely fall back to local records", () => {
 
 test("follow-up summary reply accepts fenced JSON and canonicalizes arrays", () => {
   const normalized = normalizeFollowUpSummaryReply(`前言\n\`\`\`json
-{"keyChanges":[" 變化一 ","變化二","變化三"],"discussionPriorities":[],"timelineRelations":["時間關聯"],"dataLimitations":[]}
+{"keyChanges":[" 變化一 ","變化二","變化三"],"discussionItems":[],"userSharedNotes":[],"dataLimitations":[],"diaryHighlights":[]}
 \`\`\``);
 
   assert.equal(normalized.failure, null);
   assert.deepEqual(JSON.parse(normalized.reply), {
     keyChanges: ["變化一", "變化二", "變化三"],
-    discussionPriorities: [],
-    timelineRelations: ["時間關聯"],
-    medicationSubjectiveSummaries: [],
+    discussionItems: [],
     userSharedNotes: [],
-    userReportedConcerns: [],
     dataLimitations: [],
+    diaryHighlights: [],
   });
 });
 
-test("follow-up summary preserves medication subjective summaries", () => {
+test("follow-up summary preserves discussion items", () => {
   const normalized = normalizeFollowUpSummaryReply(JSON.stringify({
       keyChanges: ["change one", "change two", "change three"],
-      discussionPriorities: [],
-      timelineRelations: [],
-      medicationSubjectiveSummaries: [
-        "使用者於調藥後第3、7天主觀回報睡眠有變化；使用者認為可能與此次用藥調整有關。",
-      ],
+      discussionItems: ["想與醫師討論調藥後的睡眠變化。"],
       userSharedNotes: [],
-      userReportedConcerns: [],
       dataLimitations: [],
+      diaryHighlights: [],
     }));
 
   assert.deepEqual(
-    JSON.parse(normalized.reply).medicationSubjectiveSummaries,
-    [
-      "使用者於調藥後第3、7天主觀回報睡眠有變化；使用者認為可能與此次用藥調整有關。",
-    ],
+    JSON.parse(normalized.reply).discussionItems,
+    ["想與醫師討論調藥後的睡眠變化。"],
   );
+});
+
+test("follow-up summary preserves valid diary highlights", () => {
+  const normalized = normalizeFollowUpSummaryReply(JSON.stringify({
+    keyChanges: ["change one", "change two", "change three"],
+    discussionItems: [],
+    userSharedNotes: [],
+    dataLimitations: [],
+    diaryHighlights: [{
+      date: "2026-09-01",
+      category: "life_event",
+      summary: "完成一件重要工作。",
+      source: "diary",
+    }],
+  }));
+  assert.equal(normalized.failure, null);
+  assert.equal(JSON.parse(normalized.reply).diaryHighlights[0].date, "2026-09-01");
 });
 
 test("follow-up summary reply rejects an empty keyChanges array", () => {
   const normalized = normalizeFollowUpSummaryReply(JSON.stringify({
     keyChanges: [],
-    discussionPriorities: [],
-    timelineRelations: [],
-    userReportedConcerns: [],
+    discussionItems: [],
+    userSharedNotes: [],
     dataLimitations: [],
+    diaryHighlights: [],
   }));
 
   assert.equal(normalized.reply, "");
@@ -279,10 +288,10 @@ test("direct follow-up completion is wrapped in the existing App contract", () =
       message: {
         content: JSON.stringify({
           keyChanges: ["變化一", "變化二", "變化三"],
-          discussionPriorities: ["先討論睡眠"],
-          timelineRelations: [],
-          userReportedConcerns: [],
+          discussionItems: ["先討論睡眠"],
+          userSharedNotes: [],
           dataLimitations: [],
+          diaryHighlights: [],
         }),
       },
     }],

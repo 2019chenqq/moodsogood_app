@@ -206,6 +206,37 @@ void main() {
       expect(store.deletedIds, ['completed']);
     });
 
+    test('calendar historical entry creates one completed seven-day cycle',
+        () async {
+      final store = _MemoryPeriodCycleStore();
+
+      final added = await PeriodCycleService(store: store)
+          .addHistoricalCycle('u', DateTime(2026, 5, 1));
+
+      expect(added, isTrue);
+      expect(store.cycles, hasLength(1));
+      expect(store.cycles.single.startDate, DateTime(2026, 5, 1));
+      expect(store.cycles.single.endDate, DateTime(2026, 5, 7));
+    });
+
+    test('historical entry does not close or replace a current active cycle',
+        () async {
+      final store = _MemoryPeriodCycleStore()
+        ..cycles.add(
+          PeriodCycle(id: 'active', startDate: DateTime(2026, 8, 21)),
+        );
+
+      final added = await PeriodCycleService(store: store)
+          .addHistoricalCycle('u', DateTime(2026, 5, 1));
+
+      expect(added, isTrue);
+      expect(store.cycles, hasLength(2));
+      expect(
+        store.cycles.singleWhere((cycle) => cycle.id == 'active').endDate,
+        isNull,
+      );
+    });
+
     test('legacy fallback cycle does not expose destructive cancellation', () {
       final legacy = PeriodCycle(
         id: 'legacy:2026-08-21:2026-08-23',
@@ -595,6 +626,20 @@ class _MemoryPeriodCycleStore
     writeCount++;
     final id = 'p${cycles.length + 1}';
     cycles.add(PeriodCycle(id: id, startDate: startDate));
+    return id;
+  }
+
+  @override
+  Future<String> createCompletedCycle(
+    String userId,
+    DateTime startDate,
+    DateTime endDate,
+  ) async {
+    writeCount++;
+    final id = 'p${cycles.length + 1}';
+    cycles.add(
+      PeriodCycle(id: id, startDate: startDate, endDate: endDate),
+    );
     return id;
   }
 
