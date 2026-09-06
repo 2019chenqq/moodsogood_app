@@ -60,6 +60,11 @@ final List<EmotionDimensionDefinition> kEmotionDimensions = List.unmodifiable(
   ),
 );
 
+/// Canonical emotion concepts reuse the existing formal emotion dimensions.
+/// No parallel classification or ID set is introduced.
+final List<EmotionDimensionDefinition> kCanonicalEmotionRegistry =
+    kEmotionDimensions;
+
 final List<String> kEmotionCheckboxNames = List.unmodifiable(
   kEmotionDimensions.map((dimension) => dimension.displayName),
 );

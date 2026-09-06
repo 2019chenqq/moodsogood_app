@@ -587,8 +587,9 @@ class InneraAiRecordDraft {
 
   InneraAiRecordDraft mergeExplicitHealthEventFacts(
     String rawUserEntry,
-    DateTime messageTime,
-  ) =>
+    DateTime messageTime, {
+    bool allowPhysicalContinuation = false,
+  }) =>
       InneraAiRecordDraft(
         dateKey: dateKey,
         overallMood: overallMood,
@@ -602,6 +603,7 @@ class InneraAiRecordDraft {
           existing: eventDrafts,
           text: rawUserEntry,
           messageTime: messageTime,
+          allowPhysicalContinuation: allowPhysicalContinuation,
         ),
         rawUserEntries: rawUserEntries,
         diaryText: diaryText,

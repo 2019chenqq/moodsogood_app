@@ -17,7 +17,10 @@ function normalizeInneraEventDrafts(rawDrafts, existingDrafts, options = {}) {
       const patch = { ...normalized, id: correctionTarget.id };
       result.set(
         correctionTarget.id,
-        mergeEventDraft(correctionTarget, patch, { allowEventTimeUpdate: true }),
+        mergeEventDraft(correctionTarget, patch, {
+          allowEventTimeUpdate: true,
+          canonicalizeSymptoms: isPhysicalHealth,
+        }),
       );
       return { key: correctionTarget.id, priority: 5 };
     }
@@ -25,14 +28,16 @@ function normalizeInneraEventDrafts(rawDrafts, existingDrafts, options = {}) {
       if (isPhysicalHealth && fromModel &&
           shouldForkReusedPhysicalId(sameId, normalized, latestMessage)) {
         const forked = {
-          ...normalized,
+          ...physicalForkFactsFromLatestMessage(normalized, latestMessage),
           id: stablePhysicalEventId(normalized, result),
         };
         const existingFork = result.get(forked.id);
         result.set(
           forked.id,
           existingFork
-            ? mergeEventDraft(existingFork, forked)
+            ? mergeEventDraft(existingFork, forked, {
+                canonicalizeSymptoms: isPhysicalHealth,
+              })
             : forked,
         );
         return { key: forked.id, priority: 5 };
@@ -41,6 +46,7 @@ function normalizeInneraEventDrafts(rawDrafts, existingDrafts, options = {}) {
         sameId.id,
         mergeEventDraft(sameId, normalized, {
           allowEventTimeUpdate: !isPhysicalHealth,
+          canonicalizeSymptoms: isPhysicalHealth,
         }),
       );
       return { key: sameId.id, priority: 1 };
@@ -68,7 +74,11 @@ function normalizeInneraEventDrafts(rawDrafts, existingDrafts, options = {}) {
       : normalized;
     result.set(
       key,
-      previous ? mergeEventDraft(previous, patch) : normalized,
+      previous
+        ? mergeEventDraft(previous, patch, {
+            canonicalizeSymptoms: isPhysicalHealth,
+          })
+        : normalized,
     );
     return {
       key,
@@ -97,35 +107,50 @@ function normalizeInneraEventDrafts(rawDrafts, existingDrafts, options = {}) {
   if (isPhysicalHealth && latestPhysicalTargetKey) {
     const target = result.get(latestPhysicalTargetKey);
     if (target) {
+      const recurrenceAntecedent = recurrenceSymptomAntecedent(
+        latestMessage,
+        [...result.values()].filter((item) => item.id !== target.id),
+      );
       result.set(
         latestPhysicalTargetKey,
-        ensurePhysicalSymptomCompleteness(
-          target,
-          options.latestMessage,
-          [...result.values()],
+        canonicalizeEventSymptoms(
+          ensurePhysicalSymptomCompleteness(
+            recurrenceAntecedent && target.symptoms.length === 0
+              ? {
+                  ...target,
+                  symptoms: [{ name: recurrenceAntecedent, severity: null }],
+                }
+              : target,
+            options.latestMessage,
+            [...result.values()],
+          ),
         ),
       );
     }
   }
-  return [...result.values()].slice(0, 20);
+  const values = [...result.values()];
+  return (isPhysicalHealth ? values.map(canonicalizeEventSymptoms) : values)
+    .slice(0, 20);
 }
 
 const HIGH_CONFIDENCE_PHYSICAL_SYMPTOMS = [
   ["心悸", /心悸|心跳很快/u],
-  ["手抖", /手抖|手發抖/u],
+  ["手抖", /手抖|手發抖|手部顫抖/u],
   ["頭痛", /頭痛|頭疼/u],
   ["噁心反胃", /噁心|反胃|想吐/u],
+  ["頭暈", /頭暈|暈眩/u],
+  ["胸悶", /胸悶|胸口悶/u],
   ["疲倦", /疲倦|疲憊|很累|好累|很倦|倦怠/u],
-  ["胃痛", /胃痛|胃不舒服/u],
+  ["胃痛", /胃痛|胃有點痛|胃部疼痛|胃部痛|胃不舒服/u],
   ["食慾降低", /食慾下降|食慾降低|食慾不振|沒有食慾|沒胃口|吃不下/u],
   ["一直想吃東西", /食慾增加|食慾變大|食量增加|吃得比平常多|一直想吃/u],
-  ["白天嗜睡", /白天嗜睡|白天(?:一直)?想睡|白天很睏/u],
+  ["白天嗜睡", /白天嗜睡|嗜睡|睏倦|白天(?:一直)?想睡|白天很睏/u],
 ];
 
 function explicitSeverityAfterMatch(message, match) {
   const tail = message.slice(match.index + match[0].length);
   const scoreMatch = tail.match(
-    /^\s*(?:程度\s*)?(?:大概|約|是|有)?\s*([1-5１-５])\s*分/u,
+    /^\s*(?:(?:，|,)\s*程度\s*|程度\s*)?(?:大概|約|是|有)?\s*([1-5１-５])\s*分/u,
   );
   if (!scoreMatch) return null;
   const normalizedDigit = "１２３４５".indexOf(scoreMatch[1]) + 1;
@@ -145,16 +170,23 @@ function highConfidencePhysicalSymptoms(latestMessage) {
 function ensurePhysicalSymptomCompleteness(event, latestMessage, allEvents) {
   const detected = highConfidencePhysicalSymptoms(latestMessage);
   if (detected.length === 0) return event;
-  const symptomMap = new Map(event.symptoms.map((item) => [item.name, item]));
+  const symptomMap = new Map(event.symptoms.map((item) => [
+    canonicalSymptomName(item.name),
+    {
+      name: canonicalSymptomName(item.name),
+      severity: item.severity,
+    },
+  ]));
   for (const symptom of detected) {
-    const existingEvent = allEvents.find((candidate) =>
-      candidate.symptoms.some((item) => symptom.pattern.test(item.name))
+    const name = canonicalSymptomName(symptom.name);
+    const capturedElsewhere = allEvents.some((candidate) =>
+      candidate.id !== event.id && candidate.symptoms.some((item) =>
+        canonicalSymptomName(item.name) === name
+      )
     );
-    if (existingEvent && existingEvent.id !== event.id) continue;
-    const existingName = existingEvent?.symptoms.find((item) =>
-      symptom.pattern.test(item.name)
-    )?.name;
-    const name = existingName || symptom.name;
+    if (capturedElsewhere && hasMultiplePhysicalTimeContexts(latestMessage)) {
+      continue;
+    }
     const previous = symptomMap.get(name);
     symptomMap.set(name, {
       name,
@@ -162,6 +194,65 @@ function ensurePhysicalSymptomCompleteness(event, latestMessage, allEvents) {
     });
   }
   return { ...event, symptoms: [...symptomMap.values()].slice(0, 20) };
+}
+
+function extractExplicitPhysicalSymptoms(latestMessage) {
+  return highConfidencePhysicalSymptoms(latestMessage).map((item) => ({
+    name: canonicalSymptomName(item.name),
+    severity: item.severity,
+  }));
+}
+
+function hasMultiplePhysicalTimeContexts(message) {
+  const contexts = String(message || "").match(
+    /早上|上午|中午|下午|傍晚|晚上|凌晨|現在|剛剛|剛才/gu,
+  ) || [];
+  return new Set(contexts).size > 1;
+}
+
+function canonicalSymptomName(value) {
+  const name = String(value || "").trim();
+  if (/^(?:噁心|反胃|噁心反胃)$/u.test(name)) return "噁心反胃";
+  if (/^(?:胃痛|胃有點痛|胃部疼痛|胃部痛)$/u.test(name)) return "胃痛";
+  if (/^(?:手抖|手發抖|手部顫抖)$/u.test(name)) return "手抖";
+  if (/^(?:心悸|心跳很快(?:且有心悸)?)$/u.test(name)) return "心悸";
+  if (/^(?:白天嗜睡|嗜睡|睏倦)$/u.test(name)) return "白天嗜睡";
+  return name;
+}
+
+function canonicalizeEventSymptoms(event) {
+  const symptomMap = new Map();
+  for (const item of event.symptoms) {
+    const name = canonicalSymptomName(item.name);
+    if (!name) continue;
+    const previous = symptomMap.get(name);
+    symptomMap.set(name, {
+      name,
+      severity: item.severity ?? previous?.severity ?? null,
+    });
+  }
+  return { ...event, symptoms: [...symptomMap.values()].slice(0, 20) };
+}
+
+const omittedSymptomRecurrence = /(?:又|再|再次)[^，。！？]{0,10}(?:痛(?:了)?(?:一次)?|發作(?:了)?(?:一次)?)/u;
+
+function recurrenceSymptomAntecedent(latestMessage, previousEvents) {
+  const message = String(latestMessage || "");
+  if (!explicitClockOrDayPart.test(message) ||
+      !omittedSymptomRecurrence.test(message) ||
+      highConfidencePhysicalSymptoms(message).length > 0) {
+    return null;
+  }
+  const previousEntries = physicalEventsByRecency(previousEvents)
+    .flatMap((event) => [...event.rawUserEntries].reverse())
+    .filter(Boolean);
+  for (const entry of previousEntries) {
+    const symptoms = highConfidencePhysicalSymptoms(entry)
+      .map((item) => canonicalSymptomName(item.name));
+    const unique = [...new Set(symptoms)];
+    if (unique.length > 0) return unique.length === 1 ? unique[0] : null;
+  }
+  return null;
 }
 
 const PHYSICAL_CONTINUATION_WINDOW_MS = 5 * 60 * 1000;
@@ -278,6 +369,28 @@ function stablePhysicalEventId(event, result) {
   return `${base}-${suffix}`;
 }
 
+function physicalForkFactsFromLatestMessage(event, latestMessage) {
+  const message = String(latestMessage || "");
+  const detected = highConfidencePhysicalSymptoms(message);
+  const symptoms = event.symptoms.flatMap((symptom) => {
+    const known = detected.find((candidate) =>
+      candidate.pattern.test(symptom.name)
+    );
+    if (known) {
+      return [{
+        name: symptom.name,
+        severity: known.severity ?? symptom.severity,
+      }];
+    }
+    return message.includes(symptom.name) ? [symptom] : [];
+  });
+  return {
+    ...event,
+    symptoms,
+    rawUserEntries: message.trim() ? [message.trim().slice(0, 1000)] : [],
+  };
+}
+
 function sameEventMinute(left, right) {
   if (!left.eventTime || !right.eventTime) return false;
   const leftTime = new Date(left.eventTime);
@@ -388,11 +501,21 @@ function mergeEventDraft(previous, patch, options = {}) {
       value: item.value ?? old?.value ?? null,
     });
   }
-  const symptomMap = new Map(previous.symptoms.map((item) => [item.name, item]));
+  const symptomName = options.canonicalizeSymptoms
+    ? canonicalSymptomName
+    : (name) => name;
+  const symptomMap = new Map(previous.symptoms.map((item) => {
+    const name = symptomName(item.name);
+    return [name, {
+      name,
+      severity: item.severity,
+    }];
+  }));
   for (const item of patch.symptoms) {
-    const old = symptomMap.get(item.name);
-    symptomMap.set(item.name, {
-      name: item.name,
+    const name = symptomName(item.name);
+    const old = symptomMap.get(name);
+    symptomMap.set(name, {
+      name,
       severity: item.severity ?? old?.severity ?? null,
     });
   }
@@ -422,6 +545,8 @@ function mergeEventDraft(previous, patch, options = {}) {
 }
 
 module.exports = {
+  canonicalSymptomName,
+  extractExplicitPhysicalSymptoms,
   normalizeInneraEventDrafts,
   sanitizeExplicitStateChangePatch,
 };

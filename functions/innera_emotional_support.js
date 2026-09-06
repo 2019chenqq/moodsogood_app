@@ -38,13 +38,16 @@ function createEmotionalSupportApiResponse({
 function selectInneraChatResponseSchema({
   mode,
   followUpQuestionRequest,
+  followUpSummaryRequest,
   followUpQuestionsSchema,
+  followUpSummarySchema,
   inneraChatSchema,
   physicalHealthChatSchema,
   recentReviewChatSchema,
   specialRecentReviewRequest,
 }) {
   if (followUpQuestionRequest) return followUpQuestionsSchema;
+  if (followUpSummaryRequest) return followUpSummarySchema;
   if (mode === "emotionalSupport") return emotionalSupportChatSchema;
   if (mode === "physicalHealth") return physicalHealthChatSchema;
   if (mode === "recentReview" && !specialRecentReviewRequest) {

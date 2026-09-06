@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 import '../utils/health_data_encryption_service.dart';
 import 'medication_subjective_response.dart';
@@ -10,6 +11,12 @@ class MedicationLocalDB {
   factory MedicationLocalDB() => _instance;
 
   MedicationLocalDB._internal();
+
+  static final ValueNotifier<int> medicationRevision = ValueNotifier<int>(0);
+
+  static void _notifyMedicationChanged() {
+    medicationRevision.value++;
+  }
 
   CollectionReference<Map<String, dynamic>> _medications(String uid) =>
       FirebaseFirestore.instance
@@ -46,6 +53,7 @@ class MedicationLocalDB {
       _medications(uid).doc(id),
       _toCloudMedication(data),
     );
+    _notifyMedicationChanged();
   }
 
   Future<void> updateMedication(
@@ -57,6 +65,7 @@ class MedicationLocalDB {
       _medications(uid).doc(docId),
       _toCloudMedication(data),
     );
+    _notifyMedicationChanged();
   }
 
   Future<void> updateMedicationStatus(
@@ -72,10 +81,12 @@ class MedicationLocalDB {
       'updatedAt': _asTimestamp(updatedAt) ?? FieldValue.serverTimestamp(),
       if (lastChangeAt != null) 'lastChangeAt': _asTimestamp(lastChangeAt),
     });
+    _notifyMedicationChanged();
   }
 
   Future<void> deleteMedication(String uid, String docId) async {
     await _medications(uid).doc(docId).delete();
+    _notifyMedicationChanged();
   }
 
   Future<List<Map<String, dynamic>>> getMedications(String uid) async {
@@ -127,6 +138,33 @@ class MedicationLocalDB {
       'createdAt':
           _asTimestamp(data['createdAt']) ?? FieldValue.serverTimestamp(),
     });
+    _notifyMedicationChanged();
+  }
+
+  Future<void> updateAdjustmentRecord(
+    String uid,
+    String docId,
+    Map<String, dynamic> data,
+  ) async {
+    if (docId.trim().isEmpty) {
+      throw ArgumentError('Adjustment record id is required.');
+    }
+    await HealthDataEncryptionService.setEncrypted(
+      _adjustments(uid).doc(docId),
+      {
+        ...data,
+        if (data['date'] != null)
+          'date': _asTimestamp(data['date']) ?? data['date'],
+        if (data['effectiveDateTime'] != null)
+          'effectiveDateTime': _asTimestamp(data['effectiveDateTime']) ??
+              data['effectiveDateTime'],
+        if (data['adjustmentDateTime'] != null)
+          'adjustmentDateTime': _asTimestamp(data['adjustmentDateTime']) ??
+              data['adjustmentDateTime'],
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+    );
+    _notifyMedicationChanged();
   }
 
   Future<List<Map<String, dynamic>>> getAdjustmentRecords(String uid) async {
@@ -408,6 +446,7 @@ class MedicationLocalDB {
     final copy = Map<String, dynamic>.from(data)..remove('id');
     for (final field in [
       'startDate',
+      'scheduleAnchorDate',
       'createdAt',
       'updatedAt',
       'lastChangeAt',

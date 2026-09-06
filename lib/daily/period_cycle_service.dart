@@ -7,6 +7,11 @@ import '../utils/health_data_encryption_service.dart';
 abstract class PeriodCycleStore {
   Future<List<PeriodCycle>> getCycles(String userId);
   Future<String> createCycle(String userId, DateTime startDate);
+  Future<String> createCompletedCycle(
+    String userId,
+    DateTime startDate,
+    DateTime endDate,
+  );
   Future<void> deleteCycle(String userId, String cycleId);
   Future<void> updateCycle(
     String userId,
@@ -132,6 +137,25 @@ class FirestorePeriodCycleStore
     await HealthDataEncryptionService.setEncrypted(
       reference,
       PeriodCycle(id: reference.id, startDate: _day(startDate)).toFirestore(),
+      merge: false,
+    );
+    return reference.id;
+  }
+
+  @override
+  Future<String> createCompletedCycle(
+    String userId,
+    DateTime startDate,
+    DateTime endDate,
+  ) async {
+    final reference = _cycles(userId).doc();
+    await HealthDataEncryptionService.setEncrypted(
+      reference,
+      PeriodCycle(
+        id: reference.id,
+        startDate: _day(startDate),
+        endDate: _day(endDate),
+      ).toFirestore(),
       merge: false,
     );
     return reference.id;
@@ -531,6 +555,29 @@ class PeriodCycleService {
     final covering = _coveringCycle(cycles, day);
     if (covering == null) return false;
     await _store.deleteCycle(userId, covering.id);
+    return true;
+  }
+
+  /// Adds a completed historical cycle without touching an unrelated active
+  /// cycle. Returns false when the requested range overlaps canonical data.
+  Future<bool> addHistoricalCycle(
+    String userId,
+    DateTime startDate, {
+    int durationDays = 7,
+  }) async {
+    if (durationDays <= 0) {
+      throw ArgumentError.value(durationDays, 'durationDays');
+    }
+    final start = _day(startDate);
+    final end = start.add(Duration(days: durationDays - 1));
+    final candidate = PeriodCycle(
+      id: 'historical-candidate',
+      startDate: start,
+      endDate: end,
+    );
+    final cycles = await _store.getCycles(userId);
+    if (cycles.any((cycle) => _overlaps(cycle, candidate))) return false;
+    await _store.createCompletedCycle(userId, start, end);
     return true;
   }
 

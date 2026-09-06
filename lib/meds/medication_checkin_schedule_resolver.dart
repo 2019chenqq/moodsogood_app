@@ -22,102 +22,32 @@ class MedicationCheckinScheduleSnapshot {
 class MedicationCheckinScheduleResolver {
   const MedicationCheckinScheduleResolver._();
 
+  static DateTime nextIntervalDateOnOrAfter({
+    required DateTime anchorDate,
+    required int intervalDays,
+    required DateTime from,
+  }) {
+    final anchor = DateTime(anchorDate.year, anchorDate.month, anchorDate.day);
+    final boundary = DateTime(from.year, from.month, from.day);
+    if (!boundary.isAfter(anchor)) return anchor;
+    final cycleDays = intervalDays <= 1 ? 1 : intervalDays;
+    final elapsed = boundary.difference(anchor).inDays;
+    final remainder = elapsed % cycleDays;
+    return remainder == 0
+        ? boundary
+        : boundary.add(Duration(days: cycleDays - remainder));
+  }
+
   static List<MedicationCheckinScheduleSnapshot> resolve({
     required Map<String, dynamic> medication,
     required Iterable<Map<String, dynamic>> adjustmentRecords,
     required DateTime selectedDate,
-  }) {
-    final schedules = _resolveUnfiltered(
-      medication: medication,
-      adjustmentRecords: adjustmentRecords,
-      selectedDate: selectedDate,
-    );
-    final scheduleMedication = _scheduleForDate(
-      medication,
-      adjustmentRecords,
-      selectedDate,
-    );
-    if (isScheduledOn(scheduleMedication, selectedDate)) return schedules;
-    if (_oldScheduleAppliesOnSameDay(
-      medication,
-      adjustmentRecords,
-      selectedDate,
-    )) {
-      return schedules;
-    }
-    // 「需要時」不是固定排程，不應因週期設定而消失。
-    return schedules.where((item) => item.slot == '需要時').toList();
-  }
-
-  static bool _oldScheduleAppliesOnSameDay(
-    Map<String, dynamic> medication,
-    Iterable<Map<String, dynamic>> adjustmentRecords,
-    DateTime selectedDate,
-  ) {
-    final medicationId = (medication['id'] ?? '').toString();
-    for (final record in adjustmentRecords) {
-      final date = _date(record['effectiveDateTime']) ?? _date(record['date']);
-      if (date == null || !_sameDay(date, selectedDate)) continue;
-      final rawItems = record['items'] ?? record['changes'];
-      if (rawItems is! Iterable) continue;
-      for (final raw in rawItems.whereType<Map>()) {
-        final item = Map<String, dynamic>.from(raw);
-        if ((item['medDocId'] ?? '').toString() != medicationId ||
-            !item.containsKey('oldScheduleType')) {
-          continue;
-        }
-        if (isScheduledOn({
-          ...medication,
-          'scheduleType': item['oldScheduleType'] ?? 'daily',
-          'scheduleIntervalDays': item['oldScheduleIntervalDays'],
-          'weekdays': item['oldWeekdays'] ?? const <int>[],
-        }, selectedDate)) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  static Map<String, dynamic> _scheduleForDate(
-    Map<String, dynamic> medication,
-    Iterable<Map<String, dynamic>> adjustmentRecords,
-    DateTime selectedDate,
-  ) {
-    final medicationId = (medication['id'] ?? '').toString();
-    final endOfDay = DateTime(
-      selectedDate.year,
-      selectedDate.month,
-      selectedDate.day,
-      23,
-      59,
-      59,
-      999,
-    );
-    final futureChanges = <({DateTime date, Map<String, dynamic> item})>[];
-    for (final record in adjustmentRecords) {
-      final date = _date(record['effectiveDateTime']) ?? _date(record['date']);
-      if (date == null || !date.isAfter(endOfDay)) continue;
-      final rawItems = record['items'] ?? record['changes'];
-      if (rawItems is! Iterable) continue;
-      for (final raw in rawItems.whereType<Map>()) {
-        final item = Map<String, dynamic>.from(raw);
-        if ((item['medDocId'] ?? '').toString() == medicationId &&
-            item.containsKey('oldScheduleType')) {
-          futureChanges.add((date: date, item: item));
-        }
-      }
-    }
-    if (futureChanges.isEmpty) return medication;
-    futureChanges.sort((a, b) => a.date.compareTo(b.date));
-    final old = futureChanges.first.item;
-    return {
-      ...medication,
-      'scheduleType': old['oldScheduleType'] ?? 'daily',
-      'scheduleIntervalDays': old['oldScheduleIntervalDays'],
-      'weekdays': old['oldWeekdays'] ?? const <int>[],
-    };
-  }
+  }) =>
+      _resolveAtEachSlot(
+        medication: medication,
+        adjustmentRecords: adjustmentRecords,
+        selectedDate: selectedDate,
+      );
 
   static bool isScheduledOn(
     Map<String, dynamic> medication,
@@ -133,9 +63,16 @@ class MedicationCheckinScheduleResolver {
     switch ((medication['scheduleType'] ?? 'daily').toString()) {
       case 'intervalDays':
         final interval = _positiveInt(medication['scheduleIntervalDays']);
-        if (start == null || interval == null) return true;
-        final startDay = DateTime(start.year, start.month, start.day);
-        return day.difference(startDay).inDays % interval == 0;
+        final anchor = _date(medication['scheduleAnchorDate']) ??
+            _date(medication['lastChangeAt']) ??
+            start;
+        if (anchor == null || interval == null) return true;
+        final anchorDay = DateTime(anchor.year, anchor.month, anchor.day);
+        if (day.isBefore(anchorDay)) return false;
+        // 產品規則：服用當天為第 0 天，隔天是第 1 天；「每 5 天」
+        // 會在第 0、5、10 天服用，兩次日期相差 5 天。
+        final cycleDays = interval <= 1 ? 1 : interval;
+        return day.difference(anchorDay).inDays % cycleDays == 0;
       case 'weekdays':
         final weekdays = _ints(medication['weekdays']);
         return weekdays.isEmpty || weekdays.contains(day.weekday);
@@ -144,14 +81,14 @@ class MedicationCheckinScheduleResolver {
     }
   }
 
-  static List<MedicationCheckinScheduleSnapshot> _resolveUnfiltered({
+  static List<MedicationCheckinScheduleSnapshot> _resolveAtEachSlot({
     required Map<String, dynamic> medication,
     required Iterable<Map<String, dynamic>> adjustmentRecords,
     required DateTime selectedDate,
   }) {
     final medicationId = (medication['id'] ?? '').toString();
-    final sameDayItems = <({DateTime date, Map<String, dynamic> item})>[];
-    final futureItems = <({DateTime date, Map<String, dynamic> item})>[];
+    final events = <({DateTime date, Map<String, dynamic> item})>[];
+    final candidateSlots = <String>{..._strings(medication['times'])};
     for (final record in adjustmentRecords) {
       final date = _date(record['effectiveDateTime']) ?? _date(record['date']);
       if (date == null) continue;
@@ -159,98 +96,98 @@ class MedicationCheckinScheduleResolver {
       if (rawItems is! Iterable) continue;
       for (final raw in rawItems.whereType<Map>()) {
         final item = Map<String, dynamic>.from(raw);
+        if (item['supersededAt'] != null) continue;
         if ((item['medDocId'] ?? '').toString() == medicationId) {
-          if (_sameDay(date, selectedDate)) {
-            sameDayItems.add((date: date, item: item));
-          } else if (date.isAfter(DateTime(
-            selectedDate.year,
-            selectedDate.month,
-            selectedDate.day,
-            23,
-            59,
-            59,
-            999,
-          ))) {
-            futureItems.add((date: date, item: item));
-          }
+          events.add((date: date, item: item));
+          candidateSlots.addAll(_strings(item['oldTimes']));
+          candidateSlots.addAll(_strings(item['newTimes']));
         }
       }
     }
-    sameDayItems.sort((a, b) => a.date.compareTo(b.date));
-    if (sameDayItems.isEmpty) {
-      futureItems.sort((a, b) => a.date.compareTo(b.date));
-      if (futureItems.isNotEmpty) {
-        final future = futureItems.first.item;
-        if ((future['type'] ?? '').toString() == 'added') return const [];
-        final oldTimes = _strings(future['oldTimes']);
-        return oldTimes
-            .map((slot) => MedicationCheckinScheduleSnapshot(
-                  slot: slot,
-                  dose: future['oldDose'],
-                  dosePerUnit: future['oldDosePerUnit'],
-                  pillCount: future['oldPillCount'],
-                  unit:
-                      (future['oldUnit'] ?? future['unit'] ?? 'mg').toString(),
-                ))
-            .toList();
-      }
-      if (medication['isActive'] == false) return const [];
-      return _currentSnapshots(medication);
+    events.sort((left, right) => right.date.compareTo(left.date));
+
+    // 產品規則：停藥生效日不再產生任何待打卡項目。
+    final sameDayActiveChanges = events
+        .where((event) => _sameDay(event.date, selectedDate))
+        .where((entry) =>
+            entry.item['type'] == 'stopped' || entry.item['type'] == 'resumed')
+        .toList()
+      ..sort((left, right) => left.date.compareTo(right.date));
+    if (sameDayActiveChanges.lastOrNull?.item['type'] == 'stopped') {
+      return const [];
     }
 
-    final change = sameDayItems.last;
-    final item = change.item;
-    final oldTimes = _strings(item['oldTimes']);
-    final newTimes = _strings(item['newTimes']).isEmpty
-        ? _strings(medication['times'])
-        : _strings(item['newTimes']);
-    final action = (item['type'] ?? '').toString();
+    if (candidateSlots.isEmpty) candidateSlots.add('未設定');
     final result = <MedicationCheckinScheduleSnapshot>[];
-    if (action != 'added') {
-      for (final slot
-          in oldTimes.where((slot) => _isBefore(slot, change.date))) {
-        result.add(MedicationCheckinScheduleSnapshot(
-          slot: slot,
-          dose: item['oldDose'],
-          dosePerUnit: item['oldDosePerUnit'],
-          pillCount: item['oldPillCount'],
-          unit: (item['oldUnit'] ?? item['unit'] ?? 'mg').toString(),
-        ));
+    for (final slot in candidateSlots) {
+      final state = Map<String, dynamic>.from(medication);
+      final minutes = _slotMinutes[slot] ?? 23 * 60 + 59;
+      final slotTime = DateTime(
+        selectedDate.year,
+        selectedDate.month,
+        selectedDate.day,
+        minutes ~/ 60,
+        minutes % 60,
+      );
+      for (final event
+          in events.where((event) => event.date.isAfter(slotTime))) {
+        _rollback(state, event.item);
       }
-    }
-    if (action != 'stopped') {
-      for (final slot
-          in newTimes.where((slot) => !_isBefore(slot, change.date))) {
-        result.add(MedicationCheckinScheduleSnapshot(
-          slot: slot,
-          dose: medication['dose'],
-          dosePerUnit: medication['dosePerUnit'],
-          pillCount: medication['pillCount'],
-          unit: (medication['unit'] ?? 'mg').toString(),
-        ));
+      final times = _strings(state['times']);
+      final isPrn = slot == '需要時';
+      final slotExists = slot == '未設定' ? times.isEmpty : times.contains(slot);
+      if (state['isActive'] == false ||
+          (!isPrn && !isScheduledOn(state, selectedDate)) ||
+          !slotExists) {
+        continue;
       }
+      result.add(MedicationCheckinScheduleSnapshot(
+        slot: slot,
+        dose: state['dose'],
+        dosePerUnit: state['dosePerUnit'],
+        pillCount: state['pillCount'],
+        unit: (state['unit'] ?? 'mg').toString(),
+      ));
     }
+    result.sort((left, right) => (_slotMinutes[left.slot] ?? 9999)
+        .compareTo(_slotMinutes[right.slot] ?? 9999));
     return result;
   }
 
-  static List<MedicationCheckinScheduleSnapshot> _currentSnapshots(
-    Map<String, dynamic> medication,
+  static void _rollback(
+    Map<String, dynamic> state,
+    Map<String, dynamic> item,
   ) {
-    final times = _strings(medication['times']);
-    return (times.isEmpty ? const ['未設定'] : times)
-        .map((slot) => MedicationCheckinScheduleSnapshot(
-              slot: slot,
-              dose: medication['dose'],
-              dosePerUnit: medication['dosePerUnit'],
-              pillCount: medication['pillCount'],
-              unit: (medication['unit'] ?? 'mg').toString(),
-            ))
-        .toList();
+    final type = (item['type'] ?? '').toString();
+    if (type == 'added') {
+      state['isActive'] = false;
+      state['times'] = item['oldTimes'] ?? const <String>[];
+      return;
+    }
+    if (type == 'resumed') state['isActive'] = false;
+    if (type == 'stopped') state['isActive'] = true;
+    if (item.containsKey('oldDose') && item['oldDose'] != null) {
+      state['dose'] = item['oldDose'];
+    }
+    if (item.containsKey('oldDosePerUnit') && item['oldDosePerUnit'] != null) {
+      state['dosePerUnit'] = item['oldDosePerUnit'];
+    }
+    if (item.containsKey('oldPillCount') && item['oldPillCount'] != null) {
+      state['pillCount'] = item['oldPillCount'];
+    }
+    if (item.containsKey('oldUnit') && item['oldUnit'] != null) {
+      state['unit'] = item['oldUnit'];
+    }
+    if (item.containsKey('oldTimes') && item['oldTimes'] != null) {
+      state['times'] = item['oldTimes'];
+    }
+    if (item.containsKey('oldScheduleType')) {
+      state['scheduleType'] = item['oldScheduleType'] ?? 'daily';
+      state['scheduleIntervalDays'] = item['oldScheduleIntervalDays'];
+      state['scheduleAnchorDate'] = item['oldScheduleAnchorDate'];
+      state['weekdays'] = item['oldWeekdays'] ?? const <int>[];
+    }
   }
-
-  static bool _isBefore(String slot, DateTime effectiveAt) =>
-      (_slotMinutes[slot] ?? effectiveAt.hour * 60 + effectiveAt.minute) <
-      effectiveAt.hour * 60 + effectiveAt.minute;
 
   static const _slotMinutes = <String, int>{
     '早上': 8 * 60,

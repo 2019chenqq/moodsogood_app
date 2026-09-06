@@ -38,6 +38,12 @@ class MedicationCompareRepository {
         'unit': _text(data['unit']),
         'type': _text(data['type']),
         'intervalDays': _integer(data['intervalDays']),
+        'scheduleType': _text(data['scheduleType']).isEmpty
+            ? 'daily'
+            : _text(data['scheduleType']),
+        'scheduleIntervalDays': _integer(data['scheduleIntervalDays']),
+        'scheduleAnchorDate': toIsoDate(data['scheduleAnchorDate']),
+        'weekdays': _integers(data['weekdays']),
         'times': _strings(data['times']),
         'purposes': _strings(data['purposes']),
         'note': _nullableText(data['note']),
@@ -52,6 +58,13 @@ class MedicationCompareRepository {
     }
   }
 
+  List<int> _integers(dynamic value) => value is Iterable
+      ? value
+          .map((item) => item is num ? item.toInt() : int.tryParse('$item'))
+          .whereType<int>()
+          .toList()
+      : const <int>[];
+
   Future<void> syncAdjustmentRecords(String uid) async {
     final documents = await HealthDataEncryptionService.getEncrypted(
       FirebaseFirestore.instance
@@ -64,6 +77,8 @@ class MedicationCompareRepository {
       final data = document.data;
       await _localDb.addAdjustmentRecord(uid, document.id, {
         'date': toIsoDate(data['date']) ?? data['date']?.toString(),
+        'effectiveDateTime': toIsoDate(data['effectiveDateTime']),
+        'adjustmentDateTime': toIsoDate(data['adjustmentDateTime']),
         'note': _nullableText(data['note']),
         'source': _nullableText(data['source']),
         'items': _safeItems(data['items']),

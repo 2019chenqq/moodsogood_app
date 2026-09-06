@@ -47,6 +47,10 @@ const {
   enforceAiRateLimit,
 } = require("./ai_rate_limit");
 const {
+  ProEntitlementError,
+  requireProEntitlement,
+} = require("./pro_entitlement");
+const {
   previousTaipeiDayRange,
   summarizeAiUsageEvents,
 } = require("./ai_usage_aggregation");
@@ -56,11 +60,13 @@ const {
   validateShareDocument,
 } = require("./follow_up_share");
 const {
+  createFollowUpSummaryFallbackResponse,
   createRecentReviewApiResponse,
   formatRecentReviewMedicationList,
   isFollowUpQuestionRequest,
   isFollowUpSummaryRequest,
   parseFollowUpQuestionsCompletion,
+  parseFollowUpSummaryCompletion,
   recentReviewChatSchema,
   sanitizeInneraModeQuestions,
 } = require("./innera_ai_response");
@@ -72,10 +78,48 @@ const openAiApiKey = defineSecret("OPENAI_API_KEY");
 const lastFmApiKey = defineSecret("LASTFM_API_KEY");
 const spotifyClientId = defineSecret("SPOTIFY_CLIENT_ID");
 const spotifyClientSecret = defineSecret("SPOTIFY_CLIENT_SECRET");
+const revenueCatSecretApiKey = defineSecret("REVENUECAT_SECRET_API_KEY");
 const DEFAULT_AI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v25-review-domain-selection";
 const DIARY_EXTRACTION_PROMPT_VERSION = "diary_extraction_v1";
 const EVENT_SUMMARY_PROMPT_VERSION = "innera-event-summary-v1";
+
+async function requireAiProAccess(uid) {
+  try {
+    await requireProEntitlement({
+      db,
+      admin,
+      uid,
+      apiKey: revenueCatSecretApiKey.value(),
+    });
+  } catch (error) {
+    if (error instanceof ProEntitlementError) {
+      if (error.code === "required") {
+        throw new HttpsError(
+          "permission-denied",
+          "此 AI 功能需要有效的 Pro 訂閱。",
+          { reason: "pro_entitlement_required" },
+        );
+      }
+      if (error.code === "configuration") {
+        throw new HttpsError(
+          "failed-precondition",
+          "訂閱驗證服務尚未完成設定。",
+          { reason: "pro_entitlement_not_configured" },
+        );
+      }
+    }
+    console.error("Pro entitlement verification failed", {
+      uid,
+      message: error?.message || String(error),
+    });
+    throw new HttpsError(
+      "unavailable",
+      "目前無法驗證 Pro 訂閱，請稍後再試。",
+      { reason: "pro_entitlement_unavailable" },
+    );
+  }
+}
 
 async function requireAiCapacity(uid, feature) {
   try {
@@ -817,6 +861,55 @@ const followUpQuestionsSchema = {
     },
   },
 };
+const followUpSummarySchema = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "keyChanges",
+    "discussionItems",
+    "userSharedNotes",
+    "dataLimitations",
+    "diaryHighlights",
+  ],
+  properties: {
+    keyChanges: {
+      type: "array",
+      minItems: 3,
+      maxItems: 5,
+      items: { type: "string" },
+    },
+    discussionItems: {
+      type: "array",
+      maxItems: 5,
+      items: { type: "string" },
+    },
+    userSharedNotes: { type: "array", items: { type: "string" } },
+    dataLimitations: { type: "array", items: { type: "string" } },
+    diaryHighlights: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["date", "category", "summary", "source"],
+        properties: {
+          date: { type: "string" },
+          category: {
+            type: "string",
+            enum: [
+              "life_event",
+              "subjective_feeling",
+              "sleep_note",
+              "symptom_note",
+              "share_with_doctor",
+            ],
+          },
+          summary: { type: "string" },
+          source: { type: "string", enum: ["diary"] },
+        },
+      },
+    },
+  },
+};
 
 const ALLOWED_MUSIC_TAGS = new Set([
   "calm",
@@ -1300,61 +1393,26 @@ function normalizeReflection(payload, fallbackCrisis, actualModel) {
   };
 }
 
-exports.createCommunityPost = onCall(async (request) => {
-  // 1. 安全檢查：確認用戶是否已登入
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "必須登入才能發文喔！");
-  }
-
-  const uid = request.auth.uid;
-  
-  // 從 App 端接收發文內容（注意：App 這裡絕對不要傳送 anonymousName）
-  const { title, content } = request.data; 
-
-  if (!title || !content) {
-    throw new HttpsError("invalid-argument", "標題和內容不能為空。");
-  }
-
-  try {
-    // 2. 由後端親自去查這個使用者的「匿名」是什麼
-    const userDoc = await db.collection("users").doc(uid).get();
-    
-    if (!userDoc.exists || !userDoc.data().anonymousName) {
-      throw new HttpsError("not-found", "找不到用戶資料或尚未設定匿名。");
-    }
-
-    const correctAnonymousName = userDoc.data().anonymousName;
-
-    // 3. 將文章與「絕對正確的匿名」寫入社群看板
-    const newPostRef = db.collection("community_rooms").doc(); // 自動產生一個隨機 ID
-    
-    await newPostRef.set({
-      title: title,
-      content: content,
-      creatorUid: uid,                    // 紀錄真實 UID (用於後續判定誰能刪除)
-      authorName: correctAnonymousName,   // 系統查到的匿名 (公開顯示用)
-      createdAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-
-    // 4. 回傳成功訊息與新文章的 ID 給 App
-    return { 
-      success: true, 
-      roomId: newPostRef.id,
-      message: "發文成功！" 
-    };
-
-  } catch (error) {
-    console.error("發文發生錯誤:", error);
-    throw new HttpsError("internal", "伺服器發生錯誤，請稍後再試。");
-  }
-});
+exports.createCommunityPost = onCall(
+  { enforceAppCheck: true },
+  async () => {
+    // Keep the deployed endpoint fail-closed until the community feature has
+    // server-side roles, moderation and abuse controls.
+    throw new HttpsError(
+      "failed-precondition",
+      "社群功能尚未開放。",
+      { reason: "community_disabled" },
+    );
+  },
+);
 
 exports.generateAiJournalReflection = onCall(
-  { secrets: [openAiApiKey], enforceAppCheck: true },
+  { secrets: [openAiApiKey, revenueCatSecretApiKey], enforceAppCheck: true },
   async (request) => {
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "請先登入後再使用此功能");
     }
+    await requireAiProAccess(request.auth.uid);
 
     const { aiInput, diaryContent, diaryFields, dailyRecord, date } = request.data || {};
 
@@ -2001,11 +2059,12 @@ function normalizeInneraRecordDraft(rawDraft, existingDraft, emotionDimensions, 
 }
 
 exports.generateInneraDiaryDraft = onCall(
-  { secrets: [openAiApiKey], enforceAppCheck: true },
+  { secrets: [openAiApiKey, revenueCatSecretApiKey], enforceAppCheck: true },
   async (request) => {
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "請先登入後再整理今日紀錄");
     }
+    await requireAiProAccess(request.auth.uid);
     const data = request.data || {};
     const recordDate = String(data.recordDate || "").trim().slice(0, 10);
     const requestedField = String(data.requestedField || "").trim().slice(0, 40);
@@ -2154,6 +2213,7 @@ exports.recommendInneraSongs = onCall(
       lastFmApiKey,
       spotifyClientId,
       spotifyClientSecret,
+      revenueCatSecretApiKey,
     ],
     enforceAppCheck: true,
   },
@@ -2161,6 +2221,7 @@ exports.recommendInneraSongs = onCall(
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "請先登入後再取得歌曲推薦");
     }
+    await requireAiProAccess(request.auth.uid);
     const raw = request.data?.profile;
     const profile = raw && typeof raw === "object" ? raw : {};
     const musicTags = (Array.isArray(profile.musicTags) ? profile.musicTags : [])
@@ -2485,13 +2546,14 @@ exports.recommendInneraSongs = onCall(
 
 exports.searchInneraSongs = onCall(
   {
-    secrets: [spotifyClientId, spotifyClientSecret],
+    secrets: [spotifyClientId, spotifyClientSecret, revenueCatSecretApiKey],
     enforceAppCheck: true,
   },
   async (request) => {
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "請先登入後再搜尋歌曲");
     }
+    await requireAiProAccess(request.auth.uid);
     const query = String(request.data?.query || "").trim().slice(0, 120);
     const market = String(request.data?.market || "TW")
       .trim()
@@ -2539,11 +2601,12 @@ exports.searchInneraSongs = onCall(
 );
 
 exports.summarizeInneraHealthEvents = onCall(
-  { secrets: [openAiApiKey], enforceAppCheck: true },
+  { secrets: [openAiApiKey, revenueCatSecretApiKey], enforceAppCheck: true },
   async (request) => {
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "請先登入後再整理事件紀錄");
     }
+    await requireAiProAccess(request.auth.uid);
     const input = normalizeSummaryInput({
       messages: request.data?.messages,
       eventDrafts: request.data?.eventDrafts,
@@ -2637,7 +2700,7 @@ exports.summarizeInneraHealthEvents = onCall(
 );
 
 exports.generateInneraAiChat = onCall(
-  { secrets: [openAiApiKey], enforceAppCheck: true },
+  { secrets: [openAiApiKey, revenueCatSecretApiKey], enforceAppCheck: true },
   async (request) => {
     const latencyState = createInneraLatencyState();
     let latencyLogged = false;
@@ -2661,6 +2724,7 @@ exports.generateInneraAiChat = onCall(
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "請先登入後再使用心域 AI");
     }
+    await requireAiProAccess(request.auth.uid);
 
     const data = request.data || {};
     const mode = String(data.mode || "emotionalSupport").trim();
@@ -2946,6 +3010,8 @@ exports.generateInneraAiChat = onCall(
           json_schema: {
             name: followUpQuestionRequest
               ? "follow_up_questions_response"
+              : followUpSummaryRequest
+                ? "follow_up_summary_response"
               : mode === "emotionalSupport"
                 ? "innera_emotional_support_response"
                 : mode === "physicalHealth"
@@ -2957,7 +3023,9 @@ exports.generateInneraAiChat = onCall(
             schema: selectInneraChatResponseSchema({
               mode,
               followUpQuestionRequest,
+              followUpSummaryRequest,
               followUpQuestionsSchema,
+              followUpSummarySchema,
               inneraChatSchema,
               physicalHealthChatSchema,
               recentReviewChatSchema,
@@ -2968,7 +3036,9 @@ exports.generateInneraAiChat = onCall(
         messages: [
           {
             role: "system",
-            content: buildInneraPrompt(mode),
+            content: followUpSummaryRequest
+              ? `${buildInneraPrompt(mode)}\nThis special follow-up summary request uses its dedicated response schema. Return the summary fields directly; do not wrap them in reply.`
+              : buildInneraPrompt(mode),
           },
           {
             role: "user",
@@ -2997,6 +3067,33 @@ exports.generateInneraAiChat = onCall(
         return {
           ...questionResult.parsed,
           sources: [],
+          safetyLevel: "normal",
+          requiresFixedSafetyUi: false,
+          model: DEFAULT_AI_MODEL,
+          promptVersion: INNERA_AI_PROMPT_VERSION,
+          inputTokens: completion.usage?.prompt_tokens ?? null,
+          outputTokens: completion.usage?.completion_tokens ?? null,
+        };
+      }
+
+      if (followUpSummaryRequest) {
+        const summaryResult = parseFollowUpSummaryCompletion(completion);
+        const responseResult = summaryResult.parsed ||
+          createFollowUpSummaryFallbackResponse().parsed;
+        if (!summaryResult.parsed) {
+          console.warn("generateInneraAiChat follow-up summary fallback", {
+            requestId: usageTracker.requestId,
+            reason: summaryResult.failure,
+            finishReason: summaryResult.diagnostics?.finishReason,
+            refused: summaryResult.diagnostics?.refused,
+          });
+        }
+        latencyState.parseNormalizeMs = elapsedSince(parseNormalizeStartedAt);
+        await succeedUsageAndLog();
+        return {
+          ...responseResult,
+          sources: [],
+          eventDrafts: [],
           safetyLevel: "normal",
           requiresFixedSafetyUi: false,
           model: DEFAULT_AI_MODEL,
@@ -3090,7 +3187,7 @@ exports.generateInneraAiChat = onCall(
 
       const normalizedRecordDraft = supportsDailyRecordDraft
         ? normalizeInneraRecordDraft(
-            image ? existingRecordDraft : parsed.recordDraft,
+            images.length ? existingRecordDraft : parsed.recordDraft,
             existingRecordDraft,
             emotionDimensions,
             message,
@@ -3098,7 +3195,7 @@ exports.generateInneraAiChat = onCall(
         : null;
       const normalizedEventDrafts = supportsDailyRecordDraft
         ? normalizeInneraEventDrafts(
-            image ? existingRecordDraft.eventDrafts : parsed.eventDrafts,
+            images.length ? existingRecordDraft.eventDrafts : parsed.eventDrafts,
             existingRecordDraft.eventDrafts,
           )
         : [];

@@ -229,39 +229,62 @@ function normalizeFollowUpSummaryReply(reply) {
   }
 
   const keyChanges = normalizeStringArray(value.keyChanges);
-  const discussionPriorities = normalizeStringArray(value.discussionPriorities);
-  const timelineRelations = normalizeStringArray(value.timelineRelations);
-  const medicationSubjectiveSummaries = value.medicationSubjectiveSummaries == null
-    ? []
-    : normalizeStringArray(value.medicationSubjectiveSummaries);
+  const discussionItems = normalizeStringArray(
+    value.discussionItems ?? value.discussionPriorities,
+  );
   const dataLimitations = normalizeStringArray(value.dataLimitations);
   const userSharedNotes = value.userSharedNotes == null
     ? (value.userReportedConcerns == null
       ? []
       : normalizeStringArray(value.userReportedConcerns))
     : normalizeStringArray(value.userSharedNotes);
+  const diaryHighlights = value.diaryHighlights == null
+    ? []
+    : normalizeDiaryHighlights(value.diaryHighlights);
 
   if (!keyChanges || keyChanges.length < 3 || keyChanges.length > 5) {
     return { reply: "", failure: "invalid_follow_up_key_changes" };
   }
-  if (!discussionPriorities || !timelineRelations ||
-      !medicationSubjectiveSummaries ||
-      !userSharedNotes || !dataLimitations) {
+  if (!discussionItems || discussionItems.length > 5 ||
+      !userSharedNotes || !dataLimitations || !diaryHighlights) {
     return { reply: "", failure: "invalid_follow_up_summary_arrays" };
   }
 
   return {
     reply: JSON.stringify({
       keyChanges,
-      discussionPriorities,
-      timelineRelations,
-      medicationSubjectiveSummaries,
+      discussionItems,
       userSharedNotes,
-      userReportedConcerns: userSharedNotes,
       dataLimitations,
+      diaryHighlights,
     }),
     failure: null,
   };
+}
+
+function normalizeDiaryHighlights(value) {
+  if (!Array.isArray(value)) return null;
+  const allowedCategories = new Set([
+    "life_event",
+    "subjective_feeling",
+    "sleep_note",
+    "symptom_note",
+    "share_with_doctor",
+  ]);
+  const result = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+    const date = String(item.date || "").trim();
+    const category = String(item.category || "").trim();
+    const summary = String(item.summary || "").trim();
+    const source = String(item.source || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+        !allowedCategories.has(category) || !summary || source !== "diary") {
+      return null;
+    }
+    result.push({ date, category, summary, source });
+  }
+  return result;
 }
 
 function parseFollowUpSummaryCompletion(completion) {
@@ -388,12 +411,10 @@ function createFollowUpSummaryFallbackResponse() {
   // keyChanges and builds its deterministic fallback from local structured data.
   const reply = JSON.stringify({
     keyChanges: [],
-    discussionPriorities: [],
-    timelineRelations: [],
-    medicationSubjectiveSummaries: [],
+    discussionItems: [],
     userSharedNotes: [],
-    userReportedConcerns: [],
     dataLimitations: [],
+    diaryHighlights: [],
   });
   return {
     parsed: {

@@ -3,11 +3,13 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import '../constants/healing_design_system.dart';
 import '../utils/firebase_sync_config.dart';
 import 'drug_dictionary_service.dart';
 import 'medication_local_db.dart';
 import 'medication_reminder_service.dart';
 import 'medication_adjustment_service.dart';
+import 'medication_checkin_schedule_resolver.dart';
 import '../analytics_service.dart';
 
 const double kMaxDose = 50000;
@@ -53,6 +55,7 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
   int _intervalDays = 28; // 長效針用：每幾天一次（例如 28、30）
   String _scheduleType = 'daily';
   int _scheduleIntervalDays = 2;
+  DateTime _scheduleAnchorDate = DateTime.now();
   final Set<int> _scheduleWeekdays = {};
   double _dropMg = 10.0;
   double _dropMlBase = 1.0;
@@ -230,6 +233,21 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
       _startDate = DateTime.fromMillisecondsSinceEpoch(sd);
     }
     _startDate = DateTime(_startDate.year, _startDate.month, _startDate.day);
+    final scheduleAnchor = d['scheduleAnchorDate'];
+    if (scheduleAnchor is Timestamp) {
+      _scheduleAnchorDate = scheduleAnchor.toDate();
+    } else if (scheduleAnchor is DateTime) {
+      _scheduleAnchorDate = scheduleAnchor;
+    } else if (scheduleAnchor is String) {
+      _scheduleAnchorDate = DateTime.tryParse(scheduleAnchor) ?? _startDate;
+    } else {
+      _scheduleAnchorDate = _startDate;
+    }
+    _scheduleAnchorDate = DateTime(
+      _scheduleAnchorDate.year,
+      _scheduleAnchorDate.month,
+      _scheduleAnchorDate.day,
+    );
 
     _isActive = (d['isActive'] as bool?) ?? true;
   }
@@ -254,7 +272,13 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
     final otherSelected = _purposes['其他'] == true;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('編輯藥物')),
+      backgroundColor: HealingDesignSystem.softBlue,
+      appBar: AppBar(
+        backgroundColor: HealingDesignSystem.primaryBlue,
+        surfaceTintColor: Colors.transparent,
+        foregroundColor: HealingDesignSystem.deepText,
+        title: const Text('編輯藥物'),
+      ),
       body: SafeArea(
         child: Form(
           key: _formKey,
@@ -667,7 +691,7 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
                         items: const [
                           DropdownMenuItem(value: 'daily', child: Text('每日')),
                           DropdownMenuItem(
-                              value: 'intervalDays', child: Text('每隔幾天')),
+                              value: 'intervalDays', child: Text('每幾天')),
                           DropdownMenuItem(
                               value: 'weekdays', child: Text('每週指定日')),
                         ],
@@ -687,7 +711,17 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
                             () => _scheduleIntervalDays = value.round(),
                           ),
                         ),
-                        const Text('以開始日期作為第一次服用日。'),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('週期起算日'),
+                          subtitle: Text(_fmtYmd(_scheduleAnchorDate)),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: _pickScheduleAnchorDate,
+                        ),
+                        Text(
+                          '服用當天為第 0 天，隔天開始算第 1 天；下次預計服用：'
+                          '${_fmtYmd(MedicationCheckinScheduleResolver.nextIntervalDateOnOrAfter(anchorDate: _scheduleAnchorDate, intervalDays: _scheduleIntervalDays, from: DateTime.now()))}',
+                        ),
                       ],
                       if (_scheduleType == 'weekdays') ...[
                         const SizedBox(height: 12),
@@ -957,6 +991,18 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
     if (picked != null) setState(() => _startDate = picked);
   }
 
+  Future<void> _pickScheduleAnchorDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _scheduleAnchorDate,
+      firstDate: DateTime(now.year - 5),
+      lastDate: DateTime(now.year + 5),
+      helpText: '選擇本次服用日（第 0 天）',
+    );
+    if (picked != null) setState(() => _scheduleAnchorDate = picked);
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -1043,6 +1089,13 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
         'scheduleType': _medType == 'injection' ? 'daily' : _scheduleType,
         'scheduleIntervalDays':
             _scheduleType == 'intervalDays' ? _scheduleIntervalDays : null,
+        'scheduleAnchorDate': _scheduleType == 'intervalDays'
+            ? DateTime(
+                _scheduleAnchorDate.year,
+                _scheduleAnchorDate.month,
+                _scheduleAnchorDate.day,
+              ).toString()
+            : null,
         'weekdays': _scheduleType == 'weekdays'
             ? (_scheduleWeekdays.toList()..sort())
             : <int>[],
@@ -1074,14 +1127,43 @@ class _EditMedicationPageState extends State<EditMedicationPage> {
       await MedicationLocalDB()
           .updateMedication(uid, widget.docId, medicationData);
       if (timelineItems.isNotEmpty) {
-        await MedicationAdjustmentService().recordItems(
-          uid: uid,
-          effectiveDate: now,
-          source: 'detailEdit',
-          note: '藥物詳細頁調整',
-          items: timelineItems,
-        );
+        final scheduleItems = timelineItems
+            .where((item) => item['type'] == 'scheduleChanged')
+            .toList();
+        final otherItems = timelineItems
+            .where((item) => item['type'] != 'scheduleChanged')
+            .toList();
+        if (scheduleItems.isNotEmpty) {
+          final effectiveDate = _scheduleType == 'intervalDays'
+              ? DateTime(
+                  _scheduleAnchorDate.year,
+                  _scheduleAnchorDate.month,
+                  _scheduleAnchorDate.day,
+                )
+              : DateTime(now.year, now.month, now.day);
+          await MedicationAdjustmentService().recordItems(
+            uid: uid,
+            effectiveDate: effectiveDate,
+            source: 'detailEdit',
+            note: '藥物詳細頁頻率／時間調整',
+            items: scheduleItems,
+          );
+        }
+        if (otherItems.isNotEmpty) {
+          await MedicationAdjustmentService().recordItems(
+            uid: uid,
+            effectiveDate: DateTime(now.year, now.month, now.day),
+            source: 'detailEdit',
+            note: '藥物詳細頁調整',
+            items: otherItems,
+          );
+        }
       }
+      await MedicationAdjustmentService().reconcileCurrentScheduleHistory(
+        uid: uid,
+        medDocId: widget.docId,
+        medication: medicationData,
+      );
       debugPrint('✅ 本地已更新: ${widget.docId}');
 
       // 2️⃣ 再更新 Firebase（如果啟用同步）
@@ -1426,19 +1508,13 @@ class _SoftHeaderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
+        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            cs.primaryContainer.withOpacity(0.55),
-            cs.secondaryContainer.withOpacity(0.45),
-          ],
-        ),
+        border: Border.all(color: HealingDesignSystem.lineColor),
+        boxShadow: [HealingDesignSystem.shadowLight()],
       ),
       child: Row(
         children: [
@@ -1446,23 +1522,31 @@ class _SoftHeaderCard extends StatelessWidget {
             width: 46,
             height: 46,
             decoration: BoxDecoration(
-              color: cs.surface.withOpacity(0.65),
+              color: HealingDesignSystem.softBlue,
               borderRadius: BorderRadius.circular(16),
             ),
-            child: const Icon(Icons.edit_outlined),
+            child: const Icon(
+              Icons.edit_outlined,
+              color: HealingDesignSystem.primaryBlue,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: HealingDesignSystem.deepText,
+                      ),
+                ),
                 const SizedBox(height: 4),
                 Text(subtitle,
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall
-                        ?.copyWith(color: cs.onSurfaceVariant)),
+                        ?.copyWith(color: HealingDesignSystem.mutedText)),
               ],
             ),
           ),
@@ -1482,9 +1566,14 @@ class _SectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     return Card(
       elevation: 0,
+      color: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: HealingDesignSystem.lineColor),
+      ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
         child: Column(
@@ -1492,9 +1581,15 @@ class _SectionCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(icon, size: 18, color: cs.onSurfaceVariant),
+                const SizedBox(width: 2),
+                Icon(icon, size: 18, color: HealingDesignSystem.primaryBlue),
                 const SizedBox(width: 8),
-                Text(title, style: Theme.of(context).textTheme.titleSmall),
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: HealingDesignSystem.deepText,
+                      ),
+                ),
               ],
             ),
             const SizedBox(height: 10),
