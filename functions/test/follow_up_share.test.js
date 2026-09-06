@@ -120,7 +120,7 @@ test("public page renders the canonical display model in App order", () => {
     "utf8",
   );
   const renderCalls = [
-    "card('基本資訊'", "card('想跟醫師討論的事'",
+    "card('基本資訊'", "discussion(d)",
     "card('主要變化'", "<h2>睡眠趨勢</h2>",
     "card('症狀與情緒共現模式'", "card('身體測量'",
     "card('藥物調整時間軸'", "card('其他想跟醫師說的內容'",
