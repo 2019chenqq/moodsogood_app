@@ -50,6 +50,10 @@ function hashToken(token) {
   return crypto.createHash("sha256").update(String(token)).digest("hex");
 }
 
+function isValidShareToken(token) {
+  return typeof token === "string" && /^[A-Za-z0-9_-]{43}$/.test(token);
+}
+
 function encryptSummarySnapshot(summarySnapshot, token) {
   const salt = crypto.randomBytes(16);
   const iv = crypto.randomBytes(12);
@@ -214,6 +218,7 @@ module.exports = {
   decryptSummarySnapshot,
   encryptSummarySnapshot,
   hashToken,
+  isValidShareToken,
   sanitizeSummarySnapshot,
   validateShareDocument,
 };

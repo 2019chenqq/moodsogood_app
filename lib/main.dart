@@ -55,6 +55,10 @@ class App {
 }
 
 Future<void> main() async {
+  // Keep exception details and stack traces out of production device logs.
+  if (kReleaseMode) {
+    debugPrint = (String? message, {int? wrapWidth}) {};
+  }
   debugPrint('🚀 App startup starting...');
 
   WidgetsFlutterBinding.ensureInitialized();

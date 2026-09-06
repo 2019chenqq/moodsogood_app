@@ -1,8 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../utils/health_data_encryption_service.dart';
+import '../../analytics_service.dart';
+import '../models/follow_up_summary_feedback.dart';
 import '../models/follow_up_ai_summary.dart';
 
 const _legacyDiscussionTopicAppointmentLabels = <String>{
@@ -407,6 +410,9 @@ class FollowUpService {
       values,
       merge: false,
     );
+    await AnalyticsService.logFollowUpSummary(
+      FollowUpSummaryEvent.generated,
+    );
     return record;
   }
 
@@ -438,6 +444,8 @@ class FollowUpService {
     if (uid == null) throw StateError('請先登入後再更新回診摘要。');
     final updated = record.copyWith(updatedAt: DateTime.now());
     final values = updated.toMap()
+      // Feedback is written separately so stale editors cannot overwrite it.
+      ..remove('feedback')
       ..remove('createdAt')
       ..['updatedAt'] = FieldValue.serverTimestamp();
     await HealthDataEncryptionService.setEncrypted(
@@ -451,6 +459,29 @@ class FollowUpService {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) throw StateError('請先登入後再刪除回診摘要。');
     await _summaryHistoryRef(uid).doc(id).delete();
+  }
+
+  static Future<void> saveSummaryFeedback(
+    String summaryId,
+    FollowUpSummaryFeedback feedback,
+  ) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) throw StateError('請先登入後再送出回饋。');
+    // Commit the reporting copy first. A retry replaces the same server record;
+    // do not hide the entry before the administrator can receive the answers.
+    final answers = feedback.toMap()..remove('submittedAt');
+    await FirebaseFunctions.instance
+        .httpsCallable('submitFollowUpSummaryFeedback')
+        .call<void>({'summaryId': summaryId, ...answers});
+    await HealthDataEncryptionService.mutateEncrypted(
+      _summaryHistoryRef(uid).doc(summaryId),
+      (current) {
+        if (current.isEmpty) throw StateError('找不到這份摘要。');
+        current['feedback'] = feedback.toMap();
+        return current;
+      },
+    );
+    await AnalyticsService.logFollowUpFeedback(feedback.shownToDoctor);
   }
 
   static Future<List<FollowUpInstructionHistoryItem>>

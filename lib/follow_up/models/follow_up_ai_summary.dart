@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'follow_up_sleep_summary_view_model.dart';
+import 'follow_up_summary_feedback.dart';
 
 /// V0 contract between the follow-up summary UI/data layer and a future AI
 /// summarization service.
@@ -503,6 +504,7 @@ class FollowUpSummaryRecord {
     this.highFrequencySymptoms = const [],
     this.bodyMeasurements = const [],
     this.schemaVersion = 1,
+    this.feedback,
   });
 
   final String id;
@@ -523,6 +525,7 @@ class FollowUpSummaryRecord {
   final List<Map<String, dynamic>> highFrequencySymptoms;
   final List<Map<String, dynamic>> bodyMeasurements;
   final int schemaVersion;
+  final FollowUpSummaryFeedback? feedback;
 
   Map<String, dynamic> toMap() => {
         'createdAt': createdAt,
@@ -542,6 +545,7 @@ class FollowUpSummaryRecord {
         'highFrequencySymptoms': highFrequencySymptoms,
         'bodyMeasurements': bodyMeasurements,
         'schemaVersion': schemaVersion,
+        if (feedback != null) 'feedback': feedback!.toMap(),
       };
 
   Map<String, dynamic> toDeidentifiedSnapshot({
@@ -592,6 +596,7 @@ class FollowUpSummaryRecord {
   }
 
   FollowUpSummaryRecord copyWith({
+    FollowUpSummaryFeedback? feedback,
     FollowUpAiOutput? aiOutput,
     String? discussionDetails,
     String? additionalNotes,
@@ -616,6 +621,7 @@ class FollowUpSummaryRecord {
         highFrequencySymptoms: highFrequencySymptoms,
         bodyMeasurements: bodyMeasurements,
         schemaVersion: schemaVersion,
+        feedback: feedback ?? this.feedback,
       );
 
   factory FollowUpSummaryRecord.fromMap(
@@ -644,6 +650,7 @@ class FollowUpSummaryRecord {
       highFrequencySymptoms: _mapList(map['highFrequencySymptoms']),
       bodyMeasurements: _mapList(map['bodyMeasurements']),
       schemaVersion: (map['schemaVersion'] as num?)?.toInt() ?? 0,
+      feedback: FollowUpSummaryFeedback.fromMap(map['feedback']),
     );
   }
 }

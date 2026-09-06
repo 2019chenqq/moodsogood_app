@@ -26,6 +26,11 @@ service cloud.firestore {
       allow read: if false;                  // 不讓用戶互看
     }
 
+    // Callable writes validated codes; administrators use Console/Admin SDK.
+    match /followUpSummaryFeedback/{docId} {
+      allow read, write: if false;
+    }
+
     // =========================
     // 社群看板申請與看板
     // =========================

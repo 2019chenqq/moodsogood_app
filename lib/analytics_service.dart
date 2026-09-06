@@ -2,6 +2,18 @@ import 'package:flutter/foundation.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 
 class AnalyticsService {
+  // Fixed events/parameters only: never pass summary content or free text.
+  static Future<void> logFollowUpSummary(FollowUpSummaryEvent event) => _safely(
+        () => analytics.logEvent(name: event.eventName),
+      );
+
+  static Future<void> logFollowUpFeedback(bool shownToDoctor) => _safely(
+        () => analytics.logEvent(
+          name: 'followup_summary_feedback_submitted',
+          // Firebase Analytics accepts strings/numbers, not Dart bools.
+          parameters: {'shown_to_doctor': shownToDoctor ? 'true' : 'false'},
+        ),
+      );
   static final FirebaseAnalytics analytics = FirebaseAnalytics.instance;
   static final Set<String> _loggedPurchaseIds = <String>{};
 
@@ -174,4 +186,14 @@ class AnalyticsService {
       ),
     );
   }
+}
+
+enum FollowUpSummaryEvent {
+  generated('followup_summary_generated'),
+  opened('followup_summary_opened'),
+  pdfExported('followup_summary_pdf_exported'),
+  qrCreated('followup_summary_qr_created');
+
+  const FollowUpSummaryEvent(this.eventName);
+  final String eventName;
 }

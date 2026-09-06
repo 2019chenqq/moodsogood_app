@@ -57,8 +57,13 @@ const {
 const {
   authorizeShareRevocation,
   buildShareDocument,
+  isValidShareToken,
   validateShareDocument,
 } = require("./follow_up_share");
+const {
+  deleteUserAccountData,
+  hasRecentSignIn,
+} = require("./account_deletion");
 const {
   createFollowUpSummaryFallbackResponse,
   createRecentReviewApiResponse,
@@ -74,6 +79,19 @@ const {
 // 初始化 Admin SDK (擁有繞過 Security Rules 的最高權限)
 admin.initializeApp();
 const db = admin.firestore();
+const { submitFeedback, feedbackId, COLLECTION: feedbackCollection } = require("./follow_up_feedback");
+const { onDocumentDeleted } = require("firebase-functions/v2/firestore");
+
+exports.submitFollowUpSummaryFeedback = onCall({ enforceAppCheck: true }, (request) =>
+  submitFeedback(db, request, () => admin.firestore.FieldValue.serverTimestamp()));
+
+exports.deleteFollowUpSummaryFeedback = onDocumentDeleted(
+  "users/{uid}/followUpSummaries/{summaryId}",
+  async (event) => {
+    await db.collection(feedbackCollection)
+      .doc(feedbackId(event.params.uid, event.params.summaryId)).delete();
+  },
+);
 const openAiApiKey = defineSecret("OPENAI_API_KEY");
 const lastFmApiKey = defineSecret("LASTFM_API_KEY");
 const spotifyClientId = defineSecret("SPOTIFY_CLIENT_ID");
@@ -83,6 +101,37 @@ const DEFAULT_AI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v25-review-domain-selection";
 const DIARY_EXTRACTION_PROMPT_VERSION = "diary_extraction_v1";
 const EVENT_SUMMARY_PROMPT_VERSION = "innera-event-summary-v1";
+
+exports.deleteOwnAccount = onCall({ enforceAppCheck: true }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "請先登入後再刪除帳號");
+  }
+  if (!hasRecentSignIn(request.auth)) {
+    throw new HttpsError(
+      "failed-precondition",
+      "為了保護帳號，請重新登入後再執行刪除",
+      { reason: "recent_sign_in_required" },
+    );
+  }
+
+  try {
+    await deleteUserAccountData({
+      db,
+      auth: admin.auth(),
+      bucket: admin.storage().bucket(),
+      uid: request.auth.uid,
+    });
+    return { deleted: true };
+  } catch (error) {
+    console.error("Account deletion failed", {
+      code: error?.code || "unknown",
+    });
+    throw new HttpsError(
+      "internal",
+      "帳號資料刪除尚未完成，請稍後重試",
+    );
+  }
+});
 
 async function requireAiProAccess(uid) {
   try {
@@ -263,15 +312,22 @@ exports.revokeFollowUpShare = onCall({ enforceAppCheck: true }, async (request) 
 exports.getFollowUpSummaryShare = onRequest(async (request, response) => {
   response.set("Access-Control-Allow-Origin", "*");
   if (request.method === "OPTIONS") return response.status(204).send("");
+  response.set("Cache-Control", "no-store");
+  response.set("Referrer-Policy", "no-referrer");
+  response.set("X-Content-Type-Options", "nosniff");
+  if (request.method !== "GET") {
+    return response.status(405).json({ error: "method_not_allowed" });
+  }
   const token = String(request.query.token || "");
-  if (!token) return response.status(404).json({ error: "not_found" });
+  if (!isValidShareToken(token)) {
+    return response.status(404).json({ error: "not_found" });
+  }
   const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
   const matches = await db.collection("followUpSummaryShares").where("tokenHash", "==", tokenHash).limit(1).get();
   const validation = validateShareDocument({
     document: matches.empty ? null : matches.docs[0].data(), token,
   });
   if (!validation.ok) return response.status(404).json({ error: validation.reason });
-  response.set("Cache-Control", "no-store");
   return response.json({ summary: validation.summarySnapshot, expiresAt: validation.expiresAt.toISOString() });
 });
 
