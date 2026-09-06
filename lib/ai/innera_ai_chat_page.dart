@@ -304,6 +304,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
       ),
     );
     if (confirmed != true || !mounted) return;
+    _draftPreparationVersion++;
     setState(() => _loadingDraft = true);
     final imagePaths = _messages
         .expand((message) => message.allImages)
@@ -457,6 +458,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
 
     setState(() {
       _isSending = true;
+      _draftPreparationVersion++;
       _lastFailedInput = null;
       _lastFailedImages = const [];
       if (overrideText == null) {
@@ -582,8 +584,11 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
         nextDraftWithFallback = (_mode == InneraAiMode.dailyRecord
                 ? nextDraft.mergeExplicitRecordFacts(text)
                 : nextDraft)
-            .mergeExplicitHealthEventFacts(text, DateTime.now());
-        await _draftService.save(nextDraftWithFallback);
+            .mergeExplicitHealthEventFacts(
+          text,
+          DateTime.now(),
+          allowPhysicalContinuation: _mode == InneraAiMode.physicalHealth,
+        );
       }
       if (!mounted) return;
       setState(() {
@@ -614,6 +619,9 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
         _recordDraft = nextDraftWithFallback;
         _isSending = false;
       });
+      if (_mode.supportsDailyRecordDraft && !response.requiresFixedSafetyUi) {
+        unawaited(_prepareDraftSummary(nextDraftWithFallback!));
+      }
       unawaited(
         AnalyticsService.logAiTaskComplete(aiMode: _mode.analyticsMode),
       );
@@ -720,33 +728,49 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     });
   }
 
-  Future<void> _showDraftPreview() async {
-    final initialDraft = _recordDraft;
-    if (initialDraft == null) return;
-    var draft = initialDraft;
-    if (draft.eventDrafts.isNotEmpty) {
-      setState(() => _isSending = true);
-      try {
-        draft = await _service.summarizeHealthEvents(
-          messages: _messages,
-          draft: draft,
-        );
-        await _draftService.save(draft);
-        if (!mounted) return;
-        setState(() => _recordDraft = draft);
-      } catch (error, stackTrace) {
-        debugPrint('Innera event summary failed: $error');
-        debugPrintStack(stackTrace: stackTrace);
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('AI 事件整理暫時無法使用，已載入原草稿，你仍可確認或修改。'),
-          ),
-        );
-      } finally {
-        if (mounted) setState(() => _isSending = false);
+  bool _draftPreviewOpen = false;
+  int _draftPreparationVersion = 0;
+
+  Future<void> _prepareDraftSummary(InneraAiRecordDraft draft) async {
+    final version = ++_draftPreparationVersion;
+    final messages = List<InneraAiMessage>.of(_messages);
+    try {
+      await _draftService.save(draft);
+      if (!mounted ||
+          _isSending ||
+          version != _draftPreparationVersion ||
+          !identical(_recordDraft, draft) ||
+          _draftPreviewOpen) {
+        return;
       }
+      if (draft.eventDrafts.isEmpty) return;
+      final summarized = await _service.summarizeHealthEvents(
+        messages: messages,
+        draft: draft,
+      );
+      // A newer turn or an open editor owns its draft; discard stale summaries.
+      if (!mounted ||
+          _isSending ||
+          version != _draftPreparationVersion ||
+          !identical(_recordDraft, draft) ||
+          _draftPreviewOpen) {
+        return;
+      }
+      setState(() => _recordDraft = summarized);
+      await _draftService.save(summarized);
+    } catch (error, stackTrace) {
+      // The response draft is already usable, including when offline.
+      debugPrint('Innera draft preparation failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
     }
+  }
+
+  Future<void> _showDraftPreview() async {
+    final draft = _recordDraft;
+    if (draft == null || _draftPreviewOpen) return;
+    // Opening an editor invalidates pending summaries even after it is closed.
+    _draftPreparationVersion++;
+    _draftPreviewOpen = true;
     var workingDraft = draft;
     final bodyInputValidity = <String, bool>{
       'weightKg': true,
@@ -1376,6 +1400,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
         ),
       ),
     );
+    _draftPreviewOpen = false;
     if (confirmedDraft == null || !mounted) return;
     try {
       if (confirmedDraft.eventDrafts.isEmpty) {
@@ -1730,7 +1755,14 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
       },
       child: Scaffold(
         resizeToAvoidBottomInset: true,
+        backgroundColor: HealingDesignSystem.adaptiveBackground(context),
         appBar: AppBar(
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          backgroundColor:
+              HealingDesignSystem.adaptiveAppBarBackground(context),
+          foregroundColor:
+              HealingDesignSystem.adaptiveAppBarForeground(context),
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1744,7 +1776,11 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                       child: Text(
                         '目前模式：${_mode.title}',
                         overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color:
+                                  HealingDesignSystem.adaptiveAppBarForeground(
+                                      context),
+                            ),
                       ),
                     ),
                     const SizedBox(width: 2),

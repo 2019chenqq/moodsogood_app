@@ -1,3 +1,80 @@
+class CanonicalSymptomDefinition {
+  const CanonicalSymptomDefinition({
+    required this.id,
+    required this.displayName,
+    required this.category,
+  });
+
+  final String id;
+  final String displayName;
+  final String category;
+}
+
+const List<CanonicalSymptomDefinition> kCanonicalSymptoms = [
+  CanonicalSymptomDefinition(
+    id: 'palpitation',
+    displayName: '心悸',
+    category: 'cardiovascular',
+  ),
+  CanonicalSymptomDefinition(
+    id: 'tremor',
+    displayName: '手抖',
+    category: 'neuromuscular',
+  ),
+  CanonicalSymptomDefinition(
+    id: 'nausea',
+    displayName: '噁心反胃',
+    category: 'digestive',
+  ),
+  CanonicalSymptomDefinition(
+    id: 'abdominal_pain',
+    displayName: '胃痛',
+    category: 'digestive',
+  ),
+  CanonicalSymptomDefinition(
+    id: 'headache',
+    displayName: '頭痛',
+    category: 'head',
+  ),
+  CanonicalSymptomDefinition(
+    id: 'dizziness',
+    displayName: '頭暈',
+    category: 'head',
+  ),
+  CanonicalSymptomDefinition(
+    id: 'chest_tightness',
+    displayName: '胸悶',
+    category: 'cardiovascular',
+  ),
+  CanonicalSymptomDefinition(
+    id: 'fatigue',
+    displayName: '疲倦',
+    category: 'general',
+  ),
+  CanonicalSymptomDefinition(
+    id: 'daytime_sleepiness',
+    displayName: '白天嗜睡',
+    category: 'general',
+  ),
+];
+
+final Map<String, CanonicalSymptomDefinition> kCanonicalSymptomsById = {
+  for (final concept in kCanonicalSymptoms) concept.id: concept,
+};
+
+final Map<String, CanonicalSymptomDefinition> kCanonicalSymptomsByDisplayName =
+    {
+  for (final concept in kCanonicalSymptoms) concept.displayName: concept,
+};
+
+CanonicalSymptomDefinition? resolveCanonicalSymptom(String value) {
+  final text = value.trim();
+  return kCanonicalSymptomsById[text] ?? kCanonicalSymptomsByDisplayName[text];
+}
+
+String? resolveCanonicalSymptomId(String value) =>
+    resolveCanonicalSymptom(value)?.id;
+
 const Map<String, List<String>> kSymptomCategories = {
   '心血管與呼吸': ['心悸', '胸悶', '胸痛', '呼吸困難', '過度換氣'],
   '消化系統': [

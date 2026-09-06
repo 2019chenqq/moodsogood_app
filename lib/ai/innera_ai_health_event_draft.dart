@@ -1,4 +1,5 @@
 import '../daily/emotion_dimensions.dart';
+import '../daily/symptom_definitions.dart';
 import 'innera_ai_record_draft.dart';
 
 enum AiEventTimePrecision { exact, approximate, unspecified }
@@ -64,7 +65,7 @@ class InneraAiHealthEventDraft {
               .whereType<AiEmotionDraft>()
               .toList() ??
           const [],
-      symptoms: _strings(map['symptoms']),
+      symptoms: _symptomNames(map['symptoms']),
       symptomSeverities: _symptomSeverities(map['symptoms']),
       stateChanges: _stateChanges(map['stateChanges']),
       rawUserEntries: _strings(map['rawUserEntries']),
@@ -78,12 +79,16 @@ class InneraAiHealthEventDraft {
         'timeContext': timeContext,
         'timePrecision': timePrecision.name,
         'emotionMentions': emotions.map((item) => item.toMap()).toList(),
-        'symptoms': symptoms
-            .map((name) => {
-                  'name': name,
-                  'severity': symptomSeverities[name],
-                })
-            .toList(),
+        'symptoms': symptoms.map((name) {
+          final concept = resolveCanonicalSymptom(name);
+          return {
+            'canonicalId': concept?.id,
+            'displayName': concept?.displayName,
+            'rawPhrase': null,
+            'name': name,
+            'severity': symptomSeverities[name],
+          };
+        }).toList(),
         'stateChanges': stateChanges,
         'rawUserEntries': rawUserEntries,
         'note': note,
@@ -255,6 +260,21 @@ class InneraAiHealthEventDraft {
           .toList()
       : const [];
 
+  static List<String> _symptomNames(dynamic value) => value is List
+      ? value
+          .map((item) {
+            if (item is! Map) return item?.toString().trim() ?? '';
+            final canonical = resolveCanonicalSymptom(
+              item['canonicalId']?.toString() ?? '',
+            );
+            if (canonical != null) return canonical.displayName;
+            return (item['name'] ?? item['displayName'])?.toString().trim() ??
+                '';
+          })
+          .where((item) => item.isNotEmpty)
+          .toList()
+      : const [];
+
   static Map<String, int> _stateChanges(dynamic value) {
     if (value is! Map) return const {};
     final result = <String, int>{};
@@ -320,9 +340,11 @@ List<InneraAiHealthEventDraft> mergeExplicitHealthEventDrafts({
   required List<InneraAiHealthEventDraft> existing,
   required String text,
   required DateTime messageTime,
+  bool allowPhysicalContinuation = false,
 }) {
   final drafts = <String, InneraAiHealthEventDraft>{
-    for (final item in existing) item.id: item,
+    for (final item in existing)
+      item.id: allowPhysicalContinuation ? _canonicalizeSymptoms(item) : item,
   };
   String? activeId = existing.isEmpty ? null : existing.last.id;
   final clauses = text
@@ -336,7 +358,14 @@ List<InneraAiHealthEventDraft> mergeExplicitHealthEventDrafts({
     final time = _eventTimeFromClause(clause, messageTime);
     final explicitlyCorrectsTime =
         _explicitEventTimeCorrection.hasMatch(clause);
-    final symptoms = _symptomsFromClause(clause);
+    var symptoms = _symptomsFromClause(
+      clause,
+      includePhysicalAliases: allowPhysicalContinuation,
+    );
+    if (allowPhysicalContinuation && symptoms.isEmpty && time != null) {
+      final antecedent = _physicalRecurrenceAntecedent(clause, drafts.values);
+      if (antecedent != null) symptoms = [antecedent];
+    }
     final stateChanges = _stateChangesFromClause(clause);
     final standaloneSeverity = _explicitSeverityFromClause(clause);
     if (symptoms.isEmpty &&
@@ -366,7 +395,11 @@ List<InneraAiHealthEventDraft> mergeExplicitHealthEventDrafts({
             timeContext: time.context,
             timePrecision: time.precision,
             symptoms: symptoms,
-            symptomSeverities: _symptomSeveritiesFromClause(clause, symptoms),
+            symptomSeverities: _symptomSeveritiesFromClause(
+              clause,
+              symptoms,
+              bindPerSymptom: allowPhysicalContinuation,
+            ),
             stateChanges: stateChanges,
             rawUserEntries: [clause],
             note: clause,
@@ -385,7 +418,14 @@ List<InneraAiHealthEventDraft> mergeExplicitHealthEventDrafts({
       if (explicitlyCorrectsTime) {
         activeId ??= existing.isEmpty ? null : existing.last.id;
       } else {
-        activeId = _matchingEventId(drafts.values, time) ?? time.id;
+        activeId = _matchingEventId(
+              drafts.values,
+              time,
+              allowPhysicalContinuation: allowPhysicalContinuation &&
+                  _isPhysicalContinuationClause(clause),
+              messageTime: messageTime,
+            ) ??
+            time.id;
       }
     } else if (RegExp(r'那時候|當時|那個時候').hasMatch(clause)) {
       activeId ??= existing.isEmpty ? null : existing.last.id;
@@ -398,7 +438,11 @@ List<InneraAiHealthEventDraft> mergeExplicitHealthEventDrafts({
       timeContext: time?.context,
       timePrecision: time?.precision ?? AiEventTimePrecision.unspecified,
       symptoms: symptoms,
-      symptomSeverities: _symptomSeveritiesFromClause(clause, symptoms),
+      symptomSeverities: _symptomSeveritiesFromClause(
+        clause,
+        symptoms,
+        bindPerSymptom: allowPhysicalContinuation,
+      ),
       stateChanges: stateChanges,
       rawUserEntries: [clause],
       note: clause,
@@ -409,9 +453,12 @@ List<InneraAiHealthEventDraft> mergeExplicitHealthEventDrafts({
         ) ??
         patch;
   }
-  return mergeEquivalentHealthEventDrafts(
+  final merged = mergeEquivalentHealthEventDrafts(
     drafts.values.where((item) => item.hasContent),
   );
+  return allowPhysicalContinuation
+      ? merged.map(_canonicalizeSymptoms).toList()
+      : merged;
 }
 
 final _explicitEventTimeCorrection = RegExp(
@@ -513,8 +560,10 @@ String? _matchingEventId(
     DateTime? eventTime,
     String? context,
     AiEventTimePrecision precision,
-  }) time,
-) {
+  }) time, {
+  bool allowPhysicalContinuation = false,
+  DateTime? messageTime,
+}) {
   for (final draft in drafts.toList().reversed) {
     final draftTime = draft.eventTime;
     final nextTime = time.eventTime;
@@ -527,6 +576,18 @@ String? _matchingEventId(
         draftTime.minute == nextTime.minute) {
       return draft.id;
     }
+  }
+  if (allowPhysicalContinuation && messageTime != null) {
+    final recent = drafts.where((draft) {
+      final eventTime = draft.eventTime;
+      if (eventTime == null || !_sameLocalDate(eventTime, messageTime)) {
+        return false;
+      }
+      final difference = messageTime.difference(eventTime).abs();
+      return difference <= const Duration(minutes: 5);
+    }).toList()
+      ..sort((left, right) => right.eventTime!.compareTo(left.eventTime!));
+    if (recent.isNotEmpty) return recent.first.id;
   }
   final nextPeriod = _timePeriod(time.context);
   if (nextPeriod != null && time.eventTime != null) {
@@ -549,6 +610,25 @@ String? _matchingEventId(
   }
   return null;
 }
+
+bool _isPhysicalContinuationClause(String clause) {
+  if (RegExp(
+    r'(?:早上|上午|中午|下午|傍晚|晚上|凌晨)\s*[0-9一二三四五六七八九十兩]{1,3}\s*[點时時]|(?:[01]?\d|2[0-3])[:：][0-5]\d',
+  ).hasMatch(clause)) {
+    return false;
+  }
+  if (RegExp(
+    r'後來(?:又)?(?:發作|出現)|隔了?(?:一陣子|一段時間)|過了[^，。！？]{0,12}(?:又|再|出現|發作)|又一波|另一波|再次發作|又出現一次|重新發作',
+  ).hasMatch(clause)) {
+    return false;
+  }
+  return RegExp(r'^(?:而且|還有|也|另外)|^剛(?:剛|才)(?:也|還|又)?').hasMatch(clause);
+}
+
+bool _sameLocalDate(DateTime left, DateTime right) =>
+    left.year == right.year &&
+    left.month == right.month &&
+    left.day == right.day;
 
 String? _timePeriod(String? value) {
   final text = value?.trim().toLowerCase() ?? '';
@@ -601,14 +681,23 @@ bool _hasStateDescription(String clause) => RegExp(
       r'比較好|好多了|不舒服|沒精神|沒有精神|狀態|焦慮|低落|難過|生氣|煩躁|平靜|開心|興奮',
     ).hasMatch(clause);
 
-List<String> _symptomsFromClause(String clause) {
-  const rules = <String, String>{
+List<String> _symptomsFromClause(
+  String clause, {
+  bool includePhysicalAliases = false,
+}) {
+  final rules = <String, String>{
     '頭痛': r'頭痛|頭疼|頭很痛',
     '疲倦': r'疲倦|疲憊|很累|好累|超累|沒精神|沒有精神|提不起勁',
     '心悸': r'心悸|心跳很快',
     '噁心反胃': r'噁心|反胃|想吐',
-    '胃痛': r'胃痛|胃不舒服',
+    '胃痛': r'胃痛|胃有點痛|胃部疼痛|胃部痛|胃不舒服',
     '食慾降低': r'沒食慾|沒有食慾|食慾降低|吃不下',
+    if (includePhysicalAliases) ...{
+      '手抖': r'手抖|手發抖|手部顫抖',
+      '頭暈': r'頭暈|暈眩',
+      '胸悶': r'胸悶|胸口悶',
+      '白天嗜睡': r'白天嗜睡|嗜睡|睏倦|白天(?:一直)?想睡|白天很睏',
+    },
   };
   return [
     for (final rule in rules.entries)
@@ -618,12 +707,109 @@ List<String> _symptomsFromClause(String clause) {
 
 Map<String, int> _symptomSeveritiesFromClause(
   String clause,
-  List<String> symptoms,
-) {
+  List<String> symptoms, {
+  bool bindPerSymptom = false,
+}) {
   if (symptoms.isEmpty) return const {};
+  if (bindPerSymptom) {
+    final result = <String, int>{};
+    for (final symptom in symptoms) {
+      final pattern = _physicalSymptomPattern(symptom);
+      if (pattern == null) continue;
+      final match = pattern.firstMatch(clause);
+      if (match == null) continue;
+      final tail = clause.substring(match.end);
+      final scoreMatch = RegExp(
+        r'^\s*(?:(?:，|,)\s*程度\s*|程度\s*)?(?:大概|約|是|有)?\s*([1-5１-５])\s*分',
+      ).firstMatch(tail);
+      final score = _scoreFromText(scoreMatch?.group(1));
+      if (score != null) result[symptom] = score;
+    }
+    return result;
+  }
   final severity = _explicitSeverityFromClause(clause);
   if (severity == null) return const {};
   return {for (final symptom in symptoms) symptom: severity};
+}
+
+String? _physicalRecurrenceAntecedent(
+  String clause,
+  Iterable<InneraAiHealthEventDraft> drafts,
+) {
+  if (!RegExp(r'(?:又|再|再次)[^，。！？]{0,10}(?:痛(?:了)?(?:一次)?|發作(?:了)?(?:一次)?)')
+      .hasMatch(clause)) {
+    return null;
+  }
+  final recent = drafts.toList()
+    ..sort((left, right) => (right.eventTime ?? DateTime(0))
+        .compareTo(left.eventTime ?? DateTime(0)));
+  for (final event in recent) {
+    for (final entry in event.rawUserEntries.reversed) {
+      final symptoms = _symptomsFromClause(
+        entry,
+        includePhysicalAliases: true,
+      ).map(_canonicalSymptomName).toSet();
+      if (symptoms.isNotEmpty) {
+        return symptoms.length == 1 ? symptoms.single : null;
+      }
+    }
+  }
+  return null;
+}
+
+RegExp? _physicalSymptomPattern(String symptom) => switch (symptom) {
+      '心悸' => RegExp(r'心悸|心跳很快'),
+      '手抖' => RegExp(r'手抖|手發抖|手部顫抖'),
+      '頭痛' => RegExp(r'頭痛|頭疼|頭很痛'),
+      '胃痛' => RegExp(r'胃痛|胃有點痛|胃部疼痛|胃部痛|胃不舒服'),
+      '噁心反胃' => RegExp(r'噁心|反胃|想吐'),
+      '頭暈' => RegExp(r'頭暈|暈眩'),
+      '胸悶' => RegExp(r'胸悶|胸口悶'),
+      '疲倦' => RegExp(r'疲倦|疲憊|很累|好累|超累'),
+      '白天嗜睡' => RegExp(r'白天嗜睡|嗜睡|睏倦|白天(?:一直)?想睡|白天很睏'),
+      '食慾降低' => RegExp(r'沒食慾|沒有食慾|食慾降低|吃不下'),
+      _ => null,
+    };
+
+String _canonicalSymptomName(String value) {
+  final name = value.trim();
+  if (RegExp(r'^(?:噁心|反胃|噁心反胃)$').hasMatch(name)) return '噁心反胃';
+  if (RegExp(r'^(?:胃痛|胃有點痛|胃部疼痛|胃部痛)$').hasMatch(name)) {
+    return '胃痛';
+  }
+  if (RegExp(r'^(?:手抖|手發抖|手部顫抖)$').hasMatch(name)) return '手抖';
+  if (RegExp(r'^(?:心悸|心跳很快(?:且有心悸)?)$').hasMatch(name)) {
+    return '心悸';
+  }
+  if (RegExp(r'^(?:白天嗜睡|嗜睡|睏倦)$').hasMatch(name)) {
+    return '白天嗜睡';
+  }
+  return name;
+}
+
+InneraAiHealthEventDraft _canonicalizeSymptoms(
+  InneraAiHealthEventDraft event,
+) {
+  final names = <String>[];
+  final severities = <String, int>{};
+  for (final symptom in event.symptoms) {
+    final canonical = _canonicalSymptomName(symptom);
+    if (!names.contains(canonical)) names.add(canonical);
+    final severity = event.symptomSeverities[symptom];
+    if (severity != null) severities[canonical] = severity;
+  }
+  return InneraAiHealthEventDraft(
+    id: event.id,
+    eventTime: event.eventTime,
+    timeContext: event.timeContext,
+    timePrecision: event.timePrecision,
+    emotions: event.emotions,
+    symptoms: names,
+    symptomSeverities: severities,
+    stateChanges: event.stateChanges,
+    rawUserEntries: event.rawUserEntries,
+    note: event.note,
+  );
 }
 
 Map<String, int> _stateChangesFromClause(String clause) {

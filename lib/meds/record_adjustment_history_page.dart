@@ -6,6 +6,7 @@ import '../analytics_service.dart';
 import 'med_symptom_compare_models.dart';
 import 'medication_compare_repository.dart';
 import 'medication_adjustment_history_presentation.dart';
+import 'medication_reminder_service.dart';
 
 class RecordAdjustmentHistoryPage extends StatefulWidget {
   const RecordAdjustmentHistoryPage({super.key});
@@ -17,7 +18,7 @@ class RecordAdjustmentHistoryPage extends StatefulWidget {
 
 class _RecordAdjustmentHistoryPageState
     extends State<RecordAdjustmentHistoryPage> {
-  late Future<List<Map<String, dynamic>>> _future;
+  late Future<List<MedicationAdjustmentHistoryEntry>> _future;
   final MedicationCompareRepository _repository = MedicationCompareRepository();
   bool _initialized = false;
 
@@ -41,14 +42,21 @@ class _RecordAdjustmentHistoryPageState
       _future = Future.value([]);
     } else {
       debugPrint('📋 正在從本地 DB 載入調整記錄，uid: $uid');
-      _future = MedicationLocalDB()
-          .getAdjustmentRecordsForDisplay(uid)
-          .then((records) {
+      final localDb = MedicationLocalDB();
+      _future = Future.wait([
+        localDb.getAdjustmentRecordsForDisplay(uid),
+        localDb.getMedicationsForDisplay(uid),
+      ]).then((results) {
+        final records = results[0];
+        final medications = results[1];
         debugPrint('✅ 本地 DB 載入成功，共 ${records.length} 筆記錄');
-        return records;
+        return buildMedicationAdjustmentHistory(
+          records,
+          medications: medications,
+        );
       }).catchError((e) {
         debugPrint('❌ 本地 DB 載入失敗：$e');
-        return <Map<String, dynamic>>[];
+        return <MedicationAdjustmentHistoryEntry>[];
       });
     }
   }
@@ -101,7 +109,7 @@ class _RecordAdjustmentHistoryPageState
           ),
         ),
       ),
-      body: FutureBuilder<List<Map<String, dynamic>>>(
+      body: FutureBuilder<List<MedicationAdjustmentHistoryEntry>>(
         future: _future,
         builder: (context, snap) {
           debugPrint(
@@ -115,7 +123,7 @@ class _RecordAdjustmentHistoryPageState
             return Center(child: Text('讀取失敗：${snap.error}'));
           }
 
-          final entries = buildMedicationAdjustmentHistory(snap.data ?? []);
+          final entries = snap.data ?? [];
           if (entries.isEmpty) {
             return const _EmptyHistoryTimeline();
           }
@@ -129,7 +137,7 @@ class _RecordAdjustmentHistoryPageState
                 final entry = entries[i];
                 final record = entry.record;
 
-                final dateStr = entry.dateLabel;
+                final dateStr = _formatDateTime(entry.date);
                 final note = record['note']?.toString().trim() ?? '';
                 final events = entry.events;
                 final summary = _buildSummary(events);
@@ -144,7 +152,8 @@ class _RecordAdjustmentHistoryPageState
                   count: events.length,
                   isFirst: isFirst,
                   isLast: isLast,
-                  onTap: () => _showDetailSheet(context, dateStr, note, events),
+                  onTap: () =>
+                      _showDetailSheet(context, record, dateStr, note, events),
                 );
               },
             ),
@@ -159,23 +168,24 @@ class _RecordAdjustmentHistoryPageState
     final shown = events
         .take(3)
         .map((event) =>
-            '${event.medName}：${MedicationAdjustmentFormatter.shortSummary(event)}')
+            '${event.medName}：${MedicationAdjustmentFormatter.shortSummary(event)}${event.isInferred ? '（推定）' : ''}')
         .toList();
     final more = events.length > 3 ? '…等 ${events.length} 項' : '';
     return '${shown.join('、')} $more'.trim();
   }
 
-  static void _showDetailSheet(
+  Future<void> _showDetailSheet(
     BuildContext context,
+    Map<String, dynamic> record,
     String title,
     String note,
     List<MedicationAdjustmentEvent> events,
-  ) {
-    showModalBottomSheet(
+  ) async {
+    final shouldEdit = await showModalBottomSheet<bool>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (_) {
+      builder: (sheetContext) {
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -216,13 +226,185 @@ class _RecordAdjustmentHistoryPageState
                     ),
                   );
                 }),
+                const SizedBox(height: 4),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(sheetContext, true);
+                    },
+                    icon: const Icon(Icons.edit_calendar_outlined),
+                    label: const Text('編輯生效時間與備註'),
+                  ),
+                ),
               ],
             ),
           ),
         );
       },
     );
+    if (shouldEdit == true && mounted) {
+      await _editRecord(record, events);
+    }
   }
+
+  Future<void> _editRecord(
+    Map<String, dynamic> record,
+    List<MedicationAdjustmentEvent> events,
+  ) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final recordId = (record['id'] ?? '').toString();
+    if (uid == null || recordId.isEmpty || events.isEmpty) return;
+
+    var effectiveAt = events.first.effectiveDateTime;
+    final noteController = TextEditingController(
+      text: record['note']?.toString() ?? '',
+    );
+    var saving = false;
+
+    final saved = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          Future<void> pickDate() async {
+            final picked = await showDatePicker(
+              context: context,
+              initialDate: effectiveAt,
+              firstDate: DateTime(2000),
+              lastDate: DateTime.now().add(const Duration(days: 3650)),
+              helpText: '選擇調藥生效日期',
+            );
+            if (picked == null) return;
+            setDialogState(() {
+              effectiveAt = DateTime(
+                picked.year,
+                picked.month,
+                picked.day,
+                effectiveAt.hour,
+                effectiveAt.minute,
+              );
+            });
+          }
+
+          Future<void> pickTime() async {
+            final picked = await showTimePicker(
+              context: context,
+              initialTime: TimeOfDay.fromDateTime(effectiveAt),
+              helpText: '選擇調藥生效時間',
+            );
+            if (picked == null) return;
+            setDialogState(() {
+              effectiveAt = DateTime(
+                effectiveAt.year,
+                effectiveAt.month,
+                effectiveAt.day,
+                picked.hour,
+                picked.minute,
+              );
+            });
+          }
+
+          return AlertDialog(
+            title: const Text('編輯調藥紀錄'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.calendar_today_outlined),
+                    title: const Text('生效日期'),
+                    subtitle: Text(_formatDate(effectiveAt)),
+                    onTap: saving ? null : pickDate,
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.schedule_outlined),
+                    title: const Text('生效時間'),
+                    subtitle: Text(_formatTime(effectiveAt)),
+                    onTap: saving ? null : pickTime,
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: noteController,
+                    enabled: !saving,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: '備註（選填）',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed:
+                    saving ? null : () => Navigator.pop(dialogContext, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: saving
+                    ? null
+                    : () async {
+                        setDialogState(() => saving = true);
+                        try {
+                          final updated = Map<String, dynamic>.from(record)
+                            ..remove('id')
+                            ..['effectiveDateTime'] = effectiveAt
+                            ..['note'] = noteController.text.trim();
+                          await MedicationLocalDB().updateAdjustmentRecord(
+                            uid,
+                            recordId,
+                            updated,
+                          );
+                          await MedicationReminderService
+                              .syncDailyRemindersForActiveMeds();
+                          if (dialogContext.mounted) {
+                            Navigator.pop(dialogContext, true);
+                          }
+                        } catch (error) {
+                          setDialogState(() => saving = false);
+                          if (dialogContext.mounted) {
+                            ScaffoldMessenger.of(dialogContext).showSnackBar(
+                              SnackBar(content: Text('更新失敗：$error')),
+                            );
+                          }
+                        }
+                      },
+                child: saving
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('儲存'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    noteController.dispose();
+
+    if (saved == true && mounted) {
+      setState(_loadFromLocal);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('調藥紀錄已更新，請重新整理對應日期的服藥打卡')),
+      );
+    }
+  }
+
+  static String _formatDate(DateTime value) =>
+      '${value.year}/${value.month.toString().padLeft(2, '0')}/'
+      '${value.day.toString().padLeft(2, '0')}';
+
+  static String _formatTime(DateTime value) =>
+      '${value.hour.toString().padLeft(2, '0')}:'
+      '${value.minute.toString().padLeft(2, '0')}';
+
+  static String _formatDateTime(DateTime value) =>
+      '${_formatDate(value)} ${_formatTime(value)}';
 }
 
 class _HistoryTimelineItem extends StatelessWidget {

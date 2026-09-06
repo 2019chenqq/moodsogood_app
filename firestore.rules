@@ -30,30 +30,18 @@ service cloud.firestore {
     // 社群看板申請與看板
     // =========================
     match /community_room_requests/{requestId} {
-      // 登入者可建立申請
-      allow create: if request.auth != null;
-
-      // 所有登入者可讀取所有申請（UI 層級檢查誰能審核）
-      allow read: if request.auth != null;
-
-      // 申請者可更新自己的申請
-      allow update: if request.auth != null
-                    && resource.data.requesterUid == request.auth.uid;
-
-      allow delete: if false;
+      // 社群功能尚未開放。UI 隱藏不是安全邊界，因此先完全封鎖。
+      allow read, write: if false;
     }
 
     match /community_rooms/{roomId} {
-      // 登入者可讀取看板
-      allow read: if request.auth != null;
+      // 社群功能尚未開放。之後啟用時必須改成伺服器端角色驗證。
+      allow read, write: if false;
+    }
 
-      // 登入者可建立看板
-      allow create: if request.auth != null;
-
-      // 允許所有登入者嘗試刪除（UI 級別和 Firestore 級別檢查）
-      allow delete: if request.auth != null;
-      
-      allow update: if false;
+    // RevenueCat webhook/Admin SDK 維護的可信訂閱狀態。
+    match /server_entitlements/{userId} {
+      allow read, write: if false;
     }
 
     // AI usage and cost records are written only by the Admin SDK in Functions.
@@ -68,6 +56,11 @@ service cloud.firestore {
 
     // Per-user abuse-prevention counters are maintained only by Functions.
     match /ai_rate_limits/{userId} {
+      allow read, write: if false;
+    }
+
+    // Project-wide AI abuse-prevention counters are server-only.
+    match /ai_global_rate_limits/{documentId} {
       allow read, write: if false;
     }
 

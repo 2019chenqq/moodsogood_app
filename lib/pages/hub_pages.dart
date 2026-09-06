@@ -8,9 +8,6 @@ import '../daily/period_feature_visibility_service.dart';
 import '../daily/quick_record_home_card.dart';
 import '../daily/body_measurement_record_page.dart';
 import '../daily/sleep_record_page.dart';
-import '../daily/weekly_record_repository.dart';
-import '../daily/weekly_review_page.dart';
-import '../models/weekly_record.dart';
 import '../diary/diary_home_page.dart';
 import '../meds/medication_home_page.dart';
 import '../meds/medication_checkin_page.dart';
@@ -194,7 +191,6 @@ class RecordHubPage extends StatefulWidget {
 
 class _RecordHubPageState extends State<RecordHubPage>
     with WidgetsBindingObserver {
-  Future<WeeklyRecord?>? _weeklyRecordFuture;
   final _pendingService = MedicationSubjectivePendingService();
   MedicationSubjectivePendingResponse? _pendingResponse;
   bool _showsPeriodFeatures = false;
@@ -203,7 +199,6 @@ class _RecordHubPageState extends State<RecordHubPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _refreshWeeklyRecord();
     _refreshSubjectiveTracking();
     _refreshPeriodFeatureVisibility();
   }
@@ -269,41 +264,6 @@ class _RecordHubPageState extends State<RecordHubPage>
       context,
       MaterialPageRoute(builder: (_) => page),
     );
-  }
-
-  DateTime _currentWeekStart() {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    return today.subtract(Duration(days: today.weekday - DateTime.monday));
-  }
-
-  void _refreshWeeklyRecord() {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    _weeklyRecordFuture = uid == null
-        ? Future<WeeklyRecord?>.value(null)
-        : WeeklyRecordRepository().getWeeklyRecord(
-            userId: uid,
-            weekStart: _currentWeekStart(),
-          );
-  }
-
-  Future<void> _openWeeklyReview() async {
-    final start = _currentWeekStart();
-    final saved = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => WeeklyReviewPage(
-          weekStart: start,
-          weekEnd: start.add(const Duration(days: 6)),
-        ),
-      ),
-    );
-    if (saved == true && mounted) {
-      setState(_refreshWeeklyRecord);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已留下這週的狀態紀錄')),
-      );
-    }
   }
 
   @override
@@ -379,34 +339,10 @@ class _RecordHubPageState extends State<RecordHubPage>
               onTap: () => _push(context, const DiaryHomePage()),
             ),
             const SizedBox(height: 12),
-            FutureBuilder<WeeklyRecord?>(
-              future: _weeklyRecordFuture,
-              builder: (context, snapshot) {
-                final record = snapshot.data;
-                return _RecordEntryCard(
-                  icon: record == null
-                      ? Icons.calendar_view_week_rounded
-                      : Icons.check_circle_outline_rounded,
-                  title: '每週狀態紀錄',
-                  subtitle: record == null
-                      ? '3 分鐘留下一週的整體狀態，不用補登每天'
-                      : '本週已完成：${record.overallState} / 5 分',
-                  color: const Color(0xFF7DB7D8),
-                  onTap: record == null
-                      ? _openWeeklyReview
-                      : () => _push(
-                            context,
-                            const DailyRecordHistory(initialTab: 0),
-                          ),
-                  actionLabel: record == null ? '開始本週回顧' : '查看本週摘要',
-                );
-              },
-            ),
-            const SizedBox(height: 12),
             _RecordEntryCard(
               icon: Icons.history,
               title: '紀錄歷程',
-              subtitle: '查看每日紀錄與每週摘要',
+              subtitle: '查看每日紀錄與狀態摘要',
               color: const Color.fromARGB(255, 144, 202, 249),
               onTap: () =>
                   _push(context, const DailyRecordHistory(initialTab: 0)),

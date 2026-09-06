@@ -117,15 +117,31 @@ class _PeriodCalendarPageState extends State<PeriodCalendarPage> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final date = _day(value);
+    final today = _day(DateTime.now());
+    if (date.isAfter(today)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('未來日期不能補登生理期。')),
+      );
+      return;
+    }
     final marked = _markedDays.contains(date);
+    final isHistorical = !date.add(const Duration(days: 6)).isAfter(today);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(marked ? '取消這次經期？' : '記錄月經開始？'),
+        title: Text(
+          marked
+              ? '取消這次經期？'
+              : isHistorical
+                  ? '補登 7 天經期？'
+                  : '記錄月經開始？',
+        ),
         content: Text(
           marked
               ? '將取消包含 ${_dateText(date)} 的這次經期。快速記錄不會被刪除。'
-              : '將 ${_dateText(date)} 設為月經開始日，月曆會先顯示 7 天。',
+              : isHistorical
+                  ? '將 ${_dateText(date)} 起的 7 天補登為一個已完成的經期。'
+                  : '將 ${_dateText(date)} 設為月經開始日，月曆會先顯示 7 天。',
         ),
         actions: [
           TextButton(
@@ -134,7 +150,13 @@ class _PeriodCalendarPageState extends State<PeriodCalendarPage> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(marked ? '取消這次經期' : '記錄開始'),
+            child: Text(
+              marked
+                  ? '取消這次經期'
+                  : isHistorical
+                      ? '確認補登'
+                      : '記錄開始',
+            ),
           ),
         ],
       ),
@@ -152,11 +174,20 @@ class _PeriodCalendarPageState extends State<PeriodCalendarPage> {
           );
         }
       } else {
-        await service.apply(
-          userId: uid,
-          date: date,
-          action: PeriodQuickAction.start,
-        );
+        if (isHistorical) {
+          final added = await service.addHistoricalCycle(uid, date);
+          if (!added && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('這段日期已有生理期紀錄，沒有重複新增。')),
+            );
+          }
+        } else {
+          await service.apply(
+            userId: uid,
+            date: date,
+            action: PeriodQuickAction.start,
+          );
+        }
       }
       await _load();
     } catch (error) {
@@ -210,7 +241,7 @@ class _PeriodCalendarPageState extends State<PeriodCalendarPage> {
                             nextExpectedStart: _nextExpectedStart,
                             busy: _updating,
                             initiallyExpanded: true,
-                            footerText: '點日期可記錄月經開始；點已亮日期可取消該次經期。',
+                            footerText: '點過去日期可補登 7 天經期；點已亮日期可取消該次經期。',
                           ),
                         ],
                       ),

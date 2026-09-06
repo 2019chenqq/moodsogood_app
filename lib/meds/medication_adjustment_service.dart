@@ -43,6 +43,10 @@ class MedicationChangeDetector {
           before['scheduleIntervalDays'],
           after['scheduleIntervalDays'],
         ) ||
+        !_sameDate(
+          before['scheduleAnchorDate'],
+          after['scheduleAnchorDate'],
+        ) ||
         !_sameStrings(
           _strings(before['weekdays']),
           _strings(after['weekdays']),
@@ -66,6 +70,8 @@ class MedicationChangeDetector {
           'newScheduleType': after['scheduleType'] ?? 'daily',
           'oldScheduleIntervalDays': before['scheduleIntervalDays'],
           'newScheduleIntervalDays': after['scheduleIntervalDays'],
+          'oldScheduleAnchorDate': before['scheduleAnchorDate'],
+          'newScheduleAnchorDate': after['scheduleAnchorDate'],
           'oldWeekdays': before['weekdays'] ?? const <int>[],
           'newWeekdays': after['weekdays'] ?? const <int>[],
           'oldUnit': oldUnit,
@@ -78,7 +84,7 @@ class MedicationChangeDetector {
     if (doseChanged) {
       items.add(base('doseChanged'));
     }
-    if (!doseChanged && scheduleChanged) {
+    if (scheduleChanged) {
       items.add(base('scheduleChanged'));
     }
     if (oldActive != newActive) {
@@ -111,6 +117,8 @@ class MedicationChangeDetector {
       'newScheduleType': medication['scheduleType'] ?? 'daily',
       'oldScheduleIntervalDays': null,
       'newScheduleIntervalDays': medication['scheduleIntervalDays'],
+      'oldScheduleAnchorDate': null,
+      'newScheduleAnchorDate': medication['scheduleAnchorDate'],
       'oldWeekdays': const <int>[],
       'newWeekdays': medication['weekdays'] ?? const <int>[],
       'oldUnit': null,
@@ -155,6 +163,19 @@ class MedicationChangeDetector {
 
   static bool _sameText(String? left, String? right) =>
       (left ?? '').trim().toLowerCase() == (right ?? '').trim().toLowerCase();
+
+  static bool _sameDate(dynamic left, dynamic right) {
+    final a = _dateValue(left);
+    final b = _dateValue(right);
+    if (a == null || b == null) return a == b;
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  static DateTime? _dateValue(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    return DateTime.tryParse(value?.toString() ?? '');
+  }
 
   static List<String> _strings(dynamic value) {
     final values = value is List
@@ -222,6 +243,7 @@ class MedicationAdjustmentService {
       final items = rawItems
           .whereType<Map>()
           .map((raw) => Map<String, dynamic>.from(raw))
+          .where((item) => item['supersededAt'] == null)
           .toList();
       final adjustmentTypes = items
           .map((item) => item['type']?.toString() ?? '')
@@ -369,7 +391,29 @@ class MedicationAdjustmentService {
     final existing = await _localDb.getAdjustmentRecords(uid);
     final newItems =
         items.where((item) => !_alreadyRecorded(existing, date, item)).toList();
-    if (newItems.isEmpty) return false;
+    if (newItems.isEmpty) {
+      final existingScheduleId = _matchingScheduleRecordId(
+        existing,
+        date,
+        items,
+      );
+      final scheduleMedicationIds = items
+          .where((item) => item['type'] == 'scheduleChanged')
+          .map((item) => item['medDocId']?.toString().trim() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      if (existingScheduleId != null && scheduleMedicationIds.isNotEmpty) {
+        await _supersedeOlderScheduleItems(
+          uid: uid,
+          records: existing,
+          medicationIds: scheduleMedicationIds,
+          effectiveFrom: date,
+          adjustedAt: adjustedAt,
+          supersedingAdjustmentId: existingScheduleId,
+        );
+      }
+      return false;
+    }
 
     final signature = _canonical(newItems);
     final docId =
@@ -383,6 +427,21 @@ class MedicationAdjustmentService {
       'items': newItems,
       'createdAt': DateTime.now().toIso8601String(),
     });
+    final scheduleMedicationIds = newItems
+        .where((item) => item['type'] == 'scheduleChanged')
+        .map((item) => item['medDocId']?.toString().trim() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    if (scheduleMedicationIds.isNotEmpty) {
+      await _supersedeOlderScheduleItems(
+        uid: uid,
+        records: existing,
+        medicationIds: scheduleMedicationIds,
+        effectiveFrom: date,
+        adjustedAt: adjustedAt,
+        supersedingAdjustmentId: docId,
+      );
+    }
     if (shouldCreateSubjectiveTrackingCycle(source)) {
       await repairMissingLatestTrackingCycles(uid: uid);
     }
@@ -392,6 +451,144 @@ class MedicationAdjustmentService {
       debugPrint('Medication subjective reminder sync deferred: $error');
     }
     return true;
+  }
+
+  Future<void> reconcileCurrentScheduleHistory({
+    required String uid,
+    required String medDocId,
+    required Map<String, dynamic> medication,
+  }) async {
+    if ((medication['scheduleType'] ?? 'daily') != 'intervalDays') return;
+    final anchor = _date(medication['scheduleAnchorDate']);
+    if (anchor == null) return;
+    final records = await _localDb.getAdjustmentRecords(uid);
+    final currentTimes = _strings(medication['times']);
+    final currentInterval =
+        _number(medication['scheduleIntervalDays'])?.toInt();
+    final matches = <({String id, DateTime adjustedAt})>[];
+    for (final record in records) {
+      final recordId = (record['id'] ?? '').toString().trim();
+      final effective =
+          _date(record['effectiveDateTime']) ?? _date(record['date']);
+      final adjusted = _date(record['adjustmentDateTime']) ??
+          _date(record['createdAt']) ??
+          effective;
+      final rawItems = record['items'];
+      if (recordId.isEmpty ||
+          effective == null ||
+          adjusted == null ||
+          !_sameDay(effective, anchor) ||
+          rawItems is! List) {
+        continue;
+      }
+      for (final raw in rawItems.whereType<Map>()) {
+        final item = Map<String, dynamic>.from(raw);
+        if (item['supersededAt'] != null ||
+            item['type'] != 'scheduleChanged' ||
+            item['medDocId']?.toString() != medDocId ||
+            item['newScheduleType'] != 'intervalDays' ||
+            _number(item['newScheduleIntervalDays'])?.toInt() !=
+                currentInterval ||
+            !_sameStringSet(_strings(item['newTimes']), currentTimes)) {
+          continue;
+        }
+        matches.add((id: recordId, adjustedAt: adjusted));
+        break;
+      }
+    }
+    if (matches.isEmpty) return;
+    matches.sort((left, right) => right.adjustedAt.compareTo(left.adjustedAt));
+    await _supersedeOlderScheduleItems(
+      uid: uid,
+      records: records,
+      medicationIds: {medDocId},
+      effectiveFrom: anchor,
+      adjustedAt: DateTime.now(),
+      supersedingAdjustmentId: matches.first.id,
+    );
+  }
+
+  Future<void> _supersedeOlderScheduleItems({
+    required String uid,
+    required List<Map<String, dynamic>> records,
+    required Set<String> medicationIds,
+    required DateTime effectiveFrom,
+    required DateTime adjustedAt,
+    required String supersedingAdjustmentId,
+  }) async {
+    for (final record in records) {
+      final recordId = (record['id'] ?? '').toString();
+      final recordEffective =
+          _date(record['effectiveDateTime']) ?? _date(record['date']);
+      final recordAdjusted =
+          _date(record['adjustmentDateTime']) ?? _date(record['createdAt']);
+      final rawItems = record['items'];
+      if (recordId.isEmpty ||
+          recordId == supersedingAdjustmentId ||
+          recordEffective == null ||
+          recordEffective.isBefore(effectiveFrom) ||
+          (recordAdjusted != null && !recordAdjusted.isBefore(adjustedAt)) ||
+          rawItems is! List) {
+        continue;
+      }
+
+      var changed = false;
+      final updatedItems = rawItems.map((raw) {
+        if (raw is! Map) return raw;
+        final item = Map<String, dynamic>.from(raw);
+        final medId = item['medDocId']?.toString().trim() ?? '';
+        if (item['type'] == 'scheduleChanged' &&
+            medicationIds.contains(medId) &&
+            item['supersededAt'] == null) {
+          changed = true;
+          item['supersededAt'] = adjustedAt.toIso8601String();
+          item['supersededByAdjustmentId'] = supersedingAdjustmentId;
+          item['supersededReason'] = 'replacedByLaterScheduleEdit';
+        }
+        return item;
+      }).toList();
+      if (!changed) continue;
+
+      final updatedRecord = Map<String, dynamic>.from(record)
+        ..remove('id')
+        ..['items'] = updatedItems;
+      await _localDb.updateAdjustmentRecord(uid, recordId, updatedRecord);
+    }
+  }
+
+  String? _matchingScheduleRecordId(
+    List<Map<String, dynamic>> records,
+    DateTime effectiveDate,
+    List<Map<String, dynamic>> candidates,
+  ) {
+    final scheduleCandidates =
+        candidates.where((item) => item['type'] == 'scheduleChanged').toList();
+    if (scheduleCandidates.isEmpty) return null;
+    for (final record in records) {
+      final recordDate =
+          _date(record['effectiveDateTime']) ?? _date(record['date']);
+      final rawItems = record['items'];
+      if (recordDate == null ||
+          recordDate.year != effectiveDate.year ||
+          recordDate.month != effectiveDate.month ||
+          recordDate.day != effectiveDate.day ||
+          recordDate.hour != effectiveDate.hour ||
+          recordDate.minute != effectiveDate.minute ||
+          rawItems is! List) {
+        continue;
+      }
+      for (final raw in rawItems.whereType<Map>()) {
+        final item = Map<String, dynamic>.from(raw);
+        if (item['supersededAt'] != null) continue;
+        if (scheduleCandidates.any(
+          (candidate) => _canonical(candidate) == _canonical(item),
+        )) {
+          final id = record['id']?.toString().trim() ?? '';
+          if (id.isNotEmpty) return id;
+        }
+      }
+    }
+    return null;
   }
 
   static bool shouldCreateSubjectiveTrackingCycle(String source) {
@@ -438,12 +635,20 @@ class MedicationAdjustmentService {
       if (rawItems is! List) continue;
       for (final raw in rawItems.whereType<Map>()) {
         final item = Map<String, dynamic>.from(raw);
+        if (item['supersededAt'] != null) continue;
         if (item['medDocId']?.toString() != candidate['medDocId']?.toString() ||
             item['type']?.toString() != candidate['type']?.toString()) {
           continue;
         }
-        if (candidate['type'] == 'added' ||
-            _canonical(item) == _canonical(candidate)) {
+        final sameEffectiveMinute = recordDate.year == date.year &&
+            recordDate.month == date.month &&
+            recordDate.day == date.day &&
+            recordDate.hour == date.hour &&
+            recordDate.minute == date.minute;
+        final duplicate = candidate['type'] == 'added'
+            ? sameEffectiveMinute
+            : _canonical(item) == _canonical(candidate);
+        if (duplicate) {
           return true;
         }
       }
@@ -462,6 +667,25 @@ class MedicationAdjustmentService {
       left.year == right.year &&
       left.month == right.month &&
       left.day == right.day;
+
+  static double? _number(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '');
+  }
+
+  static List<String> _strings(dynamic value) => value is Iterable
+      ? value
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .toList()
+      : const [];
+
+  static bool _sameStringSet(List<String> left, List<String> right) {
+    if (left.length != right.length) return false;
+    final a = left.toSet();
+    final b = right.toSet();
+    return a.length == b.length && a.containsAll(b);
+  }
 
   static String _dateKey(DateTime date) =>
       '${date.year.toString().padLeft(4, '0')}${date.month.toString().padLeft(2, '0')}${date.day.toString().padLeft(2, '0')}';

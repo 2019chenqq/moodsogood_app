@@ -8,6 +8,7 @@ import 'medication_local_db.dart';
 import 'medication_reminder_service.dart';
 import 'medication_dose_units.dart';
 import 'medication_adjustment_service.dart';
+import 'medication_checkin_schedule_resolver.dart';
 import 'medication_dose_editor_dialog.dart';
 import '../analytics_service.dart';
 
@@ -126,6 +127,10 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
           'unit': data['unit'],
           'type': data['type'],
           'intervalDays': data['intervalDays'],
+          'scheduleType': data['scheduleType'] ?? 'daily',
+          'scheduleIntervalDays': data['scheduleIntervalDays'],
+          'scheduleAnchorDate': data['scheduleAnchorDate'],
+          'weekdays': (data['weekdays'] as List?)?.cast<num>() ?? <num>[],
           'times': (data['times'] as List?)?.cast<String>() ?? <String>[],
           'purposes': (data['purposes'] as List?)?.cast<String>() ?? <String>[],
           'note': data['note'],
@@ -498,7 +503,7 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
     final isInjectionMed = medType == 'injection';
 
     // 卡片視覺：有變動就稍微凸顯
-    final changed = draft.type != MedChangeType.unchanged;
+    final changed = draft.hasChanges;
 
     return Card(
       key: ValueKey('adj-med-$docId'),
@@ -566,7 +571,7 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
-                      _typeLabel(draft.type),
+                      draft.changeLabel,
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
                             color: HealingDesignSystem.adaptivePrimaryText(
                                 context),
@@ -587,22 +592,27 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
                 _choiceChip(
                   context,
                   label: '維持原劑量',
-                  selected: draft.type == MedChangeType.unchanged,
+                  selected: !draft.hasChanges,
                   onTap: () => setState(() {
                     draft.type = MedChangeType.unchanged;
                     draft.newDose = null;
                     draft.newDosePerUnit = draft.oldDosePerUnit;
                     draft.newPillCount = draft.oldPillCount;
                     draft.newTimes = List<String>.from(draft.oldTimes);
+                    draft.newScheduleType = draft.oldScheduleType;
+                    draft.newScheduleIntervalDays =
+                        draft.oldScheduleIntervalDays;
+                    draft.newScheduleAnchorDate = draft.oldScheduleAnchorDate;
+                    draft.newWeekdays = List<int>.from(draft.oldWeekdays);
                     draft.stopReason = null;
                   }),
                 ),
                 _choiceChip(
                   context,
                   label: '劑量調整',
-                  selected: draft.type == MedChangeType.doseChanged,
+                  selected: draft.has(MedChangeType.doseChanged),
                   onTap: () => setState(() {
-                    draft.type = MedChangeType.doseChanged;
+                    draft.toggle(MedChangeType.doseChanged);
                     // 預設帶入目前劑量
                     draft.newDose ??= _doseToDouble(dose);
                     draft.newDosePerUnit ??= draft.oldDosePerUnit;
@@ -613,12 +623,17 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
                 if (!isInjectionMed)
                   _choiceChip(
                     context,
-                    label: '時間調整',
-                    selected: draft.type == MedChangeType.scheduleChanged,
+                    label: '頻率／時間調整',
+                    selected: draft.has(MedChangeType.scheduleChanged),
                     onTap: () => setState(() {
-                      draft.type = MedChangeType.scheduleChanged;
-                      draft.newDose = null;
+                      draft.toggle(MedChangeType.scheduleChanged);
                       draft.newTimes ??= List<String>.from(draft.oldTimes);
+                      draft.newScheduleType ??= draft.oldScheduleType;
+                      draft.newScheduleIntervalDays ??=
+                          draft.oldScheduleIntervalDays;
+                      draft.newScheduleAnchorDate ??=
+                          draft.oldScheduleAnchorDate ?? _date;
+                      draft.newWeekdays ??= List<int>.from(draft.oldWeekdays);
                       draft.stopReason = null;
                     }),
                   ),
@@ -648,7 +663,7 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
             ),
 
             // 劑量調整展開
-            if (draft.type == MedChangeType.doseChanged) ...[
+            if (draft.has(MedChangeType.doseChanged)) ...[
               const SizedBox(height: 10),
               _InlineEditRow(
                 title: usesPillDose ? '調整後用量' : '新劑量',
@@ -679,17 +694,17 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
               ),
             ],
 
-            if (draft.type == MedChangeType.scheduleChanged &&
+            if (draft.has(MedChangeType.scheduleChanged) &&
                 !isInjectionMed) ...[
               const SizedBox(height: 10),
               _InlineEditRow(
-                title: '服藥時間',
-                valueText: _timesLabel(draft.newTimes ?? draft.oldTimes),
-                onTap: () => _editTimes(docId: med['id'] as String? ?? ''),
+                title: '服藥頻率與時間',
+                valueText: _scheduleSummary(draft),
+                onTap: () => _editSchedule(docId: med['id'] as String? ?? ''),
               ),
               const SizedBox(height: 8),
               Text(
-                '例如把「早上」改成「早上、晚上」。',
+                '可同時調整服藥頻率、週期起算日與早／中／晚時段。',
                 style: Theme.of(context)
                     .textTheme
                     .bodySmall
@@ -1029,12 +1044,29 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
     return value.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
   }
 
-  Future<void> _editTimes({
+  String _scheduleSummary(_MedDraft draft) {
+    final type = draft.newScheduleType ?? draft.oldScheduleType;
+    final frequency = switch (type) {
+      'intervalDays' => '每 ${draft.newScheduleIntervalDays ?? 2} 天一次',
+      'weekdays' =>
+        '每週 ${(draft.newWeekdays ?? draft.oldWeekdays).map((day) => kMedicationWeekdays[day]).whereType<String>().join('、')}',
+      _ => '每日',
+    };
+    return '$frequency · ${_timesLabel(draft.newTimes ?? draft.oldTimes)}';
+  }
+
+  Future<void> _editSchedule({
     required String docId,
   }) async {
     final draft = _draftByDocId[docId]!;
     final selected = <String>{...(draft.newTimes ?? draft.oldTimes)};
-    List<String>? picked;
+    var scheduleType = draft.newScheduleType ?? draft.oldScheduleType;
+    var intervalDays =
+        draft.newScheduleIntervalDays ?? draft.oldScheduleIntervalDays ?? 2;
+    var anchorDate =
+        draft.newScheduleAnchorDate ?? draft.oldScheduleAnchorDate ?? _date;
+    final weekdays = <int>{...(draft.newWeekdays ?? draft.oldWeekdays)};
+    Map<String, dynamic>? picked;
 
     await showDialog<void>(
       context: context,
@@ -1042,26 +1074,97 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: const Text('調整服藥時間'),
+              title: const Text('調整服藥頻率與時間'),
               content: SingleChildScrollView(
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: kAdjustmentTimeSlots.map((slot) {
-                    return FilterChip(
-                      selected: selected.contains(slot),
-                      label: Text(slot),
-                      onSelected: (on) {
-                        setDialogState(() {
-                          if (on) {
-                            selected.add(slot);
-                          } else {
-                            selected.remove(slot);
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      initialValue: scheduleType,
+                      decoration: const InputDecoration(labelText: '服藥頻率'),
+                      items: const [
+                        DropdownMenuItem(value: 'daily', child: Text('每日')),
+                        DropdownMenuItem(
+                            value: 'intervalDays', child: Text('每幾天')),
+                        DropdownMenuItem(
+                            value: 'weekdays', child: Text('每週指定日')),
+                      ],
+                      onChanged: (value) => setDialogState(
+                        () => scheduleType = value ?? 'daily',
+                      ),
+                    ),
+                    if (scheduleType == 'intervalDays') ...[
+                      const SizedBox(height: 12),
+                      Text('每 $intervalDays 天服用一次'),
+                      Slider(
+                        min: 2,
+                        max: 30,
+                        divisions: 28,
+                        value: intervalDays.toDouble(),
+                        label: '$intervalDays 天',
+                        onChanged: (value) => setDialogState(
+                          () => intervalDays = value.round(),
+                        ),
+                      ),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('週期起算日'),
+                        subtitle: Text(_fmtYmd(anchorDate)),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () async {
+                          final value = await showDatePicker(
+                            context: context,
+                            initialDate: anchorDate,
+                            firstDate: DateTime(DateTime.now().year - 5),
+                            lastDate: DateTime(DateTime.now().year + 5),
+                            helpText: '選擇本次服用日（第 0 天）',
+                          );
+                          if (value != null) {
+                            setDialogState(() => anchorDate = value);
                           }
-                        });
-                      },
-                    );
-                  }).toList(),
+                        },
+                      ),
+                      Text(
+                        '服用當天為第 0 天，隔天開始算第 1 天；下次預計服用：'
+                        '${_fmtYmd(MedicationCheckinScheduleResolver.nextIntervalDateOnOrAfter(anchorDate: anchorDate, intervalDays: intervalDays, from: DateTime.now()))}',
+                      ),
+                    ],
+                    if (scheduleType == 'weekdays') ...[
+                      const SizedBox(height: 12),
+                      const Text('服用星期'),
+                      Wrap(
+                        spacing: 8,
+                        children: kMedicationWeekdays.entries.map((entry) {
+                          return FilterChip(
+                            label: Text(entry.value),
+                            selected: weekdays.contains(entry.key),
+                            onSelected: (on) => setDialogState(() {
+                              on
+                                  ? weekdays.add(entry.key)
+                                  : weekdays.remove(entry.key);
+                            }),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    const Text('服藥時間'),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: kAdjustmentTimeSlots.map((slot) {
+                        return FilterChip(
+                          selected: selected.contains(slot),
+                          label: Text(slot),
+                          onSelected: (on) => setDialogState(() {
+                            on ? selected.add(slot) : selected.remove(slot);
+                          }),
+                        );
+                      }).toList(),
+                    ),
+                  ],
                 ),
               ),
               actions: [
@@ -1073,7 +1176,14 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
                   onPressed: () {
                     final ordered =
                         kAdjustmentTimeSlots.where(selected.contains).toList();
-                    picked = ordered;
+                    if (scheduleType == 'weekdays' && weekdays.isEmpty) return;
+                    picked = {
+                      'times': ordered,
+                      'scheduleType': scheduleType,
+                      'intervalDays': intervalDays,
+                      'anchorDate': anchorDate,
+                      'weekdays': weekdays.toList()..sort(),
+                    };
                     Navigator.pop(dialogContext);
                   },
                   child: const Text('確定'),
@@ -1087,7 +1197,11 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
 
     if (picked == null) return;
     setState(() {
-      draft.newTimes = picked;
+      draft.newTimes = picked!['times'] as List<String>;
+      draft.newScheduleType = picked!['scheduleType'] as String;
+      draft.newScheduleIntervalDays = picked!['intervalDays'] as int;
+      draft.newScheduleAnchorDate = picked!['anchorDate'] as DateTime;
+      draft.newWeekdays = picked!['weekdays'] as List<int>;
     });
   }
 
@@ -1192,8 +1306,7 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
     // 只取有變動的 items（無變化的不寫入）
     final changed = _draftByDocId.entries
         .where((e) =>
-            e.value.type != MedChangeType.unchanged ||
-            _sessionNewlyAddedDocIds.contains(e.key))
+            e.value.hasChanges || _sessionNewlyAddedDocIds.contains(e.key))
         .toList();
 
     debugPrint('🔍 檢查變動：${_draftByDocId.length} 顆藥物，${changed.length} 顆有變動');
@@ -1208,13 +1321,13 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
     // 檢查：劑量調整一定要有 newDose
     for (final e in changed) {
       final d = e.value;
-      if (d.type == MedChangeType.doseChanged && d.newDose == null) {
+      if (d.has(MedChangeType.doseChanged) && d.newDose == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('有藥物選了「劑量調整」，但尚未填入新劑量。')),
         );
         return;
       }
-      if (d.type == MedChangeType.doseChanged &&
+      if (d.has(MedChangeType.doseChanged) &&
           d.usesPillDose &&
           (d.newDosePerUnit == null ||
               d.newDosePerUnit! < 0 ||
@@ -1230,36 +1343,48 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
     setState(() => _saving = true);
 
     try {
-      final items = changed.map((e) {
+      final items = changed.expand((e) {
         final docId = e.key;
         final d = e.value;
         final isAddedThisSession = d.type == MedChangeType.added ||
             _sessionNewlyAddedDocIds.contains(docId);
 
-        final itemType =
-            isAddedThisSession ? MedChangeType.added.name : d.type.name;
+        final types = isAddedThisSession
+            ? const [MedChangeType.added]
+            : d.changes.toList(growable: false);
 
-        return <String, dynamic>{
-          'medDocId': docId,
-          'name': d.name,
-          'type': itemType, // added/injected/doseChanged/stopped/resumed
-          'oldDose': isAddedThisSession ? null : d.oldDose,
-          'newDose': isAddedThisSession ? (d.newDose ?? d.oldDose) : d.newDose,
-          'oldDosePerUnit': isAddedThisSession ? null : d.oldDosePerUnit,
-          'newDosePerUnit': isAddedThisSession
-              ? (d.newDosePerUnit ?? d.oldDosePerUnit)
-              : d.newDosePerUnit,
-          'oldPillCount': isAddedThisSession ? null : d.oldPillCount,
-          'newPillCount': isAddedThisSession
-              ? (d.newPillCount ?? d.oldPillCount)
-              : d.newPillCount,
-          'oldTimes': isAddedThisSession ? null : d.oldTimes,
-          'newTimes': d.newTimes,
-          'unit': d.unit,
-          'oldUnit': isAddedThisSession ? null : d.oldUnit,
-          'newUnit': d.unit,
-          'stopReason': d.stopReason,
-        };
+        return types.map((type) => <String, dynamic>{
+              'medDocId': docId,
+              'name': d.name,
+              'type': type.name,
+              'oldDose': isAddedThisSession ? null : d.oldDose,
+              'newDose':
+                  isAddedThisSession ? (d.newDose ?? d.oldDose) : d.newDose,
+              'oldDosePerUnit': isAddedThisSession ? null : d.oldDosePerUnit,
+              'newDosePerUnit': isAddedThisSession
+                  ? (d.newDosePerUnit ?? d.oldDosePerUnit)
+                  : d.newDosePerUnit,
+              'oldPillCount': isAddedThisSession ? null : d.oldPillCount,
+              'newPillCount': isAddedThisSession
+                  ? (d.newPillCount ?? d.oldPillCount)
+                  : d.newPillCount,
+              'oldTimes': isAddedThisSession ? null : d.oldTimes,
+              'newTimes': d.newTimes,
+              'oldScheduleType': isAddedThisSession ? null : d.oldScheduleType,
+              'newScheduleType': d.newScheduleType,
+              'oldScheduleIntervalDays':
+                  isAddedThisSession ? null : d.oldScheduleIntervalDays,
+              'newScheduleIntervalDays': d.newScheduleIntervalDays,
+              'oldScheduleAnchorDate':
+                  isAddedThisSession ? null : d.oldScheduleAnchorDate,
+              'newScheduleAnchorDate': d.newScheduleAnchorDate,
+              'oldWeekdays': isAddedThisSession ? null : d.oldWeekdays,
+              'newWeekdays': d.newWeekdays,
+              'unit': d.unit,
+              'oldUnit': isAddedThisSession ? null : d.oldUnit,
+              'newUnit': d.unit,
+              'stopReason': d.stopReason,
+            });
       }).toList();
 
       // 1) 寫入調整紀錄到本地 DB（一定要寫入）
@@ -1308,31 +1433,44 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
           updated['updatedAt'] = DateTime.now().toString();
           updated['lastChangeAt'] = _date.toIso8601String();
 
-          if (d.type == MedChangeType.doseChanged) {
+          if (d.has(MedChangeType.doseChanged)) {
             updated.addAll(
               _buildDoseFieldsForDoseChanged(
                 draft: d,
               ),
             );
+            updated['isActive'] = true;
+          }
+          if (d.has(MedChangeType.scheduleChanged)) {
+            if (d.newTimes != null) {
+              updated['times'] = d.newTimes;
+            }
+            updated['scheduleType'] = d.newScheduleType ?? 'daily';
+            updated['scheduleIntervalDays'] =
+                d.newScheduleType == 'intervalDays'
+                    ? d.newScheduleIntervalDays
+                    : null;
+            updated['scheduleAnchorDate'] = d.newScheduleType == 'intervalDays'
+                ? d.newScheduleAnchorDate?.toIso8601String()
+                : null;
+            updated['weekdays'] = d.newScheduleType == 'weekdays'
+                ? (d.newWeekdays ?? const <int>[])
+                : <int>[];
+            updated['isActive'] = true;
+          }
+          if (d.has(MedChangeType.injected)) {
+            updated['isActive'] = true;
+          }
+          if (d.has(MedChangeType.added)) {
             if (d.newTimes != null) {
               updated['times'] = d.newTimes;
             }
             updated['isActive'] = true;
-          } else if (d.type == MedChangeType.scheduleChanged) {
-            if (d.newTimes != null) {
-              updated['times'] = d.newTimes;
-            }
-            updated['isActive'] = true;
-          } else if (d.type == MedChangeType.injected) {
-            updated['isActive'] = true;
-          } else if (d.type == MedChangeType.added) {
-            if (d.newTimes != null) {
-              updated['times'] = d.newTimes;
-            }
-            updated['isActive'] = true;
-          } else if (d.type == MedChangeType.stopped) {
+          }
+          if (d.has(MedChangeType.stopped)) {
             updated['isActive'] = false;
-          } else if (d.type == MedChangeType.resumed) {
+          }
+          if (d.has(MedChangeType.resumed)) {
             updated['isActive'] = true;
             updated['resumedAt'] = _date.toIso8601String();
           }
@@ -1421,25 +1559,6 @@ class _RecordAdjustmentPageState extends State<RecordAdjustmentPage> {
     );
   }
 
-  String _typeLabel(MedChangeType t) {
-    switch (t) {
-      case MedChangeType.unchanged:
-        return '維持原劑量';
-      case MedChangeType.added:
-        return '新增';
-      case MedChangeType.injected:
-        return '已施打';
-      case MedChangeType.doseChanged:
-        return '調整';
-      case MedChangeType.scheduleChanged:
-        return '時間調整';
-      case MedChangeType.stopped:
-        return '停藥';
-      case MedChangeType.resumed:
-        return '恢復使用';
-    }
-  }
-
   double _doseToDouble(dynamic dose) {
     if (dose is int) return dose.toDouble();
     if (dose is double) return dose;
@@ -1486,14 +1605,63 @@ class _MedDraft {
   double oldDosePerUnit;
   double oldPillCount;
   List<String> oldTimes;
-  MedChangeType type;
+  String oldScheduleType;
+  int? oldScheduleIntervalDays;
+  DateTime? oldScheduleAnchorDate;
+  List<int> oldWeekdays;
+  final Set<MedChangeType> changes;
   double? newDose;
   double? newDosePerUnit;
   double? newPillCount;
   List<String>? newTimes;
+  String? newScheduleType;
+  int? newScheduleIntervalDays;
+  DateTime? newScheduleAnchorDate;
+  List<int>? newWeekdays;
   String? stopReason;
 
   bool get usesPillDose => medType != 'drops' && medType != 'injection';
+  bool get hasChanges => changes.isNotEmpty;
+  bool has(MedChangeType value) => changes.contains(value);
+
+  MedChangeType get type => changes.isEmpty
+      ? MedChangeType.unchanged
+      : changes.contains(MedChangeType.stopped)
+          ? MedChangeType.stopped
+          : changes.first;
+
+  set type(MedChangeType value) {
+    changes
+      ..clear()
+      ..addAll(value == MedChangeType.unchanged ? const [] : [value]);
+  }
+
+  void toggle(MedChangeType value) {
+    if (changes.contains(value)) {
+      changes.remove(value);
+    } else {
+      changes.add(value);
+    }
+  }
+
+  String get changeLabel => changes.map((value) {
+        switch (value) {
+          case MedChangeType.doseChanged:
+            return '劑量調整';
+          case MedChangeType.scheduleChanged:
+            return '頻率／時間調整';
+          case MedChangeType.stopped:
+            return '停藥';
+          case MedChangeType.resumed:
+            return '恢復使用';
+          case MedChangeType.injected:
+            return '已施打';
+          case MedChangeType.added:
+            return '新增';
+          case MedChangeType.unchanged:
+            return '維持原劑量';
+        }
+      }).join('＋');
 
   _MedDraft({
     required this.name,
@@ -1504,12 +1672,22 @@ class _MedDraft {
     required this.oldDosePerUnit,
     required this.oldPillCount,
     required this.oldTimes,
-    required this.type,
+    required this.oldScheduleType,
+    required this.oldScheduleIntervalDays,
+    required this.oldScheduleAnchorDate,
+    required this.oldWeekdays,
+    required MedChangeType type,
     this.newDose,
     this.newDosePerUnit,
     this.newPillCount,
     this.newTimes,
-  });
+    this.newScheduleType,
+    this.newScheduleIntervalDays,
+    this.newScheduleAnchorDate,
+    this.newWeekdays,
+  }) : changes = type == MedChangeType.unchanged
+            ? <MedChangeType>{}
+            : <MedChangeType>{type};
 
   factory _MedDraft.fromMap(Map<String, dynamic> m) {
     final name = (m['name'] as String?) ?? '未命名藥物';
@@ -1531,6 +1709,18 @@ class _MedDraft {
     final oldDosePerUnit = parsedDosePerUnit ?? (oldDose / oldPillCount);
     final oldTimes =
         (m['times'] as List?)?.whereType<String>().toList() ?? <String>[];
+    final oldScheduleType = (m['scheduleType'] ?? 'daily').toString();
+    final rawInterval = m['scheduleIntervalDays'];
+    final oldScheduleIntervalDays = rawInterval is num
+        ? rawInterval.toInt()
+        : int.tryParse(rawInterval?.toString() ?? '');
+    final oldScheduleAnchorDate =
+        _parseDate(m['scheduleAnchorDate']) ?? _parseDate(m['startDate']);
+    final oldWeekdays = (m['weekdays'] as List? ?? const [])
+        .map((value) => value is num ? value.toInt() : int.tryParse('$value'))
+        .whereType<int>()
+        .where((value) => value >= 1 && value <= 7)
+        .toList();
 
     return _MedDraft(
       name: name,
@@ -1541,12 +1731,26 @@ class _MedDraft {
       oldDosePerUnit: oldDosePerUnit,
       oldPillCount: oldPillCount,
       oldTimes: oldTimes,
+      oldScheduleType: oldScheduleType,
+      oldScheduleIntervalDays: oldScheduleIntervalDays,
+      oldScheduleAnchorDate: oldScheduleAnchorDate,
+      oldWeekdays: oldWeekdays,
       type: MedChangeType.unchanged,
       newDose: oldDose,
       newDosePerUnit: oldDosePerUnit,
       newPillCount: oldPillCount,
       newTimes: List<String>.from(oldTimes),
+      newScheduleType: oldScheduleType,
+      newScheduleIntervalDays: oldScheduleIntervalDays,
+      newScheduleAnchorDate: oldScheduleAnchorDate,
+      newWeekdays: List<int>.from(oldWeekdays),
     );
+  }
+
+  static DateTime? _parseDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    return DateTime.tryParse(value?.toString() ?? '');
   }
 }
 

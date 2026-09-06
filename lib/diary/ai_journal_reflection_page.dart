@@ -16,13 +16,11 @@
 //     若雲端 AI 暫時失敗，會自動 fallback 到 generateMockAIReflection()。
 
 import 'dart:async';
-import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart' as m;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../analytics_service.dart';
@@ -494,128 +492,10 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
           '如果資料不足，請明確說明資料有限，不要自行補充內容',
         ],
       };
-      m.debugPrint('🧪 buildAIInputData: $result');
       return result;
     }
     // deep 模式原本邏輯...
     return {};
-  }
-
-  dynamic sanitizeForJson(dynamic value) {
-    if (value == null) return null;
-
-    if (value is Timestamp) {
-      return value.toDate().toIso8601String();
-    }
-
-    if (value is DateTime) {
-      return value.toIso8601String();
-    }
-
-    if (value is List) {
-      return value.map((item) => sanitizeForJson(item)).toList();
-    }
-
-    if (value is Map) {
-      return value.map((key, val) {
-        return MapEntry(key.toString(), sanitizeForJson(val));
-      });
-    }
-
-    return value;
-  }
-
-  Future<Map<String, dynamic>> generateGeminiReflectionByMake({
-    required String uid,
-    required String docId,
-    required Map<String, dynamic> aiInput,
-    required String diaryContent,
-    required Map<String, dynamic> diaryFields,
-    required Map<String, dynamic> dailyRecord,
-  }) async {
-    const webhookUrl =
-        'https://hook.us2.make.com/1o186sfmo838wb7tto62i6neb67zob8r';
-
-    final payload = sanitizeForJson({
-      'uid': uid,
-      'docId': docId,
-      'date': docId,
-      'aiInput': aiInput,
-      'diaryContent': diaryContent,
-      'diaryFields': diaryFields,
-      'dailyRecord': dailyRecord,
-      'requestedAt': DateTime.now().toIso8601String(),
-      'source': 'make_gemini',
-    });
-
-    m.debugPrint('開始呼叫 AI service: Make Gemini webhook');
-    m.debugPrint('request payload: ${jsonEncode(payload)}');
-
-    late http.Response response;
-    try {
-      response = await http
-          .post(
-            Uri.parse(webhookUrl),
-            headers: {
-              'Content-Type': 'application/json; charset=utf-8',
-              'Accept': 'application/json',
-            },
-            body: utf8.encode(jsonEncode(payload)),
-          )
-          .timeout(const Duration(seconds: 60));
-    } catch (e, stack) {
-      m.debugPrint('Make Gemini HTTP exception: $e');
-      m.debugPrint('Make Gemini HTTP stackTrace: $stack');
-      rethrow;
-    }
-
-    m.debugPrint('response status: ${response.statusCode}');
-    final responseBody = utf8.decode(response.bodyBytes);
-    m.debugPrint('response body: $responseBody');
-
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Make Webhook 呼叫失敗：${response.statusCode} $responseBody');
-    }
-
-    m.debugPrint('Make response: $responseBody');
-
-    try {
-      final decoded = jsonDecode(responseBody);
-
-      if (decoded is Map<String, dynamic>) {
-        return {
-          'summary': decoded['summary'] ?? '',
-          'emotionObservation': decoded['emotionObservation'] ?? '',
-          'topics': decoded['topics'] ?? [],
-          'positiveFeedback': decoded['positiveFeedback'] ?? '',
-          'gratitudeQuestions': decoded['gratitudeQuestions'] ?? [],
-          'tomorrowAction': decoded['tomorrowAction'] ?? '',
-          'crisisDetected': decoded['crisisDetected'] ?? false,
-          'isMock': false,
-          'model': 'gemini-1.5-flash',
-          'source': 'make_gemini',
-          'generatedAt': FieldValue.serverTimestamp(),
-        };
-      }
-    } catch (e, stack) {
-      m.debugPrint('Make Gemini response parse exception: $e');
-      m.debugPrint('Make Gemini response parse stackTrace: $stack');
-      // Fallback to plain text when Make returns a non-JSON body.
-    }
-
-    return {
-      'summary': responseBody,
-      'emotionObservation': '',
-      'topics': [],
-      'positiveFeedback': '',
-      'gratitudeQuestions': [],
-      'tomorrowAction': '',
-      'crisisDetected': false,
-      'isMock': false,
-      'model': 'gemini-1.5-flash',
-      'source': 'make_gemini',
-      'generatedAt': FieldValue.serverTimestamp(),
-    };
   }
 
   Future<Map<String, dynamic>> generateAIReflection({
@@ -630,11 +510,8 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
         'aiInput': aiInput,
       };
       m.debugPrint('開始呼叫 AI service: HTTP generateAiJournalReflection');
-      m.debugPrint('request payload: ${jsonEncode(sanitizeForJson(payload))}');
-
       final data = await _aiClient.generate(payload: payload);
       m.debugPrint('response status: ok');
-      m.debugPrint('response body: $data');
 
       return _normalizeAiResult(data);
     } catch (e, stack) {

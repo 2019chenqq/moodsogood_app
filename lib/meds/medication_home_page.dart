@@ -333,6 +333,7 @@ class _MedicationHomePageState extends State<MedicationHomePage> {
           'intervalDays': data['intervalDays'],
           'scheduleType': data['scheduleType'] ?? 'daily',
           'scheduleIntervalDays': data['scheduleIntervalDays'],
+          'scheduleAnchorDate': data['scheduleAnchorDate'],
           'weekdays': (data['weekdays'] as List?)?.cast<num>() ?? <num>[],
           'times': (data['times'] as List?)?.cast<String>() ?? <String>[],
           'purposes': (data['purposes'] as List?)?.cast<String>() ?? <String>[],

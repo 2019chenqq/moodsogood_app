@@ -10,6 +10,7 @@ import 'medication_local_db.dart';
 import 'medication_reminder_service.dart';
 import 'medication_dose_units.dart';
 import 'medication_adjustment_service.dart';
+import 'medication_checkin_schedule_resolver.dart';
 import '../analytics_service.dart';
 
 const double kMaxDose = 50000;
@@ -57,6 +58,7 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
   int _intervalDays = 28; // 只給 injection 用
   String _scheduleType = 'daily';
   int _scheduleIntervalDays = 2;
+  DateTime _scheduleAnchorDate = DateTime.now();
   final Set<int> _scheduleWeekdays = {};
   double _dropMg = 10.0;
   double _dropMlBase = 1.0;
@@ -103,12 +105,13 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
     super.initState();
     final initialStartDate = widget.initialStartDate;
     if (initialStartDate != null) {
-      _startDate = DateTime(
-        initialStartDate.year,
-        initialStartDate.month,
-        initialStartDate.day,
-      );
+      _startDate = initialStartDate;
     }
+    _scheduleAnchorDate = DateTime(
+      _startDate.year,
+      _startDate.month,
+      _startDate.day,
+    );
     DrugDictionaryService.instance.ensureLoaded();
     AnalyticsService.logPage('add_medication_page');
   }
@@ -720,7 +723,7 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
                           items: const [
                             DropdownMenuItem(value: 'daily', child: Text('每日')),
                             DropdownMenuItem(
-                                value: 'intervalDays', child: Text('每隔幾天')),
+                                value: 'intervalDays', child: Text('每幾天')),
                             DropdownMenuItem(
                                 value: 'weekdays', child: Text('每週指定日')),
                           ],
@@ -740,7 +743,17 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
                               () => _scheduleIntervalDays = value.round(),
                             ),
                           ),
-                          const Text('以開始日期作為第一次服用日。'),
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('週期起算日'),
+                            subtitle: Text(_fmtYmd(_scheduleAnchorDate)),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: _pickScheduleAnchorDate,
+                          ),
+                          Text(
+                            '服用當天為第 0 天，隔天開始算第 1 天；下次預計服用：'
+                            '${_fmtYmd(MedicationCheckinScheduleResolver.nextIntervalDateOnOrAfter(anchorDate: _scheduleAnchorDate, intervalDays: _scheduleIntervalDays, from: DateTime.now()))}',
+                          ),
                         ],
                         if (_scheduleType == 'weekdays') ...[
                           const SizedBox(height: 12),
@@ -1004,7 +1017,27 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
       firstDate: DateTime(now.year - 5),
       lastDate: DateTime(now.year + 5),
     );
-    if (picked != null) setState(() => _startDate = picked);
+    if (picked != null) {
+      final anchorFollowedStart = _scheduleAnchorDate.year == _startDate.year &&
+          _scheduleAnchorDate.month == _startDate.month &&
+          _scheduleAnchorDate.day == _startDate.day;
+      setState(() {
+        _startDate = picked;
+        if (anchorFollowedStart) _scheduleAnchorDate = picked;
+      });
+    }
+  }
+
+  Future<void> _pickScheduleAnchorDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _scheduleAnchorDate,
+      firstDate: DateTime(now.year - 5),
+      lastDate: DateTime(now.year + 5),
+      helpText: '選擇本次服用日（第 0 天）',
+    );
+    if (picked != null) setState(() => _scheduleAnchorDate = picked);
   }
 
   Future<void> _save() async {
@@ -1095,6 +1128,13 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
         'scheduleType': _medType == 'injection' ? 'daily' : _scheduleType,
         'scheduleIntervalDays':
             _scheduleType == 'intervalDays' ? _scheduleIntervalDays : null,
+        'scheduleAnchorDate': _scheduleType == 'intervalDays'
+            ? DateTime(
+                _scheduleAnchorDate.year,
+                _scheduleAnchorDate.month,
+                _scheduleAnchorDate.day,
+              ).toString()
+            : null,
         'weekdays': _scheduleType == 'weekdays'
             ? (_scheduleWeekdays.toList()..sort())
             : <int>[],
@@ -1117,11 +1157,15 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
         uid: uid,
         medDocId: docId,
         medication: medicationData,
-        effectiveDate: DateTime(
-          _startDate.year,
-          _startDate.month,
-          _startDate.day,
-        ),
+        effectiveDate: widget.initialStartDate == null
+            ? DateTime(_startDate.year, _startDate.month, _startDate.day)
+            : DateTime(
+                _startDate.year,
+                _startDate.month,
+                _startDate.day,
+                widget.initialStartDate!.hour,
+                widget.initialStartDate!.minute,
+              ),
         source: widget.adjustmentEventSource,
       );
       debugPrint('✅ 本地已保存: $docId');

@@ -242,6 +242,16 @@ class MedicationAdjustmentEvent {
     this.newPillCount,
     this.oldTimes = const [],
     this.newTimes = const [],
+    this.oldScheduleType,
+    this.newScheduleType,
+    this.oldScheduleIntervalDays,
+    this.newScheduleIntervalDays,
+    this.oldScheduleAnchorDate,
+    this.newScheduleAnchorDate,
+    this.oldWeekdays = const [],
+    this.newWeekdays = const [],
+    this.supersededAt,
+    this.supersededByAdjustmentId,
     this.note,
     this.stopReason,
     this.origin = AdjustmentEventOrigin.persisted,
@@ -266,6 +276,16 @@ class MedicationAdjustmentEvent {
   final double? newPillCount;
   final List<String> oldTimes;
   final List<String> newTimes;
+  final String? oldScheduleType;
+  final String? newScheduleType;
+  final int? oldScheduleIntervalDays;
+  final int? newScheduleIntervalDays;
+  final DateTime? oldScheduleAnchorDate;
+  final DateTime? newScheduleAnchorDate;
+  final List<int> oldWeekdays;
+  final List<int> newWeekdays;
+  final DateTime? supersededAt;
+  final String? supersededByAdjustmentId;
   final String? note;
   final String? stopReason;
   final AdjustmentEventOrigin origin;
@@ -311,7 +331,29 @@ class MedicationAdjustmentEvent {
     if (type == 'resumed') return '恢復使用';
     if (type == 'injected' || type == 'injection') return '已施打';
     if (type == 'scheduleChanged') {
-      return '${_timesText(oldTimes)} → ${_timesText(newTimes)}';
+      final hasFrequencyDetails = oldScheduleType != null ||
+          newScheduleType != null ||
+          oldScheduleIntervalDays != null ||
+          newScheduleIntervalDays != null ||
+          oldWeekdays.isNotEmpty ||
+          newWeekdays.isNotEmpty;
+      if (!hasFrequencyDetails) {
+        return '${_timesText(oldTimes)} → ${_timesText(newTimes)}';
+      }
+      final oldSchedule = _scheduleText(
+        type: oldScheduleType,
+        intervalDays: oldScheduleIntervalDays,
+        weekdays: oldWeekdays,
+        anchorDate: oldScheduleAnchorDate,
+      );
+      final newSchedule = _scheduleText(
+        type: newScheduleType,
+        intervalDays: newScheduleIntervalDays,
+        weekdays: newWeekdays,
+        anchorDate: newScheduleAnchorDate,
+      );
+      return '$oldSchedule・${_timesText(oldTimes)} → '
+          '$newSchedule・${_timesText(newTimes)}';
     }
     final oldValue = _doseText(
       dose: oldDose,
@@ -366,6 +408,17 @@ class MedicationAdjustmentEvent {
         newPillCount: _number(item['newPillCount']),
         oldTimes: _strings(item['oldTimes']),
         newTimes: _strings(item['newTimes']),
+        oldScheduleType: _nullableText(item['oldScheduleType']),
+        newScheduleType: _nullableText(item['newScheduleType']),
+        oldScheduleIntervalDays: _integer(item['oldScheduleIntervalDays']),
+        newScheduleIntervalDays: _integer(item['newScheduleIntervalDays']),
+        oldScheduleAnchorDate: _date(item['oldScheduleAnchorDate']),
+        newScheduleAnchorDate: _date(item['newScheduleAnchorDate']),
+        oldWeekdays: _integers(item['oldWeekdays']),
+        newWeekdays: _integers(item['newWeekdays']),
+        supersededAt: _date(item['supersededAt']),
+        supersededByAdjustmentId:
+            _nullableText(item['supersededByAdjustmentId']),
         note: _nullableText(item['note'] ?? record['note']),
         stopReason: _nullableText(item['stopReason']),
         source:
@@ -389,6 +442,15 @@ class MedicationAdjustmentEvent {
     return double.tryParse(raw?.toString().trim() ?? '');
   }
 
+  static int? _integer(dynamic raw) {
+    if (raw is num) return raw.toInt();
+    return int.tryParse(raw?.toString() ?? '');
+  }
+
+  static List<int> _integers(dynamic raw) => raw is Iterable
+      ? raw.map(_integer).whereType<int>().toList()
+      : const <int>[];
+
   static String? _nullableText(dynamic raw) {
     final value = raw?.toString().trim() ?? '';
     return value.isEmpty ? null : value;
@@ -403,6 +465,35 @@ class MedicationAdjustmentEvent {
 
   static String _timesText(List<String> values) =>
       values.isEmpty ? '未設定' : values.join('、');
+
+  static String _scheduleText({
+    required String? type,
+    required int? intervalDays,
+    required List<int> weekdays,
+    required DateTime? anchorDate,
+  }) {
+    if (type == 'intervalDays') {
+      final interval = intervalDays ?? 2;
+      final anchor = anchorDate == null
+          ? ''
+          : '（${anchorDate.month}/${anchorDate.day} 起算）';
+      return '每 $interval 天一次$anchor';
+    }
+    if (type == 'weekdays') {
+      const labels = <int, String>{
+        1: '一',
+        2: '二',
+        3: '三',
+        4: '四',
+        5: '五',
+        6: '六',
+        7: '日',
+      };
+      final days = weekdays.map((day) => labels[day]).whereType<String>();
+      return '每週${days.join('、')}';
+    }
+    return '每日';
+  }
 
   static String _doseText({
     required double? dose,
@@ -439,7 +530,7 @@ class MedicationAdjustmentFormatter {
       switch (event.type) {
         'added' => '新增藥物',
         'doseChanged' => event._doseDirectionLabel,
-        'scheduleChanged' => '服用時間調整',
+        'scheduleChanged' => '服用頻率／時間調整',
         'stopped' => '停藥',
         'resumed' => '恢復使用',
         'injected' || 'injection' => '施打紀錄',
@@ -447,7 +538,9 @@ class MedicationAdjustmentFormatter {
       };
 
   static String shortSummary(MedicationAdjustmentEvent event) =>
-      event._rawChangeSummary;
+      event.supersededAt == null
+          ? event._rawChangeSummary
+          : '已被後續調整取代｜${event._rawChangeSummary}';
 
   static String detailSummary(MedicationAdjustmentEvent event) {
     return shortSummary(event);

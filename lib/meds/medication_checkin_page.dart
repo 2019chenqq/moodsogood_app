@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -5,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../analytics_service.dart';
+import '../constants/healing_design_system.dart';
 import '../utils/health_data_encryption_service.dart';
 import 'medication_local_db.dart';
 import 'medication_checkin_schedule_resolver.dart';
@@ -46,13 +49,30 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
   Map<String, DateTime> _statusAt = {};
   Map<String, double> _actualAmountByKey = {};
   Map<String, List<DateTime>> _prnEventsByKey = {};
+  Timer? _medicationReloadDebounce;
+  int _loadRequestId = 0;
 
   @override
   void initState() {
     super.initState();
     _loadSlotTimes();
     _loadData();
+    MedicationLocalDB.medicationRevision.addListener(_onMedicationChanged);
     AnalyticsService.logPage('medication_checkin_page');
+  }
+
+  void _onMedicationChanged() {
+    _medicationReloadDebounce?.cancel();
+    _medicationReloadDebounce = Timer(const Duration(milliseconds: 200), () {
+      if (mounted) _loadData();
+    });
+  }
+
+  @override
+  void dispose() {
+    MedicationLocalDB.medicationRevision.removeListener(_onMedicationChanged);
+    _medicationReloadDebounce?.cancel();
+    super.dispose();
   }
 
   String _docId(DateTime d) {
@@ -156,6 +176,37 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
       checksMap.putIfAbsent(key, () => false);
       statusesMap.putIfAbsent(key, () => _CheckinStatus.pending.value);
     }
+  }
+
+  bool _reconcileFixedSlotKeys({
+    required List<_CheckinItem> items,
+    required Map<String, dynamic> checksMap,
+    required Map<String, dynamic> statusesMap,
+    required Map<String, dynamic> takenAtMap,
+    required Map<String, dynamic> actualAmountMap,
+  }) {
+    final validKeys =
+        items.where((item) => item.slot != '需要時').map(_itemKey).toSet();
+    final beforeKeys = <String>{
+      ...checksMap.keys,
+      ...statusesMap.keys,
+      ...takenAtMap.keys,
+      ...actualAmountMap.keys,
+    };
+    bool isObsolete(String key) => !_isPrnKey(key) && !validKeys.contains(key);
+    checksMap.removeWhere((key, _) => isObsolete(key));
+    statusesMap.removeWhere((key, _) => isObsolete(key));
+    takenAtMap.removeWhere((key, _) => isObsolete(key));
+    actualAmountMap.removeWhere((key, _) => isObsolete(key));
+    _ensureFixedSlotKeys(checksMap: checksMap, statusesMap: statusesMap);
+    final afterKeys = <String>{
+      ...checksMap.keys,
+      ...statusesMap.keys,
+      ...takenAtMap.keys,
+      ...actualAmountMap.keys,
+    };
+    return beforeKeys.length != afterKeys.length ||
+        !beforeKeys.containsAll(afterKeys);
   }
 
   String _fmtDateTime(DateTime dt) {
@@ -318,9 +369,10 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
   }
 
   Future<void> _loadData() async {
+    final requestId = ++_loadRequestId;
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
-      if (!mounted) return;
+      if (!mounted || requestId != _loadRequestId) return;
       setState(() {
         _loading = false;
         _items = [];
@@ -456,22 +508,28 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
         }
       }
 
-      final beforeCount = statusesMap.length + checksMap.length;
-      _ensureFixedSlotKeys(checksMap: checksMap, statusesMap: statusesMap);
-      final afterCount = statusesMap.length + checksMap.length;
-      if (afterCount != beforeCount) {
+      final scheduleChanged = _reconcileFixedSlotKeys(
+        items: items,
+        checksMap: checksMap,
+        statusesMap: statusesMap,
+        takenAtMap: takenAtMap,
+        actualAmountMap: actualAmountMap,
+      );
+      if (scheduleChanged) {
         await HealthDataEncryptionService.setEncrypted(
           ref,
           {
             'date': Timestamp.fromDate(_dateOnly(_selectedDate)),
             'statuses': statusesMap,
             'checks': checksMap,
+            'takenAt': takenAtMap,
+            'actualAmount': actualAmountMap,
             'updatedAt': FieldValue.serverTimestamp(),
           },
         );
       }
 
-      if (!mounted) return;
+      if (!mounted || requestId != _loadRequestId) return;
       setState(() {
         _items = items;
         _statusByKey = statusByKey;
@@ -483,7 +541,7 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
 
       await _loadStats(uid);
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || requestId != _loadRequestId) return;
       setState(() => _loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('載入服藥打卡資料失敗')),
@@ -907,14 +965,18 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
     final chartData =
         _statsRange == _StatsRange.week ? _stats7Days : _stats30Days;
     final colorScheme = Theme.of(context).colorScheme;
+    final contentCardColor = HealingDesignSystem.isDark(context)
+        ? HealingDesignSystem.adaptiveSurface(context)
+        : Colors.white;
     final progress = total == 0 ? 0.0 : done / total;
 
     return Scaffold(
-      backgroundColor: colorScheme.surface,
+      backgroundColor: HealingDesignSystem.adaptiveBackground(context),
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: Colors.transparent,
-        foregroundColor: colorScheme.onSurface,
+        scrolledUnderElevation: 0,
+        backgroundColor: HealingDesignSystem.adaptiveAppBarBackground(context),
+        foregroundColor: HealingDesignSystem.adaptiveAppBarForeground(context),
         title: const Text('服藥打卡'),
         actions: [
           IconButton(
@@ -926,24 +988,12 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
       ),
       body: Container(
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color.alphaBlend(
-                colorScheme.primary.withOpacity(0.07),
-                colorScheme.surface,
-              ),
-              Color.alphaBlend(
-                colorScheme.secondary.withOpacity(0.05),
-                colorScheme.surface,
-              ),
-              Color.alphaBlend(
-                colorScheme.tertiary.withOpacity(0.04),
-                colorScheme.surface,
-              ),
-            ],
-          ),
+          color: HealingDesignSystem.isDark(context)
+              ? HealingDesignSystem.adaptiveBackground(context)
+              : null,
+          gradient: HealingDesignSystem.isDark(context)
+              ? null
+              : HealingDesignSystem.softBlueGradient(),
         ),
         child: _loading
             ? const Center(child: CircularProgressIndicator())
@@ -1076,8 +1126,7 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
                               Card(
                                 margin: EdgeInsets.zero,
                                 elevation: 0,
-                                color: colorScheme.surfaceContainerHighest
-                                    .withOpacity(0.34),
+                                color: contentCardColor,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
                                 ),
@@ -1168,6 +1217,7 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
                           ),
                           Card(
                             elevation: 2,
+                            color: contentCardColor,
                             shadowColor: colorScheme.primary.withOpacity(0.12),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(18),
@@ -1188,8 +1238,7 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
                                       padding: const EdgeInsets.fromLTRB(
                                           12, 12, 12, 8),
                                       decoration: BoxDecoration(
-                                        color: colorScheme.secondaryContainer
-                                            .withOpacity(0.3),
+                                        color: contentCardColor,
                                         borderRadius: BorderRadius.circular(14),
                                         border: Border.all(
                                           color: colorScheme.secondary
@@ -1279,8 +1328,7 @@ class _MedicationCheckinPageState extends State<MedicationCheckinPage> {
                                     padding: const EdgeInsets.fromLTRB(
                                         12, 12, 12, 8),
                                     decoration: BoxDecoration(
-                                      color: colorScheme.primaryContainer
-                                          .withOpacity(0.22),
+                                      color: contentCardColor,
                                       borderRadius: BorderRadius.circular(14),
                                       border: Border.all(
                                         color: statusColor.withOpacity(0.28),
