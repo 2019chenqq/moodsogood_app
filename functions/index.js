@@ -2699,9 +2699,24 @@ exports.summarizeInneraHealthEvents = onCall(
   },
 );
 
+const { withFreeQuota, readQuota } = require("./innera_free_quota");
+
+exports.getInneraAiFreeQuota = onCall(
+  { secrets: [revenueCatSecretApiKey], enforceAppCheck: true },
+  async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "請先登入");
+    return readQuota({ db, uid: request.auth.uid, verifyPro: requireAiProAccess });
+  },
+);
+
 exports.generateInneraAiChat = onCall(
   { secrets: [openAiApiKey, revenueCatSecretApiKey], enforceAppCheck: true },
-  async (request) => {
+  (request) => withFreeQuota({
+    db, request, verifyPro: requireAiProAccess, run: generateInneraAiChatResponse,
+  }),
+);
+
+async function generateInneraAiChatResponse(request) {
     const latencyState = createInneraLatencyState();
     let latencyLogged = false;
     let latencyMode = String(request.data?.mode || "emotionalSupport").trim();
@@ -2724,8 +2739,6 @@ exports.generateInneraAiChat = onCall(
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "請先登入後再使用心域 AI");
     }
-    await requireAiProAccess(request.auth.uid);
-
     const data = request.data || {};
     const mode = String(data.mode || "emotionalSupport").trim();
     latencyMode = mode;
@@ -3276,5 +3289,4 @@ exports.generateInneraAiChat = onCall(
         "AI 服務暫時無法回覆，請稍後再試。",
       );
     }
-  },
-);
+}

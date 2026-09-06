@@ -58,6 +58,12 @@ String aiCallableErrorMessage(
   required String functionName,
   bool? isSignedIn,
 }) {
+  final details = error.details;
+  if (details is Map &&
+      (details['reason'] == 'free_daily_quota_exhausted' ||
+          details['reason'] == 'free_quota_duplicate')) {
+    return error.message ?? '請稍後再試。';
+  }
   switch (error.code) {
     case 'not-found':
       return functionName == AiCallableEndpoints.diaryDraft
