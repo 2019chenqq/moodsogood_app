@@ -58,9 +58,8 @@ class InneraAiHomePage extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
             children: [
               _HeroHeader(
-                onStart: () => isPro
-                    ? _openChat(context, InneraAiMode.emotionalSupport)
-                    : _openSubscription(context),
+                onStart: () =>
+                    _openChat(context, InneraAiMode.emotionalSupport),
               ),
               const SizedBox(height: 16),
               if (proProvider.loading)
@@ -160,13 +159,13 @@ class _ProRequiredCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '心域 AI 為 Pro 功能',
+            '每天各模式免費 3 則訊息',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w800,
                 ),
           ),
           const SizedBox(height: 8),
-          const Text('訂閱後可使用 AI 對話、近期紀錄回顧與每日紀錄整理。'),
+          const Text('登入即可使用四個模式，各模式額度分開計算，台灣時間每日 00:00 重置。Pro 會員維持原有使用權益。'),
           const SizedBox(height: 14),
           SizedBox(
             width: double.infinity,

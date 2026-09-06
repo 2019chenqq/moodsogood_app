@@ -157,6 +157,7 @@ class InneraAiService {
     required String userMessage,
     List<InneraAiTemporaryImage> images = const [],
     InneraAiRecordDraft? recordDraft,
+    String? requestId,
   }) async {
     final localSafety = _safetyService.assess(userMessage);
     if (_requiresFixedSafetyUi(localSafety.level)) {
@@ -179,6 +180,7 @@ class InneraAiService {
     }
 
     return sendMessageWithContext(
+      requestId: requestId,
       mode: mode,
       history: history,
       userMessage: userMessage,
@@ -201,6 +203,7 @@ class InneraAiService {
     required List<AiContextSource> contextSources,
     List<InneraAiTemporaryImage> images = const [],
     InneraAiRecordDraft? recordDraft,
+    String? requestId,
   }) async {
     final localSafety = _safetyService.assess(userMessage);
     if (_requiresFixedSafetyUi(localSafety.level)) {
@@ -209,7 +212,7 @@ class InneraAiService {
 
     final messages = _historyPayload(history, userMessage);
     final payload = <String, dynamic>{
-      'requestId': createAiRequestId(),
+      'requestId': requestId ?? createAiRequestId(),
       'mode': mode.systemPromptKey,
       'message': userMessage,
       'messages': messages,

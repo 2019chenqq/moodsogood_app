@@ -14,6 +14,7 @@ import '../daily/body_measurement_input.dart';
 import '../daily/emotion_dimensions.dart';
 import '../models/daily_record.dart';
 import 'ai_callable_diagnostics.dart';
+import 'ai_request_id.dart';
 import 'ai_diary_draft_service.dart';
 import 'innera_ai_conversation_service.dart';
 import 'innera_ai_chat_image_service.dart';
@@ -24,6 +25,7 @@ import 'innera_ai_record_draft_service.dart';
 import 'innera_ai_safety_service.dart';
 import 'innera_ai_service.dart';
 import 'widgets/ai_message_bubble.dart';
+import 'widgets/ai_free_quota_banner.dart';
 import 'widgets/ai_safety_notice.dart';
 import 'widgets/ai_record_draft_card.dart';
 import 'widgets/ai_diary_draft_sheet.dart';
@@ -68,6 +70,8 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
   final _scrollController = ScrollController();
   final _focusNode = FocusNode();
   bool _isSending = false;
+  int _quotaRevision = 0;
+  String? _sendRequestId;
   String? _lastFailedInput;
   List<InneraAiImageAttachment> _lastFailedImages = const [];
   final List<Uint8List> _pendingImageBytes = [];
@@ -444,6 +448,10 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
       return;
     }
     final text = enteredText.isEmpty ? '請幫我閱讀並說明這張照片的內容。' : enteredText;
+    // The retry button reuses the original ID, including after a network timeout.
+    if (overrideText == null || _sendRequestId == null) {
+      _sendRequestId = createAiRequestId();
+    }
 
     final localSafety = _safetyService.assess(text);
     if (localSafety.level == AiSafetyLevel.normal) {
@@ -556,6 +564,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
       }
       final response = await _service
           .sendMessage(
+            requestId: _sendRequestId,
             mode: _mode,
             history: _messages,
             userMessage: text,
@@ -666,6 +675,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
       debugPrintStack(stackTrace: stackTrace);
       _showSendError(text, _messageForError(error), images: images);
     } finally {
+      if (mounted) setState(() => _quotaRevision++);
       if (temporaryImages.isNotEmpty) {
         try {
           await _imageService.deleteAll(
@@ -1858,6 +1868,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                   ],
                 ),
               ),
+              AiFreeQuotaBanner(mode: _mode, revision: _quotaRevision),
               _InputBar(
                 controller: _controller,
                 focusNode: _focusNode,
