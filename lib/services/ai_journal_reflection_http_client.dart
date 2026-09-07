@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
@@ -11,14 +12,26 @@ class AiJournalReflectionHttpClient {
   AiJournalReflectionHttpClient({
     http.Client? httpClient,
     String functionName = _defaultFunctionName,
+    Future<String?> Function()? idTokenProvider,
+    Future<String?> Function()? appCheckTokenProvider,
   })  : _httpClient = httpClient ?? http.Client(),
-        _functionName = functionName;
+        _functionName = functionName,
+        _idTokenProvider = idTokenProvider ?? _getIdToken,
+        _appCheckTokenProvider = appCheckTokenProvider ?? _getAppCheckToken;
 
   static const String _defaultFunctionName = 'generateAiJournalReflection';
   static const String _region = 'us-central1';
 
   final http.Client _httpClient;
   final String _functionName;
+  final Future<String?> Function() _idTokenProvider;
+  final Future<String?> Function() _appCheckTokenProvider;
+
+  static Future<String?> _getIdToken() async =>
+      FirebaseAuth.instance.currentUser?.getIdToken();
+
+  static Future<String?> _getAppCheckToken() =>
+      FirebaseAppCheck.instance.getToken();
 
   Uri get _callableUri {
     final projectId = DefaultFirebaseOptions.currentPlatform.projectId;
@@ -39,17 +52,34 @@ class AiJournalReflectionHttpClient {
     });
 
     try {
-      debugPrint(
-        'AI HTTP request payload: ${jsonEncode(sanitizedPayload)}',
-      );
-
-      final user = FirebaseAuth.instance.currentUser;
-      final idToken = await user?.getIdToken();
+      final idToken = await _idTokenProvider();
+      if (idToken == null || idToken.isEmpty) {
+        throw const AiJournalReflectionHttpException(
+          '登入狀態已失效，請重新登入後再試。',
+          statusCode: 401,
+        );
+      }
+      // Raw HTTP must supply App Check explicitly. Use Firebase token caching.
+      final String? appCheckToken;
+      try {
+        appCheckToken = await _appCheckTokenProvider();
+      } catch (_) {
+        throw const AiJournalReflectionHttpException(
+          '無法完成裝置驗證，請確認網路連線並重新開啟 App 後再試。',
+          statusCode: 401,
+        );
+      }
+      if (appCheckToken == null || appCheckToken.isEmpty) {
+        throw const AiJournalReflectionHttpException(
+          '裝置驗證尚未完成，請重新開啟 App 後再試。',
+          statusCode: 401,
+        );
+      }
       final headers = <String, String>{
         'Content-Type': 'application/json; charset=utf-8',
         'Accept': 'application/json',
-        if (idToken != null && idToken.isNotEmpty)
-          'Authorization': 'Bearer $idToken',
+        'Authorization': 'Bearer $idToken',
+        'X-Firebase-AppCheck': appCheckToken,
       };
 
       final response = await _httpClient
@@ -62,17 +92,18 @@ class AiJournalReflectionHttpClient {
 
       final responseBody = utf8.decode(response.bodyBytes);
       debugPrint('AI HTTP response status: ${response.statusCode}');
-      debugPrint('AI HTTP response body: $responseBody');
 
-      final decoded = _decodeResponseBody(responseBody);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw AiJournalReflectionHttpException(
-          'AI HTTP 呼叫失敗：${response.statusCode}',
+          response.statusCode == 401
+              ? '登入或裝置驗證未通過，請重新登入並重新開啟 App 後再試。'
+              : 'AI HTTP 呼叫失敗：${response.statusCode}',
           statusCode: response.statusCode,
           responseBody: responseBody,
         );
       }
 
+      final decoded = _decodeResponseBody(responseBody);
       if (decoded['error'] != null) {
         throw AiJournalReflectionHttpException(
           _extractCallableErrorMessage(decoded['error']),

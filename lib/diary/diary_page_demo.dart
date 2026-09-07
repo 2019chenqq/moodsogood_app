@@ -678,7 +678,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
             crossAxisAlignment: m.CrossAxisAlignment.start,
             children: [
               m.Text(
-                'AI 基礎回饋',
+                'AI 基礎回饋 · Pro',
                 style: m.Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: m.FontWeight.w800,
                     ),
@@ -874,7 +874,7 @@ class _DiaryPageDemoState extends m.State<DiaryPageDemo> {
         ),
         actions: [
           m.IconButton(
-            tooltip: 'AI 正念回饋',
+            tooltip: '日記 AI 回饋 · Pro 專屬',
             icon: const m.Icon(m.Icons.auto_awesome_rounded),
             onPressed: _openAiReflection,
           ),
@@ -1405,7 +1405,7 @@ class _AiEntryCard extends m.StatelessWidget {
           ),
           const m.SizedBox(height: 6),
           m.Text(
-            '先從今天的文字開始整理，也可以升級成更完整的長期觀察。',
+            'Pro 可根據日記內容與每日 check-in 的整體情緒，提供 AI 回饋。',
             style: theme.textTheme.bodySmall?.copyWith(
               color: color.onSurfaceVariant,
               height: 1.5,
@@ -1417,7 +1417,8 @@ class _AiEntryCard extends m.StatelessWidget {
               m.Expanded(
                 child: _AiSmallButton(
                   title: '基礎回饋',
-                  subtitle: '免費',
+                  subtitle: 'Pro 專屬',
+                  isPro: true,
                   icon: m.Icons.chat_bubble_outline,
                   onTap: onBasicTap,
                 ),

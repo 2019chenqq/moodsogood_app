@@ -76,23 +76,29 @@ class AiDiaryDraftService {
           .where((value) => value.isNotEmpty)
           .join('\n');
 
+  /// Diary extraction needs the whole narrative, including ordinary events.
+  static List<Map<String, String>> conversationForDiary(
+    List<InneraAiMessage> messages,
+  ) =>
+      messages
+          .where((item) => !item.isLoading && !item.isError)
+          .where((item) =>
+              item.role == InneraAiMessageRole.user ||
+              item.role == InneraAiMessageRole.assistant)
+          .map((item) => {
+                'role': item.role == InneraAiMessageRole.user
+                    ? 'user'
+                    : 'assistant',
+                'content': item.text,
+              })
+          .toList();
+
   Future<AiDiaryDraft> generate({
     required List<InneraAiMessage> messages,
     String? requestedField,
     AiDiaryDraft? currentDraft,
   }) async {
-    final conversation = messages
-        .where((item) => !item.isLoading && !item.isError)
-        .where((item) =>
-            item.role == InneraAiMessageRole.user ||
-            item.role == InneraAiMessageRole.assistant)
-        .skip(messages.length > 24 ? messages.length - 24 : 0)
-        .map((item) => {
-              'role':
-                  item.role == InneraAiMessageRole.user ? 'user' : 'assistant',
-              'content': item.text,
-            })
-        .toList();
+    final conversation = conversationForDiary(messages);
     if (!conversation.any((item) => item['role'] == 'user')) {
       throw const FormatException('沒有可整理的使用者對話');
     }

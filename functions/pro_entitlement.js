@@ -77,7 +77,20 @@ async function requireProEntitlement({
   apiKey,
   fetchImpl = fetch,
   nowMs = Date.now(),
+  testProUids = "",
+  testProEmails = "",
 }) {
+  // Server-owned configuration only. Never accept this list from request.data
+  // or user-writable Firestore profile flags.
+  const testers = String(testProUids).split(",").map((id) => id.trim()).filter(Boolean);
+  if (typeof uid === "string" && uid && testers.includes(uid)) return;
+  const testerEmails = String(testProEmails).split(",")
+    .map((email) => email.trim().toLowerCase()).filter(Boolean);
+  if (uid && testerEmails.length > 0) {
+    const user = await admin.auth().getUser(uid);
+    if (!user.disabled && user.emailVerified === true &&
+        testerEmails.includes(String(user.email || "").toLowerCase())) return;
+  }
   if (!apiKey) {
     throw new ProEntitlementError(
       "configuration",

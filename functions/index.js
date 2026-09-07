@@ -1,6 +1,8 @@
+const { journalReflectionResponseFormat, normalizeReflection } = require("./journal_reflection_response");
+const { prepareDiaryMessages } = require("./diary_extraction_input");
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const { defineSecret } = require("firebase-functions/params");
+const { defineSecret, defineString } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const OpenAI = require("openai");
 const { buildInneraPrompt, sanitizeModeFollowUp } = require("./innera_mode_prompt");
@@ -97,9 +99,11 @@ const lastFmApiKey = defineSecret("LASTFM_API_KEY");
 const spotifyClientId = defineSecret("SPOTIFY_CLIENT_ID");
 const spotifyClientSecret = defineSecret("SPOTIFY_CLIENT_SECRET");
 const revenueCatSecretApiKey = defineSecret("REVENUECAT_SECRET_API_KEY");
+const aiTestProUids = defineString("AI_TEST_PRO_UIDS", { default: "" });
+const aiTestProEmails = defineString("AI_TEST_PRO_EMAILS", { default: "" });
 const DEFAULT_AI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 const INNERA_AI_PROMPT_VERSION = "innera-ai-chat-v25-review-domain-selection";
-const DIARY_EXTRACTION_PROMPT_VERSION = "diary_extraction_v1";
+const DIARY_EXTRACTION_PROMPT_VERSION = "diary_extraction_v2";
 const EVENT_SUMMARY_PROMPT_VERSION = "innera-event-summary-v1";
 
 exports.deleteOwnAccount = onCall({ enforceAppCheck: true }, async (request) => {
@@ -140,6 +144,8 @@ async function requireAiProAccess(uid) {
       admin,
       uid,
       apiKey: revenueCatSecretApiKey.value(),
+      testProUids: aiTestProUids.value(),
+      testProEmails: aiTestProEmails.value(),
     });
   } catch (error) {
     if (error instanceof ProEntitlementError) {
@@ -1421,33 +1427,6 @@ function buildEmotionModel(dailyRecord, diaryFields, diaryText) {
   };
 }
 
-function normalizeReflection(payload, fallbackCrisis, actualModel) {
-  const topics = Array.isArray(payload.topics)
-    ? payload.topics.map((item) => String(item).trim()).filter(Boolean).slice(0, 5)
-    : [];
-  const gratitudeQuestions = Array.isArray(payload.gratitudeQuestions)
-    ? payload.gratitudeQuestions
-        .map((item) => String(item).trim())
-        .filter(Boolean)
-        .slice(0, 3)
-    : [];
-
-  return {
-    summary: String(payload.summary || "").trim(),
-    emotionObservation: String(payload.emotionObservation || "").trim(),
-    topics,
-    positiveFeedback: String(payload.positiveFeedback || "").trim(),
-    gratitudeQuestions,
-    tomorrowAction: String(payload.tomorrowAction || "").trim(),
-    crisisDetected: Boolean(payload.crisisDetected) || fallbackCrisis,
-    isMock: false,
-    model: actualModel,
-    emotionModel:
-      payload.emotionModel && typeof payload.emotionModel === "object"
-        ? payload.emotionModel
-        : null,
-  };
-}
 
 exports.createCommunityPost = onCall(
   { enforceAppCheck: true },
@@ -1556,7 +1535,7 @@ exports.generateAiJournalReflection = onCall(
       requestId: request.data?.requestId,
       feature: "journal_reflection",
       model: DEFAULT_AI_MODEL,
-      promptVersion: "journal_reflection_v1",
+      promptVersion: "journal_reflection_v2_schema_fix",
       quotedPoints: AI_QUOTED_POINTS.journal_reflection,
     });
     await usageTracker.start();
@@ -1571,14 +1550,7 @@ exports.generateAiJournalReflection = onCall(
       completion = await client.chat.completions.create({
         model: DEFAULT_AI_MODEL,
         temperature: 0.7,
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "innera_ai_chat_response",
-            strict: true,
-            schema: inneraChatSchema,
-          },
-        },
+        response_format: journalReflectionResponseFormat,
         messages: [
           {
             role: "system",
@@ -2128,14 +2100,15 @@ exports.generateInneraDiaryDraft = onCall(
       data.currentDraft && typeof data.currentDraft === "object"
         ? data.currentDraft
         : null;
-    const messages = (Array.isArray(data.messages) ? data.messages : [])
-      .map((item) => {
-        const role = item?.role === "user" ? "user" : "assistant";
-        const content = String(item?.content || "").trim().slice(0, 2000);
-        return content ? { role, content } : null;
-      })
-      .filter(Boolean)
-      .slice(-24);
+    let messages;
+    try {
+      messages = prepareDiaryMessages(data.messages);
+    } catch (error) {
+      if (error instanceof RangeError) {
+        throw new HttpsError("invalid-argument", error.message);
+      }
+      throw error;
+    }
     if (!messages.some((item) => item.role === "user")) {
       throw new HttpsError("invalid-argument", "沒有可整理的使用者對話");
     }
@@ -2180,10 +2153,10 @@ exports.generateInneraDiaryDraft = onCall(
             content: [
               "你是「心域 Innera」中的每日紀錄整理助手。",
               "你的工作不是診斷使用者，也不是替使用者創造故事，而是根據當日對話整理可供確認的日記草稿。",
-              "只根據提供的對話。不得虛構事件、感恩事項、成就、人物或情緒。",
+              "只根據使用者的原始敘述整理事實；assistant 的回覆僅用於理解問答，不可當成使用者經歷。不得虛構事件、感恩事項、成就、人物或情緒。輸出前逐一核對所有 user 訊息，確保開頭、中段、結尾的事件均有保留，並採用使用者後續更正的版本。",
               "source 必須是 explicit、summarized、inferred、suggested、missing 之一。",
               "資訊不足時使用空字串、空陣列並列入 missingFields，不得為填滿欄位而猜測。",
-              "content 使用第一人稱，保留原意，約 80 至 300 個中文字；對話很短時可以更短。",
+              "content 是完整日記正文，使用第一人稱並保留使用者語氣；依原文資訊量決定篇幅，不限制為短摘要。依時間或事件分段，保留所有不同的重要事件、人物關係、事情經過、行動、對話、原因、結果與轉折；沒有情緒或症狀的生活事件也必須保留。只刪重複語句與無資訊的口頭語，不為精簡而省略事件或把事件只改寫成情緒、症狀清單。",
               "標題提供 1 至 3 個，每個約 8 至 20 個中文字，不使用診斷標籤或制式勵志語。",
               "最想記錄的瞬間必須是具體事件、決定、對話或轉折；沒有就空陣列。",
               "做得不錯必須有具體行為證據；沒有就空陣列。",
@@ -2950,8 +2923,12 @@ async function generateInneraAiChatResponse(request) {
       feature: usageFeature,
       model: DEFAULT_AI_MODEL,
       promptVersion: INNERA_AI_PROMPT_VERSION,
-      quotedPoints: AI_QUOTED_POINTS[usageFeature],
-      metadata: { mode },
+      quotedPoints: specialRecentReviewRequest ? 0 : AI_QUOTED_POINTS[usageFeature],
+      metadata: {
+        mode,
+        requestType: recentReviewRequestType,
+        accessPolicy: specialRecentReviewRequest ? "follow_up_free_beta" : "standard",
+      },
     });
     try {
       await usageTracker.start();

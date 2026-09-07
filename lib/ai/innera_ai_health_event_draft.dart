@@ -366,9 +366,17 @@ List<InneraAiHealthEventDraft> mergeExplicitHealthEventDrafts({
       final antecedent = _physicalRecurrenceAntecedent(clause, drafts.values);
       if (antecedent != null) symptoms = [antecedent];
     }
+    // Reuse the daily-record emotion parser, including subject attribution.
+    // A symptom-only event must not hide emotions from the same conversation.
+    final emotions = InneraAiRecordDraft.empty(messageTime)
+        .mergeExplicitRecordFacts(clause)
+        .emotions
+        .where((item) => item.isEligibleUserEmotion)
+        .toList();
     final stateChanges = _stateChangesFromClause(clause);
     final standaloneSeverity = _explicitSeverityFromClause(clause);
     if (symptoms.isEmpty &&
+        emotions.isEmpty &&
         stateChanges.isEmpty &&
         standaloneSeverity != null &&
         activeId != null) {
@@ -394,6 +402,7 @@ List<InneraAiHealthEventDraft> mergeExplicitHealthEventDrafts({
             eventTime: time.eventTime,
             timeContext: time.context,
             timePrecision: time.precision,
+            emotions: emotions,
             symptoms: symptoms,
             symptomSeverities: _symptomSeveritiesFromClause(
               clause,
@@ -409,7 +418,8 @@ List<InneraAiHealthEventDraft> mergeExplicitHealthEventDrafts({
       }
       continue;
     }
-    final hasEventContent = symptoms.isNotEmpty ||
+    final hasEventContent = emotions.isNotEmpty ||
+        symptoms.isNotEmpty ||
         stateChanges.isNotEmpty ||
         _hasStateDescription(clause);
     if (!hasEventContent) continue;
@@ -437,6 +447,7 @@ List<InneraAiHealthEventDraft> mergeExplicitHealthEventDrafts({
       eventTime: time?.eventTime,
       timeContext: time?.context,
       timePrecision: time?.precision ?? AiEventTimePrecision.unspecified,
+      emotions: emotions,
       symptoms: symptoms,
       symptomSeverities: _symptomSeveritiesFromClause(
         clause,
@@ -678,7 +689,7 @@ bool _isPreviousNightSleepClause(String clause) =>
     RegExp(r'睡|入睡|醒|睡眠').hasMatch(clause);
 
 bool _hasStateDescription(String clause) => RegExp(
-      r'比較好|好多了|不舒服|沒精神|沒有精神|狀態|焦慮|低落|難過|生氣|煩躁|平靜|開心|興奮',
+      r'比較好|好多了|不舒服|沒精神|沒有精神|狀態',
     ).hasMatch(clause);
 
 List<String> _symptomsFromClause(

@@ -15,22 +15,42 @@ int homeShellTodayRevisionAfterSelection({
         ? currentRevision + 1
         : currentRevision;
 
-/// Minimal app shell.
-///
-/// We keep this wrapper to avoid touching existing entrypoints in main.dart,
-/// while delegating drawer/navigation concerns to pages that already use MainDrawer.
+/// Persistent navigation shell. Content routes stay inside the bottom bar.
 class HomeShell extends m.StatefulWidget {
-  const HomeShell({super.key});
+  const HomeShell({super.key, this.initialIndex = 0, this.testPages})
+      : assert(initialIndex >= 0 && initialIndex < 4),
+        assert(testPages == null || testPages.length == 4);
+
+  final int initialIndex;
+  @m.visibleForTesting
+  final List<m.Widget>? testPages;
+
+  static bool selectDestination(m.BuildContext context, int index) {
+    final state = context.findAncestorStateOfType<_HomeShellState>();
+    if (state == null) return false;
+    state._selectDestination(index);
+    return true;
+  }
 
   @override
   m.State<HomeShell> createState() => _HomeShellState();
 }
 
 class _HomeShellState extends m.State<HomeShell> {
-  int _index = 0;
+  late int _index = widget.initialIndex;
+  final _navigatorKey = m.GlobalKey<m.NavigatorState>();
+  final _selectionRevision = m.ValueNotifier<int>(0);
+
+  @override
+  void dispose() {
+    _selectionRevision.dispose();
+    super.dispose();
+  }
+
   int _todayRevision = 0;
 
   void _selectDestination(int value) {
+    _navigatorKey.currentState?.popUntil((route) => route.isFirst);
     setState(() {
       _todayRevision = homeShellTodayRevisionAfterSelection(
         currentIndex: _index,
@@ -39,18 +59,35 @@ class _HomeShellState extends m.State<HomeShell> {
       );
       _index = value;
     });
+    _selectionRevision.value++;
   }
 
   @override
   m.Widget build(m.BuildContext context) {
-    final pages = <m.Widget>[
-      HomeHubPage(key: m.ValueKey('today-$_todayRevision')),
-      const InneraAiHomePage(),
-      const TrendReviewHubPage(),
-      const ProfilePage(),
-    ];
     return m.Scaffold(
-      body: m.IndexedStack(index: _index, children: pages),
+      // The inner page owns keyboard insets; avoid shrinking its Scaffold twice.
+      resizeToAvoidBottomInset: false,
+      body: m.NavigatorPopHandler<Object?>(
+        onPopWithResult: (result) => _navigatorKey.currentState!.pop(result),
+        child: m.Navigator(
+          key: _navigatorKey,
+          onGenerateRoute: (_) => m.MaterialPageRoute<void>(
+            builder: (_) => m.ValueListenableBuilder<int>(
+              valueListenable: _selectionRevision,
+              builder: (context, revision, child) => m.IndexedStack(
+                index: _index,
+                children: widget.testPages ??
+                    <m.Widget>[
+                      HomeHubPage(key: m.ValueKey('today-$_todayRevision')),
+                      const InneraAiHomePage(),
+                      const TrendReviewHubPage(),
+                      const ProfilePage(),
+                    ],
+              ),
+            ),
+          ),
+        ),
+      ),
       bottomNavigationBar: m.NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: _selectDestination,

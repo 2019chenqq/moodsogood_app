@@ -5,6 +5,14 @@ const { HttpsError } = require("firebase-functions/v2/https");
 
 const MODES = ["emotionalSupport", "dailyRecord", "physicalHealth", "recentReview"];
 const DAILY_LIMIT = 3;
+const { isFollowUpQuestionRequest, isFollowUpSummaryRequest } = require("./innera_ai_response");
+
+// Beta policy: the dedicated follow-up schemas are free. Ordinary review/chat
+// still uses the daily quota; Auth, App Check and AI rate limits remain active.
+function isFreeFollowUpRequest(mode, message) {
+  return isFollowUpQuestionRequest(mode, message) ||
+    isFollowUpSummaryRequest(mode, message);
+}
 // Longer than the callable's execution deadline; abandoned reservations expire.
 const RESERVATION_MS = 5 * 60 * 1000;
 const COLLECTION = "innera_free_quota";
@@ -52,6 +60,7 @@ async function withFreeQuota({ db, request, verifyPro, run, now = Date.now }) {
   if (!uid) throw new HttpsError("unauthenticated", "請先登入後再使用心域 AI");
   const mode = String(request.data?.mode || "emotionalSupport").trim();
   if (!MODES.includes(mode)) throw new HttpsError("invalid-argument", "Unsupported AI mode");
+  if (isFreeFollowUpRequest(mode, request.data?.message)) return run(request);
   if (await isPro(verifyPro, uid)) return run(request);
 
   const requestId = request.data?.requestId;

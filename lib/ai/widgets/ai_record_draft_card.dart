@@ -13,12 +13,16 @@ class AiRecordDraftCard extends StatelessWidget {
     required this.onPreview,
     required this.onExtractDiary,
     this.isExtractingDiary = false,
+    this.diarySaved = false,
+    this.isBusy = false,
   });
 
   final InneraAiRecordDraft draft;
   final VoidCallback onPreview;
   final VoidCallback onExtractDiary;
   final bool isExtractingDiary;
+  final bool diarySaved;
+  final bool isBusy;
 
   @override
   Widget build(BuildContext context) {
@@ -27,8 +31,12 @@ class AiRecordDraftCard extends StatelessWidget {
     if (draft.eventDrafts.isNotEmpty) {
       summary.add('將建立 ${draft.eventDrafts.length} 筆事件紀錄');
       for (final event in draft.eventDrafts.take(2)) {
-        final content =
-            event.symptoms.isEmpty ? event.note : event.symptoms.join('、');
+        final labels = [
+          ...event.emotions.map(
+              (emotion) => emotion.normalizedDimensionName ?? emotion.rawText),
+          ...event.symptoms,
+        ];
+        final content = labels.isEmpty ? event.note : labels.join('、');
         summary.add('${event.timeLabel}：$content');
       }
     }
@@ -116,35 +124,34 @@ class AiRecordDraftCard extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: isExtractingDiary
-                    ? null
-                    : draft.eventDrafts.isNotEmpty && !draft.confirmed
-                        ? onPreview
-                        : onExtractDiary,
-                icon: isExtractingDiary
-                    ? const SizedBox.square(
-                        dimension: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(
-                        draft.confirmed
-                            ? Icons.playlist_add_rounded
-                            : Icons.auto_awesome_rounded,
-                        size: 18,
-                      ),
-                label: Text(
-                  isExtractingDiary
-                      ? '正在整理…'
-                      : draft.eventDrafts.isNotEmpty && !draft.confirmed
-                          ? '查看並確認 ${draft.eventDrafts.length} 筆紀錄'
-                          : draft.confirmed
-                              ? '新增另一筆紀錄'
-                              : '查看並確認',
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: isBusy || isExtractingDiary ? null : onPreview,
+                  icon: Icon(draft.confirmed
+                      ? Icons.check_circle_outline
+                      : Icons.fact_check_outlined),
+                  label: Text(draft.confirmed ? '事件已儲存' : '確認事件'),
                 ),
-              ),
+                FilledButton.icon(
+                  onPressed: isBusy || isExtractingDiary || diarySaved
+                      ? null
+                      : onExtractDiary,
+                  icon: isExtractingDiary
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.book_outlined, size: 18),
+                  label: Text(isExtractingDiary
+                      ? '正在整理…'
+                      : diarySaved
+                          ? '日記已儲存'
+                          : '加入日記'),
+                ),
+              ],
             ),
           ],
         ),
