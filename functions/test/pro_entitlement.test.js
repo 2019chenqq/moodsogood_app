@@ -68,3 +68,35 @@ test("expired cached entitlement is never accepted", () => {
   }, now);
   assert.equal(state.active, false);
 });
+
+
+test("server-configured test Pro bypasses RevenueCat for the exact UID only", async () => {
+  const { requireProEntitlement } = require("../pro_entitlement");
+  await requireProEntitlement({ uid: "tester", testProUids: " alice, tester ", apiKey: "" });
+  for (const uid of ["test", "Tester", "", "ordinary-user"]) {
+    await assert.rejects(requireProEntitlement({
+      uid, testProUids: "alice,tester", apiKey: "",
+    }), { code: "configuration" });
+  }
+  await assert.rejects(requireProEntitlement({ uid: "tester", apiKey: "" }),
+    { code: "configuration" });
+});
+
+
+test("complimentary email access uses verified Admin Auth identity", async () => {
+  const { requireProEntitlement } = require("../pro_entitlement");
+  const check = (user) => requireProEntitlement({
+    uid: "trusted-uid", apiKey: "", testProEmails: " Tester@Example.com ",
+    admin: { auth: () => ({ getUser: async (uid) => {
+      assert.equal(uid, "trusted-uid");
+      return user;
+    } }) },
+  });
+  await check({ email: "tester@example.com", emailVerified: true });
+  for (const user of [
+    { email: "tester@example.com", emailVerified: false },
+    { email: "other@example.com", emailVerified: true },
+    { email: "tester@example.com", emailVerified: true, disabled: true },
+    {},
+  ]) await assert.rejects(check(user), { code: "configuration" });
+});

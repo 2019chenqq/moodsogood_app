@@ -36,7 +36,7 @@ void main() {
     );
 
     expect(find.text('可以整理成紀錄'), findsOneWidget);
-    expect(find.text('查看並確認'), findsOneWidget);
+    expect(find.text('加入日記'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -55,7 +55,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('查看並確認'));
+    await tester.tap(find.text('加入日記'));
     expect(pressed, isTrue);
   });
 
@@ -76,9 +76,42 @@ void main() {
       ),
     );
 
-    expect(find.text('新增另一筆紀錄'), findsOneWidget);
-    await tester.tap(find.text('新增另一筆紀錄'));
+    expect(find.text('加入日記'), findsOneWidget);
+    await tester.tap(find.text('加入日記'));
     expect(pressed, isTrue);
+  });
+
+  testWidgets('saved diary cannot be added twice while events stay independent',
+      (tester) async {
+    var previewPressed = false;
+    var diaryPressed = false;
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: AiRecordDraftCard(
+      draft: InneraAiRecordDraft.empty(DateTime(2026, 9, 6)),
+      diarySaved: true,
+      onPreview: () => previewPressed = true,
+      onExtractDiary: () => diaryPressed = true,
+    ))));
+    await tester.tap(find.text('日記已儲存'));
+    expect(diaryPressed, isFalse);
+    await tester.tap(find.text('確認事件'));
+    expect(previewPressed, isTrue);
+  });
+
+  testWidgets('diary generation prevents duplicate actions', (tester) async {
+    var pressed = false;
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: AiRecordDraftCard(
+      draft: InneraAiRecordDraft.empty(DateTime(2026, 9, 6)),
+      isExtractingDiary: true,
+      onPreview: () => pressed = true,
+      onExtractDiary: () => pressed = true,
+    ))));
+    await tester.tap(find.text('確認事件'));
+    await tester.tap(find.text('正在整理…'));
+    expect(pressed, isFalse);
   });
 
   testWidgets('routes an unconfirmed multi-event draft to event preview',
@@ -108,8 +141,12 @@ void main() {
       ),
     ));
 
-    await tester.tap(find.text('查看並確認 1 筆紀錄'));
+    await tester.tap(find.text('確認事件'));
     expect(previewPressed, isTrue);
     expect(diaryPressed, isFalse);
+    previewPressed = false;
+    await tester.tap(find.text('加入日記'));
+    expect(diaryPressed, isTrue);
+    expect(previewPressed, isFalse);
   });
 }

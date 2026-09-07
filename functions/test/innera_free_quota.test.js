@@ -126,3 +126,49 @@ test("abandoned reservations expire and stale failure cannot remove a replacemen
   const quota = await readQuota({ db: f.db, uid: "alice", verifyPro: free, nowMs: earlier + RESERVATION_MS + 1 });
   assert.equal(quota.remaining.emotionalSupport, 2);
 });
+
+
+test("test Pro can continue after exhausting free quota without spending more", async () => {
+  const { requireProEntitlement } = require("../pro_entitlement");
+  const f = fixture();
+  for (let i = 0; i < 3; i++) await f.call();
+  const before = structuredClone([...f.db.documents]);
+  const verifyPro = (uid) => requireProEntitlement({ uid, testProEmails: "tester@example.com",
+    admin: { auth: () => ({ getUser: async () => ({ email: "tester@example.com", emailVerified: true }) }) },
+  });
+  for (let i = 0; i < 5; i++) assert.deepEqual(await f.call({ verifyPro }), { reply: "ok" });
+  assert.deepEqual([...f.db.documents], before);
+  const quota = await readQuota({ db: f.db, uid: "alice", verifyPro, nowMs: start });
+  assert.equal(quota.pro, true);
+});
+
+
+test("follow-up summary and questions are free after review quota is exhausted", async () => {
+  const f = fixture();
+  for (let i = 0; i < 3; i++) await f.call({ request: {
+    auth: { uid: "alice" }, data: { mode: "recentReview", requestId: `review-${i}`, message: "近期狀態如何" },
+  } });
+  const before = structuredClone([...f.db.documents]);
+  for (const message of ["回診摘要補問", "產生可供回診使用的資料摘要"]) {
+    for (let i = 0; i < 4; i++) {
+      await f.call({ request: { auth: { uid: "alice" }, data: { mode: "recentReview", message } },
+        verifyPro: () => assert.fail("Free follow-up must not depend on billing availability"),
+      });
+    }
+  }
+  assert.deepEqual([...f.db.documents], before);
+  await assert.rejects(f.call({ request: { auth: { uid: "alice" },
+    data: { mode: "recentReview", message: "近期狀態如何", requestId: "fourth" },
+  } }), (error) => error.details.reason === "free_daily_quota_exhausted");
+});
+
+test("follow-up wording does not unlock other chat modes or anonymous access", async () => {
+  const f = fixture();
+  for (let i = 0; i < 3; i++) await f.call();
+  await assert.rejects(f.call({ request: { auth: { uid: "alice" }, data: {
+    mode: "emotionalSupport", message: "回診摘要補問", requestId: "fourth",
+  } } }), (error) => error.details.reason === "free_daily_quota_exhausted");
+  await assert.rejects(f.call({ request: { data: {
+    mode: "recentReview", message: "產生可供回診使用的資料摘要",
+  } } }), { code: "unauthenticated" });
+});

@@ -17,6 +17,53 @@ void main() {
         messageTime: at ?? morning,
       );
 
+  test('emotion-only input becomes a confirmable health event', () {
+    final candidates = apply(const [], '今天早上我很焦慮4分');
+    expect(candidates, hasLength(1));
+    expect(candidates.single.emotions.single.normalizedDimensionName, '焦慮');
+    final saved = buildConfirmedHealthEvents(InneraAiRecordDraft(
+      dateKey: '2026-08-21',
+      eventDrafts: candidates,
+      updatedAt: morning,
+    ));
+    expect(saved.single.emotions.single.name, '焦慮');
+    expect(saved.single.emotions.single.intensity, 4);
+  });
+
+  test('mixed emotion and symptom evidence retains both in preview', () {
+    const text = '今天早上我很焦慮也頭痛';
+    final draft = InneraAiRecordDraft.empty(morning)
+        .mergeExplicitRecordFacts(text)
+        .mergeExplicitRecordFacts(text)
+        .mergeExplicitHealthEventFacts(text, morning);
+    expect(
+        draft.emotions.map((e) => e.normalizedDimensionName), contains('焦慮'));
+    expect(draft.eventDrafts.single.symptoms, contains('頭痛'));
+    final emotion = draft.eventDrafts.single.emotions.single;
+    expect(emotion.normalizedDimensionName, '焦慮');
+    expect(emotion.score, isNull);
+    expect(emotion.needsFollowUp, isTrue);
+  });
+
+  test('emotion follow-up joins symptoms at the same time', () {
+    var candidates = apply(const [], '早上九點頭痛');
+    candidates = apply(candidates, '那時候我也很難過3分');
+    expect(candidates, hasLength(1));
+    expect(candidates.single.symptoms, contains('頭痛'));
+    expect(candidates.single.emotions.single.normalizedDimensionName, '難過');
+  });
+
+  test('different times retain separate emotions', () {
+    final candidates = apply(const [], '早上我很焦慮4分，晚上我很平靜2分');
+    expect(candidates, hasLength(2));
+    expect(candidates[0].emotions.single.score, 4);
+    expect(candidates[1].emotions.single.score, 2);
+  });
+
+  test('other people emotions do not become user health events', () {
+    expect(apply(const [], '朋友今天很焦慮'), isEmpty);
+  });
+
   test('case 1: different morning and afternoon times create two events', () {
     var drafts = apply(const [], '今天早上起床的時候頭很痛。');
     drafts = apply(drafts, '下午三點左右頭痛好多了，但是變得很累。');
