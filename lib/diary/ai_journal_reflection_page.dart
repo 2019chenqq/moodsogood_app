@@ -22,6 +22,13 @@ import 'package:flutter/material.dart' as m;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:provider/provider.dart';
+
+import '../daily/daily_check_in_service.dart';
+import '../models/daily_check_in.dart';
+import '../providers/pro_provider.dart';
+import '../pro/pro_page.dart';
+import '../services/diary_reflection_input.dart';
 
 import '../analytics_service.dart';
 import '../services/ai_journal_reflection_http_client.dart';
@@ -66,6 +73,8 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
   // 從 Firestore 抓到的原始資料
   Map<String, dynamic>? _diaryData;
   Map<String, dynamic>? _dailyRecordData;
+  DailyCheckIn? _checkIn;
+  int? get _checkInMood => diaryReflectionMood(_checkIn, _day);
 
   // AI 回饋結果
   Map<String, dynamic>? _aiResult;
@@ -194,6 +203,7 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
         }
       }
 
+      final checkIn = await DailyCheckInService().getForDate(_day);
       final dailyRecordData = recordSnap.data() == null
           ? null
           : await HealthDataEncryptionService.decryptData(recordSnap.data()!);
@@ -201,6 +211,7 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
       setState(() {
         _diaryData = diaryData;
         _dailyRecordData = dailyRecordData;
+        _checkIn = checkIn;
       });
     } catch (e, stack) {
       m.debugPrint('AiJournalReflectionPage Firestore read exception: $e');
@@ -447,52 +458,12 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
       return empty;
     }
 
-    Map<String, dynamic> diary = _diaryData ?? const <String, dynamic>{};
-    Map<String, dynamic> dailyRecord =
-        _dailyRecordData ?? const <String, dynamic>{};
-
-    String _safeText(dynamic v) => (v ?? '').toString().trim();
-    num? _toNum(dynamic v) {
-      if (v is num) return v;
-      return num.tryParse((v ?? '').toString().trim());
-    }
-
     if (widget.mode == AiAnalysisMode.basic) {
-      // 僅允許 diaryText 與 overallMood
-      final diarySections = <MapEntry<String, String>>[
-        MapEntry('標題', _safeText(diary['title'])),
-        MapEntry('內容', _safeText(diary['content'])),
-        MapEntry('今日主題曲', _safeText(diary['themeSong'])),
-        MapEntry('最想記錄的瞬間', _safeText(diary['highlight'])),
-        MapEntry('今天的感受意象', _safeText(diary['metaphor'])),
-        MapEntry('為自己感到驕傲', _safeText(diary['conceited'])),
-        MapEntry('做得不錯的地方', _safeText(diary['proudOf'])),
-        MapEntry('可多照顧自己的地方', _safeText(diary['selfCare'])),
-      ];
-      final diaryText = diarySections
-          .where((entry) => entry.value.isNotEmpty)
-          .map((entry) => '${entry.key}: ${entry.value}')
-          .join('\n');
-      final emotions = <Map<String, dynamic>>[];
-      final overallMood =
-          _toNum(diary['overallMood'] ?? dailyRecord['overallMood']);
-      if (overallMood != null) {
-        emotions.add({'name': '整體情緒', 'score': overallMood});
-      }
-      final result = <String, dynamic>{
-        'date': _docId,
-        'mode': 'basic',
-        'moodScale': 5,
-        'diaryText': diaryText,
-        'emotions': emotions,
-        'allowedAnalysisScope': [
-          '僅可根據今日日記文字與整體情緒分數進行整理',
-          '不可推論睡眠、症狀、藥物或長期趨勢',
-          '不可做診斷、不可判斷病情嚴重度',
-          '如果資料不足，請明確說明資料有限，不要自行補充內容',
-        ],
-      };
-      return result;
+      return buildDiaryReflectionInput(
+        diary: _diaryData ?? const {},
+        checkIn: _checkIn,
+        date: _day,
+      );
     }
     // deep 模式原本邏輯...
     return {};
@@ -528,6 +499,13 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
   // ──────────────────────────────────────────────
 
   Future<void> _generateAndSave() async {
+    if (_loading) return;
+    if (!context.read<ProProvider>().isPro) {
+      await m.Navigator.of(context).push(m.MaterialPageRoute(
+        builder: (_) => const ProPage(source: 'diary_feedback'),
+      ));
+      return;
+    }
     m.debugPrint('按鈕已點擊: 生成 AI 回饋');
     final uid = _uid;
     if (uid == null) {
@@ -542,6 +520,9 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
     });
 
     try {
+      final checkIn = await DailyCheckInService().getForDate(_day);
+      if (!mounted) return;
+      setState(() => _checkIn = checkIn);
       final aiInput = await buildAIInputData();
 
       final diaryFieldsForAi = {
@@ -553,7 +534,7 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
         'conceited': _diaryData?['conceited'] ?? '',
         'proudOf': _diaryData?['proudOf'] ?? '',
         'selfCare': _diaryData?['selfCare'] ?? '',
-        'overallMood': _diaryData?['overallMood'],
+        'overallMood': _checkInMood,
         'overallHealth': _diaryData?['overallHealth'],
         'overallSleepQuality': _diaryData?['overallSleepQuality'],
         'moodScale': 5,
@@ -595,11 +576,10 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
       final crisis = _detectCrisis(diaryContent);
 
       // 優先呼叫 Firebase Functions 上的 AI；失敗時回退到 mock
-      // dailyRecord 優先用日記頁整體情緒滑桿值覆蓋平均值
+      // 整體情緒只使用所選日期的每日 check-in
       // 基礎版不讀藥物與其他紀錄
       final dailyRecordForAi = {
-        if (_diaryData?['overallMood'] != null)
-          'overallMood': _diaryData!['overallMood'],
+        if (_checkInMood != null) 'overallMood': _checkInMood,
         'moodScale': 5,
       };
       unawaited(
@@ -699,8 +679,7 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
           if (widget.mode == AiAnalysisMode.basic) ...[
             // ② 今日情緒摘要（僅整體情緒分數）
             _OverallMoodCard(
-              overallMood: _diaryData?['overallMood'] ??
-                  _dailyRecordData?['overallMood'],
+              overallMood: _checkInMood,
               teal: _teal,
               tealLight: _tealLight,
             ),
@@ -710,8 +689,7 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
             _DailyRecordCard(
               recordData: {
                 if (_dailyRecordData != null) ..._dailyRecordData!,
-                if (_diaryData?['overallMood'] != null)
-                  'overallMood': _diaryData!['overallMood'],
+                'overallMood': _checkInMood,
               },
               teal: _teal,
               tealLight: _tealLight,
@@ -850,7 +828,9 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
         crossAxisAlignment: m.CrossAxisAlignment.start,
         children: [
           m.Text(
-            widget.mode == AiAnalysisMode.basic ? 'AI 基礎回饋' : 'AI 深入觀察',
+            widget.mode == AiAnalysisMode.basic
+                ? 'AI 基礎回饋 · Pro'
+                : 'AI 深入觀察 · Pro',
             style: HealingDesignSystem.titleMedium.copyWith(
               color: HealingDesignSystem.adaptiveAppBarForeground(context),
             ),
@@ -886,6 +866,7 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
 
   // ── 生成按鈕 ──
   m.Widget _buildGenerateButton() {
+    final isPro = context.watch<ProProvider>().isPro;
     if (_loading) {
       return m.Card(
         elevation: 0,
@@ -934,12 +915,14 @@ class _AiJournalReflectionPageState extends m.State<AiJournalReflectionPage> {
               borderRadius:
                   m.BorderRadius.circular(HealingDesignSystem.radiusM)),
         ),
-        onPressed: _hasMeaningfulDiaryInput ? _generateAndSave : null,
+        onPressed: !isPro || _hasMeaningfulDiaryInput ? _generateAndSave : null,
         icon: const m.Icon(m.Icons.auto_awesome_rounded, size: 20),
         label: m.Text(
-          _hasMeaningfulDiaryInput
-              ? (_hasSavedResult ? '重新生成 AI 回饋' : '生成今日 AI 回饋')
-              : '請先填寫日記內容',
+          !isPro
+              ? '升級 Pro，使用日記 AI 回饋'
+              : _hasMeaningfulDiaryInput
+                  ? (_hasSavedResult ? '重新生成 AI 回饋' : '生成今日 AI 回饋')
+                  : '請先填寫日記內容',
           style: const m.TextStyle(fontSize: 15, fontWeight: m.FontWeight.w600),
         ),
       ),
@@ -1664,7 +1647,9 @@ class _OverallMoodCard extends m.StatelessWidget {
                 ),
                 const m.SizedBox(height: 6),
                 m.Text(
-                  '你記錄的整體情緒分數',
+                  overallMood == null
+                      ? '當日尚未填寫 check-in'
+                      : '每日 check-in 的整體情緒分數',
                   style: m.TextStyle(
                     fontSize: 13,
                     color: HealingDesignSystem.adaptiveSecondaryText(context),

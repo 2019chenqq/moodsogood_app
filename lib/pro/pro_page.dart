@@ -305,8 +305,15 @@ class _ProPageState extends State<ProPage> {
           ),
           _buildFeatureComparison(
             context,
+            Icons.auto_awesome_outlined,
+            '日記 AI 回饋',
+            free: '需升級 Pro',
+            pro: '可生成日記回饋',
+          ),
+          _buildFeatureComparison(
+            context,
             Icons.medical_information_outlined,
-            '回診專區 Beta',
+            'AI 回診摘要 Beta',
             free: '免費使用',
             pro: '免費使用',
           ),
@@ -388,7 +395,7 @@ class _ProPageState extends State<ProPage> {
           ),
           const SizedBox(height: 20),
           Text(
-            '提示\n• 完成購買後可立即使用心域 AI\n• 訂閱會依商店顯示的週期自動續訂，除非你在目前週期結束前取消\n• 可在 $_storeName 帳戶設定中管理或取消訂閱\n• 回診專區 Beta 目前免費；回診摘要仍在開發中，未列入本次付費權益',
+            '提示\n• 完成購買後可立即使用心域 AI\n• 訂閱會依商店顯示的週期自動續訂，除非你在目前週期結束前取消\n• 可在 $_storeName 帳戶設定中管理或取消訂閱\n• AI 回診摘要與補問 Beta 目前免費，不扣心域 AI 每日免費則數；未來收費方式另行公告',
             style:
                 const TextStyle(color: Colors.grey, fontSize: 12, height: 1.6),
           ),

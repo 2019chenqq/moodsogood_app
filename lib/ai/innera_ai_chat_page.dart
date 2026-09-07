@@ -86,6 +86,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
   InneraAiRecordDraft? _recordDraft;
   bool _loadingDraft = false;
   bool _isExtractingDiary = false;
+  String? _savedDiarySource;
   final _diaryDraftService = AiDiaryDraftService();
 
   @override
@@ -328,6 +329,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
           ..clear()
           ..add(_welcomeMessage());
         _recordDraft = freshDraft;
+        _savedDiarySource = null;
         _lastFailedInput = null;
         _lastFailedImages = const [];
         _pendingImageBytes.clear();
@@ -1418,7 +1420,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
       } else {
         await _draftService.confirmAndMerge(
           draft: confirmedDraft,
-          diaryContent: confirmedDraft.diaryText,
+          diaryContent: '',
           replaceDiary: false,
         );
       }
@@ -1446,9 +1448,7 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
     }
   }
 
-  Future<void> _extractDiaryDraft({
-    InneraAiRecordDraft? structuredDraft,
-  }) async {
+  Future<void> _extractDiaryDraft() async {
     if (_isExtractingDiary || _isSending) return;
     final hasUserMessage =
         _messages.any((item) => item.role == InneraAiMessageRole.user);
@@ -1508,36 +1508,12 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
         draft: draft,
         confirmation: confirmation,
       );
-      final recordDraft = structuredDraft ?? _recordDraft;
-      if (recordDraft != null) {
-        try {
-          await _draftService.confirmAndMerge(
-            draft: recordDraft,
-            diaryContent: '',
-            replaceDiary: false,
-          );
-        } catch (error, stackTrace) {
-          debugPrint(
-            'Diary saved but structured daily record merge failed: $error',
-          );
-          debugPrintStack(stackTrace: stackTrace);
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('完整日記已儲存，但情緒／症狀／睡眠暫時無法合併；草稿仍保留可再次確認。'),
-            ),
-          );
-          return;
-        }
-      }
       if (!mounted) return;
-      if (recordDraft != null) {
-        setState(
-          () => _recordDraft = recordDraft.copyWith(confirmed: true),
-        );
-      }
+      setState(() {
+        _savedDiarySource = AiDiaryDraftService.originalUserContent(_messages);
+      });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已儲存完整今日紀錄，並合併情緒、症狀與睡眠。')),
+        const SnackBar(content: Text('日記已儲存。')),
       );
     } on FirebaseFunctionsException catch (error, stackTrace) {
       unawaited(
@@ -1845,6 +1821,11 @@ class _InneraAiChatPageState extends State<InneraAiChatPage> {
                         draft: _recordDraft!,
                         onPreview: _showDraftPreview,
                         onExtractDiary: _extractDiaryDraft,
+                        diarySaved: _savedDiarySource != null &&
+                            _savedDiarySource ==
+                                AiDiaryDraftService.originalUserContent(
+                                    _messages),
+                        isBusy: _isSending,
                         isExtractingDiary: _isExtractingDiary,
                       ),
                     ..._messages.map(

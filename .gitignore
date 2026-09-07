@@ -92,3 +92,6 @@ pnpm-debug.log*
 # VS Code / OS
 .DS_Store
 .vscode/
+
+# Local Firebase deployment settings
+functions/.env.moodsogood-9e45b

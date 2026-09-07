@@ -428,7 +428,7 @@ class InneraAiRecordDraft {
             });
       if (parsed == null) continue;
       final migratedSymptoms = _symptomNamesFromText(
-        '${parsed.rawText} ${parsed.evidence ?? ''}',
+        parsed.rawText,
       );
       if (migratedSymptoms.isNotEmpty) {
         symptomSet.addAll(migratedSymptoms);
@@ -529,7 +529,7 @@ class InneraAiRecordDraft {
     final emotionByName = <String, AiEmotionDraft>{};
     for (final emotion in emotions) {
       final migratedSymptoms = _symptomNamesFromText(
-        '${emotion.rawText} ${emotion.evidence ?? ''}',
+        emotion.rawText,
       );
       if (migratedSymptoms.isNotEmpty) {
         symptomSet.addAll(migratedSymptoms);
@@ -626,7 +626,7 @@ class InneraAiRecordDraft {
     final emotionByName = <String, AiEmotionDraft>{};
     for (final emotion in emotions) {
       final migratedSymptoms = _symptomNamesFromText(
-        '${emotion.rawText} ${emotion.evidence ?? ''}',
+        emotion.rawText,
       );
       if (migratedSymptoms.isNotEmpty) {
         symptomSet.addAll(migratedSymptoms);

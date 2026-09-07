@@ -553,7 +553,7 @@ class NotificationHelper {
 
     navigator.pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const DailyCheckInPage()),
-      (_) => false,
+      (route) => route.isFirst,
     );
     return true;
   }
@@ -564,7 +564,7 @@ class NotificationHelper {
 
     navigator.pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const MedicationCheckinPage()),
-      (_) => false,
+      (route) => route.isFirst,
     );
     return true;
   }

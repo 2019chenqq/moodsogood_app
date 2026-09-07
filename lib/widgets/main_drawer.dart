@@ -6,12 +6,11 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../settings_page.dart';
-import '../ai/innera_ai_home_page.dart';
+import '../Home_shell.dart';
 import '../pages/feedback_page.dart';
 import '../follow_up/pages/follow_up_hub_page.dart';
 import '../pages/hub_pages.dart';
 import '../pages/life_overview_page.dart';
-import '../pages/profile_page.dart';
 import '../constants/healing_design_system.dart';
 
 class MainDrawer extends StatefulWidget {
@@ -225,11 +224,13 @@ class _MainDrawerState extends State<MainDrawer> {
               title: Text('首頁', style: drawerTitleStyle),
               onTap: () {
                 Navigator.pop(context);
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (_) => const HomeHubPage()),
-                  (route) => false,
-                );
+                if (!HomeShell.selectDestination(context, 0)) {
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(builder: (_) => const HomeShell()),
+                    (route) => route.isFirst,
+                  );
+                }
               },
             ),
             ListTile(
@@ -238,7 +239,7 @@ class _MainDrawerState extends State<MainDrawer> {
               title: Text('紀錄系統', style: drawerTitleStyle),
               onTap: () {
                 Navigator.pop(context);
-                Navigator.pushReplacement(
+                Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const RecordHubPage()),
                 );
@@ -250,10 +251,14 @@ class _MainDrawerState extends State<MainDrawer> {
               title: Text('心域 AI', style: drawerTitleStyle),
               onTap: () {
                 Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const InneraAiHomePage()),
-                );
+                if (!HomeShell.selectDestination(context, 1)) {
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const HomeShell(initialIndex: 1)),
+                    (route) => route.isFirst,
+                  );
+                }
               },
             ),
             ListTile(
@@ -288,10 +293,14 @@ class _MainDrawerState extends State<MainDrawer> {
               title: Text('個人資料', style: drawerTitleStyle),
               onTap: () {
                 Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const ProfilePage()),
-                );
+                if (!HomeShell.selectDestination(context, 3)) {
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const HomeShell(initialIndex: 3)),
+                    (route) => route.isFirst,
+                  );
+                }
               },
             ),
 
