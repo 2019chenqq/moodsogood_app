@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../constants/healing_design_system.dart';
+import '../../analytics_service.dart';
+import '../widgets/follow_up_feedback_dialog.dart';
 import '../models/follow_up_ai_summary.dart';
 import '../pdf/follow_up_summary_pdf_service.dart';
 import '../qr/follow_up_qr_painter.dart';
@@ -35,6 +37,7 @@ class _FollowUpSummaryDetailPageState extends State<FollowUpSummaryDetailPage>
   bool _working = false;
   bool _authorized = false;
   bool _checkingAccess = false;
+  bool _loggedOpen = false;
   DateTime? _backgroundedAt;
 
   @override
@@ -89,6 +92,12 @@ class _FollowUpSummaryDetailPageState extends State<FollowUpSummaryDetailPage>
       return;
     }
     setState(() => _authorized = true);
+    if (!_loggedOpen) {
+      _loggedOpen = true;
+      unawaited(AnalyticsService.logFollowUpSummary(
+        FollowUpSummaryEvent.opened,
+      ));
+    }
     _loadActiveShare();
   }
 
@@ -127,6 +136,9 @@ class _FollowUpSummaryDetailPageState extends State<FollowUpSummaryDetailPage>
         _summary,
         options: options,
       );
+      unawaited(AnalyticsService.logFollowUpSummary(
+        FollowUpSummaryEvent.pdfExported,
+      ));
     } catch (error) {
       if (mounted) {
         _showError('匯出 PDF 失敗', error, retry: () => _exportPdf(options));
@@ -300,6 +312,27 @@ class _FollowUpSummaryDetailPageState extends State<FollowUpSummaryDetailPage>
                   label: const Text('刪除摘要')),
             ]),
             const SizedBox(height: 24),
+            if (_summary.feedback == null)
+              TextButton(
+                onPressed: _working
+                    ? null
+                    : () async {
+                        final feedback = await showFollowUpFeedbackDialog(
+                          context,
+                          summaryId: _summary.id,
+                        );
+                        if (mounted && feedback != null) {
+                          setState(() =>
+                              _summary = _summary.copyWith(feedback: feedback));
+                        }
+                      },
+                child: const Text('回診後告訴我們這份摘要有沒有幫上忙'),
+              )
+            else
+              const Padding(
+                padding: EdgeInsets.all(8),
+                child: Text('已收到這份摘要的回饋，謝謝你。'),
+              ),
           ],
         ),
         if (_working) const LinearProgressIndicator(),
@@ -524,6 +557,9 @@ class _TimedShareDialogState extends State<_TimedShareDialog> {
         widget.summary,
         options: widget.options,
       );
+      unawaited(AnalyticsService.logFollowUpSummary(
+        FollowUpSummaryEvent.qrCreated,
+      ));
       widget.onSessionChanged(next);
       if (mounted) {
         setState(() {

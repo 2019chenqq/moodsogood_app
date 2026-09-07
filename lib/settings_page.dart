@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // 需要安裝這個來存設定
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/foundation.dart';
@@ -10,6 +11,7 @@ import 'providers/theme_provider.dart';
 import 'onboarding_page.dart';
 import 'utils/data_sync_diagnostics.dart';
 import 'utils/app_lock_pin_service.dart';
+import 'utils/secure_storage_service.dart';
 import 'analytics_service.dart';
 import 'test_pages/test_data_management_page.dart';
 
@@ -1168,8 +1170,19 @@ class _SettingsPageState extends State<SettingsPage> {
       //   for (DocumentSnapshot doc in snapshot.docs) { doc.reference.delete(); }
       // });
 
-      // 💡 第二步：刪除 Firebase Auth 帳號本身
-      await user.delete();
+      // Server-side deletion recursively removes Firestore, Storage and Auth.
+      // App Check and a recent Firebase sign-in are both required.
+      await FirebaseFunctions.instance.httpsCallable('deleteOwnAccount').call();
+
+      await Future.wait([
+        SecureStorageService.deleteKey(),
+        SecureStorageService.deletePin(),
+        SecureStorageService.deleteLegacyAppLockRecoveryPin(),
+        AppLockPinService.deletePin(),
+      ]);
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.clear();
+      await FirebaseAuth.instance.signOut();
 
       // 關閉載入圈圈
       if (context.mounted) Navigator.of(context).pop();
@@ -1181,12 +1194,14 @@ class _SettingsPageState extends State<SettingsPage> {
         Navigator.of(context)
             .pushNamedAndRemoveUntil('/login', (route) => false); // 換成你的登入頁路由
       }
-    } on FirebaseAuthException catch (e) {
+    } on FirebaseFunctionsException catch (e) {
       // 關閉載入圈圈
       if (context.mounted) Navigator.of(context).pop();
 
       // 🚨 踩到地雷：Firebase 覺得你登入太久了，要求重新驗證
-      if (e.code == 'requires-recent-login') {
+      if (e.code == 'failed-precondition' &&
+          e.details is Map &&
+          (e.details as Map)['reason'] == 'recent_sign_in_required') {
         if (context.mounted) {
           showDialog(
             context: context,
@@ -1214,12 +1229,16 @@ class _SettingsPageState extends State<SettingsPage> {
         // 其他未知錯誤
         if (context.mounted) {
           ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('刪除失敗：${e.message}')));
+              .showSnackBar(const SnackBar(content: Text('帳號資料刪除尚未完成，請稍後重試')));
         }
       }
-    } catch (e) {
+    } catch (_) {
       if (context.mounted) Navigator.of(context).pop();
-      debugPrint('刪除帳號發生錯誤: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('帳號資料刪除尚未完成，請稍後重試')),
+        );
+      }
     }
   }
 }

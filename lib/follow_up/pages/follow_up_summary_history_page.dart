@@ -4,6 +4,7 @@ import '../../constants/healing_design_system.dart';
 import '../models/follow_up_ai_summary.dart';
 import '../services/follow_up_service.dart';
 import '../qr/follow_up_summary_share_service.dart';
+import '../widgets/follow_up_feedback_dialog.dart';
 import 'follow_up_summary_access_guard.dart';
 import 'follow_up_summary_detail_page.dart';
 
@@ -18,6 +19,7 @@ class FollowUpSummaryHistoryPage extends StatefulWidget {
 class _FollowUpSummaryHistoryPageState
     extends State<FollowUpSummaryHistoryPage> {
   late Future<_HistoryData> _future;
+  bool _openingFeedback = false;
 
   @override
   void initState() {
@@ -50,6 +52,35 @@ class _FollowUpSummaryHistoryPageState
       ),
     );
     if (mounted) _reload();
+  }
+
+  Future<void> _giveFeedback(
+    FollowUpSummaryRecord summary,
+    _HistoryData data,
+  ) async {
+    if (_openingFeedback || summary.feedback != null) return;
+    setState(() => _openingFeedback = true);
+    try {
+      final verified = await FollowUpSummaryAccessGuard.ensureVerified(context);
+      if (!mounted || !verified) return;
+      final feedback = await showFollowUpFeedbackDialog(
+        context,
+        summaryId: summary.id,
+      );
+      if (!mounted || feedback == null) return;
+      setState(() {
+        _future = Future.value(_HistoryData(
+          summaries: data.summaries
+              .map((item) => item.id == summary.id
+                  ? item.copyWith(feedback: feedback)
+                  : item)
+              .toList(),
+          activeShareIds: data.activeShareIds,
+        ));
+      });
+    } finally {
+      if (mounted) setState(() => _openingFeedback = false);
+    }
   }
 
   @override
@@ -149,10 +180,31 @@ class _FollowUpSummaryHistoryPageState
                         ]),
                         Align(
                           alignment: Alignment.centerRight,
-                          child: TextButton.icon(
-                            onPressed: () => _open(summary),
-                            icon: const Icon(Icons.lock_open_rounded),
-                            label: const Text('查看摘要'),
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              TextButton.icon(
+                                onPressed: () => _open(summary),
+                                icon: const Icon(Icons.lock_open_rounded),
+                                label: const Text('查看摘要'),
+                              ),
+                              if (summary.feedback == null)
+                                OutlinedButton.icon(
+                                  onPressed: _openingFeedback
+                                      ? null
+                                      : () => _giveFeedback(summary, data),
+                                  icon: const Icon(Icons.chat_bubble_outline),
+                                  label: const Text('回診後回饋'),
+                                )
+                              else
+                                const Chip(
+                                  avatar: Icon(Icons.check_circle_outline,
+                                      size: 18),
+                                  label: Text('已回饋'),
+                                ),
+                            ],
                           ),
                         ),
                       ],
