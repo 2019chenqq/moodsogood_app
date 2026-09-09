@@ -227,7 +227,13 @@ class MedicationAdjustmentService {
       final b = _date(right['effectiveDateTime']) ??
           _date(right['date']) ??
           DateTime.fromMillisecondsSinceEpoch(0);
-      return b.compareTo(a);
+      final effectiveOrder = b.compareTo(a);
+      if (effectiveOrder != 0) return effectiveOrder;
+      final recordedA =
+          _date(left['adjustmentDateTime']) ?? _date(left['createdAt']) ?? a;
+      final recordedB =
+          _date(right['adjustmentDateTime']) ?? _date(right['createdAt']) ?? b;
+      return recordedB.compareTo(recordedA);
     });
     final eligible = <_EpisodeAdjustment>[];
     for (final record in records) {
@@ -272,7 +278,7 @@ class MedicationAdjustmentService {
     final base = _representativeCycle(
       changeRecordId: latest.changeRecordId,
       changeDate: latest.date,
-      items: allItems,
+      items: latest.items,
     );
     if (base == null) return;
     final episodeId = 'episode_${Uri.encodeComponent(oldest.changeRecordId)}';
@@ -296,6 +302,12 @@ class MedicationAdjustmentService {
       changeRecordIds: changeRecordIds,
       medicationIds: medicationIds,
       adjustmentTypes: adjustmentTypes,
+      adjustmentDetails: episode
+          .expand(
+            (record) => describeAdjustmentItems(
+                record.changeRecordId, record.date, record.items),
+          )
+          .toList(),
     );
     await _localDb.endActiveSubjectiveTrackingCyclesExceptCycle(
       uid: uid,
@@ -312,6 +324,27 @@ class MedicationAdjustmentService {
       'medicationIds=${medicationIds.join(',')} '
       'adjustmentTypes=${adjustmentTypes.join(',')} trackingActive=true',
     );
+  }
+
+  /// Keep every change in chronological context, newest record first.
+  static List<String> describeAdjustmentItems(
+    String recordId,
+    DateTime date,
+    List<Map<String, dynamic>> items,
+  ) {
+    final details = <String>[];
+    for (final item in items) {
+      final cycle = MedicationTrackingCycleFactory.fromAdjustmentItems(
+        changeRecordId: recordId,
+        changeDate: date,
+        medicationId: item['medDocId']?.toString() ?? '',
+        items: [item],
+      );
+      if (cycle == null) continue;
+      details.add('${date.year}/${date.month}/${date.day} · '
+          '${cycle.medicationName}：${cycle.adjustmentSummary}');
+    }
+    return details;
   }
 
   static bool _isEpisodeAdjustmentType(String type) => const {

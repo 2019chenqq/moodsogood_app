@@ -18,11 +18,19 @@ class MedicationSubjectivePendingResponse {
   final int followUpDay;
   final int calculatedDay;
 
-  String get adjustmentSummary => cycles.length == 1
-      ? cycle.adjustmentSummary
-      : cycles
-          .map((item) => '${item.medicationName}：${item.adjustmentSummary}')
-          .join('；');
+  List<String> get adjustmentDetails => cycles
+      .expand((item) => item.adjustmentDetails.isNotEmpty
+          ? item.adjustmentDetails
+          : ['${item.medicationName}：${item.adjustmentSummary}'])
+      .toList();
+
+  String get adjustmentSummary => cycle.adjustmentDetails.isNotEmpty
+      ? adjustmentDetails.join('；')
+      : cycles.length == 1
+          ? cycle.adjustmentSummary
+          : cycles
+              .map((item) => '${item.medicationName}：${item.adjustmentSummary}')
+              .join('；');
 }
 
 class MedicationSubjectivePendingDetector {

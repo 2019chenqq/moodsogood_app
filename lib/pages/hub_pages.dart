@@ -69,17 +69,26 @@ class _HomeHubPageState extends State<HomeHubPage> with WidgetsBindingObserver {
   Future<void> _openPendingResponse(
     MedicationSubjectivePendingResponse pending,
   ) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final latest = await _pendingService.load(uid: uid);
+    if (!mounted) return;
+    if (latest.isEmpty) {
+      await _refreshSubjectiveTracking();
+      return;
+    }
+    pending = latest.first;
     final cycle = pending.cycle;
     await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => MedicationSubjectiveResponsePage(
           medicationId: cycle.medicationId,
-          medicationName:
-              pending.cycles.length == 1 ? cycle.medicationName : '本次用藥調整',
+          medicationName: '本次用藥調整',
           changeRecordId: cycle.changeRecordId,
           changeDate: cycle.changeDate,
           adjustmentSummary: pending.adjustmentSummary,
+          adjustmentDetails: pending.adjustmentDetails,
           followUpDay: pending.followUpDay,
         ),
       ),
@@ -239,7 +248,11 @@ class _RecordHubPageState extends State<RecordHubPage>
   }
 
   Future<void> _openPendingResponse() async {
-    final pending = _pendingResponse;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final latest = await _pendingService.load(uid: uid);
+    if (!mounted) return;
+    final pending = latest.isEmpty ? null : latest.first;
     if (pending == null) return;
     final cycle = pending.cycle;
     await Navigator.push(
@@ -247,11 +260,11 @@ class _RecordHubPageState extends State<RecordHubPage>
       MaterialPageRoute(
         builder: (_) => MedicationSubjectiveResponsePage(
           medicationId: cycle.medicationId,
-          medicationName:
-              pending.cycles.length == 1 ? cycle.medicationName : '本次用藥調整',
+          medicationName: '本次用藥調整',
           changeRecordId: cycle.changeRecordId,
           changeDate: cycle.changeDate,
           adjustmentSummary: pending.adjustmentSummary,
+          adjustmentDetails: pending.adjustmentDetails,
           followUpDay: pending.followUpDay,
         ),
       ),
