@@ -32,6 +32,7 @@ class MedicationSubjectiveTrackingCycle {
     List<String>? changeRecordIds,
     List<String>? medicationIds,
     List<String>? adjustmentTypes,
+    this.adjustmentDetails = const [],
   })  : id = _requiredText(id, 'id'),
         medicationId = _requiredText(medicationId, 'medicationId'),
         changeRecordId = _requiredText(changeRecordId, 'changeRecordId'),
@@ -71,6 +72,7 @@ class MedicationSubjectiveTrackingCycle {
   final List<String> changeRecordIds;
   final List<String> medicationIds;
   final List<String> adjustmentTypes;
+  final List<String> adjustmentDetails;
 
   Map<int, DateTime> get followUpDates => {
         for (final day in followUpDays)
@@ -143,6 +145,7 @@ class MedicationSubjectiveTrackingCycle {
       changeRecordIds: changeRecordIds,
       medicationIds: medicationIds,
       adjustmentTypes: adjustmentTypes,
+      adjustmentDetails: adjustmentDetails,
     );
   }
 
@@ -155,6 +158,7 @@ class MedicationSubjectiveTrackingCycle {
     required List<String> changeRecordIds,
     required List<String> medicationIds,
     required List<String> adjustmentTypes,
+    List<String> adjustmentDetails = const [],
   }) {
     return MedicationSubjectiveTrackingCycle(
       id: id,
@@ -174,6 +178,7 @@ class MedicationSubjectiveTrackingCycle {
       changeRecordIds: changeRecordIds,
       medicationIds: medicationIds,
       adjustmentTypes: adjustmentTypes,
+      adjustmentDetails: adjustmentDetails,
     );
   }
 
@@ -195,6 +200,7 @@ class MedicationSubjectiveTrackingCycle {
         'changeRecordIds': changeRecordIds,
         'medicationIds': medicationIds,
         'adjustmentTypes': adjustmentTypes,
+        'adjustmentDetails': adjustmentDetails,
         'followUpDays': followUpDays,
         'followUpDates': {
           for (final entry in followUpDates.entries)
@@ -232,6 +238,7 @@ class MedicationSubjectiveTrackingCycle {
       changeRecordIds: _strings(map['changeRecordIds']),
       medicationIds: _strings(map['medicationIds']),
       adjustmentTypes: _strings(map['adjustmentTypes']),
+      adjustmentDetails: _strings(map['adjustmentDetails']),
     );
   }
 

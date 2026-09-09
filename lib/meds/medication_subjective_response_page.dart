@@ -16,6 +16,7 @@ class MedicationSubjectiveResponsePage extends StatefulWidget {
     required this.changeDate,
     required this.adjustmentSummary,
     required this.followUpDay,
+    this.adjustmentDetails = const [],
   }) {
     if (!MedicationSubjectiveResponse.allowedFollowUpDays.contains(
       followUpDay,
@@ -50,6 +51,7 @@ class MedicationSubjectiveResponsePage extends StatefulWidget {
   final DateTime changeDate;
   final String adjustmentSummary;
   final int followUpDay;
+  final List<String> adjustmentDetails;
 
   @override
   State<MedicationSubjectiveResponsePage> createState() =>
@@ -195,6 +197,7 @@ class _MedicationSubjectiveResponsePageState
               adjustmentSummary: widget.adjustmentSummary,
               changeDate: widget.changeDate,
               followUpDay: widget.followUpDay,
+              adjustmentDetails: widget.adjustmentDetails,
             ),
             const SizedBox(height: 14),
             _QuestionCard(
@@ -294,12 +297,14 @@ class _AdjustmentCard extends StatelessWidget {
     required this.adjustmentSummary,
     required this.changeDate,
     required this.followUpDay,
+    this.adjustmentDetails = const [],
   });
 
   final String medicationName;
   final String adjustmentSummary;
   final DateTime changeDate;
   final int followUpDay;
+  final List<String> adjustmentDetails;
 
   @override
   Widget build(BuildContext context) {
@@ -330,7 +335,7 @@ class _AdjustmentCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        medicationName,
+                        adjustmentDetails.isEmpty ? medicationName : '本次用藥調整',
                         style: TextStyle(
                           color: HealingDesignSystem.adaptivePrimaryText(
                             context,
@@ -361,14 +366,30 @@ class _AdjustmentCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 7),
-                Text(
-                  adjustmentSummary,
-                  style: TextStyle(
-                    color: HealingDesignSystem.adaptiveSecondaryText(context),
-                    fontSize: 14,
-                    height: 1.4,
+                if (adjustmentDetails.isNotEmpty) ...[
+                  const Text('請針對這次所有調藥後的整體感受填答'),
+                  Material(
+                    type: MaterialType.transparency,
+                    child: ExpansionTile(
+                      tilePadding: EdgeInsets.zero,
+                      title: Text('查看全部調藥紀錄（${adjustmentDetails.length} 筆）'),
+                      children: [
+                        for (final detail in adjustmentDetails)
+                          ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(detail)),
+                      ],
+                    ),
                   ),
-                ),
+                ] else
+                  Text(
+                    adjustmentSummary,
+                    style: TextStyle(
+                      color: HealingDesignSystem.adaptiveSecondaryText(context),
+                      fontSize: 14,
+                      height: 1.4,
+                    ),
+                  ),
                 const SizedBox(height: 5),
                 Text(
                   '調整日期 ${_dateText(changeDate)}',

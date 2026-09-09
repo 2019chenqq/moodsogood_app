@@ -7,10 +7,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../app_globals.dart';
 import '../daily/daily_check_in_page.dart';
 import '../meds/medication_checkin_page.dart';
-import '../meds/medication_local_db.dart';
 import '../meds/medication_subjective_reminder_payload.dart';
 import '../meds/medication_subjective_response_page.dart';
-import '../meds/medication_subjective_tracking_cycle.dart';
+import '../meds/medication_subjective_pending_service.dart';
 
 const _channelId = 'heartshine_general';
 const _channelName = '心域提醒';
@@ -514,24 +513,25 @@ class NotificationHelper {
       return;
     }
     try {
-      final cycle = await MedicationLocalDB().getSubjectiveTrackingCycle(
-        uid,
-        payload.cycleId,
-      );
-      if (cycle == null ||
-          cycle.medicationId != payload.medicationId ||
-          cycle.changeRecordId != payload.changeRecordId) {
-        throw StateError('Tracking cycle is unavailable.');
+      final latest = await MedicationSubjectivePendingService().load(uid: uid);
+      if (latest.isEmpty) {
+        rootMessengerKey.currentState?.showSnackBar(
+          const SnackBar(content: Text('目前沒有待填寫的用藥感受問卷')),
+        );
+        return;
       }
+      final pending = latest.first;
+      final cycle = pending.cycle;
       navigator.push(
         MaterialPageRoute(
           builder: (_) => MedicationSubjectiveResponsePage(
             medicationId: cycle.medicationId,
-            medicationName: cycle.medicationName,
+            medicationName: '本次用藥調整',
             changeRecordId: cycle.changeRecordId,
             changeDate: cycle.changeDate,
-            adjustmentSummary: _trackingChangeSummary(cycle),
-            followUpDay: payload.followUpDay,
+            adjustmentSummary: pending.adjustmentSummary,
+            adjustmentDetails: pending.adjustmentDetails,
+            followUpDay: pending.followUpDay,
           ),
         ),
       );
@@ -541,10 +541,6 @@ class NotificationHelper {
         const SnackBar(content: Text('目前無法開啟這筆用藥感受問卷')),
       );
     }
-  }
-
-  String _trackingChangeSummary(MedicationSubjectiveTrackingCycle cycle) {
-    return cycle.adjustmentSummary;
   }
 
   bool _navigateToDailyRecord() {
