@@ -3,6 +3,35 @@ import 'package:moodsogood_app/meds/med_symptom_compare_models.dart';
 import 'package:moodsogood_app/meds/medication_adjustment_service.dart';
 
 void main() {
+  test('episode details preserve every medication and adjustment type', () {
+    final details = MedicationAdjustmentService.describeAdjustmentItems(
+      'latest',
+      DateTime(2026, 8, 17),
+      [
+        {
+          'medDocId': 'b',
+          'name': 'B',
+          'type': 'doseChanged',
+          'oldDose': 10,
+          'newDose': 20,
+          'unit': 'mg'
+        },
+        {
+          'medDocId': 'b',
+          'name': 'B',
+          'type': 'scheduleChanged',
+          'oldTimes': ['早上'],
+          'newTimes': ['晚上']
+        },
+        {'medDocId': 'a', 'name': 'A', 'type': 'stopped'},
+      ],
+    );
+    expect(details.length, 3);
+    expect(details[0], contains('B：10mg → 20mg'));
+    expect(details[1], contains('早上 → 晚上'));
+    expect(details[2], contains('A：停止使用'));
+  });
+
   group('MedicationChangeDetector', () {
     test('備註與名稱等非臨床欄位不建立事件', () {
       final events = MedicationChangeDetector.detect(

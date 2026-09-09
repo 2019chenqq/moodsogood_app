@@ -4,15 +4,15 @@ import 'package:moodsogood_app/meds/medication_subjective_response_page.dart';
 
 void main() {
   Widget subject({int day = 7}) => MaterialApp(
-    home: MedicationSubjectiveResponsePage(
-      medicationId: 'med-1',
-      medicationName: '測試藥物',
-      changeRecordId: 'change-1',
-      changeDate: DateTime(2026, 8, 1),
-      adjustmentSummary: '10 mg → 20 mg',
-      followUpDay: day,
-    ),
-  );
+        home: MedicationSubjectiveResponsePage(
+          medicationId: 'med-1',
+          medicationName: '測試藥物',
+          changeRecordId: 'change-1',
+          changeDate: DateTime(2026, 8, 1),
+          adjustmentSummary: '10 mg → 20 mg',
+          followUpDay: day,
+        ),
+      );
 
   testWidgets('shows adjustment context and all questionnaire sections', (
     tester,
@@ -51,6 +51,29 @@ void main() {
     await tester.tap(find.text('可能有關'));
     await tester.pump();
     expect(button().onPressed, isNotNull);
+  });
+
+  testWidgets('all episode changes can be expanded and collapsed',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+        home: MedicationSubjectiveResponsePage(
+      medicationId: 'med-2',
+      medicationName: '本次用藥調整',
+      changeRecordId: 'latest',
+      changeDate: DateTime(2026, 8, 17),
+      adjustmentSummary: '',
+      followUpDay: 3,
+      adjustmentDetails: const ['藥物 B：10mg → 20mg', '藥物 A：停止使用'],
+    )));
+    expect(find.text('請針對這次所有調藥後的整體感受填答'), findsOneWidget);
+    expect(find.text('藥物 A：停止使用'), findsNothing);
+    await tester.tap(find.text('查看全部調藥紀錄（2 筆）'));
+    await tester.pumpAndSettle();
+    expect(find.text('藥物 A：停止使用'), findsOneWidget);
+    expect(find.text('藥物 B：10mg → 20mg'), findsOneWidget);
+    await tester.tap(find.text('查看全部調藥紀錄（2 筆）'));
+    await tester.pumpAndSettle();
+    expect(find.text('藥物 A：停止使用'), findsNothing);
   });
 
   test('rejects unsupported follow-up days', () {
