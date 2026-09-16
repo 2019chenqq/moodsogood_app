@@ -1,0 +1,32 @@
+version: 2
+
+updates:
+  # Flutter / Dart 套件
+  - package-ecosystem: "pub"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Taipei"
+    open-pull-requests-limit: 5
+
+  # Firebase Functions 的 Node.js 套件
+  - package-ecosystem: "npm"
+    directory: "/functions"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:15"
+      timezone: "Asia/Taipei"
+    open-pull-requests-limit: 5
+
+  # GitHub Actions 使用的套件
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:30"
+      timezone: "Asia/Taipei"
+    open-pull-requests-limit: 5
