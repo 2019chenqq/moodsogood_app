@@ -1180,7 +1180,7 @@ class FollowUpSummaryDisplayModel {
     if (cooccurrences.isNotEmpty) {
       return FollowUpSummaryTextFormatter.sentences([
         ...cooccurrences,
-        '共現僅代表同次記錄中共同出現，不代表因果關係',
+        '共同記錄不代表因果關係',
       ]);
     }
 

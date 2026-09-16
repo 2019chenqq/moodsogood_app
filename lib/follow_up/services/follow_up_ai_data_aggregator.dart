@@ -435,13 +435,7 @@ class FollowUpAiDataAggregator {
           'totalMinutes': napMinutes,
         },
       },
-      highFrequencySymptoms: _cooccurrenceItems(
-        healthEvents
-            .where((event) =>
-                !event.timestamp.isBefore(start) &&
-                event.timestamp.isBefore(endExclusive))
-            .toList(growable: false),
-      ),
+      highFrequencySymptoms: symptoms,
       bodyMeasurements: body,
       currentMedications: currentMedications,
       medicationTimeline: medicationTimeline,
