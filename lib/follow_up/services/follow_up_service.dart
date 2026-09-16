@@ -7,6 +7,7 @@ import '../../utils/health_data_encryption_service.dart';
 import '../../analytics_service.dart';
 import '../models/follow_up_summary_feedback.dart';
 import '../models/follow_up_ai_summary.dart';
+import 'follow_up_summary_section_builder.dart';
 
 const _legacyDiscussionTopicAppointmentLabels = <String>{
   '情緒狀況',
@@ -377,6 +378,9 @@ class FollowUpService {
       ..remove('durationHours');
     sleepSummary['durationHours'] = Map<String, dynamic>.from(durationMap)
       ..remove('dailyTrend');
+    final cooccurrences = FollowUpSummarySectionBuilder.summaryCooccurrences(
+      input.coOccurrenceSummary,
+    );
     final record = FollowUpSummaryRecord(
       id: reference.id,
       createdAt: now,
@@ -399,7 +403,9 @@ class FollowUpService {
       sleepSummary: sleepSummary,
       sleepTrend: trend,
       medicationTimeline: input.medicationTimeline,
-      highFrequencySymptoms: input.highFrequencySymptoms,
+      highFrequencySymptoms: cooccurrences.isNotEmpty
+          ? cooccurrences
+          : input.highFrequencySymptoms,
       bodyMeasurements: input.bodyMeasurements,
     );
     final values = record.toMap()

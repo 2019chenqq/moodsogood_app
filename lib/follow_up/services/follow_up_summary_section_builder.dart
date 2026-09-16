@@ -121,9 +121,30 @@ class FollowUpSummarySectionBuilder {
         .where((item) => item.isNotEmpty)
         .toList(growable: true);
     if (items.isNotEmpty) {
-      items.add('共現僅代表同次記錄中共同出現，不代表因果關係。');
+      items.add('共同記錄不代表因果關係。');
     }
     return items;
+  }
+
+  /// Adapt canonical cluster evidence for the existing summary display field.
+  static List<Map<String, dynamic>> summaryCooccurrences(
+    Map<String, dynamic> summary,
+  ) {
+    final clusters = summary['clusters'];
+    if (clusters is! Iterable) return const [];
+    return clusters
+        .whereType<Map>()
+        .map((cluster) {
+          return <String, dynamic>{
+            'items': cluster['coreItems'],
+            'coOccurrenceCount': cluster['occurrenceCount'],
+          };
+        })
+        .where((item) =>
+            item['items'] is Iterable &&
+            (item['items'] as Iterable).length >= 2 &&
+            item['coOccurrenceCount'] is num)
+        .toList(growable: false);
   }
 
   static String _sentence(String value) =>

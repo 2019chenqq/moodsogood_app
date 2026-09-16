@@ -230,7 +230,9 @@ class _FollowUpAiPreviewPageState extends State<FollowUpAiPreviewPage> {
 
   List<String> _cooccurrenceItems() =>
       FollowUpSummarySectionBuilder.cooccurrenceItems(
-        widget.aiInput?.highFrequencySymptoms ?? const [],
+        FollowUpSummarySectionBuilder.summaryCooccurrences(
+          widget.aiInput?.coOccurrenceSummary ?? const {},
+        ),
       );
 
   Widget _basicInfoSection() {
