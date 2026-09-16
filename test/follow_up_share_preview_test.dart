@@ -38,24 +38,33 @@ void main() {
       home: FollowUpSharePreviewPage(summary: record),
     ));
 
-    expect(find.textContaining('想詢問最近早醒。'), findsNothing);
+    expect(find.textContaining('想詢問最近早醒'), findsNothing);
     expect(find.textContaining('頭痛出現 2 天。'), findsNothing);
     expect(find.textContaining('最近完成了一趟旅行。'), findsNothing);
 
     await tester.tap(find.text('討論主題'));
     await tester.pumpAndSettle();
-    await tester.drag(find.byType(ListView), const Offset(0, -500));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('想詢問最近早醒。'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.textContaining('想詢問最近早醒'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.textContaining('想詢問最近早醒'), findsOneWidget);
     expect(find.textContaining('頭痛出現 2 天。'), findsNothing);
     expect(find.textContaining('最近完成了一趟旅行。'), findsNothing);
 
-    await tester.drag(find.byType(ListView), const Offset(0, 500));
-    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('生活近況'),
+      -200,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.tap(find.text('生活近況'));
     await tester.pumpAndSettle();
-    await tester.drag(find.byType(ListView), const Offset(0, -700));
-    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.textContaining('最近完成了一趟旅行。'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.textContaining('最近完成了一趟旅行。'), findsOneWidget);
   });
 }

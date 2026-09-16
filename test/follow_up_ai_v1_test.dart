@@ -229,61 +229,126 @@ void main() {
     );
 
     expect(normalized.keyChanges, contains('期間有頭痛紀錄'));
-    expect(normalized.discussionPriorities, ['生活近況更新及身體不適狀況']);
-    expect(normalized.userSharedNotes, ['我完成了期待很久的旅行']);
+    expect(normalized.discussionPriorities, isEmpty);
+    expect(normalized.discussionItems, ['生活近況更新及身體不適狀況。']);
+    expect(normalized.userSharedNotes, isEmpty);
+    expect(normalized.followUpResponses.last, {
+      'question': '還有什麼想讓醫師知道？',
+      'answer': '我完成了期待很久的旅行',
+    });
     expect(normalized.userSharedNotes, isNot(contains('每天都有頭痛')));
     expect(normalized.userReportedConcerns, isEmpty);
   });
 
-  testWidgets('preview supports editing, deleting, and confirming',
-      (tester) async {
-    FollowUpAiPreviewResult? confirmed;
-    final summary = FollowUpAiOutput(
-      keyChanges: const ['項目 A', '項目 B', '項目 C'],
-      discussionPriorities: const ['優先事項'],
-      timelineRelations: const ['時間關聯'],
-      userReportedConcerns: const ['使用者困擾'],
-      dataLimitations: const ['資料限制'],
-      generatedAt: DateTime.utc(2026, 8, 5),
-    );
-    await tester.pumpWidget(MaterialApp(
-      home: Builder(builder: (context) {
-        return FilledButton(
-          onPressed: () async {
-            confirmed = await Navigator.push<FollowUpAiPreviewResult>(
-              context,
-              MaterialPageRoute(
-                builder: (_) => FollowUpAiPreviewPage(
-                  initialSummary: summary,
-                  initialAdditionalNotes: '原本的補充背景',
-                  onRegenerate: (_) async => summary,
-                ),
-              ),
-            );
-          },
-          child: const Text('open'),
-        );
-      }),
-    ));
+  testWidgets(
+    'preview supports editing, deleting, and confirming',
+    (tester) async {
+      FollowUpAiPreviewResult? confirmed;
 
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const ValueKey('keyChanges-0')), '修改後項目');
-    await tester.enterText(
-      find.byKey(const ValueKey('preview-additional-notes')),
-      '更新後的補充背景',
-    );
-    tester.testTextInput.hide();
-    await tester.pump();
-    await tester.drag(find.byType(ListView), const Offset(0, -300));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('keyChanges-delete-1')));
-    await tester.pump();
-    await tester.tap(find.text('確認摘要'));
-    await tester.pumpAndSettle();
+      final summary = FollowUpAiOutput(
+        keyChanges: const ['項目 A', '項目 B', '項目 C'],
+        discussionPriorities: const ['優先事項'],
+        timelineRelations: const ['時間關聯'],
+        userReportedConcerns: const ['使用者困擾'],
+        dataLimitations: const ['資料限制'],
+        generatedAt: DateTime.utc(2026, 8, 5),
+      );
 
-    expect(confirmed, isNotNull);
-    expect(confirmed!.summary.keyChanges, ['修改後項目', '項目 C']);
-    expect(confirmed!.additionalNotes, '更新後的補充背景');
-  });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) {
+              return FilledButton(
+                onPressed: () async {
+                  confirmed = await Navigator.push<FollowUpAiPreviewResult>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => FollowUpAiPreviewPage(
+                        initialSummary: summary,
+                        initialAdditionalNotes: '原本的補充背景',
+                        onRegenerate: (_) async => summary,
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('open'),
+              );
+            },
+          ),
+        ),
+      );
+
+      // 開啟預覽頁面
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      // 修改第一個主要變化
+      final firstKeyChange = find.byKey(const ValueKey('keyChanges-0'));
+
+      await tester.ensureVisible(firstKeyChange);
+      await tester.tap(firstKeyChange);
+      await tester.enterText(firstKeyChange, '修改後項目');
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<TextField>(firstKeyChange).controller!.text,
+        '修改後項目',
+      );
+
+      // 修改補充背景
+      final additionalNotes =
+          find.byKey(const ValueKey('preview-additional-notes'));
+
+      await tester.ensureVisible(additionalNotes);
+      await tester.tap(additionalNotes);
+      await tester.enterText(additionalNotes, '更新後的補充背景');
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<TextField>(additionalNotes).controller!.text,
+        '更新後的補充背景',
+      );
+
+      tester.testTextInput.hide();
+      await tester.pumpAndSettle();
+
+      // 刪除第二個項目「項目 B」
+      final deleteSecondItem =
+          find.byKey(const ValueKey('keyChanges-delete-1'));
+
+      await tester.scrollUntilVisible(
+        deleteSecondItem,
+        -250,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(deleteSecondItem);
+      await tester.pumpAndSettle();
+
+      // 刪除後，原本的項目 C 會變成索引 1
+      final remainingSecondItem = find.byKey(const ValueKey('keyChanges-1'));
+
+      expect(remainingSecondItem, findsOneWidget);
+      expect(
+        tester.widget<TextField>(remainingSecondItem).controller!.text,
+        '項目 C',
+      );
+
+      // 確認摘要
+      final confirmButton = find.text('確認摘要');
+
+      await tester.ensureVisible(confirmButton);
+      await tester.tap(confirmButton);
+      await tester.pumpAndSettle();
+
+      expect(confirmed, isNotNull);
+      expect(
+        confirmed!.summary.keyChanges,
+        ['修改後項目', '項目 C'],
+      );
+      expect(
+        confirmed!.additionalNotes,
+        '更新後的補充背景',
+      );
+    },
+  );
 }

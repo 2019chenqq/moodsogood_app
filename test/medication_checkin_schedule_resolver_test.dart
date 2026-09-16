@@ -124,8 +124,12 @@ void main() {
   });
 
   test('effectiveDateTime overrides adjustment time on the same day', () {
+    final bedtimeMedication = {
+      ...medication,
+      'times': ['早上', '晚上', '睡前'],
+    };
     final schedules = MedicationCheckinScheduleResolver.resolve(
-      medication: medication,
+      medication: bedtimeMedication,
       adjustmentRecords: [
         {
           'date': DateTime(2026, 8, 17, 15),

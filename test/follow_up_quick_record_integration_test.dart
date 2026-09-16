@@ -21,7 +21,7 @@ void main() {
       healthEvents: [
         _event('a', DateTime(2026, 8, 1, 9), 2),
         _event('b', DateTime(2026, 8, 1, 12), 4),
-        _event('c', DateTime(2026, 8, 1, 18), 5),
+        _event('c', DateTime(2026, 8, 1, 10), 5),
         _event('d', DateTime(2026, 8, 2, 9), 3),
         _event('outside', DateTime(2026, 8, 15), 5),
       ],
@@ -64,7 +64,7 @@ void main() {
         ),
         HealthEvent(
           id: 'different-time-b',
-          timestamp: DateTime(2026, 8, 3, 18),
+          timestamp: DateTime(2026, 8, 3, 10),
           symptoms: const [HealthEventSymptom(name: '噁心', severity: 2)],
         ),
       ],
@@ -76,7 +76,7 @@ void main() {
     final cluster = (summary.coOccurrences['clusters'] as List).single as Map;
     expect(cluster['coreItems'], containsAll(['心悸', '噁心']));
     expect(cluster['occurrenceCount'], 3);
-    expect(cluster['sameDayCount'], 3);
+    expect(cluster['sameDayCount'], 2);
     expect(cluster['nearbyTimeCount'], 1);
   });
 

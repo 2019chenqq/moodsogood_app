@@ -6,7 +6,7 @@ import 'package:moodsogood_app/models/daily_record.dart';
 import 'package:moodsogood_app/models/health_event.dart';
 
 void main() {
-  test('same HealthEvent pair is counted four times without same-day mixing',
+  test('canonical clusters include four event pairs and one legacy day',
       () {
     final events = [
       for (var index = 0; index < 4; index++)
@@ -45,9 +45,22 @@ void main() {
       now: DateTime(2026, 8, 6),
     );
 
-    final pair = input.highFrequencySymptoms.single;
-    expect(pair['items'], ['焦慮', '心悸']);
-    expect(pair['coOccurrenceCount'], 4);
+    final pair = (input.coOccurrenceSummary['clusters'] as List).single as Map;
+    expect(pair['coreItems'], containsAll(['焦慮', '心悸']));
+    expect(pair['occurrenceCount'], 5);
+    expect(pair['sameDayCount'], 5);
+    expect(pair['nearbyTimeCount'], 0);
+    expect(input.highFrequencySymptoms, isNotEmpty);
+    expect(input.highFrequencySymptoms.first['name'], isNotNull);
+    final summaryPairs =
+        FollowUpSummarySectionBuilder.summaryCooccurrences(
+      input.coOccurrenceSummary,
+    );
+    expect(summaryPairs.single['coOccurrenceCount'], 5);
+    expect(
+      FollowUpSummarySectionBuilder.cooccurrenceItems(summaryPairs).first,
+      contains('共同記錄 5 次'),
+    );
   });
 
   test('canonical sections deduplicate discussion and keep fixed order', () {
