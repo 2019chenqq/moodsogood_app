@@ -5,7 +5,7 @@ const { HttpsError } = require("firebase-functions/v2/https");
 
 const MODES = ["emotionalSupport", "dailyRecord", "physicalHealth", "recentReview"];
 const DAILY_LIMIT = 3;
-const { isFollowUpQuestionRequest, isFollowUpSummaryRequest } = require("./innera_ai_response");
+const { isFollowUpQuestionRequest, isFollowUpSummaryRequest } = require("../chat/innera_ai_response");
 
 // Beta policy: the dedicated follow-up schemas are free. Ordinary review/chat
 // still uses the daily quota; Auth, App Check and AI rate limits remain active.

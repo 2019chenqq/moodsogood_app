@@ -2,10 +2,10 @@
 
 const {
   extractExplicitPhysicalSymptoms,
-} = require("./innera_event_drafts");
+} = require("../health_events/innera_event_drafts");
 const {
   resolveCanonicalSymptom,
-} = require("./innera_canonical_concepts");
+} = require("../health_events/innera_canonical_concepts");
 
 const physicalHealthTurnFactsSchema = {
   type: "object",

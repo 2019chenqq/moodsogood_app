@@ -19,6 +19,7 @@ import '../analytics_service.dart';
 import '../constants/healing_design_system.dart';
 import '../follow_up/pages/follow_up_hub_page.dart';
 import '../follow_up/services/follow_up_service.dart';
+import '../clinic/clinical_share_page.dart';
 import 'life_overview_page.dart';
 import 'trend_review_hub_page.dart';
 
@@ -183,6 +184,15 @@ class _HomeHubPageState extends State<HomeHubPage> with WidgetsBindingObserver {
               color: const Color(0xFF5C9BD5),
               onTap: () => _push(context, const LifeOverviewPage()),
               actionLabel: '查看軌跡',
+            ),
+            const SizedBox(height: 12),
+            _RecordEntryCard(
+              icon: Icons.cloud_upload_outlined,
+              title: '醫療資料分享',
+              subtitle: '管理要分享給醫療端的睡眠、用藥與其他健康紀錄',
+              color: const Color(0xFF5C9BD5),
+              onTap: () => _push(context, const ClinicalSharePage()),
+              actionLabel: '管理授權',
             ),
           ],
         ),

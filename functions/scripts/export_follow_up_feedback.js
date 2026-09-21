@@ -1,7 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
-const { validateFeedback, COLLECTION } = require("../follow_up_feedback");
+const { validateFeedback, COLLECTION } = require("../src/follow_up/follow_up_feedback");
 
 const columns = ["shownToDoctor", "surfacedForgottenInfo", "hadDeeperDiscussion",
   "doctorRequestedAgain", "submittedAt"];

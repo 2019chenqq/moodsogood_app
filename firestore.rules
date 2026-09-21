@@ -1,78 +1,547 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // =========================
-    // 使用者自己的資料（完全私有）
-    // =========================
-    match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null
+    // =========================================================
+    // 共用 helper functions
+    // =========================================================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+
+    // ---------------------------------------------------------
+    // 是否為有效的平台管理員
+    // ---------------------------------------------------------
+    function isPlatformAdmin() {
+      return isSignedIn()
+
+        && exists(
+          /databases/$(database)/documents/platformAdmins/$(request.auth.uid)
+        )
+
+        && get(
+          /databases/$(database)/documents/platformAdmins/$(request.auth.uid)
+        ).data.get("role", "") == "platform_admin"
+
+        && get(
+          /databases/$(database)/documents/platformAdmins/$(request.auth.uid)
+        ).data.get("status", "") == "active";
+    }
+
+
+    // ---------------------------------------------------------
+    // 是否為有效的院所人員
+    //
+    // 相容：
+    // 舊格式 active: true
+    // 新格式 status: "active"
+    // ---------------------------------------------------------
+    function isActiveClinicStaff() {
+      return isSignedIn()
+
+        && exists(
+          /databases/$(database)/documents/clinicStaff/$(request.auth.uid)
+        )
+
+        && (
+          get(
+            /databases/$(database)/documents/clinicStaff/$(request.auth.uid)
+          ).data.get("active", false) == true
+
+          ||
+
+          get(
+            /databases/$(database)/documents/clinicStaff/$(request.auth.uid)
+          ).data.get("status", "") == "active"
+        );
+    }
+
+
+    // ---------------------------------------------------------
+    // 取得目前登入 staff 的 clinicId
+    // ---------------------------------------------------------
+    function currentClinicId() {
+      return get(
+        /databases/$(database)/documents/clinicStaff/$(request.auth.uid)
+      ).data.get("clinicId", "");
+    }
+
+
+    // ---------------------------------------------------------
+    // 是否為院所管理員
+    //
+    // 相容：
+    // 舊格式 role: "admin"
+    // 新格式 role: "clinic_admin"
+    // ---------------------------------------------------------
+    function isClinicAdmin() {
+      return isActiveClinicStaff()
+
+        && (
+          get(
+            /databases/$(database)/documents/clinicStaff/$(request.auth.uid)
+          ).data.get("role", "") == "admin"
+
+          ||
+
+          get(
+            /databases/$(database)/documents/clinicStaff/$(request.auth.uid)
+          ).data.get("role", "") == "clinic_admin"
+        );
+    }
+
+
+    // =========================================================
+    // 平台管理員
+    // =========================================================
+
+    match /platformAdmins/{uid} {
+
+      // 使用者只能讀自己的 platform admin 身分
+      allow read: if isSignedIn()
+                  && request.auth.uid == uid;
+
+      // 平台管理員帳號不允許由前端直接修改
+      allow create, update, delete: if false;
+    }
+
+
+    // =========================================================
+    // 院所
+    // =========================================================
+
+    match /clinics/{clinicId} {
+
+      // 平台管理員：
+      // 可查看全部院所
+      //
+      // 院所人員：
+      // 只能查看自己的院所
+      allow read: if isPlatformAdmin()
+
+                  ||
+
+                  (
+                    isActiveClinicStaff()
+                    && currentClinicId() == clinicId
+                  );
+
+
+      // 平台管理員可以修改院所基本設定
+      //
+      // 院所 admin / clinic_admin
+      // 可以修改自己的院所
+      allow update: if isPlatformAdmin()
+
+                    ||
+
+                    (
+                      isClinicAdmin()
+                      && currentClinicId() == clinicId
+                    );
+
+
+      // 新增院所目前統一走 Cloud Function
+      // 不允許 Web client 直接 create
+      allow create: if false;
+
+
+      // 刪除院所目前禁止
+      // 後續若需要，改由 Cloud Function 做停用 / 刪除流程
+      allow delete: if false;
+    }
+
+
+    // =========================================================
+    // 院所人員
+    // =========================================================
+
+    match /clinicStaff/{staffUid} {
+
+      allow read: if isSignedIn()
+
+        && (
+
+          // 使用者可以讀自己的 staff document
+          request.auth.uid == staffUid
+
+          ||
+
+          // 同院所有效 staff 可以讀同院所成員
+          (
+            isActiveClinicStaff()
+
+            && resource.data.get("clinicId", "")
+               == currentClinicId()
+          )
+
+          ||
+
+          // 平台管理員可查看 staff
+          isPlatformAdmin()
+        );
+
+
+      // staff 建立、修改、停用
+      // 目前由 Cloud Functions 處理
+      allow create, update, delete: if false;
+    }
+
+
+    // =========================================================
+    // 系統流水號
+    // =========================================================
+
+    match /inneraCounters/{docId} {
+
+      // 目前先保留你的既有行為，
+      // 避免影響原本 App / MVP 流程。
+      //
+      // 未來建議改成 server-only。
+      allow read, write: if isSignedIn();
+    }
+
+
+    // =========================================================
+    // Innera Patients
+    // =========================================================
+
+    match /inneraPatients/{patientId} {
+
+      // 同院所有效 staff 才能讀取患者
+      allow read: if isActiveClinicStaff()
+                  && resource.data.get("clinicId", "") == currentClinicId();
+
+      // 新增患者時：
+      // clinicId 必須等於登入者自己的院所
+      allow create: if isActiveClinicStaff()
+                    && request.resource.data.get("clinicId", "") == currentClinicId();
+
+      // 修改患者時：
+      // 只能修改原本就屬於自己院所的患者
+      // 而且不准偷偷把 clinicId 改成別的院所
+      allow update: if isActiveClinicStaff()
+                    && resource.data.get("clinicId", "") == currentClinicId()
+                    && request.resource.data.get("clinicId", "") == currentClinicId();
+
+      allow delete: if false;
+    }
+
+
+    // =========================================================
+    // Invite codes
+    // =========================================================
+
+    match /inneraInvites/{code} {
+
+      // 邀請碼由 Cloud Function 兌換；client 僅限同院所 staff 管理。
+      // 產生代碼前，允許有效 staff 單筆確認該代碼尚未存在。
+      allow get: if isActiveClinicStaff()
+                 && (
+                   !exists(/databases/$(database)/documents/inneraInvites/$(code))
+                   || resource.data.get("clinicId", "") == currentClinicId()
+                 );
+
+      allow list: if isActiveClinicStaff()
+                  && resource.data.get("clinicId", "") == currentClinicId();
+
+      allow create: if isActiveClinicStaff()
+                    && request.resource.data.get("clinicId", "") == currentClinicId();
+
+      allow update: if isActiveClinicStaff()
+                    && resource.data.get("clinicId", "") == currentClinicId()
+                    && request.resource.data.get("clinicId", "") == currentClinicId();
+
+      allow delete: if false;
+    }
+    // =========================================================
+    // 使用者自己的 clinicLinks
+    // =========================================================
+
+    match /users/{uid}/clinicLinks/{clinicId} {
+
+      allow read, write: if isSignedIn()
+                         && request.auth.uid == uid;
+    }
+
+
+    // =========================================================
+    // clinicalShares
+    // =========================================================
+
+    match /clinicalShares/{userId} {
+
+      // -------------------------------------------------------
+      // clinicalShares root document
+      // 患者本人管理
+      // -------------------------------------------------------
+
+      allow read, write: if isSignedIn()
+                         && request.auth.uid == userId;
+
+
+      // =======================================================
+      // 患者授權給特定院所
+      // =======================================================
+
+      match /clinics/{clinicId} {
+
+        // 患者本人可以讀寫自己的授權設定
+        allow read, write: if isSignedIn()
+                           && request.auth.uid == userId;
+
+
+        // 同院所有效醫療人員：
+        // 只有患者仍授權該院所才能讀
+        allow read: if isActiveClinicStaff()
+
+                    && currentClinicId() == clinicId
+
+                    && resource.data.get("active", false) == true;
+
+
+        // =====================================================
+        // 睡眠紀錄
+        // =====================================================
+
+        match /sleepRecords/{recordId} {
+
+          // 患者本人可讀寫
+          allow read, write: if isSignedIn()
+                             && request.auth.uid == userId;
+
+
+          // 醫療端唯讀
+          allow read: if isActiveClinicStaff()
+
+                      && currentClinicId() == clinicId
+
+                      // 患者仍授權此院所
+                      && get(
+                        /databases/$(database)/documents/clinicalShares/$(userId)/clinics/$(clinicId)
+                      ).data.get("active", false) == true
+
+                      // 有開睡眠分享
+                      && get(
+                        /databases/$(database)/documents/clinicalShares/$(userId)/clinics/$(clinicId)
+                      ).data.get("sleepSharingEnabled", false) == true;
+        }
+        
+      match /healthEvents/{eventId} {
+
+        // 患者本人可管理分享資料
+        allow read, write: if isSignedIn()
                           && request.auth.uid == userId;
+
+        // 醫療端唯讀
+        allow read: if isActiveClinicStaff()
+                    && currentClinicId() == clinicId
+
+                    && get(
+                      /databases/$(database)/documents/clinicalShares/$(userId)/clinics/$(clinicId)
+                    ).data.get("active", false) == true
+
+                    && get(
+                      /databases/$(database)/documents/clinicalShares/$(userId)/clinics/$(clinicId)
+                    ).data.get("healthEventSharingEnabled", false) == true;
+      }
+
+
+      match /dailyCheckIns/{dateId} {
+
+        // 患者本人可管理分享資料
+        allow read, write: if isSignedIn()
+                          && request.auth.uid == userId;
+
+        // 醫療端唯讀
+        allow read: if isActiveClinicStaff()
+                    && currentClinicId() == clinicId
+
+                    && get(
+                      /databases/$(database)/documents/clinicalShares/$(userId)/clinics/$(clinicId)
+                    ).data.get("active", false) == true
+
+                    && get(
+                      /databases/$(database)/documents/clinicalShares/$(userId)/clinics/$(clinicId)
+                    ).data.get("dailyCheckInSharingEnabled", false) == true;
+      }
+
+      // =====================================================
+      // AI 臨床摘要
+      // =====================================================
+
+      match /aiSummaries/{summaryId} {
+
+        // 患者本人可讀，但不可直接修改 AI 摘要
+        allow read: if isSignedIn()
+                    && request.auth.uid == userId;
+
+        // 同院所有效醫療人員可唯讀
+        allow read: if isActiveClinicStaff()
+
+                    && currentClinicId() == clinicId
+
+                    && get(
+                      /databases/$(database)/documents/clinicalShares/$(userId)/clinics/$(clinicId)
+                    ).data.get("active", false) == true;
+
+        // AI 摘要只能由 Cloud Function / Admin SDK 寫入
+        allow create, update, delete: if false;
+      }
+
+        // =====================================================
+        // 用藥
+        // =====================================================
+
+        match /medications/{medicationId} {
+
+          // 患者本人可讀寫
+          allow read, write: if isSignedIn()
+                             && request.auth.uid == userId;
+
+
+          // 醫療端唯讀
+          allow read: if isActiveClinicStaff()
+
+                      && currentClinicId() == clinicId
+
+                      // 患者仍授權此院所
+                      && get(
+                        /databases/$(database)/documents/clinicalShares/$(userId)/clinics/$(clinicId)
+                      ).data.get("active", false) == true
+
+                      // 有開用藥分享
+                      && get(
+                        /databases/$(database)/documents/clinicalShares/$(userId)/clinics/$(clinicId)
+                      ).data.get("medicationSharingEnabled", false) == true;
+        }
+      }
     }
 
-    // =========================
-    // 藥物成分字典（所有登入者可讀）
-    // =========================
+
+    // =========================================================
+    // 使用者自己的資料
+    // =========================================================
+
+    match /users/{userId}/{document=**} {
+
+      allow read, write: if isSignedIn()
+                         && request.auth.uid == userId;
+    }
+
+
+    // =========================================================
+    // 藥物成分字典
+    // =========================================================
+
     match /drug_dictionary/{docId} {
-      allow read: if request.auth != null;
-      allow write: if false; // ❌ 用戶不能改字典
+
+      allow read: if isSignedIn();
+
+      // Client 不可修改字典
+      allow write: if false;
     }
 
-    // =========================
+
+    // =========================================================
     // 回饋與建議
-    // =========================
+    // =========================================================
+
     match /feedback/{docId} {
-      allow create: if request.auth != null; // 任何登入者可寫
-      allow read: if false;                  // 不讓用戶互看
+
+      // 登入使用者可以提交
+      allow create: if isSignedIn();
+
+      // 使用者不能互相讀取 feedback
+      allow read: if false;
+
+      allow update, delete: if false;
     }
 
-    // Callable writes validated codes; administrators use Console/Admin SDK.
-    match /followUpSummaryFeedback/{docId} {
-      allow read, write: if false;
-    }
 
-    // =========================
-    // 社群看板申請與看板
-    // =========================
+    // =========================================================
+    // 社群看板申請
+    // =========================================================
+
     match /community_room_requests/{requestId} {
-      // 社群功能尚未開放。UI 隱藏不是安全邊界，因此先完全封鎖。
+
+      // 社群功能目前尚未開放
       allow read, write: if false;
     }
+
+
+    // =========================================================
+    // 社群看板
+    // =========================================================
 
     match /community_rooms/{roomId} {
-      // 社群功能尚未開放。之後啟用時必須改成伺服器端角色驗證。
+
+      // 社群功能目前尚未開放
       allow read, write: if false;
     }
 
-    // RevenueCat webhook/Admin SDK 維護的可信訂閱狀態。
+
+    // =========================================================
+    // RevenueCat server entitlement
+    // =========================================================
+
     match /server_entitlements/{userId} {
+
+      // 僅 Admin SDK / backend 維護
       allow read, write: if false;
     }
 
-    // AI usage and cost records are written only by the Admin SDK in Functions.
+
+    // =========================================================
+    // AI usage events
+    // =========================================================
+
     match /ai_usage_events/{eventId} {
+
       allow read, write: if false;
     }
 
-    // Daily AI summaries are also server-only operational billing data.
+
+    // =========================================================
+    // Daily AI usage
+    // =========================================================
+
     match /ai_usage_daily/{dateId} {
+
       allow read, write: if false;
     }
 
-    // Per-user abuse-prevention counters are maintained only by Functions.
+
+    // =========================================================
+    // Per-user AI rate limits
+    // =========================================================
+
     match /ai_rate_limits/{userId} {
+
       allow read, write: if false;
     }
 
-    // Project-wide AI abuse-prevention counters are server-only.
+
+    // =========================================================
+    // Global AI rate limits
+    // =========================================================
+
     match /ai_global_rate_limits/{documentId} {
+
       allow read, write: if false;
     }
 
-    // =========================
-    // 其他所有路徑：預設全部拒絕
-    // =========================
+
+    // =========================================================
+    // 其他所有路徑
+    // 預設拒絕
+    // =========================================================
+
     match /{document=**} {
+
       allow read, write: if false;
     }
   }

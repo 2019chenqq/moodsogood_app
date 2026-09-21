@@ -6,7 +6,7 @@ Pro 維持既有訂閱驗證與速率限制，不套用免費額度；尚未啟�
 
 ## 後端
 
-- `functions/innera_free_quota.js`：`DAILY_LIMIT = 3`，四模式白名單、交易保留額度、成功確認與失敗釋放。
+- `functions/src/ai/innera_free_quota.js`：`DAILY_LIMIT = 3`，四模式白名單、交易保留額度、成功確認與失敗釋放。
 - `getInneraAiFreeQuota`：回傳可信的 Pro 狀態、台灣日期與各模式剩餘額度。
 - 路徑：`innera_free_quota/{uid}/days/{yyyy-MM-dd}_{mode}`。現有 Firestore 預設拒絕規則禁止客戶端讀寫，僅 Admin SDK 可維護。
 - 計次紀錄只存雜湊訊息 ID 與狀態，不保存聊天內容。跨裝置共用，刪除對話不會清除額度。

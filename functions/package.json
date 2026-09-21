@@ -7,8 +7,8 @@
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
-    "test": "node --test test/*.test.js",
-    "test:rules": "firebase emulators:exec --project moodsogood-security-test --only firestore,storage \"node --test test/firebase_rules.test.js\""
+    "test": "node --test",
+    "test:rules": "firebase emulators:exec --project moodsogood-security-test --only firestore,storage \"node --test test/security/firebase_rules.test.js\""
   },
   "engines": {
     "node": "24"
