@@ -1,0 +1,8 @@
+{
+  "demo-sleep-clinic": {
+    "writeVersion": "projects/innera-demo/locations/global/keyRings/demo-clinical/cryptoKeys/demo-sleep-clinic/cryptoKeyVersions/1",
+    "readVersions": [
+      "projects/innera-demo/locations/global/keyRings/demo-clinical/cryptoKeys/demo-sleep-clinic/cryptoKeyVersions/1"
+    ]
+  }
+}

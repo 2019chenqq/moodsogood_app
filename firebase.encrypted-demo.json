@@ -1,0 +1,22 @@
+{
+  "functions": [{ "source": "functions_encrypted_demo", "codebase": "encrypted-sleep-demo" }],
+  "hosting": [
+    {
+      "site": "innera-demo-encrypted-patient",
+      "public": "build/encrypted_sleep_demo",
+      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "headers": [{ "source": "**", "headers": [{ "key": "Cache-Control", "value": "no-store" }] }]
+    },
+    {
+      "site": "innera-demo-encrypted-doctor",
+      "public": "build/encrypted_sleep_doctor",
+      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "headers": [{ "source": "**", "headers": [{ "key": "Cache-Control", "value": "no-store" }] }]
+    }
+  ],
+  "firestore": {
+    "rules": "firestore.demo.rules",
+    "indexes": "firestore.encrypted-demo.indexes.json"
+  },
+  "emulators": { "firestore": { "host": "127.0.0.1", "port": 8185 }, "singleProjectMode": true }
+}
