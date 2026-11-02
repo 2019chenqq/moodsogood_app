@@ -3323,3 +3323,16 @@ async function generateInneraAiChatResponse(request) {
       );
     }
 }
+
+exports.createClinicStaff = require("./src/clinic/staff").createClinicStaff;
+exports.createStaffInvite = require("./src/clinic/staff_invites").createStaffInvite;
+exports.listPendingStaffInvites = require("./src/clinic/staff_invites").listPendingStaffInvites;
+exports.resendStaffInvite = require("./src/clinic/staff_invites").resendStaffInvite;
+exports.revokeStaffInvite = require("./src/clinic/staff_invites").revokeStaffInvite;
+exports.getStaffInvite = require("./src/clinic/staff_invites").getStaffInvite;
+exports.getStaffInviteActivationEmail = require("./src/clinic/staff_invites").getStaffInviteActivationEmail;
+exports.acceptStaffInvite = require("./src/clinic/staff_invites").acceptStaffInvite;
+exports.updateClinicStaffRole = require("./src/clinic/staff").updateClinicStaffRole;
+exports.disableClinicStaff = require("./src/clinic/staff").disableClinicStaff;
+exports.enableClinicStaff = require("./src/clinic/staff").enableClinicStaff;
+exports.listClinicAuditLogs = require("./src/clinic/audit").listClinicAuditLogs;
