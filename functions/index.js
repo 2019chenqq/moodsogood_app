@@ -3,7 +3,6 @@ const { prepareDiaryMessages } = require("./diary_extraction_input");
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret, defineString } = require("firebase-functions/params");
-const admin = require("firebase-admin");
 const OpenAI = require("openai");
 const { buildInneraPrompt, sanitizeModeFollowUp } = require("./innera_mode_prompt");
 const {
@@ -79,8 +78,9 @@ const {
 } = require("./innera_ai_response");
 
 // 初始化 Admin SDK (擁有繞過 Security Rules 的最高權限)
-admin.initializeApp();
-const db = admin.firestore();
+const { admin, db } = require("./src/config/firebase");
+exports.getClinicDetails = require("./src/clinic/clinics").getClinicDetails;
+exports.updateClinicTrial = require("./src/clinic/clinics").updateClinicTrial;
 const { submitFeedback, feedbackId, COLLECTION: feedbackCollection } = require("./follow_up_feedback");
 const { onDocumentDeleted } = require("firebase-functions/v2/firestore");
 
