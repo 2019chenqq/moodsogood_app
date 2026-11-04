@@ -95,3 +95,16 @@ pnpm-debug.log*
 
 # Local Firebase deployment settings
 functions/.env.moodsogood-9e45b
+
+.codex-remote-attachments/
+Keystores/
+*.jks
+*.keystore
+*.p12
+*.pfx
+android/key.properties
+.firebase/
+.env.*
+functions/.env
+**/service-account*.json
+**/*serviceAccount*.json
