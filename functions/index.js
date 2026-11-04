@@ -80,6 +80,7 @@ const {
 // 初始化 Admin SDK (擁有繞過 Security Rules 的最高權限)
 const { admin, db } = require("./src/config/firebase");
 exports.getClinicDetails = require("./src/clinic/clinics").getClinicDetails;
+exports.updateClinicOperations = require("./src/clinic/clinics").updateClinicOperations;
 exports.updateClinicTrial = require("./src/clinic/clinics").updateClinicTrial;
 const { submitFeedback, feedbackId, COLLECTION: feedbackCollection } = require("./follow_up_feedback");
 const { onDocumentDeleted } = require("firebase-functions/v2/firestore");
