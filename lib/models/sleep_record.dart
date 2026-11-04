@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../utils/date_helper.dart';
 import 'daily_record.dart';
+import 'sleep_record_date.dart';
 
 class SleepMedication {
   const SleepMedication({
@@ -95,6 +96,10 @@ class SleepRecord {
       };
 
   factory SleepRecord.fromMap(Map<String, dynamic> map) {
+    final date = parseSleepRecordDate(map['date']);
+    if (date == null) {
+      throw const FormatException('Sleep record requires a valid date.');
+    }
     final start = DateHelper.parseTime(
       map['sleepStart'] ?? map['estimatedSleepTime'] ?? map['sleepTime'],
     );
@@ -114,7 +119,7 @@ class SleepRecord {
     final rawConditions = map['sleepConditions'] ?? map['flags'];
 
     return SleepRecord(
-      date: _asDate(map['date']) ?? DateTime.now(),
+      date: date,
       bedTime: DateHelper.parseTime(map['bedTime'] ?? map['sleepTime']),
       sleepStart: start,
       wakeTime: DateHelper.parseTime(map['finalWakeTime'] ?? map['wakeTime']),

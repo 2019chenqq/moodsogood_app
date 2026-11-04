@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/sleep_record.dart';
+import '../models/sleep_record_date.dart';
 import '../utils/health_data_encryption_service.dart';
 
 class SleepRecordService {
@@ -41,9 +42,10 @@ class SleepRecordService {
     final snapshot = await reference(userId, date).get();
     final raw = snapshot.data();
     if (raw == null) return null;
-    return SleepRecord.fromMap(
-      await HealthDataEncryptionService.decryptData(raw),
-    );
+    final data = await HealthDataEncryptionService.decryptData(raw);
+    final recordDate = sleepRecordDocumentDate(data['date'], snapshot.id);
+    if (recordDate == null || dateId(recordDate) != dateId(date)) return null;
+    return SleepRecord.fromMap({...data, 'date': recordDate});
   }
 
   static String dateId(DateTime date) =>

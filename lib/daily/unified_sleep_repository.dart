@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/daily_record.dart';
 import '../models/sleep_record.dart';
+import '../models/sleep_record_date.dart';
 import '../utils/health_data_encryption_service.dart';
 import 'sleep_record_service.dart';
 
@@ -19,7 +20,8 @@ class UnifiedSleepRepository {
     FirebaseFirestore? firestore,
     SleepRecordService? sleepRecordService,
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
-        _sleepRecordService = sleepRecordService ?? SleepRecordService();
+        _sleepRecordService =
+            sleepRecordService ?? SleepRecordService(firestore: firestore);
 
   final FirebaseFirestore _firestore;
   final SleepRecordService _sleepRecordService;
@@ -29,7 +31,7 @@ class UnifiedSleepRepository {
     required DateTime date,
   }) async {
     final current = await _sleepRecordService.get(userId: userId, date: date);
-    if (current != null) {
+    if (current != null && current.hasData) {
       return UnifiedSleepRecord(
         record: current,
         source: SleepRecordSource.sleepRecord,
@@ -44,9 +46,13 @@ class UnifiedSleepRepository {
     final raw = legacyDoc.data();
     if (raw == null) return null;
     final data = await HealthDataEncryptionService.decryptData(raw);
-    final sleep = DailyRecord.fromData(legacyDoc.id, data).sleep;
-    final record = SleepRecord.fromSleepData(date, sleep);
-    if (!record.hasData) return null;
+    final record = _legacySleepRecord(legacyDoc.id, data);
+    if (record == null ||
+        !record.hasData ||
+        SleepRecordService.dateId(record.date) !=
+            SleepRecordService.dateId(date)) {
+      return null;
+    }
     return UnifiedSleepRecord(
       record: record,
       source: SleepRecordSource.legacyDailyRecord,
@@ -59,31 +65,59 @@ class UnifiedSleepRepository {
     required DateTime end,
   }) async {
     final startDay = DateTime(start.year, start.month, start.day);
-    final endDay = DateTime(end.year, end.month, end.day, 23, 59, 59, 999);
+    final endExclusive = DateTime(end.year, end.month, end.day + 1);
+    if (!startDay.isBefore(endExclusive)) return const [];
     final user = _firestore.collection('users').doc(userId);
-    final results = await Future.wait([
-      HealthDataEncryptionService.getEncrypted(
-        user
-            .collection('sleepRecords')
+    Future<List<HealthDocument>> read(String collection) async {
+      final reference = user.collection(collection);
+      final results = await Future.wait([
+        HealthDataEncryptionService.getEncrypted(reference
             .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startDay))
-            .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endDay)),
-      ),
-      HealthDataEncryptionService.getEncrypted(
-        user
-            .collection('dailyRecords')
-            .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startDay))
-            .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endDay)),
-      ),
-    ]);
-    final current = results[0]
-        .map((doc) => SleepRecord.fromMap(doc.data))
-        .where((record) => record.hasData);
+            .where('date', isLessThan: Timestamp.fromDate(endExclusive))),
+        // Date queries cannot discover missing, invalid or string date fields.
+        HealthDataEncryptionService.getEncrypted(reference
+            .where(FieldPath.documentId,
+                isGreaterThanOrEqualTo: SleepRecordService.dateId(startDay))
+            .where(FieldPath.documentId,
+                isLessThan: SleepRecordService.dateId(endExclusive))),
+      ]);
+      return {
+        for (final doc in results.expand((items) => items)) doc.id: doc,
+      }.values.toList();
+    }
+
+    final results =
+        await Future.wait([read('sleepRecords'), read('dailyRecords')]);
+    final current = results[0].map((doc) {
+      final date = sleepRecordDocumentDate(doc.data['date'], doc.id);
+      return date == null
+          ? null
+          : SleepRecord.fromMap({...doc.data, 'date': date});
+    }).whereType<SleepRecord>();
     final legacy = results[1]
-        .map((doc) => DailyRecord.fromData(doc.id, doc.data))
-        .where((record) =>
-            SleepRecord.fromSleepData(record.date, record.sleep).hasData)
-        .map((record) => SleepRecord.fromSleepData(record.date, record.sleep));
-    return resolve(current: current, legacy: legacy);
+        .map((doc) => _legacySleepRecord(doc.id, doc.data))
+        .whereType<SleepRecord>();
+    bool inRange(SleepRecord record) {
+      final day =
+          DateTime(record.date.year, record.date.month, record.date.day);
+      return !day.isBefore(startDay) && day.isBefore(endExclusive);
+    }
+
+    return resolve(
+      current: current.where(inRange),
+      legacy: legacy.where(inRange),
+    );
+  }
+
+  static SleepRecord? _legacySleepRecord(String id, Map<String, dynamic> data) {
+    final date = sleepRecordDocumentDate(data['date'], id);
+    if (date == null) return null;
+    final rawSleep = data['sleep'];
+    return SleepRecord.fromSleepData(
+      date,
+      SleepData.fromMap(
+          rawSleep is Map ? rawSleep.cast<String, dynamic>() : null),
+    );
   }
 
   static List<UnifiedSleepRecord> resolve({
@@ -92,12 +126,14 @@ class UnifiedSleepRepository {
   }) {
     final byDate = <String, UnifiedSleepRecord>{};
     for (final record in legacy) {
+      if (!record.hasData) continue;
       byDate[SleepRecordService.dateId(record.date)] = UnifiedSleepRecord(
         record: record,
         source: SleepRecordSource.legacyDailyRecord,
       );
     }
     for (final record in current) {
+      if (!record.hasData) continue;
       byDate[SleepRecordService.dateId(record.date)] = UnifiedSleepRecord(
         record: record,
         source: SleepRecordSource.sleepRecord,

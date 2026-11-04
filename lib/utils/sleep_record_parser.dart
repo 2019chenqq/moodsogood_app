@@ -5,12 +5,14 @@ class SleepRecordParser {
 
   /// Returns sleep quality on the App's current 1–5 scale.
   ///
-  /// Current records store `sleep.quality`. Older builds also used
-  /// `sleep.sleepQuality`, `sleep.qualityScore`, or a top-level
-  /// `sleepQuality`. Explicit 10-point values are converted to 1–5.
+  /// A value alone never identifies its scale. Supply [knownScale] only when
+  /// the caller knows the source schema; otherwise explicit scale metadata is
+  /// required. Invalid explicit metadata is not overridden by [knownScale].
+  /// Only 1–5 and 1–10 scales are supported. Missing/invalid values stay null.
   static int? quality(
     Map<String, dynamic>? sleep, {
     Map<String, dynamic>? record,
+    int? knownScale,
   }) {
     final source = sleep ?? const <String, dynamic>{};
     final raw = source['quality'] ??
@@ -18,18 +20,15 @@ class SleepRecordParser {
         source['qualityScore'] ??
         record?['sleepQuality'];
     final parsed = _number(raw);
-    if (parsed == null || parsed <= 0) return null;
+    if (parsed == null || !parsed.isFinite) return null;
 
     final rawScale = source['qualityScale'] ??
         source['sleepQualityScale'] ??
         record?['sleepQualityScale'];
-    final scale = _number(rawScale);
-    final normalized = scale != null && scale > 5
-        ? parsed * 5 / scale
-        : parsed > 5 && parsed <= 10
-            ? parsed / 2
-            : parsed;
-    if (normalized < 1 || normalized > 5) return null;
+    final scale = rawScale == null ? knownScale?.toDouble() : _number(rawScale);
+    if (scale != 5 && scale != 10) return null;
+    if (parsed < 1 || parsed > scale!) return null;
+    final normalized = parsed * 5 / scale;
     return normalized.round().clamp(1, 5);
   }
 
