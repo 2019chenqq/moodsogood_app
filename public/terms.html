@@ -1,12 +1,91 @@
-<!doctype html><meta charset="utf-8">
-<title>心域｜服務條款</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
-<div id="app">載入中…</div>
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<script>
-fetch('legal/terms_zh-TW.md', { cache: 'no-cache' })
-  .then(r => r.text())
-  .then(t => { document.getElementById('app').innerHTML = marked.parse(t); })
-  .catch(() => { document.getElementById('app').innerHTML = '載入失敗，請稍後再試。'; });
-</script>
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>心域 Innera｜服務條款</title>
+  <meta name="description" content="心域 Innera 服務條款">
+  <style>
+    :root {
+      --bg: #f5fbfb;
+      --card: #ffffff;
+      --text: #21363b;
+      --muted: #60767c;
+      --brand: #2e8f9e;
+      --line: #dcebed;
+      --quote: #eef8f8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+                   "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+      line-height: 1.85;
+    }
+    main {
+      width: min(920px, calc(100% - 32px));
+      margin: 40px auto;
+      padding: 42px 48px 56px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      box-shadow: 0 8px 28px rgba(35, 75, 85, .06);
+    }
+    h1 {
+      margin: 0 0 8px;
+      color: var(--brand);
+      font-size: clamp(28px, 4vw, 40px);
+      line-height: 1.3;
+    }
+    h2 {
+      margin-top: 38px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--line);
+      font-size: 22px;
+      line-height: 1.45;
+    }
+    p, li { font-size: 16px; }
+    p { margin: 12px 0; }
+    ul { padding-left: 1.5rem; }
+    li { margin: 8px 0; }
+    strong { color: #143f47; }
+    a {
+      color: var(--brand);
+      text-underline-offset: 3px;
+    }
+    blockquote {
+      margin: 24px 0;
+      padding: 18px 20px;
+      background: var(--quote);
+      border-left: 4px solid var(--brand);
+      border-radius: 10px;
+      color: #34575e;
+    }
+    footer {
+      margin-top: 42px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 14px;
+    }
+    @media (max-width: 640px) {
+      main {
+        width: 100%;
+        margin: 0;
+        padding: 28px 20px 42px;
+        border: 0;
+        border-radius: 0;
+      }
+      h2 { margin-top: 30px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>心域 App— 服務條款</h1><p>最後更新：2026-10-03</p><p>感謝您使用「心域」（以下稱「本服務」）。本服務由《心域 Innera》（以下稱「我們」）提供。</p><p>使用或安裝本服務，即表示您已閱讀、理解並同意受本服務條款及隱私權政策約束。若您不同意本條款內容，請停止使用本服務。</p><h2>1. 服務內容</h2><p>本服務提供身心狀態記錄與整理相關功能，依實際版本可能包括：</p><ul><li>情緒、症狀、能量、食慾、活動量與其他日常狀態紀錄。</li><li>睡眠時間、睡眠品質、睡眠型態與相關標籤紀錄。</li><li>日記、健康事件、身體測量及生理期／月經週期紀錄。</li><li>藥物、服藥、調藥歷程、主觀用藥感受與相關比較功能。</li><li>紀錄歷程、趨勢圖表、資料整理與回顧功能。</li><li>AI 輔助紀錄、自然語言整理、近期回顧及回診摘要等功能。</li><li>在使用者主動授權並建立院所連結時，提供部分紀錄予經授權之醫療端人員查看。</li><li>其他我們日後提供之相關功能。</li></ul><p>本服務旨在協助使用者整理自身紀錄、回顧身心變化及促進就醫溝通。</p><p><strong>本服務及 AI 功能並非醫療機構、醫療行為或醫療專業意見，不提供診斷、處方或治療，也不應取代醫師、心理師、藥師或其他醫療專業人員之判斷。</strong></p><p>如您有緊急、嚴重或可能危及生命之身心狀況，請立即聯絡當地緊急服務或尋求合格醫療專業人員協助。</p><h2>2. 資格與帳號</h2><ul><li>您應具備依所在地法律使用本服務及同意本條款所需之資格。未成年人應於適用法律要求之情形下取得法定代理人或監護人同意。</li><li>您可透過本服務支援之第三方登入方式（例如 Google 或 Apple）建立或登入帳號。</li><li>您應妥善保管自己的裝置、第三方帳號及登入憑證，並對以您帳號進行之操作負合理管理責任。</li><li>若您發現帳號遭未授權使用或有其他安全疑慮，請儘速與我們聯絡。</li></ul><h2>3. 使用規範</h2><p>您同意不得利用本服務從事下列行為：</p><ul><li>違反適用法令或侵害他人權利。</li><li>未經授權蒐集、取得、使用、揭露或散布他人之個人資料、健康資料或其他受保護資訊。</li><li>冒用他人身分、帳號或院所權限。</li><li>規避、破壞或干擾身分驗證、資料加密、存取控制、FireStore Security Rules、App Check 或其他安全機制。</li><li>對本服務進行惡意逆向工程、攻擊、未經授權的自動化大量存取、弱點濫用或其他足以影響系統安全與正常運作之行為。</li><li>上傳或傳輸惡意程式、侵權內容或其他違法內容。</li><li>將本服務或 AI 產出作為唯一依據，進行可能危害本人或他人安全之醫療、用藥或其他高風險決策。</li><li>其他我們有合理理由認為會影響其他使用者、醫療端、服務安全或合法營運之行為。</li></ul><h2>4. 使用者內容、資料與加密</h2><ul><li>您保留您在本服務中主動建立或輸入之內容的相關權利，並應對其合法性及適當性負責。</li><li>為提供本服務所必要，我們可能依隱私權政策處理、儲存、同步、備份或傳輸相關資料。</li><li>使用者建立的個人紀錄會依本服務實際技術機制先於使用者裝置端加密，再上傳至雲端；雲端資料庫及一般後台保存與顯示的內容為密文，開發者或一般後台管理者無法直接讀取其明文內容。</li><li>帳號識別、權限、時間戳、技術資訊或其他系統正常運作所必要的資料，可能依功能需要以系統可處理的形式保存。</li><li>有關資料種類、處理目的、分享、加密、安全、保存及刪除方式，請參閱最新版本之《隱私權政策》。</li></ul><h2>5. AI 功能</h2><ul><li>本服務的 AI 功能主要用於協助整理、分類、摘要或回顧使用者提供之資訊。</li><li>AI 可能誤解內容、遺漏資訊、產生不完整或不精確的分類、摘要或文字。</li><li>AI 產出僅供輔助參考，不構成醫療診斷、處方、治療建議或其他專業意見。</li><li>您不應僅依賴 AI 產出自行開始、停止或調整處方藥物，或處理其他需要專業醫療判斷之事項。</li><li>如 AI 功能需由第三方模型或雲端服務處理資料，其處理方式將依《隱私權政策》及實際功能說明辦理。</li><li>我們可能基於安全、成本、品質、法令或服務調整而限制、暫停或變更 AI 功能。</li></ul><h2>6. 醫療端連結與資料分享</h2><ul><li>醫療端資料分享並非預設開啟。只有在您主動建立院所連結並完成相關授權後，系統才會依您的設定提供相應資料。</li><li>可分享內容、分享期間及可查看之人員範圍，以當時 App 顯示之設定、院所權限及角色控管為準。</li><li>您可依本服務提供的功能停止或撤回分享；撤回不影響撤回前已合法進行之處理。</li><li>醫療端所呈現之資料主要來自使用者紀錄與系統整理結果，醫療專業人員仍應依其專業判斷及其他臨床資訊進行評估。</li><li>本服務不保證醫療端一定會於特定時間閱讀、回覆或採用您分享之資料，亦不應被用作緊急求助管道。</li></ul><h2>7. 付費、方案與測試功能</h2><ul><li>本服務可能提供免費、測試、Pro、訂閱或其他方案；實際價格、功能、使用額度、計費週期及適用條件，以 App、官方網站或應用程式商店當時顯示之資訊為準。</li><li>測試期間提供的免費功能、Pro 權限、AI 額度或其他優惠，不代表未來永久免費或永久維持相同內容。</li><li>若透過 App Store、Google Play 或其他第三方平台付款，付款、續訂、取消及退款原則亦受該平台之條款與政策規範。</li><li>我們如調整付費方案，將於合理範圍內提供必要資訊；已完成之交易依法及依相關平台規則處理。</li></ul><h2>8. 第三方服務</h2><p>本服務可能整合或連結第三方服務，例如：</p><ul><li>Google／Apple 登入。</li><li>Google Firebase 相關雲端服務。</li><li>AI 模型或 AI 雲端服務。</li><li>Google 表單或其他回饋工具。</li><li>App Store、Google Play 或其他應用程式平台。</li><li>其他為提供功能所必要的第三方服務。</li></ul><p>第三方服務由各該服務提供者負責，其使用可能受到各自之服務條款與隱私權政策約束。</p><h2>9. 服務更新、變更與中止</h2><ul><li>為提升安全性、修正錯誤、改善功能、符合法規或調整產品方向，我們可能更新、增加、限制、暫停或移除部分功能。</li><li>Beta、公開測試、實驗性或尚在開發中的功能可能較不穩定，也可能在未來調整或終止。</li><li>我們會盡合理努力維持服務運作，但不保證本服務永久不中斷、無錯誤、無資料同步延遲或與所有裝置完全相容。</li><li>若您違反法令、本條款或對系統安全造成重大風險，我們得於合理必要範圍限制或停止您使用全部或部分服務。</li><li>您可隨時停止使用本服務，並依《隱私權政策》及 App 實際功能管理或申請刪除相關資料。</li></ul><h2>10. 智慧財產權</h2><ul><li>除使用者自行提供之內容外，本服務之程式、介面、商標、品牌名稱、圖像、文字、設計及其他依法受保護之內容，其相關權利屬我們或合法權利人所有。</li><li>未經合法授權，不得以超出正常使用本服務所必要之方式重製、修改、散布、出售、公開傳輸或另作商業利用。</li><li>本條款不影響您依法對自己建立內容所享有之權利。</li></ul><h2>11. 免責與責任限制</h2><ul><li>本服務以實際提供狀態為準。我們會合理維護服務，但無法保證任何功能完全無錯誤、不中斷或永久可用。</li><li>使用者輸入資料的完整性、正確性及紀錄頻率可能影響圖表、摘要、AI 整理及其他分析結果。</li><li>AI 內容、趨勢、共現模式、用藥比較、回診摘要及其他系統整理結果僅為資訊輔助，不代表因果關係，也不構成醫療專業判斷。</li><li>本服務不負責取代緊急醫療、危機處理或即時醫療聯絡。</li><li>在適用法律允許之範圍內，我們對因不可歸責於我們之網路中斷、第三方服務異常、裝置問題、使用者操作或其他超出合理控制範圍之事件所造成的損失，不負超出法律要求之責任。</li><li>本條款任何內容均不排除或限制依法不得排除之責任，包括因故意或重大過失所生之責任，以及法律保障之消費者權利。</li></ul><h2>12. 準據法與爭議處理</h2><ul><li>本條款原則上以中華民國（臺灣）法律為準據法，但不影響依適用法律不得排除之消費者保護規定。</li><li>如發生爭議，我們鼓勵您先透過聯絡方式與我們溝通處理。</li><li>如需進入司法程序，管轄法院依適用法律及民事訴訟相關規定決定；本條款不排除依法應適用之消費爭議處理程序或法定管轄。</li></ul><h2>13. 條款變更</h2><p>我們可能因服務功能、AI、醫療端分享、付費方案、第三方服務、資訊安全或法令要求而修訂本條款。</p><p>若有重大變更，我們可能透過 App 內公告、登入頁、官方網站或其他適當方式通知您。最新版本將公布於本服務提供之服務條款頁面，並標示最後更新日期。</p><h2>14. 聯絡方式</h2><p>若您對本條款、帳號、資料或本服務有任何疑問，請聯繫：</p><ul><li>電子郵件：<a href="mailto:innera0120@gmail.com">innera0120@gmail.com</a></li><li>組織名稱：心域 Innera</li></ul>
+    <footer>© 心域 Innera</footer>
+  </main>
+</body>
+</html>

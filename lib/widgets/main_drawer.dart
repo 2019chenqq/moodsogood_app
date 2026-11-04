@@ -24,7 +24,7 @@ class _MainDrawerState extends State<MainDrawer> {
   bool _isUploading = false; // 用來控制轉圈圈
 
   static const _userGuideUrl =
-      'https://2019chenqq.github.io/Innera/guide/daily-record.html';
+      'https://innerahealthcare.com/guide/guide.html';
 
   /// 從 Firestore 加載日記記錄用於導出
   Future<void> _pickAndUploadImage() async {

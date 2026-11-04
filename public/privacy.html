@@ -1,12 +1,93 @@
-<!<!doctype html><meta charset="utf-8">
-<title>心域｜隱私權政策</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
-<div id="app">載入中…</div>
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<script>
-fetch('legal/privacy_zh-TW.md', { cache: 'no-cache' })   // ← 不要用 '/legal/...'
-  .then(r => r.text())
-  .then(t => { document.getElementById('app').innerHTML = marked.parse(t); })
-  .catch(() => { document.getElementById('app').innerHTML = '載入失敗，請稍後再試。'; });
-</script>
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>心域 Innera｜隱私權政策</title>
+  <meta name="description" content="心域 Innera 隱私權政策">
+  <style>
+    :root {
+      --bg: #f7fbfb;
+      --card: #ffffff;
+      --text: #233238;
+      --muted: #61727a;
+      --brand: #2e8f9e;
+      --line: #dbe8ea;
+      --quote: #eef7f8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+                   "Noto Sans TC", "PingFang TC", "Microsoft JhengHei",
+                   sans-serif;
+      line-height: 1.85;
+    }
+    main {
+      width: min(920px, calc(100% - 32px));
+      margin: 40px auto;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 40px 46px 56px;
+      box-shadow: 0 8px 30px rgba(30, 70, 80, .06);
+    }
+    h1 {
+      margin: 0 0 8px;
+      color: var(--brand);
+      font-size: clamp(28px, 4vw, 40px);
+      line-height: 1.3;
+    }
+    h2 {
+      margin-top: 38px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--line);
+      font-size: 22px;
+      line-height: 1.45;
+    }
+    p, li { font-size: 16px; }
+    p { margin: 12px 0; }
+    ul { padding-left: 1.5rem; }
+    li { margin: 7px 0; }
+    strong { color: #163f47; }
+    a {
+      color: var(--brand);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+    blockquote {
+      margin: 24px 0;
+      padding: 18px 20px;
+      background: var(--quote);
+      border-left: 4px solid var(--brand);
+      border-radius: 10px;
+      color: #34545c;
+    }
+    footer {
+      margin-top: 42px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 14px;
+    }
+    @media (max-width: 640px) {
+      main {
+        width: 100%;
+        margin: 0;
+        border: 0;
+        border-radius: 0;
+        padding: 28px 20px 42px;
+      }
+      h2 { margin-top: 30px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>心域 App— 隱私權政策</h1><p>最後更新：2026-10-03</p><p>我們重視您的個人資料與隱私。本政策說明我們如何蒐集、使用、分享與保護您的資料，以及您可如何行使權利。使用或安裝本服務，即表示您已閱讀並同意本政策。</p><h2>1. 我們是誰</h2><p>《心域 Innera》（以下稱「我們」）係「心域」之提供者。聯絡方式見文末。</p><h2>2. 我們處理哪些資料</h2><p>依您使用之功能與設定，可能處理下列類別：</p><ul><li><strong>帳號識別</strong>：第三方登入基本資料（例如 Google UID、暱稱、頭像 URL、電子郵件）。</li><li><strong>身心與健康紀錄</strong>：您主動輸入或建立的情緒分數／關鍵詞、能量、食慾、活動量、症狀、睡眠時間與品質、睡眠型態與標籤、健康事件、日記、身體測量、生理期／月經週期，以及建立與編輯時間戳等。</li><li><strong>用藥相關資料</strong>：藥物名稱、劑型、劑量、服藥時間與紀錄、藥物啟用／停用／調整時間、長效針週期、主觀用藥感受，以及您主動記錄的調藥前後狀態變化。</li><li><strong>AI 功能輸入與產出</strong>：您主動提交給心域 AI 的自然語言、情緒、症狀、睡眠、用藥與健康事件資訊，以及 AI 協助整理產生的結構化紀錄、近期回顧或回診摘要等內容。</li><li><strong>醫療端分享資料</strong>：僅在您主動建立院所連結並開啟分享時，依您的分享設定處理可供授權醫療人員查看的情緒、睡眠、健康事件、用藥、摘要或其他您明確授權的資料。</li><li><strong>裝置與技術資訊</strong>：裝置型號、作業系統版本、應用程式版本、語系、近端時間、錯誤記錄（crash log，若相關功能已啟用）、IP 位址與基本連線資訊（為資安、維運與除錯之必要）。</li><li><strong>雲端記錄</strong>：本服務使用雲端服務提供登入、資料儲存與同步，例如 Google Firebase Authentication、Cloud Firestore、Firebase Storage 與 Firebase Hosting。</li><li><strong>選用資料</strong>（僅在您明確同意或啟用時）：通知權限、小工具顯示設定、Beta／公開測試回饋表單內容，以及其他您主動提供的選用資訊。</li></ul><blockquote>本服務之目的為協助您記錄、整理並以視覺化或摘要方式瞭解身心狀況與趨勢，便利自我照顧及與醫療專業人員溝通。本應用程式及 AI 功能僅提供自我記錄與資訊整理輔助，不構成醫療建議、診斷、處方或治療，也不應取代醫師、心理師或其他醫療專業人員之判斷。如有醫療急症或嚴重不適，請立即就醫或聯絡當地緊急服務。</blockquote><h2>3. 我們如何使用資料（處理目的）</h2><ul><li><strong>提供核心功能</strong>：帳號登入、資料建立／同步／備份、紀錄歷程、趨勢、睡眠、用藥、生理期、身體測量、日記及其他身心紀錄功能。</li><li><strong>提供 AI 輔助功能</strong>：依您主動輸入之內容協助結構化紀錄、整理近期狀態、產生回顧或回診摘要。AI 內容可能不完整或發生錯誤，僅供資訊整理與輔助使用。</li><li><strong>醫療端資料分享</strong>：在您主動授權並建立院所連結時，依分享設定提供必要資料予經授權之醫療端人員查看；未經您授權，不因使用本服務而自動向院所開放您的紀錄。</li><li><strong>安全與維運</strong>：偵測濫用、權限驗證、除錯、效能監測、備援與災難復原。</li><li><strong>溝通與通知</strong>：重要異動、政策更新、服務公告；在您同意時寄送相關活動或功能訊息。</li><li><strong>產品改進與統計</strong>：如相關分析功能已啟用，可能在必要範圍內彙整使用狀況，以改善服務穩定性、操作流程與功能設計。<strong>我們不會</strong>在未經您同意的情況下，將可識別之健康資料用於第三方廣告投放。</li></ul><h2>4. 法律依據與同意（如適用）</h2><ul><li>為履行與您之合約（提供服務）所必要。</li><li>為履行法定義務或回應主管機關依法提出之要求所必要。</li><li>以我們或第三人之正當利益為基礎，且不逾越您的權利與合理期待（例如資安、除錯與防止濫用）。</li><li>在需要時，基於您的<strong>明確同意</strong>（例如醫療端資料分享、可選分析或實驗功能）。您得依功能設定或透過聯絡方式撤回同意，惟不影響撤回前既已合法進行之處理。</li></ul><h2>5. 資料保存與地點</h2><ul><li>在您使用本服務期間內，我們會於提供服務所必要之範圍保存相關資料。</li><li>當您刪除個別紀錄、停止分享或要求刪除帳號及相關資料時，我們將依實際系統流程於合理期間內進行刪除、停止使用或去識別化；因備份、資安或技術因素，部分資料可能於有限期間內留存在備份中，並依備份週期移除。</li><li>雲端供應商之伺服器可能位於臺灣境內或境外；我們將依適用法令及供應商提供之安全機制，採取合理措施維持資料保護水準。</li></ul><h2>6. 分享與受託</h2><ul><li><strong>雲端與基礎設施服務</strong>：例如 Google Firebase Authentication、Cloud Firestore、Firebase Storage、Firebase Hosting，以及其他為提供本服務所必要的基礎設施。</li><li><strong>AI 服務供應者</strong>：若您使用需由第三方 AI 模型或雲端服務處理的功能，系統可能在提供該功能所必要的範圍內，傳送您主動提交的內容或相關紀錄進行處理。</li><li><strong>醫療端分享</strong>：僅在您主動建立院所連結並授權分享時，依您設定的分享範圍提供資料予經授權之醫療端人員；不同角色之可見範圍可能受到權限控管限制。</li><li><strong>錯誤與效能服務</strong>：如 Firebase Crashlytics、Analytics 或其他分析工具實際啟用時，可能於其必要範圍內處理裝置、使用狀況或錯誤資訊。</li><li><strong>法律需求</strong>：依法律、法院裁定或主管機關合法程序要求時，於必要範圍內提供資料。</li><li><strong>研究或統計</strong>：如進行研究、產品分析或統計分享，原則上將以去識別化、彙整化或其他降低識別風險之方式處理；若依法需另行取得同意，將於取得適當同意後進行。</li></ul><p>我們<strong>不會販售您的個人資料或健康資料</strong>，亦不會將您的健康資料提供予第三方作為廣告投放之用途。</p><h2>7. 您的權利</h2><p>依適用法令，您可能享有以下權利：查詢或請求閱覽、製給副本、補充或更正、停止蒐集處理或利用、刪除，以及在本服務支援範圍內進行資料匯出。</p><ul><li><strong>紀錄管理</strong>：您可依 App 實際提供之功能檢視、編輯或刪除部分紀錄。</li><li><strong>醫療端分享控制</strong>：如您已建立院所連結，可依系統提供之功能管理分享狀態、調整可分享資料類型或撤回分享；撤回不影響撤回前已合法進行之資料處理。</li><li><strong>帳號與資料刪除</strong>：若 App 內已提供刪除帳號／資料功能，可直接依介面操作；若相關功能尚未提供或遇到問題，可透過文末聯絡方式提出申請。</li><li><strong>資料匯出</strong>：如 App 內已提供資料匯出功能，可依介面操作；若您需要取得其他個人資料副本，可透過文末聯絡方式提出申請。</li><li><strong>身分驗證</strong>：為保護您的權益，提出資料權利申請時，我們可能進行合理的身分驗證。</li></ul><h2>8. 資料安全</h2><ul><li>我們採取合理的技術與管理措施，例如：傳輸加密（TLS／HTTPS）、Firebase Authentication 身分驗證、Firestore Security Rules、最小必要權限、院所與角色權限控管、存取紀錄、重要操作驗證與備援。</li><li>醫療端資料之存取會依院所、角色與使用者授權範圍進行限制；未經授權之帳號不應取得相應臨床資料。</li><li>然而，任何網路服務、雲端系統或電子儲存方式均無法保證絕對安全；請妥善保管您的裝置、Google 帳戶及其他登入憑證。</li></ul><h2>9. 兒童與青少年</h2><p>本服務並非專門為兒童設計。未滿 13 歲者，或依所在地法律屬需法定代理人同意之未成年人，應在法定代理人或監護人同意及適當監護下使用。若您為法定代理人並欲行使相關權利，請透過文末方式與我們聯繫。</p><h2>10. 第三方連結與服務</h2><p>本服務可能包含 Google 表單、官方網站、Google 登入、Firebase、AI 服務或其他第三方網站與服務之連結或整合。離開本服務或使用第三方服務後，其資料處理方式受該第三方之條款與隱私政策規範，我們無法控制其全部資料處理行為。</p><h2>11. 政策變更</h2><p>我們可能因功能、第三方服務、資料處理方式或法令變更而修訂本政策。若新增或調整健康資料類型、AI 功能、第三方 SDK、醫療端分享或其他重要資料處理方式，我們將相應更新本政策。</p><p>重大變更時，我們可能透過 App 內公告、登入頁提示、官方網站或其他適當方式通知您。最新版本將公布於本服務提供之隱私權政策頁面，並標示最後更新日期。</p><h2>12. 聯絡我們（資料保護聯絡窗口）</h2><ul><li>電子郵件：innera0120@gmail.com</li><li>組織名稱：心域 Innera</li></ul>
+    <footer>© 心域 Innera</footer>
+  </main>
+</body>
+</html>

@@ -8,8 +8,8 @@ import 'package:crypto/crypto.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-import 'legal_markdown_page.dart';
 import 'analytics_service.dart';
 
 class SignInPage extends StatefulWidget {
@@ -118,6 +118,44 @@ class _SignInPageState extends State<SignInPage> {
         _loading = false;
         _loadingProvider = null;
       });
+    }
+  }
+
+  Future<void> _openPrivacyPolicy() async {
+    final uri = Uri.parse(
+      'https://innerahealthcare.com/privacy.html',
+    );
+
+    final opened = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
+
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('無法開啟隱私權政策，請稍後再試'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _openTermsOfService() async {
+    final uri = Uri.parse(
+      'https://innerahealthcare.com/terms.html',
+    );
+
+    final opened = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
+
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('無法開啟服務條款，請稍後再試'),
+        ),
+      );
     }
   }
 
@@ -453,27 +491,11 @@ class _SignInPageState extends State<SignInPage> {
                                   style: theme.textTheme.bodySmall
                                       ?.copyWith(color: Colors.white),
                                 ),
-                                _link('服務條款', () {
-                                  Navigator.of(context).push(MaterialPageRoute(
-                                    builder: (_) => const LegalMarkdownPage(
-                                      title: '服務條款',
-                                      assetPath:
-                                          'assets/legal/心域_服務條款_zh-TW.md',
-                                    ),
-                                  ));
-                                }),
+                                _link('服務條款', _openTermsOfService),
                                 Text('與',
                                     style: theme.textTheme.bodySmall
                                         ?.copyWith(color: Colors.white)),
-                                _link('隱私權政策', () {
-                                  Navigator.of(context).push(MaterialPageRoute(
-                                    builder: (_) => const LegalMarkdownPage(
-                                      title: '隱私權政策',
-                                      assetPath:
-                                          'assets/legal/心域_隱私權政策_zh-TW.md',
-                                    ),
-                                  ));
-                                }),
+                                _link('隱私權政策', _openPrivacyPolicy),
                               ],
                             ),
                           ),
