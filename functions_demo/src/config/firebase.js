@@ -1,7 +1,7 @@
 const admin = require("firebase-admin");
 
 // 初始化 Admin SDK (擁有繞過 Security Rules 的最高權限)
-if (!admin.apps.some(app => app.name === "[DEFAULT]")) admin.initializeApp();
+admin.initializeApp();
 
 const db = admin.firestore();
 
