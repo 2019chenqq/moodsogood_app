@@ -2,6 +2,17 @@
 const { randomUUID, createHash } = require("node:crypto");
 const { PROJECT, requireThat, identifier, validateEnvelope, decrypt } = require("./protocol");
 
+function fixturePatientId(fixture, clinicId) {
+  requireThat(fixture?.synthetic === true);
+  if (Object.hasOwn(fixture, "clinics")) {
+    requireThat(fixture.clinics && typeof fixture.clinics === "object" &&
+      !Array.isArray(fixture.clinics) && Object.hasOwn(fixture.clinics, clinicId));
+    return identifier(fixture.clinics[clinicId]?.patientId);
+  }
+  requireThat(fixture.clinicId === clinicId);
+  return identifier(fixture.patientId);
+}
+
 // All authorization reads use transactions. The final transaction is the read's
 // authorization linearization point; an already released response cannot be recalled.
 function createService({ db, projectId, keys, now = () => Date.now(), type = "sleepRecords" }) {
@@ -26,8 +37,9 @@ function createService({ db, projectId, keys, now = () => Date.now(), type = "sl
     const r = refs(uid, clinicId);
     const fixture = (await tx.get(r.fixture)).data();
     const clinic = (await tx.get(r.clinic)).data();
-    requireThat(fixture?.synthetic === true && fixture.clinicId === clinicId && clinic?.status === "active");
-    const patient = (await tx.get(db.doc(`inneraPatients/${identifier(fixture.patientId)}`))).data();
+    const patientId = fixturePatientId(fixture, clinicId);
+    requireThat(clinic?.status === "active");
+    const patient = (await tx.get(db.doc(`inneraPatients/${patientId}`))).data();
     requireThat(patient?.linked === true && patient.firebaseUid === uid && patient.clinicId === clinicId);
     return r;
   }
@@ -82,7 +94,9 @@ function createService({ db, projectId, keys, now = () => Date.now(), type = "sl
     return db.runTransaction(async tx => {
       const r = refs(uid, clinicId);
       const fixture = (await tx.get(r.fixture)).data();
-      requireThat(fixture?.synthetic === true && fixture.clinicId === clinicId);
+      const patientId = fixturePatientId(fixture, clinicId);
+      const patient = (await tx.get(db.doc(`inneraPatients/${patientId}`))).data();
+      requireThat(patient?.firebaseUid === uid && patient.clinicId === clinicId);
       const share = (await tx.get(r.share)).data();
       const old = await tx.get(r.records.limit(31));
       requireThat(old.size <= 30, "resource-exhausted");
@@ -138,12 +152,22 @@ function createService({ db, projectId, keys, now = () => Date.now(), type = "sl
       const clinicId = identifier(staff.clinicId);
       const clinic = (await tx.get(db.doc(`clinics/${clinicId}`))).data();
       requireThat(clinic?.status === "active");
-      const fixtures = await tx.get(db.collection("demoEncryptedFixtures").where("clinicId", "==", clinicId).limit(30));
-      return { patients: fixtures.docs.filter(d => d.data().synthetic === true).map(d => ({
-        uid: d.id, clinicId, label: "睡眠測試患者",
-      })) };
+      const fixtures = db.collection("demoEncryptedFixtures");
+      const legacy = await tx.get(fixtures.where("clinicId", "==", clinicId).limit(30));
+      const mapped = await tx.get(fixtures.where(`clinics.${clinicId}.patientId`, ">", "").limit(30));
+      const candidates = new Map([...legacy.docs, ...mapped.docs].map(doc => [doc.id, doc]));
+      const patients = [];
+      for (const uid of candidates.keys()) {
+        try {
+          await relation(tx, identifier(uid), clinicId);
+          patients.push({ uid, clinicId, label: "睡眠測試患者" });
+        } catch (error) {
+          if (!["permission-denied", "invalid-argument"].includes(error.code)) throw error;
+        }
+      }
+      return { patients: patients.slice(0, 30) };
     });
   }
   return { context, publish, revoke, read, list };
 }
-module.exports = { createService };
+module.exports = { createService, fixturePatientId };

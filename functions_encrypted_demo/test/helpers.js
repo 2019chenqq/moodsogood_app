@@ -29,7 +29,8 @@ class MemoryDb {
     const query = { path, max: Infinity, condition: null, doc: id => this.doc(`${path}/${id}`) };
     query.limit = n => ({ ...query, max: n });
     query.where = (field, op, value) => {
-      const result = { ...query, condition: [field, value] };
+      if (!["==", ">"].includes(op)) throw Error("Unsupported fixture query operator");
+      const result = { ...query, condition: [field, value, op] };
       result.limit = n => ({ ...result, max: n }); return result;
     };
     return query;
@@ -41,7 +42,13 @@ class MemoryDb {
       get: async ref => {
         if (ref.max === undefined) return this.snap(ref);
         const docs = [...this.data.keys()].filter(p => p.startsWith(`${ref.path}/`) && p.split("/").length === ref.path.split("/").length + 1)
-          .filter(p => !ref.condition || this.data.get(p)[ref.condition[0]] === ref.condition[1])
+          .filter(p => {
+            if (!ref.condition) return true;
+            const [field, expected, op] = ref.condition;
+            const value = field.split(".").reduce((data, key) => data?.[key], this.data.get(p));
+            if (op === ">") return typeof value === typeof expected && value > expected;
+            return value === expected;
+          })
           .slice(0, ref.max).map(p => this.snap(this.doc(p)));
         return { size: docs.length, docs };
       },
@@ -60,5 +67,21 @@ function fixture(db) {
   db.data.set("demoEncryptedFixtures/fake-patient", { synthetic: true, clinicId: "clinic-a", patientId: "fake-chart" });
   db.data.set("inneraPatients/fake-chart", { linked: true, firebaseUid: "fake-patient", clinicId: "clinic-a" });
 }
+function dualClinicFixture(db) {
+  fixture(db);
+  db.data.set("clinics/clinic-b", { status: "active" });
+  db.data.set("clinicStaff/doctor-b", { status: "active", role: "doctor", clinicId: "clinic-b" });
+  db.data.set("inneraPatients/fake-chart-b", { linked: true, firebaseUid: "fake-patient", clinicId: "clinic-b" });
+  // Keep legacy clinic A fields while declaring both synthetic clinic relationships.
+  db.data.set("demoEncryptedFixtures/fake-patient", {
+    synthetic: true,
+    clinicId: "clinic-a",
+    patientId: "fake-chart",
+    clinics: {
+      "clinic-a": { patientId: "fake-chart" },
+      "clinic-b": { patientId: "fake-chart-b" },
+    },
+  });
+}
 function request(uid, data = {}) { return { auth: { uid, token: { firebase: { sign_in_provider: "password" } } }, app: { appId: "demo-app" }, data: { clinicId: "clinic-a", ...data } }; }
-module.exports = { VERSION, keyPair, sleep, encrypt, unwrap, MemoryDb, fixture, request };
+module.exports = { VERSION, keyPair, sleep, encrypt, unwrap, MemoryDb, fixture, dualClinicFixture, request };

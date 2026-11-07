@@ -2,6 +2,7 @@
 const { randomUUID, createHash } = require("node:crypto");
 const { PROJECT, ShareError, requireThat, identifier, decrypt, encryptSummary } = require("./protocol");
 const { TYPES, FLAGS, normalize, summarize } = require("./summary-schema");
+const { fixturePatientId } = require("./service");
 function stale() { const error = new ShareError("failed-precondition"); error.regenerate = true; throw error; }
 function sameSourceVersions(a, b) {
   return TYPES.every(type => a?.[type] && b?.[type] && ["active", "epoch", "consentVersion"].every(field => a[type][field] === b[type][field]));
@@ -26,8 +27,9 @@ function createSummaryService({ db, projectId, keys, now = () => Date.now(), ver
   async function relation(tx, uid, clinic) {
     const fixture = (await tx.get(db.doc(`demoEncryptedFixtures/${uid}`))).data();
     const c = (await tx.get(db.doc(`clinics/${clinic}`))).data();
-    requireThat(fixture?.synthetic === true && fixture.clinicId === clinic && c?.status === "active");
-    const p = (await tx.get(db.doc(`inneraPatients/${identifier(fixture.patientId)}`))).data();
+    const patientId = fixturePatientId(fixture, clinic);
+    requireThat(c?.status === "active");
+    const p = (await tx.get(db.doc(`inneraPatients/${patientId}`))).data();
     requireThat(p?.linked === true && p.firebaseUid === uid && p.clinicId === clinic);
   }
   async function state(tx, actor, uid, clinic) {
@@ -83,7 +85,9 @@ function createSummaryService({ db, projectId, keys, now = () => Date.now(), ver
     await verifySession(request);
     return db.runTransaction(async tx => {
       const fixture = (await tx.get(db.doc(`demoEncryptedFixtures/${uid}`))).data();
-      requireThat(fixture?.synthetic === true && fixture.clinicId === clinic);
+      const patientId = fixturePatientId(fixture, clinic);
+      const patient = (await tx.get(db.doc(`inneraPatients/${patientId}`))).data();
+      requireThat(patient?.firebaseUid === uid && patient.clinicId === clinic);
       const old = (await tx.get(scope(uid, clinic))).data(), epoch = (old?.epoch || 0) + 1;
       tx.set(scope(uid, clinic), { active: false, epoch, consentVersion: 1, revokedAt: now() });
       tx.delete(current(uid, clinic)); audit(tx, "summary.revoke", uid, uid);
